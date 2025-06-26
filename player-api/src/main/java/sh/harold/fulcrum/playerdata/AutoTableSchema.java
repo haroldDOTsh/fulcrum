@@ -63,6 +63,23 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         return sb.toString();
     }
 
+    public int getSchemaVersion() {
+        var ann = type.getAnnotation(SchemaVersion.class);
+        return ann != null ? ann.value() : 1;
+    }
+
+    public void createTable(java.sql.Connection conn) throws Exception {
+        String sql = getCreateTableSql();
+        try (var stmt = conn.createStatement()) {
+            stmt.execute(sql);
+        }
+        // Simulate versioning logic: update schema_versions table
+        String versionSql = "INSERT OR REPLACE INTO schema_versions (table_name, version) VALUES ('" + tableName + "', " + getSchemaVersion() + ")";
+        try (var stmt = conn.createStatement()) {
+            stmt.execute(versionSql);
+        }
+    }
+
     @Override
     public String schemaKey() { return tableName; }
     @Override
