@@ -54,12 +54,17 @@ class PlayerProfileTest {
         sqlBacking.put(PLAYER_ID, new TestSqlData(42));
     }
 
+    @BeforeEach
+    void resetRegistry() {
+        PlayerDataRegistry.clear();
+    }
+
     @Test
     void testProfileLifecycle() {
-        var registry = new PlayerDataRegistry();
-        registry.register(new TestJsonSchema());
-        registry.register(new TestSqlSchema());
-        var profile = new PlayerProfile(PLAYER_ID, registry);
+        PlayerDataRegistry.clear();
+        PlayerDataRegistry.register(new TestJsonSchema());
+        PlayerDataRegistry.register(new TestSqlSchema());
+        var profile = new PlayerProfile(PLAYER_ID);
         profile.loadAll();
         assertEquals(new TestJsonData("foo"), profile.get(TestJsonData.class));
         assertEquals(new TestSqlData(42), profile.get(TestSqlData.class));

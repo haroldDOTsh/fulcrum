@@ -1,30 +1,26 @@
 package sh.harold.fulcrum.playerdata;
 
-import java.util.Collection;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 
 public final class PlayerDataRegistry {
-    private final Map<Class<?>, PlayerDataSchema<?>> schemas = new ConcurrentHashMap<>();
-    private final Map<UUID, Map<Class<?>, Object>> data = new ConcurrentHashMap<>();
+    private static final Map<Class<?>, PlayerDataSchema<?>> schemas = new HashMap<>();
 
-    public <T> void register(PlayerDataSchema<T> schema) {
+    private PlayerDataRegistry() {}
+
+    public static <T> void register(PlayerDataSchema<T> schema) {
         schemas.put(schema.type(), schema);
     }
 
     @SuppressWarnings("unchecked")
-    public <T> T get(UUID uuid, Class<T> type) {
-        var userMap = data.get(uuid);
-        if (userMap == null) return null;
-        return (T) userMap.get(type);
+    public static <T> PlayerDataSchema<T> get(Class<T> type) {
+        return (PlayerDataSchema<T>) schemas.get(type);
     }
 
-    public <T> void set(UUID uuid, Class<T> type, T value) {
-        data.computeIfAbsent(uuid, k -> new ConcurrentHashMap<>()).put(type, value);
+    public static Collection<PlayerDataSchema<?>> allSchemas() {
+        return Collections.unmodifiableCollection(schemas.values());
     }
 
-    public Collection<PlayerDataSchema<?>> getRegisteredSchemas() {
-        return schemas.values();
+    public static void clear() {
+        schemas.clear();
     }
 }

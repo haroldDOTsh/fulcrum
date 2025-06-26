@@ -5,11 +5,9 @@ import java.util.*;
 public final class PlayerProfile {
     private final UUID playerId;
     private final Map<Class<?>, Object> schemaData = new HashMap<>();
-    private final PlayerDataRegistry registry;
 
-    public PlayerProfile(UUID playerId, PlayerDataRegistry registry) {
+    public PlayerProfile(UUID playerId) {
         this.playerId = playerId;
-        this.registry = registry;
     }
 
     @SuppressWarnings("unchecked")
@@ -22,14 +20,16 @@ public final class PlayerProfile {
     }
 
     public void loadAll() {
-        for (PlayerDataSchema<?> schema : registry.getRegisteredSchemas()) {
+        for (PlayerDataSchema<?> schema : PlayerDataRegistry.allSchemas()) {
             Object data = schema.load(playerId);
             schemaData.put(schema.type(), data);
         }
     }
 
     public void saveAll() {
-        for (PlayerDataSchema<?> schema : registry.getRegisteredSchemas()) {
+        List<PlayerDataSchema<?>> schemas = new ArrayList<>(PlayerDataRegistry.allSchemas());
+        Collections.reverse(schemas);
+        for (PlayerDataSchema<?> schema : schemas) {
             Object data = schemaData.get(schema.type());
             if (data != null) saveSchema(schema, data);
         }
