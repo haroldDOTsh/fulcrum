@@ -131,12 +131,12 @@ class MockConnection implements Connection {
 class AutoTableSchemaJdbcTest {
     @Test
     void createTableExecutesCorrectSql() throws Exception {
-        var schema = new AutoTableSchema<>(TestPlayer.class);
         var conn = new MockConnection();
+        var schema = new AutoTableSchema<>(TestPlayer.class, conn);
         schema.createTable(conn);
         var stmts = conn.statement.executedSql;
         assertEquals(2, stmts.size());
-        assertEquals("CREATE TABLE test_players (id UUID, name TEXT, level INT, PRIMARY KEY (id));", stmts.get(0));
+        assertEquals("CREATE TABLE test_players (id TEXT, name TEXT, level INT, PRIMARY KEY (id));", stmts.get(0));
         assertEquals("INSERT OR REPLACE INTO schema_versions (table_name, version) VALUES ('test_players', 1)", stmts.get(1));
     }
 }
