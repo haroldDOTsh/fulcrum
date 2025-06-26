@@ -29,8 +29,11 @@ public class PlayerDataSchemaTest {
         registry.register(schema);
         var uuid = UUID.randomUUID();
         var data = new TestData(42);
+        System.out.println("Registering schema: " + schema.schemaKey());
+        System.out.println("Setting data for UUID: " + uuid + ", value: " + data);
         registry.set(uuid, TestData.class, data);
         var retrieved = registry.get(uuid, TestData.class);
+        System.out.println("Retrieved data for UUID: " + uuid + ", value: " + retrieved);
         assertNotNull(retrieved);
         assertEquals(42, retrieved.x());
     }
