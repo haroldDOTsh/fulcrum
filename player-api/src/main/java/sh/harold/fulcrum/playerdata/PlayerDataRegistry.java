@@ -23,4 +23,20 @@ public final class PlayerDataRegistry {
     public static void clear() {
         schemas.clear();
     }
+
+    public static void notifyJoin(UUID playerId) {
+        for (var schema : allSchemas()) {
+            if (schema instanceof LifecycleAwareSchema lifecycle) {
+                lifecycle.onJoin(playerId);
+            }
+        }
+    }
+
+    public static void notifyQuit(UUID playerId) {
+        for (var schema : allSchemas()) {
+            if (schema instanceof LifecycleAwareSchema lifecycle) {
+                lifecycle.onQuit(playerId);
+            }
+        }
+    }
 }
