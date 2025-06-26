@@ -1,42 +1,57 @@
 package sh.harold.fulcrum.playerdata;
 
 import java.util.*;
+import java.util.function.Supplier;
 
 public final class PlayerProfile {
     private final UUID playerId;
-    private final Map<Class<?>, Object> schemaData = new HashMap<>();
+    private final Map<Class<?>, Object> data = new HashMap<>();
 
     public PlayerProfile(UUID playerId) {
         this.playerId = playerId;
     }
 
     @SuppressWarnings("unchecked")
-    public <T> T get(Class<T> type) {
-        return (T) schemaData.get(type);
+    public <T> T get(Class<T> schemaType) {
+        if (data.containsKey(schemaType)) return (T) data.get(schemaType);
+        var schema = PlayerDataRegistry.get(schemaType);
+        if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
+        T loaded = PlayerStorageManager.load(playerId, schema);
+        data.put(schemaType, loaded);
+        return loaded;
     }
 
-    public <T> void set(Class<T> type, T data) {
-        schemaData.put(type, data);
+    @SuppressWarnings("unchecked")
+    public <T> T get(Class<T> schemaType, Supplier<T> fallback) {
+        if (data.containsKey(schemaType)) return (T) data.get(schemaType);
+        var schema = PlayerDataRegistry.get(schemaType);
+        if (schema == null) return fallback.get();
+        T loaded = PlayerStorageManager.load(playerId, schema);
+        data.put(schemaType, loaded);
+        return loaded;
+    }
+
+    public <T> void set(Class<T> schemaType, T value) {
+        data.put(schemaType, value);
     }
 
     public void loadAll() {
         for (PlayerDataSchema<?> schema : PlayerDataRegistry.allSchemas()) {
-            Object data = PlayerStorageManager.load(playerId, schema);
-            schemaData.put(schema.type(), data);
+            Object loaded = PlayerStorageManager.load(playerId, schema);
+            data.put(schema.type(), loaded);
         }
     }
 
     public void saveAll() {
-        List<PlayerDataSchema<?>> schemas = new ArrayList<>(PlayerDataRegistry.allSchemas());
-        Collections.reverse(schemas);
-        for (PlayerDataSchema<?> schema : schemas) {
-            Object data = schemaData.get(schema.type());
-            if (data != null) saveSchema(schema, data);
+        for (var entry : data.entrySet()) {
+            var schema = PlayerDataRegistry.get(entry.getKey());
+            if (schema != null && entry.getValue() != null)
+                saveSchema(schema, entry.getValue());
         }
     }
 
-    private <T> void saveSchema(PlayerDataSchema<T> schema, Object data) {
-        PlayerStorageManager.save(playerId, schema, schema.type().cast(data));
+    private <T> void saveSchema(PlayerDataSchema<T> schema, Object value) {
+        PlayerStorageManager.save(playerId, schema, schema.type().cast(value));
     }
 
     public UUID getPlayerId() {
