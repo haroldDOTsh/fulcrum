@@ -21,7 +21,7 @@ public final class PlayerProfile {
 
     public void loadAll() {
         for (PlayerDataSchema<?> schema : PlayerDataRegistry.allSchemas()) {
-            Object data = schema.load(playerId);
+            Object data = PlayerStorageManager.load(playerId, schema);
             schemaData.put(schema.type(), data);
         }
     }
@@ -36,7 +36,7 @@ public final class PlayerProfile {
     }
 
     private <T> void saveSchema(PlayerDataSchema<T> schema, Object data) {
-        schema.save(playerId, schema.type().cast(data));
+        PlayerStorageManager.save(playerId, schema, schema.type().cast(data));
     }
 
     public UUID getPlayerId() {
