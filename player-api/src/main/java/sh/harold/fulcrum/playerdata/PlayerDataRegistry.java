@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.playerdata;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,5 +22,9 @@ public final class PlayerDataRegistry {
 
     public <T> void set(UUID uuid, Class<T> type, T value) {
         data.computeIfAbsent(uuid, k -> new ConcurrentHashMap<>()).put(type, value);
+    }
+
+    public Collection<PlayerDataSchema<?>> getRegisteredSchemas() {
+        return schemas.values();
     }
 }
