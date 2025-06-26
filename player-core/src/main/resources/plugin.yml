@@ -1,0 +1,4 @@
+name: FulcrumPlayerData
+version: 1.0
+main: sh.harold.fulcrum.playerdata.PlayerDataPlugin
+api-version: 1.21
