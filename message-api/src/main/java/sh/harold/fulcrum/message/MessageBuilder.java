@@ -70,6 +70,11 @@ public class MessageBuilder {
         tags.add(MessageTag.DAEMON);
         return this;
     }
+
+    public MessageBuilder debug() {
+        tags.add(MessageTag.DEBUG);
+        return this;
+    }
       
     /**
      * Adds a custom tag to the message.
