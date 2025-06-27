@@ -1,5 +1,11 @@
 package sh.harold.fulcrum.playerdata;
 
+import sh.harold.fulcrum.api.Column;
+import sh.harold.fulcrum.api.Table;
+import sh.harold.fulcrum.api.TableSchema;
+import sh.harold.fulcrum.backend.sql.SqlDialect;
+import sh.harold.fulcrum.backend.sql.SqliteDialect;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.sql.Connection;
@@ -7,6 +13,21 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.*;
 
+/**
+ * TableSchema implementation that generates SQL DDL/DML from annotated POJOs.
+ * Now supports pluggable SQL dialects for cross-database compatibility.
+ *
+ * <p>Usage example:
+ * <pre>
+ *   SqlDialect dialect = new SqliteDialect();
+ *   AutoTableSchema<MyPojo> schema = new AutoTableSchema<>(MyPojo.class, null, dialect);
+ * </pre>
+ *
+ * <p>Legacy usage (deprecated):
+ * <pre>
+ *   AutoTableSchema<MyPojo> schema = new AutoTableSchema<>(MyPojo.class, null);
+ * </pre>
+ */
 public class AutoTableSchema<T> extends TableSchema<T> {
     private final Class<T> type;
     private final String tableName;
@@ -14,6 +35,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     private final ColumnInfo primaryKey;
     private final Map<String, Field> fieldMap;
     private final Connection testConnection;
+    private final SqlDialect dialect;
 
     private static class ColumnInfo {
         final String name;
@@ -26,26 +48,40 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         }
     }
 
+    /**
+     * @deprecated Use {@link #AutoTableSchema(Class, Connection, SqlDialect)} for explicit dialect selection.
+     * If dialect is null, falls back to SqliteDialect for backwards compatibility.
+     */
+    @Deprecated
     public AutoTableSchema(Class<T> type, Connection testConnection) {
+        this(type, testConnection, null);
+    }
+
+    /**
+     * Constructs an AutoTableSchema with the given dialect.
+     * @param type POJO class
+     * @param testConnection optional test connection
+     * @param dialect SQL dialect (if null, uses SqliteDialect)
+     */
+    public AutoTableSchema(Class<T> type, Connection testConnection, SqlDialect dialect) {
         this.type = type;
         this.testConnection = testConnection;
+        this.dialect = dialect != null ? dialect : new SqliteDialect();
         var tableAnn = type.getAnnotation(Table.class);
         if (tableAnn == null) throw new IllegalArgumentException("Missing @Table annotation");
         this.tableName = tableAnn.value();
         this.columns = new LinkedHashMap<>();
         this.fieldMap = new LinkedHashMap<>();
-        Field pkField = null;
         // 1. Collect all eligible fields
         for (Field field : type.getDeclaredFields()) {
             int mods = field.getModifiers();
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
             var colAnn = field.getAnnotation(Column.class);
             String colName = colAnn != null && !colAnn.value().isEmpty() ? colAnn.value() : field.getName();
-            String sqlType = mapType(field.getType());
+            String sqlType = this.dialect.getSqlType(field.getType());
             boolean isPrimary = colAnn != null && colAnn.primary();
             columns.put(colName, new ColumnInfo(colName, sqlType, isPrimary));
             fieldMap.put(colName, field);
-            if (isPrimary) pkField = field;
         }
         // 2. If no @Column(primary = true), fallback to id/uuid
         ColumnInfo pkInfo = columns.values().stream().filter(c -> c.primary).findFirst().orElse(null);
@@ -63,31 +99,22 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         this.primaryKey = pkInfo;
     }
 
-    private String mapType(Class<?> type) {
-        if (type == UUID.class) return "TEXT"; // SQLite does not support UUID natively
-        if (type == String.class) return "TEXT";
-        if (type == int.class || type == Integer.class) return "INT";
-        if (type == long.class || type == Long.class) return "BIGINT";
-        if (type == boolean.class || type == Boolean.class) return "BOOLEAN";
-        throw new IllegalArgumentException("Unsupported type: " + type.getName());
-    }
-
     public String getCreateTableSql() {
         StringBuilder sb = new StringBuilder();
-        sb.append("CREATE TABLE ").append(tableName).append(" (");
+        sb.append("CREATE TABLE ").append(dialect.quoteIdentifier(tableName)).append(" (");
         String pk = null;
         boolean first = true;
         for (var col : columns.values()) {
             if (!first) sb.append(", ");
             first = false;
-            sb.append(col.name).append(" ").append(col.sqlType);
+            sb.append(dialect.quoteIdentifier(col.name)).append(" ").append(col.sqlType);
             if (col.primary) {
                 if (pk != null) throw new IllegalStateException("Multiple primary keys");
                 pk = col.name;
             }
         }
         if (pk == null) pk = primaryKey.name;
-        if (pk != null) sb.append(", PRIMARY KEY (").append(pk).append(")");
+        if (pk != null) sb.append(", PRIMARY KEY (").append(dialect.quoteIdentifier(pk)).append(")");
         sb.append(");");
         return sb.toString();
     }
@@ -102,26 +129,23 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         try (var stmt = conn.createStatement()) {
             stmt.execute(sql);
         }
-        String versionSql = "INSERT OR REPLACE INTO schema_versions (table_name, version) VALUES ('" + tableName + "', " + getSchemaVersion() + ")";
+        String versionSql = "INSERT OR REPLACE INTO " + dialect.quoteIdentifier("schema_versions") +
+                " (" + dialect.quoteIdentifier("table_name") + ", " + dialect.quoteIdentifier("version") + ") VALUES ('" + tableName + "', " + getSchemaVersion() + ")";
         try (var stmt = conn.createStatement()) {
             stmt.execute(versionSql);
         }
     }
 
-    @Override
-    public String schemaKey() { return tableName; }
-    @Override
-    public Class<T> type() { return type; }
-
-    @Override
+    // Remove @Override from load/save, as TableSchema no longer declares them
     public T load(UUID uuid) {
         Connection conn = null;
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
             conn = getConnection();
-            ps = conn.prepareStatement("SELECT * FROM " + tableName + " WHERE " + primaryKey.name + " = ? LIMIT 1");
-            System.out.println("[DEBUG] load: SQL=SELECT * FROM " + tableName + " WHERE " + primaryKey.name + " = ? LIMIT 1, uuid=" + uuid);
+            String sql = "SELECT * FROM " + dialect.quoteIdentifier(tableName) + " WHERE " + dialect.quoteIdentifier(primaryKey.name) + " = ? LIMIT 1";
+            ps = conn.prepareStatement(sql);
+            System.out.println("[DEBUG] load: SQL=" + sql + ", uuid=" + uuid);
             ps.setObject(1, uuid);
             rs = ps.executeQuery();
             if (!rs.next()) return null;
@@ -145,15 +169,14 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         }
     }
 
-    @Override
     public void save(UUID uuid, T data) {
         if (uuid == null) throw new RuntimeException("Primary key (UUID) must not be null for save() on " + tableName);
         StringBuilder sql = new StringBuilder();
-        sql.append("INSERT OR REPLACE INTO ").append(tableName).append(" (");
+        sql.append("INSERT OR REPLACE INTO ").append(dialect.quoteIdentifier(tableName)).append(" (");
         StringJoiner cols = new StringJoiner(", ");
         StringJoiner vals = new StringJoiner(", ");
         for (var col : columns.keySet()) {
-            cols.add(col);
+            cols.add(dialect.quoteIdentifier(col));
             vals.add("?");
         }
         sql.append(cols).append(") VALUES (").append(vals).append(")");
@@ -215,5 +238,15 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     protected Connection getConnection() throws Exception {
         if (testConnection != null) return testConnection;
         throw new UnsupportedOperationException("getConnection() must be implemented by the user");
+    }
+
+    @Override
+    public Class<T> type() {
+        return type;
+    }
+
+    @Override
+    public String schemaKey() {
+        return tableName;
     }
 }

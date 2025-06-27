@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.playerdata;
 
+import sh.harold.fulcrum.api.JsonSchema;
+
 import java.util.UUID;
 
 public class GenericJsonSchema extends JsonSchema<PluginJsonData> {
@@ -27,15 +29,5 @@ public class GenericJsonSchema extends JsonSchema<PluginJsonData> {
     @Override
     public String serialize(UUID uuid, PluginJsonData data) {
         return data.toJsonString();
-    }
-
-    @Override
-    public PluginJsonData load(UUID uuid) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void save(UUID uuid, PluginJsonData data) {
-        throw new UnsupportedOperationException();
     }
 }

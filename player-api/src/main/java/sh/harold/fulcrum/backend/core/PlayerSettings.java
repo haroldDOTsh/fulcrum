@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.playerdata;
 
+import sh.harold.fulcrum.util.SettingsWrapper;
+
 import java.util.*;
 
 /**

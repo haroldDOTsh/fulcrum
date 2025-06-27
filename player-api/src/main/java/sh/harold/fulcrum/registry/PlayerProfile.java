@@ -17,9 +17,13 @@ public final class PlayerProfile {
     @SuppressWarnings("unchecked")
     public <T> T get(Class<T> schemaType) {
         if (data.containsKey(schemaType)) return (T) data.get(schemaType);
-        var schema = PlayerDataRegistry.get(schemaType);
+        var schema = PlayerDataRegistry.allSchemas().stream()
+            .filter(s -> s.type().equals(schemaType))
+            .findFirst().orElse(null);
         if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
-        T loaded = PlayerStorageManager.load(playerId, schema);
+        @SuppressWarnings("unchecked")
+        PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
+        T loaded = PlayerStorageManager.load(playerId, typedSchema);
         if (loaded != null) {
             data.put(schemaType, loaded);
         }
@@ -34,9 +38,13 @@ public final class PlayerProfile {
             return CompletableFuture.completedFuture(cached);
         }
         return CompletableFuture.supplyAsync(() -> {
-            var schema = PlayerDataRegistry.get(schemaType);
+            var schema = PlayerDataRegistry.allSchemas().stream()
+                .filter(s -> s.type().equals(schemaType))
+                .findFirst().orElse(null);
             if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
-            T loaded = PlayerStorageManager.load(playerId, schema);
+            @SuppressWarnings("unchecked")
+            PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
+            T loaded = PlayerStorageManager.load(playerId, typedSchema);
             if (loaded != null) {
                 data.put(schemaType, loaded);
             }
@@ -47,9 +55,13 @@ public final class PlayerProfile {
     @SuppressWarnings("unchecked")
     public <T> T get(Class<T> schemaType, Supplier<T> fallback) {
         if (data.containsKey(schemaType)) return (T) data.get(schemaType);
-        var schema = PlayerDataRegistry.get(schemaType);
+        var schema = PlayerDataRegistry.allSchemas().stream()
+            .filter(s -> s.type().equals(schemaType))
+            .findFirst().orElse(null);
         if (schema == null) return fallback.get();
-        T loaded = PlayerStorageManager.load(playerId, schema);
+        @SuppressWarnings("unchecked")
+        PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
+        T loaded = PlayerStorageManager.load(playerId, typedSchema);
         data.put(schemaType, loaded);
         return loaded;
     }
@@ -61,11 +73,15 @@ public final class PlayerProfile {
 
     public <T> void save(Class<T> schemaType, T value) {
         if (value == null) return;
-        var schema = PlayerDataRegistry.get(schemaType);
+        var schema = PlayerDataRegistry.allSchemas().stream()
+            .filter(s -> s.type().equals(schemaType))
+            .findFirst().orElse(null);
         if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
         if (!schemaType.isInstance(value))
             throw new IllegalArgumentException("Value type does not match schema: " + value.getClass());
-        PlayerStorageManager.save(playerId, schema, value);
+        @SuppressWarnings("unchecked")
+        PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
+        PlayerStorageManager.save(playerId, typedSchema, value);
         data.put(schemaType, value);
     }
 
@@ -102,9 +118,14 @@ public final class PlayerProfile {
     public void saveAll() {
         for (var entry : data.entrySet()) {
             if (entry.getValue() == null) continue;
-            var schema = PlayerDataRegistry.get(entry.getKey());
-            if (schema != null)
-                saveSchema(schema, entry.getValue());
+            var schema = PlayerDataRegistry.allSchemas().stream()
+                .filter(s -> s.type().equals(entry.getKey()))
+                .findFirst().orElse(null);
+            if (schema != null) {
+                @SuppressWarnings("unchecked")
+                PlayerDataSchema<Object> typedSchema = (PlayerDataSchema<Object>) schema;
+                saveSchema(typedSchema, entry.getValue());
+            }
         }
     }
 
@@ -113,9 +134,13 @@ public final class PlayerProfile {
         List<CompletableFuture<?>> futures = new ArrayList<>();
         for (var entry : data.entrySet()) {
             if (entry.getValue() == null) continue;
-            var schema = PlayerDataRegistry.get(entry.getKey());
+            var schema = PlayerDataRegistry.allSchemas().stream()
+                .filter(s -> s.type().equals(entry.getKey()))
+                .findFirst().orElse(null);
             if (schema != null) {
-                futures.add(CompletableFuture.runAsync(() -> saveSchema(schema, entry.getValue()), ASYNC_EXECUTOR));
+                @SuppressWarnings("unchecked")
+                PlayerDataSchema<Object> typedSchema = (PlayerDataSchema<Object>) schema;
+                futures.add(CompletableFuture.runAsync(() -> saveSchema(typedSchema, entry.getValue()), ASYNC_EXECUTOR));
             }
         }
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
