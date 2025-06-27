@@ -1,11 +1,13 @@
 package sh.harold.fulcrum.backend.core;
 
 import sh.harold.fulcrum.api.Column;
+import sh.harold.fulcrum.api.ForeignKey;
 import sh.harold.fulcrum.api.SchemaVersion;
 import sh.harold.fulcrum.api.Table;
 import sh.harold.fulcrum.api.TableSchema;
 import sh.harold.fulcrum.backend.sql.SqlDialect;
 import sh.harold.fulcrum.backend.sql.SqliteDialect;
+import sh.harold.fulcrum.registry.PlayerDataRegistry;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -37,6 +39,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     private final Map<String, Field> fieldMap;
     private final Connection testConnection;
     private final SqlDialect dialect;
+    private final List<ForeignKeyInfo> foreignKeys = new ArrayList<>();
 
     /**
      * @deprecated Use {@link #AutoTableSchema(Class, Connection, SqlDialect)} for explicit dialect selection.
@@ -73,6 +76,11 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             boolean isPrimary = colAnn != null && colAnn.primary();
             columns.put(colName, new ColumnInfo(colName, sqlType, isPrimary));
             fieldMap.put(colName, field);
+            // Foreign key detection and validation
+            var fkAnn = field.getAnnotation(ForeignKey.class);
+            if (fkAnn != null) {
+                pendingForeignKeys.add(new PendingForeignKey(colName, fkAnn.references(), fkAnn.field(), fkAnn.onDelete(), fkAnn.onUpdate()));
+            }
         }
         // 2. If no @Column(primary = true), fallback to id/uuid
         ColumnInfo pkInfo = columns.values().stream().filter(c -> c.primary).findFirst().orElse(null);
@@ -91,6 +99,43 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     }
 
     public String getCreateTableSql() {
+        // Resolve all pending foreign keys now
+        foreignKeys.clear();
+        for (var pfk : pendingForeignKeys) {
+            var refSchema = PlayerDataRegistry.allSchemas().stream()
+                    .filter(s -> s.type().equals(pfk.refClass))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Referenced schema not registered: " + pfk.refClass.getName()));
+            String refTable = refSchema.schemaKey();
+            String refCol = null;
+            Field refFieldObj = null;
+            for (Field f : pfk.refClass.getDeclaredFields()) {
+                var refColAnn = f.getAnnotation(Column.class);
+                String candidate = refColAnn != null && !refColAnn.value().isEmpty() ? refColAnn.value() : f.getName();
+                if (candidate.equals(pfk.refField)) {
+                    refCol = candidate;
+                    refFieldObj = f;
+                    break;
+                }
+            }
+            if (refCol == null) {
+                for (Field f : pfk.refClass.getDeclaredFields()) {
+                    var refColAnn = f.getAnnotation(Column.class);
+                    if (refColAnn != null && refColAnn.primary()) {
+                        refCol = !refColAnn.value().isEmpty() ? refColAnn.value() : f.getName();
+                        refFieldObj = f;
+                        break;
+                    }
+                }
+            }
+            if (refCol == null || refFieldObj == null) throw new IllegalArgumentException("Referenced field not found: " + pfk.refField + " in " + pfk.refClass.getName());
+            Field localField = fieldMap.get(pfk.columnName);
+            if (localField == null) throw new IllegalArgumentException("Local field not found: " + pfk.columnName);
+            if (!localField.getType().equals(refFieldObj.getType())) {
+                throw new IllegalArgumentException("Foreign key type mismatch: " + localField.getType().getName() + " vs " + refFieldObj.getType().getName());
+            }
+            foreignKeys.add(new ForeignKeyInfo(pfk.columnName, refTable, refCol, pfk.onDelete, pfk.onUpdate));
+        }
         StringBuilder sb = new StringBuilder();
         sb.append("CREATE TABLE ").append(dialect.quoteIdentifier(tableName)).append(" (");
         String pk = null;
@@ -106,6 +151,18 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         }
         if (pk == null) pk = primaryKey.name;
         if (pk != null) sb.append(", PRIMARY KEY (").append(dialect.quoteIdentifier(pk)).append(")");
+        // Emit foreign key constraints
+        for (var fk : foreignKeys) {
+            sb.append(", FOREIGN KEY (")
+              .append(dialect.quoteIdentifier(fk.columnName))
+              .append(") REFERENCES ")
+              .append(dialect.quoteIdentifier(fk.referencedTable))
+              .append("(")
+              .append(dialect.quoteIdentifier(fk.referencedColumn))
+              .append(")");
+            if (!fk.onDelete.isEmpty()) sb.append(" ON DELETE ").append(fk.onDelete);
+            if (!fk.onUpdate.isEmpty()) sb.append(" ON UPDATE ").append(fk.onUpdate);
+        }
         sb.append(");");
         return sb.toString();
     }
@@ -262,4 +319,35 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             this.primary = primary;
         }
     }
+
+    // Foreign key metadata for DDL and future runtime use
+    private static class ForeignKeyInfo {
+        final String columnName;
+        final String referencedTable;
+        final String referencedColumn;
+        final String onDelete;
+        final String onUpdate;
+        ForeignKeyInfo(String columnName, String referencedTable, String referencedColumn, String onDelete, String onUpdate) {
+            this.columnName = columnName;
+            this.referencedTable = referencedTable;
+            this.referencedColumn = referencedColumn;
+            this.onDelete = onDelete;
+            this.onUpdate = onUpdate;
+        }
+    }
+    private static class PendingForeignKey {
+        final String columnName;
+        final Class<?> refClass;
+        final String refField;
+        final String onDelete;
+        final String onUpdate;
+        PendingForeignKey(String columnName, Class<?> refClass, String refField, String onDelete, String onUpdate) {
+            this.columnName = columnName;
+            this.refClass = refClass;
+            this.refField = refField;
+            this.onDelete = onDelete;
+            this.onUpdate = onUpdate;
+        }
+    }
+    private final List<PendingForeignKey> pendingForeignKeys = new ArrayList<>();
 }

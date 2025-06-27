@@ -155,6 +155,52 @@ schema.save(stats.id, stats);
 PlayerStats loaded = schema.load(stats.id);
 ```
 
+## Foreign Key Support
+
+### @ForeignKey Annotation
+
+You can declare foreign key relationships between schemas using the `@ForeignKey` annotation:
+
+```java
+@ForeignKey(
+    references = Guild.class, // Target schema class
+    field = "id",            // Target field (default: primary key)
+    onDelete = "CASCADE",    // Optional: ON DELETE action
+    onUpdate = "SET NULL"    // Optional: ON UPDATE action
+)
+public UUID guild_id;
+```
+- Only valid on fields whose type matches the referenced column (usually UUID).
+- The referenced schema **must** be registered in `PlayerDataRegistry` before DDL generation.
+- If `field` is not specified, the referenced schema's primary key is used.
+
+### DDL Generation
+
+- `AutoTableSchema#getCreateTableSql()` emits `FOREIGN KEY` constraints for all fields annotated with `@ForeignKey`.
+- All identifiers (table names, columns) are quoted using the current `SqlDialect`.
+- Example output (SQLite):
+  ```sql
+  CREATE TABLE `guild_members` (
+    `id` TEXT, ...,
+    `guild_id` TEXT,
+    PRIMARY KEY (`id`),
+    FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE ON UPDATE SET NULL
+  );
+  ```
+- Multiple foreign keys and mixed primary/foreign key constraints are supported.
+
+### Validation & Error Handling
+
+- If the referenced schema is not registered, or the referenced field does not exist, an `IllegalArgumentException` is thrown when generating DDL.
+- Type mismatches between the local and referenced field also throw an error.
+- Circular references are supported as long as all schemas are registered before DDL generation.
+
+### Testing
+
+- All DDL-related tests must use `dialect.quoteIdentifier()` for expected SQL fragments.
+- Exception tests should call `getCreateTableSql()` to trigger validation.
+- See `ForeignKeySchemaTest` for comprehensive usage and edge cases.
+
 ## Examples
 
 ### Simple Plugin Startup
