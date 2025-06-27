@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.features.playerdata;
 
 import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.backend.PlayerDataBackend;

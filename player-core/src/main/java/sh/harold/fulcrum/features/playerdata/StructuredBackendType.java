@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.features.playerdata;
 
 public enum StructuredBackendType {
     SQLITE,

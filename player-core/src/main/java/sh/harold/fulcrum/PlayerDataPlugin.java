@@ -1,9 +1,9 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum;
 
 import org.bukkit.plugin.java.JavaPlugin;
 
 import sh.harold.fulcrum.features.message.MessageFeature;
-import sh.harold.fulcrum.features.PlayerDataFeature;
+import sh.harold.fulcrum.features.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
 
 public final class PlayerDataPlugin extends JavaPlugin {
