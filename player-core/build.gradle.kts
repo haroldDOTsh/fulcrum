@@ -19,6 +19,7 @@ repositories {
 dependencies {
     implementation("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
     implementation(project(":player-api"))
+    implementation("org.mongodb:mongodb-driver-sync:4.11.1")
 }
 
 val targetJavaVersion = 21

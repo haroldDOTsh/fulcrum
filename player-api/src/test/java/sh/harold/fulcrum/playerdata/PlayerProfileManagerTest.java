@@ -1,25 +1,22 @@
 package sh.harold.fulcrum.playerdata;
 
-import org.junit.jupiter.api.*;
-import java.util.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.JsonSchema;
+import sh.harold.fulcrum.api.PlayerDataSchema;
+import sh.harold.fulcrum.backend.PlayerDataBackend;
+import sh.harold.fulcrum.registry.PlayerDataRegistry;
+import sh.harold.fulcrum.registry.PlayerProfileManager;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerProfileManagerTest {
-    record TestData(String value) {}
     static final Map<UUID, TestData> backing = new HashMap<>();
     static final UUID PLAYER_ID = UUID.randomUUID();
-
-    static class DummyJsonSchema extends JsonSchema<TestData> {
-        @Override public String schemaKey() { return "dummy"; }
-        @Override public Class<TestData> type() { return TestData.class; }
-        @Override public TestData load(UUID uuid) { return backing.get(uuid); }
-        @Override public void save(UUID uuid, TestData data) {
-            if (data == null) return;
-            backing.put(uuid, data);
-        }
-        @Override public TestData deserialize(UUID uuid, String json) { return null; }
-        @Override public String serialize(UUID uuid, TestData data) { return null; }
-    }
 
     @BeforeEach
     void reset() {
@@ -29,7 +26,9 @@ class PlayerProfileManagerTest {
 
     @Test
     void testProfileLifecycle() {
-        PlayerDataRegistry.register(new DummyJsonSchema());
+        var schema = new DummyJsonSchema();
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         var profile = PlayerProfileManager.load(PLAYER_ID);
         assertTrue(PlayerProfileManager.isLoaded(PLAYER_ID));
         assertSame(profile, PlayerProfileManager.get(PLAYER_ID));
@@ -49,7 +48,9 @@ class PlayerProfileManagerTest {
 
     @Test
     void testMissingDataNotCached() {
-        PlayerDataRegistry.register(new DummyJsonSchema());
+        var schema = new DummyJsonSchema();
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         // backing is empty, so load should return null
         var profile = PlayerProfileManager.load(PLAYER_ID);
         assertNull(profile.get(TestData.class));
@@ -59,5 +60,42 @@ class PlayerProfileManagerTest {
         PlayerProfileManager.unload(PLAYER_ID);
         // After unload, data is saved
         assertEquals(new TestData("baz"), backing.get(PLAYER_ID));
+    }
+
+    record TestData(String value) {
+    }
+
+    static class DummyJsonSchema extends JsonSchema<TestData> {
+        @Override
+        public String schemaKey() {
+            return "dummy";
+        }
+
+        @Override
+        public Class<TestData> type() {
+            return TestData.class;
+        }
+
+        @Override
+        public TestData deserialize(UUID uuid, String json) {
+            return null;
+        }
+
+        @Override
+        public String serialize(UUID uuid, TestData data) {
+            return null;
+        }
+    }
+
+    static class DummyBackend implements PlayerDataBackend {
+        @Override
+        public <T> T load(UUID uuid, PlayerDataSchema<T> schema) {
+            return (T) backing.get(uuid);
+        }
+
+        @Override
+        public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
+            if (data != null) backing.put(uuid, (TestData) data);
+        }
     }
 }

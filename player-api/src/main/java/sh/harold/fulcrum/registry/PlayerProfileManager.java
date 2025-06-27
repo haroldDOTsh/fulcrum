@@ -1,10 +1,14 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.registry;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public final class PlayerProfileManager {
     private static final Map<UUID, PlayerProfile> profiles = new HashMap<>();
-    private PlayerProfileManager() {}
+
+    private PlayerProfileManager() {
+    }
 
     public static PlayerProfile load(UUID playerId) {
         var profile = new PlayerProfile(playerId);

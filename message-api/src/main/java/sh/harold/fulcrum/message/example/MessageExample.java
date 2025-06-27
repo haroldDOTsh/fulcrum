@@ -24,30 +24,6 @@ public class MessageExample {
                .staff().daemon().send();
         // Results in: &c[STAFF]&r &5[DAEMON]&r &aSuccessfully deposited &e1000 &acoins!
         
-        Message.info(playerId, "player.balance.current", 15750)
-               .admin().system().send();
-        // Results in: &4[ADMIN]&r &b[SYSTEM]&r &7Your current balance is &b15750 &7coins
-        
-        Message.error(playerId, "permission.area.restricted")
-               .security().urgent().send();
-        // Results in: &4[SECURITY]&r &c[URGENT]&r &cYou can't do that here!
-        
-        Message.debug(playerId, "debug.profile.current", "hardcore")
-               .debug().send();
-        // Results in: &8[DEBUG]&r &8On profile &8hardcore&8!
-        
-        // BROADCASTING WITH TAGS
-        Message.broadcastInfo("server.restart.warning", 5)
-               .broadcast().warning().send();
-        // Results in: &a[BROADCAST]&r &e[WARNING]&r &7Server restart in &b5 &7minutes!
-        
-        Message.broadcastError("server.maintenance.starting")
-               .maintenance().urgent().send();
-        // Results in: &6[MAINTENANCE]&r &c[URGENT]&r &cServer is entering maintenance mode!
-        
-        // USING CUSTOM TAGS
-        Message.success(playerId, "event.pvp.tournament.started")
-               .event().vip().premium().send();
         // Results in: &d[EVENT]&r &6[VIP]&r &e[PREMIUM]&r &aThe &ePvP Tournament &ahas started!
         
         // BUILDING MESSAGES WITHOUT SENDING (for logging, etc.)

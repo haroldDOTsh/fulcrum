@@ -1,0 +1,24 @@
+# Fulcrum Database Configuration
+# type: sqlite | postgres | mysql | mariadb
+# Only set the options needed for your database type
+
+backends:
+  structured: sqlite     # options: sqlite, postgres
+  document: json         # options: json, mongo
+
+sqlite:
+  file: "data/players.db"
+
+postgres:
+  host: "localhost"
+  port: 5432
+  database: "players"
+  user: "dev"
+  password: "password"
+
+json:
+  dir: "data/json/"
+
+mongo:
+  uri: "mongodb://localhost:27017"
+  database: "players"

@@ -1,6 +1,7 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.backend.core;
 
 import sh.harold.fulcrum.api.Column;
+import sh.harold.fulcrum.api.SchemaVersion;
 import sh.harold.fulcrum.api.Table;
 import sh.harold.fulcrum.api.TableSchema;
 import sh.harold.fulcrum.backend.sql.SqlDialect;
@@ -37,17 +38,6 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     private final Connection testConnection;
     private final SqlDialect dialect;
 
-    private static class ColumnInfo {
-        final String name;
-        final String sqlType;
-        final boolean primary;
-        ColumnInfo(String name, String sqlType, boolean primary) {
-            this.name = name;
-            this.sqlType = sqlType;
-            this.primary = primary;
-        }
-    }
-
     /**
      * @deprecated Use {@link #AutoTableSchema(Class, Connection, SqlDialect)} for explicit dialect selection.
      * If dialect is null, falls back to SqliteDialect for backwards compatibility.
@@ -59,9 +49,10 @@ public class AutoTableSchema<T> extends TableSchema<T> {
 
     /**
      * Constructs an AutoTableSchema with the given dialect.
-     * @param type POJO class
+     *
+     * @param type           POJO class
      * @param testConnection optional test connection
-     * @param dialect SQL dialect (if null, uses SqliteDialect)
+     * @param dialect        SQL dialect (if null, uses SqliteDialect)
      */
     public AutoTableSchema(Class<T> type, Connection testConnection, SqlDialect dialect) {
         this.type = type;
@@ -163,8 +154,14 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             System.out.println("[DEBUG] load: Exception: " + e);
             throw new RuntimeException("Failed to load " + type.getSimpleName() + " for UUID " + uuid + ": " + e, e);
         } finally {
-            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
-            try { if (ps != null) ps.close(); } catch (Exception ignored) {}
+            try {
+                if (rs != null) rs.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (ps != null) ps.close();
+            } catch (Exception ignored) {
+            }
             // do not close conn
         }
     }
@@ -199,7 +196,10 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             System.out.println("[DEBUG] save: Exception: " + e);
             throw new RuntimeException("Failed to save " + type.getSimpleName() + " for UUID " + uuid + ": " + e, e);
         } finally {
-            try { if (ps != null) ps.close(); } catch (Exception ignored) {}
+            try {
+                if (ps != null) ps.close();
+            } catch (Exception ignored) {
+            }
             // do not close conn
         }
     }
@@ -225,6 +225,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         if (type == boolean.class || type == Boolean.class) return rs.getBoolean(col);
         throw new IllegalArgumentException("Unsupported type: " + type.getName());
     }
+
     private void setPreparedStatementValue(PreparedStatement ps, int idx, Object value, Class<?> type) throws Exception {
         if (type == UUID.class) ps.setString(idx, value == null ? null : value.toString());
         else if (type == String.class) ps.setString(idx, (String) value);
@@ -248,5 +249,17 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     @Override
     public String schemaKey() {
         return tableName;
+    }
+
+    private static class ColumnInfo {
+        final String name;
+        final String sqlType;
+        final boolean primary;
+
+        ColumnInfo(String name, String sqlType, boolean primary) {
+            this.name = name;
+            this.sqlType = sqlType;
+            this.primary = primary;
+        }
     }
 }

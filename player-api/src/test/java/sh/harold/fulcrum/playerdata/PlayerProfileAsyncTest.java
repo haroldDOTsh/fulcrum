@@ -1,23 +1,23 @@
 package sh.harold.fulcrum.playerdata;
 
-import org.junit.jupiter.api.*;
-import java.util.*;
-import java.util.concurrent.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.JsonSchema;
+import sh.harold.fulcrum.api.PlayerDataSchema;
+import sh.harold.fulcrum.backend.PlayerDataBackend;
+import sh.harold.fulcrum.registry.PlayerDataRegistry;
+import sh.harold.fulcrum.registry.PlayerProfile;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerProfileAsyncTest {
-    record TestStats(int level) {}
     static final Map<UUID, TestStats> backing = new ConcurrentHashMap<>();
     static final UUID PLAYER_ID = UUID.randomUUID();
-
-    static class TestStatsSchema extends JsonSchema<TestStats> {
-        @Override public String schemaKey() { return "stats"; }
-        @Override public Class<TestStats> type() { return TestStats.class; }
-        @Override public TestStats load(UUID uuid) { return backing.get(uuid); }
-        @Override public void save(UUID uuid, TestStats data) { backing.put(uuid, data); }
-        @Override public TestStats deserialize(UUID uuid, String json) { return null; }
-        @Override public String serialize(UUID uuid, TestStats data) { return null; }
-    }
 
     @BeforeEach
     void reset() {
@@ -27,7 +27,9 @@ class PlayerProfileAsyncTest {
 
     @Test
     void getAsyncLoadsAndCaches() {
-        PlayerDataRegistry.register(new TestStatsSchema());
+        var schema = new TestStatsSchema();
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         backing.put(PLAYER_ID, new TestStats(5));
         var profile = new PlayerProfile(PLAYER_ID);
         var future = profile.getAsync(TestStats.class);
@@ -40,7 +42,9 @@ class PlayerProfileAsyncTest {
 
     @Test
     void saveAsyncPersistsAndCaches() {
-        PlayerDataRegistry.register(new TestStatsSchema());
+        var schema = new TestStatsSchema();
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         var profile = new PlayerProfile(PLAYER_ID);
         var stats = new TestStats(42);
         profile.saveAsync(TestStats.class, stats).join();
@@ -65,18 +69,22 @@ class PlayerProfileAsyncTest {
 
     @Test
     void saveAsyncThrowsIfTypeMismatch() {
-        PlayerDataRegistry.register(new TestStatsSchema());
+        var schema = new TestStatsSchema();
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         var profile = new PlayerProfile(PLAYER_ID);
         // Use raw type to bypass compile-time check
         @SuppressWarnings("rawtypes")
         PlayerProfile rawProfile = (PlayerProfile) profile;
-        var ex = assertThrows(CompletionException.class, () -> rawProfile.saveAsync((Class)TestStats.class, (Object)"not stats").join());
+        var ex = assertThrows(CompletionException.class, () -> rawProfile.saveAsync((Class) TestStats.class, (Object) "not stats").join());
         assertTrue(ex.getCause() instanceof IllegalArgumentException);
     }
 
     @Test
     void loadAllAsyncLoadsAllSchemas() {
-        PlayerDataRegistry.register(new TestStatsSchema());
+        var schema = new TestStatsSchema();
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         backing.put(PLAYER_ID, new TestStats(7));
         var profile = new PlayerProfile(PLAYER_ID);
         profile.loadAllAsync().join();
@@ -85,7 +93,9 @@ class PlayerProfileAsyncTest {
 
     @Test
     void saveAllAsyncPersistsAllSchemas() {
-        PlayerDataRegistry.register(new TestStatsSchema());
+        var schema = new TestStatsSchema();
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         var profile = new PlayerProfile(PLAYER_ID);
         profile.set(TestStats.class, new TestStats(88));
         profile.saveAllAsync().join();
@@ -94,10 +104,49 @@ class PlayerProfileAsyncTest {
 
     @Test
     void saveAllAsyncSkipsNulls() {
-        PlayerDataRegistry.register(new TestStatsSchema());
+        var schema = new TestStatsSchema();
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         var profile = new PlayerProfile(PLAYER_ID);
         // Do not set nulls; just don't set at all
         profile.saveAllAsync().join();
         assertNull(backing.get(PLAYER_ID));
+    }
+
+    record TestStats(int level) {
+    }
+
+    static class TestStatsSchema extends JsonSchema<TestStats> {
+        @Override
+        public String schemaKey() {
+            return "stats";
+        }
+
+        @Override
+        public Class<TestStats> type() {
+            return TestStats.class;
+        }
+
+        @Override
+        public TestStats deserialize(UUID uuid, String json) {
+            return null;
+        }
+
+        @Override
+        public String serialize(UUID uuid, TestStats data) {
+            return null;
+        }
+    }
+
+    static class DummyBackend implements PlayerDataBackend {
+        @Override
+        public <T> T load(UUID uuid, PlayerDataSchema<T> schema) {
+            return (T) backing.get(uuid);
+        }
+
+        @Override
+        public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
+            backing.put(uuid, (TestStats) data);
+        }
     }
 }

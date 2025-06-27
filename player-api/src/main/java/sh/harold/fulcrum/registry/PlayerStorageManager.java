@@ -1,11 +1,12 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.registry;
 
-import sh.harold.fulcrum.registry.PlayerDataRegistry;
+import sh.harold.fulcrum.api.PlayerDataSchema;
 
 import java.util.UUID;
 
 public final class PlayerStorageManager {
-    private PlayerStorageManager() {}
+    private PlayerStorageManager() {
+    }
 
     public static <T> T load(UUID playerId, PlayerDataSchema<T> schema) {
         var backend = PlayerDataRegistry.getBackend(schema);

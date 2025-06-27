@@ -2,27 +2,16 @@ package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.JsonSchema;
+import sh.harold.fulcrum.api.PlayerDataSchema;
+import sh.harold.fulcrum.backend.PlayerDataBackend;
+import sh.harold.fulcrum.registry.PlayerDataRegistry;
+
 import java.util.UUID;
-import static org.junit.jupiter.api.Assertions.*;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class PlayerDataSchemaTest {
-    record TestData(int x) {}
-
-    static class DummyJsonSchema extends JsonSchema<TestData> {
-        @Override
-        public String schemaKey() { return "test"; }
-        @Override
-        public Class<TestData> type() { return TestData.class; }
-        @Override
-        public TestData load(UUID uuid) { return null; }
-        @Override
-        public void save(UUID uuid, TestData data) {}
-        @Override
-        public TestData deserialize(UUID uuid, String json) { return new TestData(Integer.parseInt(json)); }
-        @Override
-        public String serialize(UUID uuid, TestData data) { return Integer.toString(data.x()); }
-    }
-
     @BeforeEach
     void resetRegistry() {
         PlayerDataRegistry.clear();
@@ -31,17 +20,53 @@ public class PlayerDataSchemaTest {
     @Test
     void registryStoresAndRetrievesValues() {
         var schema = new DummyJsonSchema();
-        PlayerDataRegistry.register(schema);
-        assertSame(schema, PlayerDataRegistry.get(TestData.class));
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         assertTrue(PlayerDataRegistry.allSchemas().contains(schema));
     }
 
     @Test
     void registryClearEmptiesAllSchemas() {
-        PlayerDataRegistry.register(new DummyJsonSchema());
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(new DummyJsonSchema(), backend);
         PlayerDataRegistry.clear();
-        assertNull(PlayerDataRegistry.get(TestData.class));
         assertTrue(PlayerDataRegistry.allSchemas().isEmpty());
+    }
+
+    record TestData(int x) {
+    }
+
+    static class DummyJsonSchema extends JsonSchema<TestData> {
+        @Override
+        public String schemaKey() {
+            return "test";
+        }
+
+        @Override
+        public Class<TestData> type() {
+            return TestData.class;
+        }
+
+        @Override
+        public TestData deserialize(UUID uuid, String json) {
+            return new TestData(Integer.parseInt(json));
+        }
+
+        @Override
+        public String serialize(UUID uuid, TestData data) {
+            return Integer.toString(data.x());
+        }
+    }
+
+    static class DummyBackend implements PlayerDataBackend {
+        @Override
+        public <T> T load(UUID uuid, PlayerDataSchema<T> schema) {
+            return null;
+        }
+
+        @Override
+        public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
+        }
     }
 
 }

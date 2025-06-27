@@ -1,8 +1,14 @@
 package sh.harold.fulcrum.playerdata;
 
-import org.junit.jupiter.api.*;
-import java.sql.*;
-import java.util.*;
+import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.Column;
+import sh.harold.fulcrum.api.SchemaVersion;
+import sh.harold.fulcrum.api.Table;
+import sh.harold.fulcrum.backend.core.AutoTableSchema;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -14,14 +20,18 @@ class PlayerStats {
     public int deaths;
     public String name;
     public boolean online;
-    public PlayerStats() {}
+
+    public PlayerStats() {
+    }
 }
 
 @Table("no_column_table")
 class NoColumnPojo {
     public UUID uuid;
     public int value;
-    public NoColumnPojo() {}
+
+    public NoColumnPojo() {
+    }
 }
 
 class AutoTableSchemaTest {
@@ -49,7 +59,13 @@ class AutoTableSchemaTest {
     void schemaVersioning_insertsCorrectVersion() throws Exception {
         @SchemaVersion(42)
         @Table("versioned_table")
-        class Versioned { @Column(primary = true) public UUID id; public Versioned() {} }
+        class Versioned {
+            @Column(primary = true)
+            public UUID id;
+
+            public Versioned() {
+            }
+        }
         try (var conn = newConnection()) {
             var schema = new AutoTableSchema<>(Versioned.class, conn);
             schema.createTable(conn);
@@ -93,7 +109,8 @@ class AutoTableSchemaTest {
 
     @Test
     void throwsIfMissingTableAnnotation() {
-        class NoTable {}
+        class NoTable {
+        }
         Exception ex = assertThrows(IllegalArgumentException.class, () -> new AutoTableSchema<>(NoTable.class, null));
         assertTrue(ex.getMessage().contains("Missing @Table annotation"));
     }

@@ -1,8 +1,12 @@
 package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.backend.json.InMemoryJsonStorageEngine;
+
 import java.util.UUID;
-import static org.junit.jupiter.api.Assertions.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class JsonStorageEngineTest {
     @Test

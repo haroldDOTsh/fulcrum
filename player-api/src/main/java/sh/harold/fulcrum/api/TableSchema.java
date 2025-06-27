@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.api;
 
 public abstract class TableSchema<T> implements PlayerDataSchema<T> {
     @Override

@@ -1,7 +1,10 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.util;
 
-import java.util.*;
-import java.util.concurrent.locks.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Utility for dot-path access to arbitrarily nested Map<String, Object> structures.
@@ -13,6 +16,7 @@ public class SettingsWrapper {
 
     /**
      * Wraps the given root map. Changes are reflected in the original map.
+     *
      * @param root the root map to wrap
      */
     public SettingsWrapper(Map<String, Object> root) {
@@ -21,6 +25,7 @@ public class SettingsWrapper {
 
     /**
      * Gets the value at the given dot-path, or null if not found.
+     *
      * @param path dot-separated path (e.g. "hud.scale")
      * @return the value, or null
      */
@@ -35,6 +40,7 @@ public class SettingsWrapper {
 
     /**
      * Gets the value at the given dot-path, cast to the given type.
+     *
      * @param path dot-separated path
      * @param type expected type
      * @return value or null if not found
@@ -48,7 +54,8 @@ public class SettingsWrapper {
 
     /**
      * Sets the value at the given dot-path, creating intermediate maps as needed.
-     * @param path dot-separated path
+     *
+     * @param path  dot-separated path
      * @param value value to set
      */
     public void set(String path, Object value) {
@@ -62,6 +69,7 @@ public class SettingsWrapper {
 
     /**
      * Returns true if the given dot-path exists.
+     *
      * @param path dot-separated path
      * @return true if present
      */
@@ -76,6 +84,7 @@ public class SettingsWrapper {
 
     /**
      * Removes the value at the given dot-path if it exists.
+     *
      * @param path dot-separated path
      */
     public void remove(String path) {
@@ -96,6 +105,7 @@ public class SettingsWrapper {
 
     /**
      * Returns the root map (with all changes applied).
+     *
      * @return the root map
      */
     public Map<String, Object> toMap() {

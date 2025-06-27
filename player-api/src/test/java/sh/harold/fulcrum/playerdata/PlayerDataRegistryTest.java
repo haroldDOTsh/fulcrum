@@ -1,28 +1,18 @@
 package sh.harold.fulcrum.playerdata;
 
-import org.junit.jupiter.api.*;
-import java.util.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.JsonSchema;
+import sh.harold.fulcrum.api.PlayerDataSchema;
+import sh.harold.fulcrum.api.TableSchema;
+import sh.harold.fulcrum.backend.PlayerDataBackend;
+import sh.harold.fulcrum.registry.PlayerDataRegistry;
+
+import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerDataRegistryTest {
-    static class TestJsonData {}
-    static class TestSqlData {}
-
-    static class TestJsonSchema extends JsonSchema<TestJsonData> {
-        @Override public String schemaKey() { return "json"; }
-        @Override public Class<TestJsonData> type() { return TestJsonData.class; }
-        @Override public TestJsonData load(UUID uuid) { return null; }
-        @Override public void save(UUID uuid, TestJsonData data) {}
-        @Override public TestJsonData deserialize(UUID uuid, String json) { return null; }
-        @Override public String serialize(UUID uuid, TestJsonData data) { return null; }
-    }
-    static class TestSqlSchema extends TableSchema<TestSqlData> {
-        @Override public String schemaKey() { return "sql"; }
-        @Override public Class<TestSqlData> type() { return TestSqlData.class; }
-        @Override public TestSqlData load(UUID uuid) { return null; }
-        @Override public void save(UUID uuid, TestSqlData data) {}
-    }
-
     @BeforeEach
     void clearRegistry() {
         PlayerDataRegistry.clear();
@@ -32,18 +22,20 @@ class PlayerDataRegistryTest {
     void testRegisterAndGet() {
         var jsonSchema = new TestJsonSchema();
         var sqlSchema = new TestSqlSchema();
-        PlayerDataRegistry.register(jsonSchema);
-        PlayerDataRegistry.register(sqlSchema);
-        assertSame(jsonSchema, PlayerDataRegistry.get(TestJsonData.class));
-        assertSame(sqlSchema, PlayerDataRegistry.get(TestSqlData.class));
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(jsonSchema, backend);
+        PlayerDataRegistry.registerSchema(sqlSchema, backend);
+        assertTrue(PlayerDataRegistry.allSchemas().contains(jsonSchema));
+        assertTrue(PlayerDataRegistry.allSchemas().contains(sqlSchema));
     }
 
     @Test
     void testAllSchemas() {
         var jsonSchema = new TestJsonSchema();
         var sqlSchema = new TestSqlSchema();
-        PlayerDataRegistry.register(jsonSchema);
-        PlayerDataRegistry.register(sqlSchema);
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(jsonSchema, backend);
+        PlayerDataRegistry.registerSchema(sqlSchema, backend);
         var all = PlayerDataRegistry.allSchemas();
         assertTrue(all.contains(jsonSchema));
         assertTrue(all.contains(sqlSchema));
@@ -52,9 +44,61 @@ class PlayerDataRegistryTest {
 
     @Test
     void testClear() {
-        PlayerDataRegistry.register(new TestJsonSchema());
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(new TestJsonSchema(), backend);
         assertFalse(PlayerDataRegistry.allSchemas().isEmpty());
         PlayerDataRegistry.clear();
         assertTrue(PlayerDataRegistry.allSchemas().isEmpty());
+    }
+
+    static class TestJsonData {
+    }
+
+    static class TestSqlData {
+    }
+
+    static class TestJsonSchema extends JsonSchema<TestJsonData> {
+        @Override
+        public String schemaKey() {
+            return "json";
+        }
+
+        @Override
+        public Class<TestJsonData> type() {
+            return TestJsonData.class;
+        }
+
+        @Override
+        public TestJsonData deserialize(UUID uuid, String json) {
+            return null;
+        }
+
+        @Override
+        public String serialize(UUID uuid, TestJsonData data) {
+            return null;
+        }
+    }
+
+    static class TestSqlSchema extends TableSchema<TestSqlData> {
+        @Override
+        public String schemaKey() {
+            return "sql";
+        }
+
+        @Override
+        public Class<TestSqlData> type() {
+            return TestSqlData.class;
+        }
+    }
+
+    static class DummyBackend implements PlayerDataBackend {
+        @Override
+        public <T> T load(UUID uuid, PlayerDataSchema<T> schema) {
+            return null;
+        }
+
+        @Override
+        public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
+        }
     }
 }

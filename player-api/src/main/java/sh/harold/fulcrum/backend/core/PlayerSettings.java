@@ -1,8 +1,10 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.backend.core;
 
 import sh.harold.fulcrum.util.SettingsWrapper;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * Schema class for player settings, supporting nested settings via SettingsWrapper.

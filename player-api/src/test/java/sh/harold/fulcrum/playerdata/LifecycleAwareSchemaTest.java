@@ -1,24 +1,22 @@
 package sh.harold.fulcrum.playerdata;
 
-import org.junit.jupiter.api.*;
-import java.util.*;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.JsonSchema;
+import sh.harold.fulcrum.api.LifecycleAwareSchema;
+import sh.harold.fulcrum.api.PlayerDataSchema;
+import sh.harold.fulcrum.backend.PlayerDataBackend;
+import sh.harold.fulcrum.registry.PlayerDataRegistry;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class LifecycleAwareSchemaTest {
-    record TestData(String value) {}
     static final List<String> called = new ArrayList<>();
     static final UUID PLAYER_ID = UUID.randomUUID();
-
-    static class TestSchema extends JsonSchema<TestData> implements LifecycleAwareSchema {
-        @Override public String schemaKey() { return "test"; }
-        @Override public Class<TestData> type() { return TestData.class; }
-        @Override public TestData load(UUID uuid) { return null; }
-        @Override public void save(UUID uuid, TestData data) {}
-        @Override public TestData deserialize(UUID uuid, String json) { return null; }
-        @Override public String serialize(UUID uuid, TestData data) { return null; }
-        @Override public void onJoin(UUID playerId) { called.add("JOIN:" + playerId); }
-        @Override public void onQuit(UUID playerId) { called.add("QUIT:" + playerId); }
-    }
 
     @BeforeEach
     void reset() {
@@ -29,9 +27,56 @@ class LifecycleAwareSchemaTest {
     @Test
     void lifecycleHooksAreCalled() {
         var schema = new TestSchema();
-        PlayerDataRegistry.register(schema);
+        var backend = new DummyBackend();
+        PlayerDataRegistry.registerSchema(schema, backend);
         PlayerDataRegistry.notifyJoin(PLAYER_ID);
         PlayerDataRegistry.notifyQuit(PLAYER_ID);
         assertEquals(List.of("JOIN:" + PLAYER_ID, "QUIT:" + PLAYER_ID), called);
+    }
+
+    record TestData(String value) {
+    }
+
+    static class TestSchema extends JsonSchema<TestData> implements LifecycleAwareSchema {
+        @Override
+        public String schemaKey() {
+            return "test";
+        }
+
+        @Override
+        public Class<TestData> type() {
+            return TestData.class;
+        }
+
+        @Override
+        public TestData deserialize(UUID uuid, String json) {
+            return null;
+        }
+
+        @Override
+        public String serialize(UUID uuid, TestData data) {
+            return null;
+        }
+
+        @Override
+        public void onJoin(UUID playerId) {
+            called.add("JOIN:" + playerId);
+        }
+
+        @Override
+        public void onQuit(UUID playerId) {
+            called.add("QUIT:" + playerId);
+        }
+    }
+
+    static class DummyBackend implements PlayerDataBackend {
+        @Override
+        public <T> T load(UUID uuid, PlayerDataSchema<T> schema) {
+            return null;
+        }
+
+        @Override
+        public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
+        }
     }
 }

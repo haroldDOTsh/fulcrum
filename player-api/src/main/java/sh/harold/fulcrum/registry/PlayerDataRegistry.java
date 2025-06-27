@@ -1,5 +1,7 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.registry;
 
+import sh.harold.fulcrum.api.LifecycleAwareSchema;
+import sh.harold.fulcrum.api.PlayerDataSchema;
 import sh.harold.fulcrum.backend.PlayerDataBackend;
 
 import java.util.*;
@@ -7,7 +9,8 @@ import java.util.*;
 public final class PlayerDataRegistry {
     private static final Map<PlayerDataSchema<?>, PlayerDataBackend> schemaBackends = new HashMap<>();
 
-    private PlayerDataRegistry() {}
+    private PlayerDataRegistry() {
+    }
 
     public static <T> void registerSchema(PlayerDataSchema<T> schema, PlayerDataBackend backend) {
         schemaBackends.put(schema, backend);

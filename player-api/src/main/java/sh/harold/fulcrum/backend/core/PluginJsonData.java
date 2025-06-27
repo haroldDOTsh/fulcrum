@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.backend.core;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;

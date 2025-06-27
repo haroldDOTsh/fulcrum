@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.backend.json;
 
 import java.util.Map;
 import java.util.UUID;

@@ -1,25 +1,35 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.registry;
 
-import java.util.*;
-import java.util.concurrent.*;
+import sh.harold.fulcrum.api.PlayerDataSchema;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 public final class PlayerProfile {
+    private static final Executor ASYNC_EXECUTOR = Executors.newCachedThreadPool();
     private final UUID playerId;
     private final Map<Class<?>, Object> data = new ConcurrentHashMap<>();
-    private static final Executor ASYNC_EXECUTOR = Executors.newCachedThreadPool();
 
     public PlayerProfile(UUID playerId) {
         this.playerId = playerId;
     }
 
-    /** Internal, synchronous. Requires prior load or safe context. */
+    /**
+     * Internal, synchronous. Requires prior load or safe context.
+     */
     @SuppressWarnings("unchecked")
     public <T> T get(Class<T> schemaType) {
         if (data.containsKey(schemaType)) return (T) data.get(schemaType);
         var schema = PlayerDataRegistry.allSchemas().stream()
-            .filter(s -> s.type().equals(schemaType))
-            .findFirst().orElse(null);
+                .filter(s -> s.type().equals(schemaType))
+                .findFirst().orElse(null);
         if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
         @SuppressWarnings("unchecked")
         PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
@@ -30,7 +40,9 @@ public final class PlayerProfile {
         return loaded;
     }
 
-    /** Safe async version of get(...) */
+    /**
+     * Safe async version of get(...)
+     */
     public <T> CompletableFuture<T> getAsync(Class<T> schemaType) {
         if (data.containsKey(schemaType)) {
             @SuppressWarnings("unchecked")
@@ -39,8 +51,8 @@ public final class PlayerProfile {
         }
         return CompletableFuture.supplyAsync(() -> {
             var schema = PlayerDataRegistry.allSchemas().stream()
-                .filter(s -> s.type().equals(schemaType))
-                .findFirst().orElse(null);
+                    .filter(s -> s.type().equals(schemaType))
+                    .findFirst().orElse(null);
             if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
             @SuppressWarnings("unchecked")
             PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
@@ -56,8 +68,8 @@ public final class PlayerProfile {
     public <T> T get(Class<T> schemaType, Supplier<T> fallback) {
         if (data.containsKey(schemaType)) return (T) data.get(schemaType);
         var schema = PlayerDataRegistry.allSchemas().stream()
-            .filter(s -> s.type().equals(schemaType))
-            .findFirst().orElse(null);
+                .filter(s -> s.type().equals(schemaType))
+                .findFirst().orElse(null);
         if (schema == null) return fallback.get();
         @SuppressWarnings("unchecked")
         PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
@@ -74,8 +86,8 @@ public final class PlayerProfile {
     public <T> void save(Class<T> schemaType, T value) {
         if (value == null) return;
         var schema = PlayerDataRegistry.allSchemas().stream()
-            .filter(s -> s.type().equals(schemaType))
-            .findFirst().orElse(null);
+                .filter(s -> s.type().equals(schemaType))
+                .findFirst().orElse(null);
         if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
         if (!schemaType.isInstance(value))
             throw new IllegalArgumentException("Value type does not match schema: " + value.getClass());
@@ -90,7 +102,9 @@ public final class PlayerProfile {
         return CompletableFuture.runAsync(() -> save(schemaType, value), ASYNC_EXECUTOR);
     }
 
-    /** Loads all known schemas synchronously — internal use only */
+    /**
+     * Loads all known schemas synchronously — internal use only
+     */
     public void loadAll() {
         for (PlayerDataSchema<?> schema : PlayerDataRegistry.allSchemas()) {
             Object loaded = PlayerStorageManager.load(playerId, schema);
@@ -100,7 +114,9 @@ public final class PlayerProfile {
         }
     }
 
-    /** Asynchronous safe version of loadAll */
+    /**
+     * Asynchronous safe version of loadAll
+     */
     public CompletableFuture<Void> loadAllAsync() {
         List<CompletableFuture<?>> futures = new ArrayList<>();
         for (PlayerDataSchema<?> schema : PlayerDataRegistry.allSchemas()) {
@@ -114,13 +130,15 @@ public final class PlayerProfile {
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
 
-    /** Synchronous save of all loaded data */
+    /**
+     * Synchronous save of all loaded data
+     */
     public void saveAll() {
         for (var entry : data.entrySet()) {
             if (entry.getValue() == null) continue;
             var schema = PlayerDataRegistry.allSchemas().stream()
-                .filter(s -> s.type().equals(entry.getKey()))
-                .findFirst().orElse(null);
+                    .filter(s -> s.type().equals(entry.getKey()))
+                    .findFirst().orElse(null);
             if (schema != null) {
                 @SuppressWarnings("unchecked")
                 PlayerDataSchema<Object> typedSchema = (PlayerDataSchema<Object>) schema;
@@ -129,14 +147,16 @@ public final class PlayerProfile {
         }
     }
 
-    /** Asynchronous save of all loaded data */
+    /**
+     * Asynchronous save of all loaded data
+     */
     public CompletableFuture<Void> saveAllAsync() {
         List<CompletableFuture<?>> futures = new ArrayList<>();
         for (var entry : data.entrySet()) {
             if (entry.getValue() == null) continue;
             var schema = PlayerDataRegistry.allSchemas().stream()
-                .filter(s -> s.type().equals(entry.getKey()))
-                .findFirst().orElse(null);
+                    .filter(s -> s.type().equals(entry.getKey()))
+                    .findFirst().orElse(null);
             if (schema != null) {
                 @SuppressWarnings("unchecked")
                 PlayerDataSchema<Object> typedSchema = (PlayerDataSchema<Object>) schema;

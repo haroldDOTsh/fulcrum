@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.playerdata;
+package sh.harold.fulcrum.backend.core;
 
 import sh.harold.fulcrum.api.JsonSchema;
 

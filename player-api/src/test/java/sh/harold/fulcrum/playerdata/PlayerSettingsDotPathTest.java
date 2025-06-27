@@ -1,7 +1,11 @@
 package sh.harold.fulcrum.playerdata;
 
-import org.junit.jupiter.api.*;
-import java.util.*;
+import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.backend.core.PlayerSettings;
+import sh.harold.fulcrum.util.SettingsWrapper;
+
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerSettingsDotPathTest {
@@ -30,7 +34,7 @@ class PlayerSettingsDotPathTest {
         assertEquals(123, wrapper.get("a.b.c.d.e"));
         Map<String, Object> map = settings.getSettingsMap();
         assertTrue(map.containsKey("a"));
-        assertTrue(((Map<?,?>) ((Map<?,?>) ((Map<?,?>) ((Map<?,?>) map.get("a")).get("b")).get("c")).get("d")).containsKey("e"));
+        assertTrue(((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) map.get("a")).get("b")).get("c")).get("d")).containsKey("e"));
     }
 
     @Test
@@ -58,7 +62,7 @@ class PlayerSettingsDotPathTest {
         SettingsWrapper wrapper = settings.getSettingsWrapper();
         wrapper.set("foo.bar", 123);
         Map<String, Object> out = wrapper.toMap();
-        assertEquals(123, ((Map<String, Object>)out.get("foo")).get("bar"));
+        assertEquals(123, ((Map<String, Object>) out.get("foo")).get("bar"));
     }
 
     @Test

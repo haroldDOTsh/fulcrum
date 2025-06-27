@@ -1,7 +1,11 @@
 package sh.harold.fulcrum.playerdata;
 
-import org.junit.jupiter.api.*;
-import java.util.*;
+import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.util.SettingsWrapper;
+
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class SettingsWrapperTest {
@@ -19,7 +23,7 @@ class SettingsWrapperTest {
         Map<String, Object> map = new HashMap<>();
         SettingsWrapper wrapper = new SettingsWrapper(map);
         wrapper.set("a.b.c.d", 42);
-        assertEquals(42, ((Map<String, Object>)((Map<String, Object>)((Map<String, Object>)map.get("a")).get("b")).get("c")).get("d"));
+        assertEquals(42, ((Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) map.get("a")).get("b")).get("c")).get("d"));
     }
 
     @Test
@@ -48,7 +52,7 @@ class SettingsWrapperTest {
         SettingsWrapper wrapper = new SettingsWrapper(map);
         wrapper.set("foo.bar", 123);
         Map<String, Object> out = wrapper.toMap();
-        assertEquals(123, ((Map<String, Object>)out.get("foo")).get("bar"));
+        assertEquals(123, ((Map<String, Object>) out.get("foo")).get("bar"));
     }
 
     @Test
