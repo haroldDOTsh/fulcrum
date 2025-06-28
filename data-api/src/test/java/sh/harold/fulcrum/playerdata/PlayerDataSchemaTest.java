@@ -2,9 +2,9 @@ package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.impl.JsonSchema;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
-import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 
 import java.util.UUID;

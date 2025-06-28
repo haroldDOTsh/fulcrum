@@ -1,12 +1,8 @@
 package sh.harold.fulcrum.api.data.backend.core;
 
-import sh.harold.fulcrum.api.data.impl.Column;
-import sh.harold.fulcrum.api.data.impl.ForeignKey;
-import sh.harold.fulcrum.api.data.impl.SchemaVersion;
-import sh.harold.fulcrum.api.data.impl.Table;
-import sh.harold.fulcrum.api.data.impl.TableSchema;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
+import sh.harold.fulcrum.api.data.impl.*;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 
 import java.lang.reflect.Field;
@@ -40,6 +36,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     private final Connection testConnection;
     private final SqlDialect dialect;
     private final List<ForeignKeyInfo> foreignKeys = new ArrayList<>();
+    private final List<PendingForeignKey> pendingForeignKeys = new ArrayList<>();
 
     /**
      * @deprecated Use {@link #AutoTableSchema(Class, Connection, SqlDialect)} for explicit dialect selection.
@@ -128,7 +125,8 @@ public class AutoTableSchema<T> extends TableSchema<T> {
                     }
                 }
             }
-            if (refCol == null || refFieldObj == null) throw new IllegalArgumentException("Referenced field not found: " + pfk.refField + " in " + pfk.refClass.getName());
+            if (refCol == null || refFieldObj == null)
+                throw new IllegalArgumentException("Referenced field not found: " + pfk.refField + " in " + pfk.refClass.getName());
             Field localField = fieldMap.get(pfk.columnName);
             if (localField == null) throw new IllegalArgumentException("Local field not found: " + pfk.columnName);
             if (!localField.getType().equals(refFieldObj.getType())) {
@@ -154,12 +152,12 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         // Emit foreign key constraints
         for (var fk : foreignKeys) {
             sb.append(", FOREIGN KEY (")
-              .append(dialect.quoteIdentifier(fk.columnName))
-              .append(") REFERENCES ")
-              .append(dialect.quoteIdentifier(fk.referencedTable))
-              .append("(")
-              .append(dialect.quoteIdentifier(fk.referencedColumn))
-              .append(")");
+                    .append(dialect.quoteIdentifier(fk.columnName))
+                    .append(") REFERENCES ")
+                    .append(dialect.quoteIdentifier(fk.referencedTable))
+                    .append("(")
+                    .append(dialect.quoteIdentifier(fk.referencedColumn))
+                    .append(")");
             if (!fk.onDelete.isEmpty()) sb.append(" ON DELETE ").append(fk.onDelete);
             if (!fk.onUpdate.isEmpty()) sb.append(" ON UPDATE ").append(fk.onUpdate);
         }
@@ -327,6 +325,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         final String referencedColumn;
         final String onDelete;
         final String onUpdate;
+
         ForeignKeyInfo(String columnName, String referencedTable, String referencedColumn, String onDelete, String onUpdate) {
             this.columnName = columnName;
             this.referencedTable = referencedTable;
@@ -335,12 +334,14 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             this.onUpdate = onUpdate;
         }
     }
+
     private static class PendingForeignKey {
         final String columnName;
         final Class<?> refClass;
         final String refField;
         final String onDelete;
         final String onUpdate;
+
         PendingForeignKey(String columnName, Class<?> refClass, String refField, String onDelete, String onUpdate) {
             this.columnName = columnName;
             this.refClass = refClass;
@@ -349,5 +350,4 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             this.onUpdate = onUpdate;
         }
     }
-    private final List<PendingForeignKey> pendingForeignKeys = new ArrayList<>();
 }

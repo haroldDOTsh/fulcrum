@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.api.data.registry;
 
+import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.impl.LifecycleAwareSchema;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
-import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 
 import java.util.*;
 

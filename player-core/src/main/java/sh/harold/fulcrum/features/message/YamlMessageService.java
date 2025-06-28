@@ -2,29 +2,18 @@ package sh.harold.fulcrum.features.message;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
-import sh.harold.fulcrum.api.message.DefaultTagFormatter;
-import sh.harold.fulcrum.api.message.GenericResponse;
-import sh.harold.fulcrum.api.message.MessageService;
-import sh.harold.fulcrum.api.message.MessageStyle;
-import sh.harold.fulcrum.api.message.MessageTag;
-import sh.harold.fulcrum.api.message.TagFormatter;
-
-import java.util.List;
-import java.util.stream.Collectors;
+import sh.harold.fulcrum.api.message.*;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class YamlMessageService implements MessageService {
@@ -80,25 +69,25 @@ public class YamlMessageService implements MessageService {
         translations.clear();
         try (Stream<Path> featureDirs = Files.walk(langDirectory, 1)) {
             featureDirs
-                .filter(Files::isDirectory)
-                .filter(path -> !path.equals(langDirectory))
-                .forEach(featureDir -> {
-                    String featureName = featureDir.getFileName().toString();
-                    Map<Locale, FileConfiguration> localeMap = new HashMap<>();
-                    try (Stream<Path> langFiles = Files.walk(featureDir, 1)) {
-                        langFiles
-                            .filter(path -> !Files.isDirectory(path) && path.toString().endsWith(".yml"))
-                            .forEach(langFile -> {
-                                String fileName = langFile.getFileName().toString().replace(".yml", "");
-                                Locale locale = Locale.forLanguageTag(fileName.replace("_", "-"));
-                                FileConfiguration config = YamlConfiguration.loadConfiguration(langFile.toFile());
-                                localeMap.put(locale, config);
-                            });
-                    } catch (IOException e) {
-                        Bukkit.getLogger().severe("Failed to load translation files for feature '" + featureName + "': " + e.getMessage());
-                    }
-                    translations.put(featureName, localeMap);
-                });
+                    .filter(Files::isDirectory)
+                    .filter(path -> !path.equals(langDirectory))
+                    .forEach(featureDir -> {
+                        String featureName = featureDir.getFileName().toString();
+                        Map<Locale, FileConfiguration> localeMap = new HashMap<>();
+                        try (Stream<Path> langFiles = Files.walk(featureDir, 1)) {
+                            langFiles
+                                    .filter(path -> !Files.isDirectory(path) && path.toString().endsWith(".yml"))
+                                    .forEach(langFile -> {
+                                        String fileName = langFile.getFileName().toString().replace(".yml", "");
+                                        Locale locale = Locale.forLanguageTag(fileName.replace("_", "-"));
+                                        FileConfiguration config = YamlConfiguration.loadConfiguration(langFile.toFile());
+                                        localeMap.put(locale, config);
+                                    });
+                        } catch (IOException e) {
+                            Bukkit.getLogger().severe("Failed to load translation files for feature '" + featureName + "': " + e.getMessage());
+                        }
+                        translations.put(featureName, localeMap);
+                    });
         } catch (IOException e) {
             Bukkit.getLogger().severe("Failed to load translation features: " + e.getMessage());
         }
@@ -168,7 +157,6 @@ public class YamlMessageService implements MessageService {
         return getStyledMessage(getPlayerLocale(playerId), style, translationKey, args);
     }
 
-    
 
     @Override
     public void sendStyledMessageWithTags(UUID playerId, MessageStyle style, String translationKey, List<MessageTag> tags, Object... args) {

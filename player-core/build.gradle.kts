@@ -68,10 +68,16 @@ tasks.named<ShadowJar>("shadowJar") {
 
     relocate("org.yaml.snakeyaml", "sh.harold.libraries.snakeyaml")      // Actual package in SnakeYAML 2.2
     relocate("com.google", "sh.harold.libraries.google")       // From gson 2.11.0
-    relocate("com.fasterxml.jackson", "sh.harold.libraries.jackson")      // From jackson-databind, jackson-core, jackson-annotations
+    relocate(
+        "com.fasterxml.jackson",
+        "sh.harold.libraries.jackson"
+    )      // From jackson-databind, jackson-core, jackson-annotations
     relocate("com.mongodb", "sh.harold.libraries.mongodb")                // From mongodb-driver-sync
     relocate("org.bson", "sh.harold.libraries.bson")                      // From bson + bson-record-codec
-    relocate("net.kyori", "sh.harold.libraries.kyori")                    // From adventure-api, minimessage, examination
+    relocate(
+        "net.kyori",
+        "sh.harold.libraries.kyori"
+    )                    // From adventure-api, minimessage, examination
 
     relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
     relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")

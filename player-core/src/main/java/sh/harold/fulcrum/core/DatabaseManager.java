@@ -1,8 +1,9 @@
 package sh.harold.fulcrum.core;
 
+import org.yaml.snakeyaml.Yaml;
+import sh.harold.fulcrum.api.data.backend.sql.PostgresDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
-import sh.harold.fulcrum.api.data.backend.sql.PostgresDialect;
 
 import java.io.File;
 import java.io.FileReader;
@@ -11,19 +12,19 @@ import java.sql.DriverManager;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
-import org.yaml.snakeyaml.Yaml;
 
 /**
  * Centralized database and dialect manager for Fulcrum plugins.
  * Handles config parsing, connection, dialect detection, and test overrides.
  */
 public final class DatabaseManager {
+    private static final ReentrantLock lock = new ReentrantLock();
     private static volatile Connection connection;
     private static volatile SqlDialect dialect;
-    private static final ReentrantLock lock = new ReentrantLock();
     private static boolean testOverride = false;
 
-    private DatabaseManager() {}
+    private DatabaseManager() {
+    }
 
     public static void setupFromConfig(File dataFolder) {
         if (connection != null && !testOverride) return;

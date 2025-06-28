@@ -1,10 +1,10 @@
 package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.impl.Column;
 import sh.harold.fulcrum.api.data.impl.SchemaVersion;
 import sh.harold.fulcrum.api.data.impl.Table;
-import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 
 import java.sql.Connection;
 import java.sql.DriverManager;

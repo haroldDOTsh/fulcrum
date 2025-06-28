@@ -4,9 +4,9 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.ReplaceOptions;
 import org.bson.Document;
+import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.impl.JsonSchema;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
-import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 
 import java.util.UUID;
 

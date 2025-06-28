@@ -9,7 +9,10 @@ import java.lang.annotation.Target;
 @Target(ElementType.FIELD)
 public @interface ForeignKey {
     Class<?> references();
+
     String field() default "id";
+
     String onDelete() default "";
+
     String onUpdate() default "";
 }

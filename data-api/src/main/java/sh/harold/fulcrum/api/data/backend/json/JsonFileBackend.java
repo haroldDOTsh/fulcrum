@@ -1,9 +1,9 @@
 package sh.harold.fulcrum.api.data.backend.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.impl.JsonSchema;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
-import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 
 import java.io.File;
 import java.util.UUID;

@@ -2,18 +2,19 @@ package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.api.data.impl.Column;
-import sh.harold.fulcrum.api.data.impl.ForeignKey;
-import sh.harold.fulcrum.api.data.impl.Table;
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.backend.sql.PostgresDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
+import sh.harold.fulcrum.api.data.impl.Column;
+import sh.harold.fulcrum.api.data.impl.ForeignKey;
+import sh.harold.fulcrum.api.data.impl.Table;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ForeignKeySchemaTest {
     @BeforeEach
@@ -24,31 +25,6 @@ class ForeignKeySchemaTest {
     // Helper: register a schema in the registry
     private <T> void registerSchema(Class<T> type, SqlDialect dialect) {
         PlayerDataRegistry.registerSchema(new AutoTableSchema<>(type, null, dialect), null);
-    }
-
-    // --- Core Test Classes ---
-    @Table("players")
-    static class Player {
-        @Column(primary = true)
-        public UUID id;
-        public String name;
-    }
-
-    @Table("guilds")
-    static class Guild {
-        @Column(primary = true)
-        public UUID id;
-        public String name;
-    }
-
-    @Table("guild_members")
-    static class GuildMember {
-        @Column(primary = true)
-        public UUID id;
-        @ForeignKey(references = Player.class)
-        public UUID player_id;
-        @ForeignKey(references = Guild.class, onDelete = "CASCADE", onUpdate = "SET NULL")
-        public UUID guild_id;
     }
 
     // --- Basic Foreign Key Creation ---
@@ -93,15 +69,6 @@ class ForeignKeySchemaTest {
         assertTrue(ddl.contains(fk2), "Expected FK2: " + fk2 + "\nDDL:\n" + ddl);
     }
 
-    // --- Type Mismatch Handling ---
-    @Table("bad_ref")
-    static class BadRef {
-        @Column(primary = true)
-        public UUID id;
-        @ForeignKey(references = Player.class)
-        public String player_id; // Should fail: type mismatch
-    }
-
     @Test
     void throwsOnTypeMismatch() {
         SqlDialect dialect = new SqliteDialect();
@@ -111,32 +78,12 @@ class ForeignKeySchemaTest {
         assertTrue(ex.getMessage().contains("Foreign key type mismatch"), "Expected type mismatch error, got: " + ex.getMessage());
     }
 
-    // --- Missing Schema Handling ---
-    @Table("unregistered_fk")
-    static class UnregisteredFK {
-        @Column(primary = true)
-        public UUID id;
-        @ForeignKey(references = Guild.class)
-        public UUID guild_id;
-    }
-
     @Test
     void throwsOnMissingReferencedSchema() {
         SqlDialect dialect = new SqliteDialect();
         AutoTableSchema<UnregisteredFK> schema = new AutoTableSchema<>(UnregisteredFK.class, null, dialect);
         Exception ex = assertThrows(IllegalArgumentException.class, schema::getCreateTableSql);
         assertTrue(ex.getMessage().contains("Referenced schema not registered"), "Expected missing schema error, got: " + ex.getMessage());
-    }
-
-    // --- Multiple Foreign Keys ---
-    @Table("multi_fk")
-    static class MultiFK {
-        @Column(primary = true)
-        public UUID id;
-        @ForeignKey(references = Player.class)
-        public UUID player_id;
-        @ForeignKey(references = Guild.class)
-        public UUID guild_id;
     }
 
     @Test
@@ -156,15 +103,6 @@ class ForeignKeySchemaTest {
         assertTrue(ddl.contains(fk2), "Expected FK2: " + fk2 + "\nDDL:\n" + ddl);
     }
 
-    // --- Implicit Foreign Key (default column = id) ---
-    @Table("implicit_fk")
-    static class ImplicitFK {
-        @Column(primary = true)
-        public UUID id;
-        @ForeignKey(references = Player.class)
-        public UUID player_id;
-    }
-
     @Test
     void implicitForeignKeyDefaultsToPrimaryKey() {
         SqlDialect dialect = new SqliteDialect();
@@ -176,22 +114,6 @@ class ForeignKeySchemaTest {
         String quotedId = dialect.quoteIdentifier("id");
         String fk = "FOREIGN KEY (" + quotedPlayerId + ") REFERENCES " + quotedPlayers + "(" + quotedId + ")";
         assertTrue(ddl.contains(fk), "Expected implicit FK: " + fk + "\nDDL:\n" + ddl);
-    }
-
-    // --- Circular Reference Handling ---
-    @Table("a")
-    static class A {
-        @Column(primary = true)
-        public UUID id;
-        @ForeignKey(references = B.class)
-        public UUID b_id;
-    }
-    @Table("b")
-    static class B {
-        @Column(primary = true)
-        public UUID id;
-        @ForeignKey(references = A.class)
-        public UUID a_id;
     }
 
     @Test
@@ -229,5 +151,85 @@ class ForeignKeySchemaTest {
         assertTrue(sqlSqlite.contains("`players`"));
         assertTrue(sqlPg.contains('"' + "players" + '"'));
         assertTrue(sqlPg.contains('"' + "player_id" + '"'));
+    }
+
+    // --- Core Test Classes ---
+    @Table("players")
+    static class Player {
+        @Column(primary = true)
+        public UUID id;
+        public String name;
+    }
+
+    @Table("guilds")
+    static class Guild {
+        @Column(primary = true)
+        public UUID id;
+        public String name;
+    }
+
+    @Table("guild_members")
+    static class GuildMember {
+        @Column(primary = true)
+        public UUID id;
+        @ForeignKey(references = Player.class)
+        public UUID player_id;
+        @ForeignKey(references = Guild.class, onDelete = "CASCADE", onUpdate = "SET NULL")
+        public UUID guild_id;
+    }
+
+    // --- Type Mismatch Handling ---
+    @Table("bad_ref")
+    static class BadRef {
+        @Column(primary = true)
+        public UUID id;
+        @ForeignKey(references = Player.class)
+        public String player_id; // Should fail: type mismatch
+    }
+
+    // --- Missing Schema Handling ---
+    @Table("unregistered_fk")
+    static class UnregisteredFK {
+        @Column(primary = true)
+        public UUID id;
+        @ForeignKey(references = Guild.class)
+        public UUID guild_id;
+    }
+
+    // --- Multiple Foreign Keys ---
+    @Table("multi_fk")
+    static class MultiFK {
+        @Column(primary = true)
+        public UUID id;
+        @ForeignKey(references = Player.class)
+        public UUID player_id;
+        @ForeignKey(references = Guild.class)
+        public UUID guild_id;
+    }
+
+    // --- Implicit Foreign Key (default column = id) ---
+    @Table("implicit_fk")
+    static class ImplicitFK {
+        @Column(primary = true)
+        public UUID id;
+        @ForeignKey(references = Player.class)
+        public UUID player_id;
+    }
+
+    // --- Circular Reference Handling ---
+    @Table("a")
+    static class A {
+        @Column(primary = true)
+        public UUID id;
+        @ForeignKey(references = B.class)
+        public UUID b_id;
+    }
+
+    @Table("b")
+    static class B {
+        @Column(primary = true)
+        public UUID id;
+        @ForeignKey(references = A.class)
+        public UUID a_id;
     }
 }

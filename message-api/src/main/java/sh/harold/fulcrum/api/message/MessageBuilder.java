@@ -38,7 +38,7 @@ public class MessageBuilder {
         tags.add(new MessageTag("tag", "daemon"));
         return this;
     }
-    
+
     public MessageBuilder system() {
         tags.add(new MessageTag("tag", "system"));
         return this;

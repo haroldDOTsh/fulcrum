@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.api.data.backend.sql;
 
+import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
 import sh.harold.fulcrum.api.data.impl.TableSchema;
-import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 
 import java.sql.Connection;
 import java.util.UUID;

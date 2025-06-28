@@ -9,17 +9,18 @@ import sh.harold.fulcrum.api.data.backend.sql.SqlDataBackend;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.Map;
-import java.util.Objects;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.util.Map;
+import java.util.Objects;
 
 public final class StorageManager {
     private static PlayerDataBackend structuredBackend;
     private static PlayerDataBackend documentBackend;
     private static boolean initialized = false;
 
-    private StorageManager() {}
+    private StorageManager() {
+    }
 
     @SuppressWarnings("unchecked")
     public static synchronized void initialize(File configFile) {
