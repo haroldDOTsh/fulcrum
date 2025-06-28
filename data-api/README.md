@@ -1,7 +1,11 @@
 # Fulcrum Data API Documentation
-This module is meant as a data layer for any custom plugins built on top of it. Developers will be able to define their own schemas, and have it all stored in one central database. We support hybrid SQL and JSON storage engines, automatic schema evolution, and robust async/sync access patterns. The API prioritizes plugin interoperability and developer UX.
+
+This module is meant as a data layer for any custom plugins built on top of it. Developers will be able to define their
+own schemas, and have it all stored in one central database. We support hybrid SQL and JSON storage engines, automatic
+schema evolution, and robust async/sync access patterns. The API prioritizes plugin interoperability and developer UX.
 
 **Important Classes:**
+
 - `PlayerProfile`: Represents a single player's data, including all registered schemas.
 - `PlayerProfileManager`: Manages lifecycle, loading, and saving of player profiles.
 - `PlayerStorageManager`: Abstracts storage backends and schema registration.
@@ -12,32 +16,33 @@ This module is meant as a data layer for any custom plugins built on top of it. 
 ### PlayerProfile
 
 - `boolean isLoaded()`
-  - **Description:** Returns true if the profile's data is fully loaded and available for access.
-  - **Usage:** Check before accessing data synchronously.
-  - **Thread-Safety:** Immutable after load; safe for concurrent reads.
+    - **Description:** Returns true if the profile's data is fully loaded and available for access.
+    - **Usage:** Check before accessing data synchronously.
+    - **Thread-Safety:** Immutable after load; safe for concurrent reads.
 
 - `<T> T get(Class<T> schemaType)`
-  - **Description:** Retrieves the data object for the given schema type.
-  - **Usage:** Use to access custom or built-in data models.
-  - **Null Handling:** Returns null if schema is not registered or not loaded.
-  - **Thread-Safety:** Safe for concurrent reads.
+    - **Description:** Retrieves the data object for the given schema type.
+    - **Usage:** Use to access custom or built-in data models.
+    - **Null Handling:** Returns null if schema is not registered or not loaded.
+    - **Thread-Safety:** Safe for concurrent reads.
 
 - `<T> void set(Class<T> schemaType, T value)`
-  - **Description:** Updates the data object for the given schema type.
-  - **Usage:** Use to modify player data before saving.
-  - **Thread-Safety:** Not thread-safe for concurrent writes; use async methods for cross-thread access.
+    - **Description:** Updates the data object for the given schema type.
+    - **Usage:** Use to modify player data before saving.
+    - **Thread-Safety:** Not thread-safe for concurrent writes; use async methods for cross-thread access.
 
 - `void save()`
-  - **Description:** Synchronously saves all data to storage.
-  - **Usage:** Use only on the main thread; blocks until complete.
-  - **Thread-Safety:** Not thread-safe; do not call from async threads.
+    - **Description:** Synchronously saves all data to storage.
+    - **Usage:** Use only on the main thread; blocks until complete.
+    - **Thread-Safety:** Not thread-safe; do not call from async threads.
 
 - `CompletableFuture<Void> saveAsync()`
-  - **Description:** Asynchronously saves all data to storage.
-  - **Usage:** Use for non-blocking saves from any thread.
-  - **Thread-Safety:** Safe for concurrent use.
+    - **Description:** Asynchronously saves all data to storage.
+    - **Usage:** Use for non-blocking saves from any thread.
+    - **Thread-Safety:** Safe for concurrent use.
 
 #### Example
+
 ```java
 PlayerProfile profile = playerProfileManager.getProfile(playerUUID);
 if (profile.isLoaded()) {
@@ -51,26 +56,27 @@ if (profile.isLoaded()) {
 ### PlayerProfileManager
 
 - `PlayerProfile getProfile(UUID playerId)`
-  - **Description:** Returns the profile for the given player, loading if necessary.
-  - **Usage:** Use for synchronous access on the main thread.
-  - **Thread-Safety:** Not thread-safe for concurrent loads.
+    - **Description:** Returns the profile for the given player, loading if necessary.
+    - **Usage:** Use for synchronous access on the main thread.
+    - **Thread-Safety:** Not thread-safe for concurrent loads.
 
 - `CompletableFuture<PlayerProfile> loadProfileAsync(UUID playerId)`
-  - **Description:** Loads the profile asynchronously.
-  - **Usage:** Use for async plugin logic or background tasks.
-  - **Thread-Safety:** Safe for concurrent use.
+    - **Description:** Loads the profile asynchronously.
+    - **Usage:** Use for async plugin logic or background tasks.
+    - **Thread-Safety:** Safe for concurrent use.
 
 - `void saveAll()`
-  - **Description:** Synchronously saves all loaded profiles.
-  - **Usage:** Use for plugin shutdown or periodic flush.
-  - **Thread-Safety:** Not thread-safe; call from main thread only.
+    - **Description:** Synchronously saves all loaded profiles.
+    - **Usage:** Use for plugin shutdown or periodic flush.
+    - **Thread-Safety:** Not thread-safe; call from main thread only.
 
 - `CompletableFuture<Void> saveAllAsync()`
-  - **Description:** Asynchronously saves all loaded profiles.
-  - **Usage:** Use for non-blocking global saves.
-  - **Thread-Safety:** Safe for concurrent use.
+    - **Description:** Asynchronously saves all loaded profiles.
+    - **Usage:** Use for non-blocking global saves.
+    - **Thread-Safety:** Safe for concurrent use.
 
 #### Example
+
 ```java
 playerProfileManager.loadProfileAsync(playerUUID)
     .thenAccept(profile -> {
@@ -82,16 +88,17 @@ playerProfileManager.loadProfileAsync(playerUUID)
 ### PlayerStorageManager
 
 - `void registerSchema(PlayerDataSchema<?> schema)`
-  - **Description:** Registers a new schema for player data.
-  - **Usage:** Call during plugin startup before loading profiles.
-  - **Thread-Safety:** Not thread-safe; call from main thread only.
+    - **Description:** Registers a new schema for player data.
+    - **Usage:** Call during plugin startup before loading profiles.
+    - **Thread-Safety:** Not thread-safe; call from main thread only.
 
 - `Collection<PlayerDataSchema<?>> getRegisteredSchemas()`
-  - **Description:** Returns all registered schemas.
-  - **Usage:** For introspection or plugin interoperability.
-  - **Thread-Safety:** Read-only after startup.
+    - **Description:** Returns all registered schemas.
+    - **Usage:** For introspection or plugin interoperability.
+    - **Thread-Safety:** Read-only after startup.
 
 #### Example
+
 ```java
 playerStorageManager.registerSchema(new PlayerStatsSchema());
 ```
@@ -99,30 +106,38 @@ playerStorageManager.registerSchema(new PlayerStatsSchema());
 ### Schema Engines
 
 - **TableSchema (SQL):**
-  - Uses JDBC for persistent, normalized storage.
-  - Supports schema evolution and migration.
-  - Best for structured, queryable data (e.g., stats, achievements).
+    - Uses JDBC for persistent, normalized storage.
+    - Supports schema evolution and migration.
+    - Best for structured, queryable data (e.g., stats, achievements).
 
 - **JsonSchema (JSON):**
-  - Stores data as JSON blobs (e.g., in SQLite or flat files).
-  - Flexible for unstructured or plugin-specific data.
-  - Best for rapidly evolving or nested data models.
+    - Stores data as JSON blobs (e.g., in SQLite or flat files).
+    - Flexible for unstructured or plugin-specific data.
+    - Best for rapidly evolving or nested data models.
 
 ## SQL TableSchema Annotations and Usage
 
 ### `@Table`
+
 Annotate your data class with `@Table("table_name")` to specify the SQL table name for the schema.
 
 ### `@Column`
-Annotate fields with `@Column` to mark them as persistent columns. Use `@Column(primary = true)` to designate the primary key. Optionally, use `@Column("column_name")` to override the default column name (defaults to the field name).
 
-- If no field is marked `@Column(primary = true)`, the first field named `id` or `uuid` of type `UUID` is used as the primary key by convention.
-- All private, non-static, non-transient fields are included by default (convention-over-configuration). `@Column` is only required for overrides.
+Annotate fields with `@Column` to mark them as persistent columns. Use `@Column(primary = true)` to designate the
+primary key. Optionally, use `@Column("column_name")` to override the default column name (defaults to the field name).
+
+- If no field is marked `@Column(primary = true)`, the first field named `id` or `uuid` of type `UUID` is used as the
+  primary key by convention.
+- All private, non-static, non-transient fields are included by default (convention-over-configuration). `@Column` is
+  only required for overrides.
 
 ### `@SchemaVersion`
-Annotate your class with `@SchemaVersion(n)` to specify the schema version. If omitted, version 1 is assumed. Versioning is tracked in the `schema_versions` table for migration support.
+
+Annotate your class with `@SchemaVersion(n)` to specify the schema version. If omitted, version 1 is assumed. Versioning
+is tracked in the `schema_versions` table for migration support.
 
 ### Example
+
 ```java
 @Table("player_stats")
 public class PlayerStats {
@@ -136,13 +151,16 @@ public class PlayerStats {
 ```
 
 ### SQL Backend Notes
+
 - The default implementation is optimized for SQLite (UUID fields are stored as TEXT, booleans as BOOLEAN, etc).
 - For other databases, you may need to override type mapping and upsert/replace SQL.
 - Connections must be managed externally and passed to `AutoTableSchema` for testability and in-memory DB support.
 - Only close PreparedStatement and ResultSet in your code; do not close the Connection if you want to reuse it.
 
 ### Test Example
-> For unit testing and advanced use only. Not required for plugin integration. All connection management is handled internally by the library.
+
+> For unit testing and advanced use only. Not required for plugin integration. All connection management is handled
+> internally by the library.
 
 ```java
 Connection conn = DriverManager.getConnection("jdbc:sqlite::memory:");
@@ -170,6 +188,7 @@ You can declare foreign key relationships between schemas using the `@ForeignKey
 )
 public UUID guild_id;
 ```
+
 - Only valid on fields whose type matches the referenced column (usually UUID).
 - The referenced schema **must** be registered in `PlayerDataRegistry` before DDL generation.
 - If `field` is not specified, the referenced schema's primary key is used.
@@ -191,7 +210,8 @@ public UUID guild_id;
 
 ### Validation & Error Handling
 
-- If the referenced schema is not registered, or the referenced field does not exist, an `IllegalArgumentException` is thrown when generating DDL.
+- If the referenced schema is not registered, or the referenced field does not exist, an `IllegalArgumentException` is
+  thrown when generating DDL.
 - Type mismatches between the local and referenced field also throw an error.
 - Circular references are supported as long as all schemas are registered before DDL generation.
 
@@ -204,6 +224,7 @@ public UUID guild_id;
 ## Examples
 
 ### Simple Plugin Startup
+
 ```java
 public final class MyPlugin extends JavaPlugin {
     @Override
@@ -215,6 +236,7 @@ public final class MyPlugin extends JavaPlugin {
 ```
 
 ### Sync vs. Async Data Load/Save
+
 ```java
 // Synchronous (main thread only)
 PlayerProfile profile = playerProfileManager.getProfile(playerUUID);
@@ -226,6 +248,7 @@ playerProfileManager.loadProfileAsync(playerUUID)
 ```
 
 ### Plugin Interoperability
+
 ```java
 PlayerProfile profile = playerProfileManager.getProfile(playerUUID);
 RankingData ranking = profile.get(RankingData.class);
@@ -233,6 +256,7 @@ QuestProgress quest = profile.get(QuestProgress.class);
 ```
 
 ### Nested Data Example: FairySouls
+
 ```java
 // Schema for storing a set of found fairy souls (UUIDs)
 @Table("fairy_souls")
@@ -253,6 +277,7 @@ playerProfile.saveAsync();
 ```
 
 ### Structured Data Example: PlayerStats
+
 ```java
 // Schema for structured player stats
 @Table("player_stats")
@@ -285,6 +310,7 @@ playerProfile.saveAsync();
 ```
 
 ### Deeply Nested/JSON Example: PlayerSettings
+
 ```java
 // Usage (recommended): dot-path access
 PlayerSettings settings = playerProfile.get(PlayerSettings.class);
@@ -309,7 +335,8 @@ playerProfile.saveAsync();
 
 ## Tutorial: Implementing a Data Schema with Fulcrum
 
-This tutorial walks you through the recommended, minimal-boilerplate way to use the Fulcrum Data API for plugin development.
+This tutorial walks you through the recommended, minimal-boilerplate way to use the Fulcrum Data API for plugin
+development.
 
 ### 1. Define Your Data POJO
 
@@ -377,34 +404,34 @@ public class CustomStatsSchema extends TableSchema<PlayerStats> {
 ## Advanced: Internal Design and Behavior
 
 - **Caching:**
-  - Profiles are cached in-memory while players are online.
-  - Data is evicted on player disconnect or after a configurable timeout.
-  - Write-through cache ensures consistency between memory and storage.
+    - Profiles are cached in-memory while players are online.
+    - Data is evicted on player disconnect or after a configurable timeout.
+    - Write-through cache ensures consistency between memory and storage.
 
 - **Thread-Safety:**
-  - All async methods are safe for concurrent use.
-  - Sync methods must be called from the main thread.
-  - Internal locks prevent race conditions during load/save.
+    - All async methods are safe for concurrent use.
+    - Sync methods must be called from the main thread.
+    - Internal locks prevent race conditions during load/save.
 
 - **Null Handling:**
-  - `get(Class<T>)` returns null if schema is missing or not loaded.
-  - Plugins should check for null before accessing data.
+    - `get(Class<T>)` returns null if schema is missing or not loaded.
+    - Plugins should check for null before accessing data.
 
 - **Schema Engines:**
-  - `TableSchema` uses SQL DDL/DML for structure and migration.
-  - `JsonSchema` serializes/deserializes POJOs to JSON.
-  - Both engines support versioned schema evolution.
+    - `TableSchema` uses SQL DDL/DML for structure and migration.
+    - `JsonSchema` serializes/deserializes POJOs to JSON.
+    - Both engines support versioned schema evolution.
 
 - **Lifecycle:**
-  - Schemas must be registered before any profile loads.
-  - Profile data is loaded on demand and saved on explicit request or plugin shutdown.
+    - Schemas must be registered before any profile loads.
+    - Profile data is loaded on demand and saved on explicit request or plugin shutdown.
 
 ---
+
 ## TODO:
+
 - implement proper dirty data management with redis
 - implement transfer packets via redis
 - implement actual database implementations
-
-
 
 For further details, see Javadoc on each public interface and class.
