@@ -1,5 +1,9 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import xyz.jpenilla.runpaper.task.RunServer
+
 plugins {
     java
+    id("com.gradleup.shadow") version "9.0.0-beta17"
     id("xyz.jpenilla.run-paper") version "2.3.1"
 }
 
@@ -8,18 +12,24 @@ version = "0.0.1"
 
 repositories {
     mavenCentral()
-    maven("https://repo.papermc.io/repository/maven-public/") {
-        name = "papermc-repo"
-    }
-    maven("https://oss.sonatype.org/content/groups/public/") {
-        name = "sonatype"
-    }
+    maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://oss.sonatype.org/content/groups/public/")
 }
 
 dependencies {
-    implementation("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
-    implementation(project(":player-api"))
+    implementation(project(":data-api"))
+    implementation(project(":message-api"))
+
+    // Paper API
+    compileOnly("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
+
+    // Other runtime deps
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
+    implementation("org.yaml:snakeyaml:2.2")
+
+    // (Optional test setup)
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 val targetJavaVersion = 21
@@ -30,9 +40,7 @@ java {
 
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
-    if (JavaVersion.current().isJava10Compatible) {
-        options.release.set(targetJavaVersion)
-    }
+    options.release.set(targetJavaVersion)
 }
 
 tasks.named<Copy>("processResources") {
@@ -44,6 +52,50 @@ tasks.named<Copy>("processResources") {
     }
 }
 
-tasks.named("runServer", xyz.jpenilla.runpaper.task.RunServer::class) {
+// Disable plain jar — shadow will be the output
+tasks.named("jar") {
+    enabled = false
+}
+
+// Create the uberjar and set output
+tasks.named<ShadowJar>("shadowJar") {
+    archiveClassifier.set("")
+    configurations = listOf(project.configurations.runtimeClasspath.get())
+
+    // Exclude duplicate or non-essential metadata to avoid remapper errors
+    exclude("META-INF/LICENSE", "META-INF/NOTICE", "META-INF/*.kotlin_module")
+    exclude("META-INF/native-image/**")
+
+    relocate("org.yaml.snakeyaml", "sh.harold.libraries.snakeyaml")      // Actual package in SnakeYAML 2.2
+    relocate("com.google", "sh.harold.libraries.google")       // From gson 2.11.0
+    relocate("com.fasterxml.jackson", "sh.harold.libraries.jackson")      // From jackson-databind, jackson-core, jackson-annotations
+    relocate("com.mongodb", "sh.harold.libraries.mongodb")                // From mongodb-driver-sync
+    relocate("org.bson", "sh.harold.libraries.bson")                      // From bson + bson-record-codec
+    relocate("net.kyori", "sh.harold.libraries.kyori")                    // From adventure-api, minimessage, examination
+
+    relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
+    relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
+}
+
+
+
+tasks.named("build") {
+    dependsOn(tasks.named("shadowJar"))
+}
+
+// Ensure runServer uses the shaded jar
+tasks.named<RunServer>("runServer") {
     minecraftVersion("1.21.6")
+    dependsOn(tasks.named("shadowJar"))
+    pluginJars.setFrom(tasks.named<ShadowJar>("shadowJar").map { it.archiveFile })
+}
+
+// Optional: configure test logging
+tasks.named<Test>("test") {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = true
+    }
 }

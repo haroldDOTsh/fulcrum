@@ -1,7 +1,14 @@
 rootProject.name = "fulcrum"
 
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
 include(
     "message-api",
-    "player-api",
+    "data-api",
     "player-core"
 )

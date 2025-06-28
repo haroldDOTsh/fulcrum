@@ -1,7 +1,7 @@
 package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.backend.core.PluginJsonData;
+import sh.harold.fulcrum.api.data.backend.core.PluginJsonData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

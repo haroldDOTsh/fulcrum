@@ -1,4 +1,5 @@
 dependencies {
-    // YAML processing for translation files
-    implementation("org.yaml:snakeyaml:2.0")
+    // MiniMessage for color parsing
+    implementation("net.kyori:adventure-api:4.17.0")
+    implementation("net.kyori:adventure-text-minimessage:4.17.0")
 }

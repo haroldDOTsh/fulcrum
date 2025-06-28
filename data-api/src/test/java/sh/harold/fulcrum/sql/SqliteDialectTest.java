@@ -1,7 +1,7 @@
 package sh.harold.fulcrum.sql;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.backend.sql.SqliteDialect;
+import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
 
 import java.util.List;
 import java.util.UUID;

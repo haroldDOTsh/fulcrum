@@ -1,7 +1,7 @@
 package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.util.SettingsWrapper;
+import sh.harold.fulcrum.api.data.util.SettingsWrapper;
 
 import java.util.HashMap;
 import java.util.Map;

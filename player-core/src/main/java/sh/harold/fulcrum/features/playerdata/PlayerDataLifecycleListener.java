@@ -4,8 +4,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.EventHandler;
-import sh.harold.fulcrum.registry.PlayerDataRegistry;
-import sh.harold.fulcrum.registry.PlayerProfileManager;
+import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
+import sh.harold.fulcrum.api.data.registry.PlayerProfileManager;
 
 import java.util.UUID;
 

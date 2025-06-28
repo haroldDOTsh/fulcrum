@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.core;
 
-import sh.harold.fulcrum.backend.sql.SqlDialect;
-import sh.harold.fulcrum.backend.sql.SqliteDialect;
-import sh.harold.fulcrum.backend.sql.PostgresDialect;
+import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
+import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
+import sh.harold.fulcrum.api.data.backend.sql.PostgresDialect;
 
 import java.io.File;
 import java.io.FileReader;
@@ -31,7 +31,10 @@ public final class DatabaseManager {
         try {
             if (connection != null && !testOverride) return;
             File configFile = new File(dataFolder, "database-config.yml");
-            Map<String, Object> config = new Yaml().load(new FileReader(configFile));
+            Map<String, Object> config = null;
+            try (FileReader reader = new FileReader(configFile)) {
+                config = new Yaml().load(reader);
+            }
             String type = ((String) config.getOrDefault("type", "sqlite")).toLowerCase(Locale.ROOT);
             switch (type) {
                 case "sqlite" -> {
