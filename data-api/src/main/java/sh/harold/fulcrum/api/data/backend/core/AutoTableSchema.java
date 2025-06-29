@@ -1,7 +1,6 @@
 package sh.harold.fulcrum.api.data.backend.core;
 
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
-import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
 import sh.harold.fulcrum.api.data.impl.*;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 
@@ -39,25 +38,16 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     private final List<PendingForeignKey> pendingForeignKeys = new ArrayList<>();
 
     /**
-     * @deprecated Use {@link #AutoTableSchema(Class, Connection, SqlDialect)} for explicit dialect selection.
-     * If dialect is null, falls back to SqliteDialect for backwards compatibility.
-     */
-    @Deprecated
-    public AutoTableSchema(Class<T> type, Connection testConnection) {
-        this(type, testConnection, null);
-    }
-
-    /**
-     * Constructs an AutoTableSchema with the given dialect.
+     * Constructs an AutoTableSchema for the given POJO class.
+     * Uses the globally configured SqlDialectProvider for dialect selection.
      *
      * @param type           POJO class
      * @param testConnection optional test connection
-     * @param dialect        SQL dialect (if null, uses SqliteDialect)
      */
-    public AutoTableSchema(Class<T> type, Connection testConnection, SqlDialect dialect) {
+    public AutoTableSchema(Class<T> type, Connection testConnection) {
         this.type = type;
         this.testConnection = testConnection;
-        this.dialect = dialect != null ? dialect : new SqliteDialect();
+        this.dialect = sh.harold.fulcrum.api.data.backend.sql.SqlDialectProvider.get();
         var tableAnn = type.getAnnotation(Table.class);
         if (tableAnn == null) throw new IllegalArgumentException("Missing @Table annotation");
         this.tableName = tableAnn.value();

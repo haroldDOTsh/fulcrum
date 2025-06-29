@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.backend.sql.PostgresDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
+import sh.harold.fulcrum.api.data.backend.sql.SqlDialectProvider;
 import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
 import sh.harold.fulcrum.api.data.impl.Column;
 import sh.harold.fulcrum.api.data.impl.ForeignKey;
@@ -20,21 +21,22 @@ class ForeignKeySchemaTest {
     @BeforeEach
     void setup() {
         PlayerDataRegistry.clear();
+        SqlDialectProvider.setDialect(new SqliteDialect());
     }
 
     // Helper: register a schema in the registry
-    private <T> void registerSchema(Class<T> type, SqlDialect dialect) {
-        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(type, null, dialect), null);
+    private <T> void registerSchema(Class<T> type) {
+        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(type, null), null);
     }
 
     // --- Basic Foreign Key Creation ---
     @Test
     void foreignKeyConstraintIsEmitted() {
-        SqlDialect dialect = new SqliteDialect();
-        registerSchema(Player.class, dialect);
-        registerSchema(Guild.class, dialect);
-        AutoTableSchema<GuildMember> schema = new AutoTableSchema<>(GuildMember.class, null, dialect);
+        registerSchema(Player.class);
+        registerSchema(Guild.class);
+        AutoTableSchema<GuildMember> schema = new AutoTableSchema<>(GuildMember.class, null);
         PlayerDataRegistry.registerSchema(schema, null);
+        SqlDialect dialect = SqlDialectProvider.get();
         String ddl = schema.getCreateTableSql();
         String quotedPlayerId = dialect.quoteIdentifier("player_id");
         String quotedPlayers = dialect.quoteIdentifier("players");
@@ -51,10 +53,10 @@ class ForeignKeySchemaTest {
     // --- DDL Generation Consistency ---
     @Test
     void ddlContainsPrimaryAndForeignKeys() {
-        SqlDialect dialect = new SqliteDialect();
-        registerSchema(Player.class, dialect);
-        registerSchema(Guild.class, dialect);
-        AutoTableSchema<GuildMember> schema = new AutoTableSchema<>(GuildMember.class, null, dialect);
+        registerSchema(Player.class);
+        registerSchema(Guild.class);
+        AutoTableSchema<GuildMember> schema = new AutoTableSchema<>(GuildMember.class, null);
+        SqlDialect dialect = SqlDialectProvider.get();
         String ddl = schema.getCreateTableSql();
         String quotedId = dialect.quoteIdentifier("id");
         String quotedPlayerId = dialect.quoteIdentifier("player_id");
@@ -71,27 +73,25 @@ class ForeignKeySchemaTest {
 
     @Test
     void throwsOnTypeMismatch() {
-        SqlDialect dialect = new SqliteDialect();
-        registerSchema(Player.class, dialect);
-        AutoTableSchema<BadRef> schema = new AutoTableSchema<>(BadRef.class, null, dialect);
+        registerSchema(Player.class);
+        AutoTableSchema<BadRef> schema = new AutoTableSchema<>(BadRef.class, null);
         Exception ex = assertThrows(IllegalArgumentException.class, schema::getCreateTableSql);
         assertTrue(ex.getMessage().contains("Foreign key type mismatch"), "Expected type mismatch error, got: " + ex.getMessage());
     }
 
     @Test
     void throwsOnMissingReferencedSchema() {
-        SqlDialect dialect = new SqliteDialect();
-        AutoTableSchema<UnregisteredFK> schema = new AutoTableSchema<>(UnregisteredFK.class, null, dialect);
+        AutoTableSchema<UnregisteredFK> schema = new AutoTableSchema<>(UnregisteredFK.class, null);
         Exception ex = assertThrows(IllegalArgumentException.class, schema::getCreateTableSql);
         assertTrue(ex.getMessage().contains("Referenced schema not registered"), "Expected missing schema error, got: " + ex.getMessage());
     }
 
     @Test
     void multipleForeignKeysAreEmitted() {
-        SqlDialect dialect = new SqliteDialect();
-        registerSchema(Player.class, dialect);
-        registerSchema(Guild.class, dialect);
-        AutoTableSchema<MultiFK> schema = new AutoTableSchema<>(MultiFK.class, null, dialect);
+        registerSchema(Player.class);
+        registerSchema(Guild.class);
+        AutoTableSchema<MultiFK> schema = new AutoTableSchema<>(MultiFK.class, null);
+        SqlDialect dialect = SqlDialectProvider.get();
         String ddl = schema.getCreateTableSql();
         String quotedPlayerId = dialect.quoteIdentifier("player_id");
         String quotedPlayers = dialect.quoteIdentifier("players");
@@ -105,9 +105,9 @@ class ForeignKeySchemaTest {
 
     @Test
     void implicitForeignKeyDefaultsToPrimaryKey() {
-        SqlDialect dialect = new SqliteDialect();
-        registerSchema(Player.class, dialect);
-        AutoTableSchema<ImplicitFK> schema = new AutoTableSchema<>(ImplicitFK.class, null, dialect);
+        registerSchema(Player.class);
+        AutoTableSchema<ImplicitFK> schema = new AutoTableSchema<>(ImplicitFK.class, null);
+        SqlDialect dialect = SqlDialectProvider.get();
         String ddl = schema.getCreateTableSql();
         String quotedPlayerId = dialect.quoteIdentifier("player_id");
         String quotedPlayers = dialect.quoteIdentifier("players");
@@ -118,11 +118,11 @@ class ForeignKeySchemaTest {
 
     @Test
     void circularReferenceSchemasRegisterAndEmitForeignKeys() {
-        SqlDialect dialect = new SqliteDialect();
-        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(A.class, null, dialect), null);
-        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(B.class, null, dialect), null);
-        AutoTableSchema<A> schemaA = new AutoTableSchema<>(A.class, null, dialect);
-        AutoTableSchema<B> schemaB = new AutoTableSchema<>(B.class, null, dialect);
+        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(A.class, null), null);
+        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(B.class, null), null);
+        AutoTableSchema<A> schemaA = new AutoTableSchema<>(A.class, null);
+        AutoTableSchema<B> schemaB = new AutoTableSchema<>(B.class, null);
+        SqlDialect dialect = SqlDialectProvider.get();
         String ddlA = schemaA.getCreateTableSql();
         String ddlB = schemaB.getCreateTableSql();
         String quotedAId = dialect.quoteIdentifier("a_id");
@@ -139,16 +139,16 @@ class ForeignKeySchemaTest {
     // --- Dialect Variation ---
     @Test
     void foreignKeyQuotingRespectsDialect() {
-        SqlDialect sqlite = new SqliteDialect();
-        SqlDialect pg = new PostgresDialect();
-        registerSchema(Player.class, sqlite);
-        registerSchema(Player.class, pg);
-        AutoTableSchema<ImplicitFK> schemaSqlite = new AutoTableSchema<>(ImplicitFK.class, null, sqlite);
-        AutoTableSchema<ImplicitFK> schemaPg = new AutoTableSchema<>(ImplicitFK.class, null, pg);
+        SqlDialectProvider.setDialect(new SqliteDialect());
+        registerSchema(Player.class);
+        AutoTableSchema<ImplicitFK> schemaSqlite = new AutoTableSchema<>(ImplicitFK.class, null);
         String sqlSqlite = schemaSqlite.getCreateTableSql();
-        String sqlPg = schemaPg.getCreateTableSql();
-        // Sqlite uses backticks, Postgres uses double quotes
         assertTrue(sqlSqlite.contains("`players`"));
+
+        SqlDialectProvider.setDialect(new PostgresDialect());
+        registerSchema(Player.class);
+        AutoTableSchema<ImplicitFK> schemaPg = new AutoTableSchema<>(ImplicitFK.class, null);
+        String sqlPg = schemaPg.getCreateTableSql();
         assertTrue(sqlPg.contains('"' + "players" + '"'));
         assertTrue(sqlPg.contains('"' + "player_id" + '"'));
     }

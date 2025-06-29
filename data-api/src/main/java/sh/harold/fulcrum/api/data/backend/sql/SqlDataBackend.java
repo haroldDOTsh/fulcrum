@@ -30,7 +30,7 @@ public class SqlDataBackend implements PlayerDataBackend {
         if (!(schema instanceof TableSchema<?>)) {
             throw new IllegalArgumentException("Not a TableSchema: " + schema.type());
         }
-        return (AutoTableSchema<T>) schemaCache.computeIfAbsent(schema.type(), k -> new AutoTableSchema<>(schema.type(), connection, dialect));
+        return (AutoTableSchema<T>) schemaCache.computeIfAbsent(schema.type(), k -> new AutoTableSchema<>(schema.type(), connection));
     }
 
     @Override

@@ -1,8 +1,9 @@
 package sh.harold.fulcrum.playerdata;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
-import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
+import sh.harold.fulcrum.api.data.backend.sql.SqlDialectProvider;
 import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
 import sh.harold.fulcrum.api.data.impl.Column;
 import sh.harold.fulcrum.api.data.impl.Table;
@@ -21,10 +22,14 @@ class DialectTestPojo {
 }
 
 class AutoTableSchemaDialectTest {
+    @BeforeEach
+    void setup() {
+        SqlDialectProvider.setDialect(new SqliteDialect());
+    }
+
     @Test
     void testCreateTableSqlUsesDialect() {
-        SqlDialect dialect = new SqliteDialect();
-        AutoTableSchema<DialectTestPojo> schema = new AutoTableSchema<>(DialectTestPojo.class, null, dialect);
+        AutoTableSchema<DialectTestPojo> schema = new AutoTableSchema<>(DialectTestPojo.class, null);
         String sql = schema.getCreateTableSql();
         assertTrue(sql.contains("`test_table`"));
         assertTrue(sql.contains("`id` TEXT"));

@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.features.playerdata;
+package sh.harold.fulcrum.api.playerdata;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import org.yaml.snakeyaml.Yaml;
@@ -66,6 +66,8 @@ public final class StorageManager {
                 try {
                     Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
                     SqlDialect dialect = new SqliteDialect();
+                    // Set the global dialect for player-api
+                    sh.harold.fulcrum.api.data.backend.sql.SqlDialectProvider.setDialect(dialect);
                     structuredBackend = new SqlDataBackend(conn, dialect);
                     logger.info("Using SQLite for structured data: " + dbFile.getAbsolutePath());
                 } catch (Exception e) {
@@ -85,6 +87,8 @@ public final class StorageManager {
                 try {
                     Connection conn = DriverManager.getConnection(url, user, pw);
                     SqlDialect dialect = new PostgresDialect();
+                    // Set the global dialect for player-api
+                    sh.harold.fulcrum.api.data.backend.sql.SqlDialectProvider.setDialect(dialect);
                     structuredBackend = new SqlDataBackend(conn, dialect);
                     logger.info("Using Postgres for structured data: " + url);
                 } catch (Exception e) {
