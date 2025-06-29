@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.features.message;
+package sh.harold.fulcrum.api.message;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -6,7 +6,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
-import sh.harold.fulcrum.api.message.*;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -89,7 +88,7 @@ public class YamlMessageService implements MessageService {
                         translations.put(featureName, localeMap);
                     });
         } catch (IOException e) {
-            Bukkit.getLogger().severe("Failed to load translation features: " + e.getMessage());
+            Bukkit.getLogger().severe("Failed to load translation feature: " + e.getMessage());
         }
     }
 
