@@ -90,6 +90,21 @@ class PlayerStorageManagerTest {
         public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
             jsonMap.put(uuid, (TestData) data);
         }
+
+        @Override
+        public <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema) {
+            T loaded = load(uuid, schema);
+            if (loaded != null) {
+                return loaded;
+            }
+            // For dummy, just return a new instance if not found
+            if (schema.type() == TestData.class) {
+                T newInstance = (T) new TestData(null);
+                save(uuid, schema, newInstance);
+                return newInstance;
+            }
+            throw new UnsupportedOperationException("Only TestData is supported for dummy creation");
+        }
     }
 
     static class DummySqlBackend implements PlayerDataBackend {
@@ -101,6 +116,21 @@ class PlayerStorageManagerTest {
         @Override
         public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
             sqlMap.put(uuid, (TestData) data);
+        }
+
+        @Override
+        public <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema) {
+            T loaded = load(uuid, schema);
+            if (loaded != null) {
+                return loaded;
+            }
+            // For dummy, just return a new instance if not found
+            if (schema.type() == TestData.class) {
+                T newInstance = (T) new TestData(null);
+                save(uuid, schema, newInstance);
+                return newInstance;
+            }
+            throw new UnsupportedOperationException("Only TestData is supported for dummy creation");
         }
     }
 }

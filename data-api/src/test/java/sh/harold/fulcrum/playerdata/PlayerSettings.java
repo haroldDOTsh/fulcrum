@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.api.data.backend.core;
+package sh.harold.fulcrum.playerdata;
 
 import sh.harold.fulcrum.api.data.util.SettingsWrapper;
 

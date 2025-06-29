@@ -119,6 +119,22 @@ class PlayerProfileTest {
         public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
             jsonBacking.put(uuid, ((TestJsonData) data).value);
         }
+
+        @Override
+        public <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema) {
+            T loaded = load(uuid, schema);
+            if (loaded != null) {
+                return loaded;
+            }
+            // For dummy, just return a new instance if not found
+            try {
+                T newInstance = schema.type().getDeclaredConstructor().newInstance();
+                save(uuid, schema, newInstance);
+                return newInstance;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     static class DummySqlBackend implements PlayerDataBackend {
@@ -130,6 +146,22 @@ class PlayerProfileTest {
         @Override
         public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
             sqlBacking.put(uuid, (TestSqlData) data);
+        }
+
+        @Override
+        public <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema) {
+            T loaded = load(uuid, schema);
+            if (loaded != null) {
+                return loaded;
+            }
+            // For dummy, just return a new instance if not found
+            try {
+                T newInstance = schema.type().getDeclaredConstructor().newInstance();
+                save(uuid, schema, newInstance);
+                return newInstance;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 }

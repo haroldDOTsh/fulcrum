@@ -11,4 +11,6 @@ public interface PlayerDataBackend {
     <T> T load(UUID uuid, PlayerDataSchema<T> schema);
 
     <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data);
+
+    <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema);
 }

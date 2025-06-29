@@ -100,5 +100,10 @@ class PlayerDataRegistryTest {
         @Override
         public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
         }
+
+        @Override
+        public <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema) {
+            return null;
+        }
     }
 }

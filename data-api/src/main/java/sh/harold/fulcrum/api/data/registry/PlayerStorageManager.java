@@ -19,4 +19,10 @@ public final class PlayerStorageManager {
         if (backend == null) throw new IllegalStateException("No backend registered for schema: " + schema.schemaKey());
         backend.save(playerId, schema, data);
     }
+
+    public static <T> T loadOrCreate(UUID playerId, PlayerDataSchema<T> schema) {
+        var backend = PlayerDataRegistry.getBackend(schema);
+        if (backend == null) throw new IllegalStateException("No backend registered for schema: " + schema.schemaKey());
+        return backend.loadOrCreate(playerId, schema);
+    }
 }

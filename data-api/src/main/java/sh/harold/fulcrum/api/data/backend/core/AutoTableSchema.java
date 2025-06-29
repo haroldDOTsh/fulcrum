@@ -259,7 +259,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         }
     }
 
-    private T instantiate() throws Exception {
+    public T instantiate() throws Exception {
         try {
             var ctor = type.getDeclaredConstructor();
             ctor.setAccessible(true);

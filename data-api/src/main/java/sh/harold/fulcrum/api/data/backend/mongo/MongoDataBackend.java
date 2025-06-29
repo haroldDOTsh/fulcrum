@@ -42,4 +42,22 @@ public class MongoDataBackend implements PlayerDataBackend {
         }
         throw new UnsupportedOperationException("MongoDataBackend only supports JsonSchema<T>");
     }
+
+    @Override
+    public <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema) {
+        if (!(schema instanceof JsonSchema<T> jsonSchema)) {
+            throw new UnsupportedOperationException("MongoDataBackend only supports JsonSchema<T>");
+        }
+
+        Document doc = collection.find(Filters.eq("_id", uuid.toString())).first();
+
+        if (doc != null) {
+            doc.remove("_id");
+            return jsonSchema.deserialize(uuid, doc.toJson());
+        }
+
+        T newInstance = jsonSchema.deserialize(uuid, "{}");
+        save(uuid, schema, newInstance);
+        return newInstance;
+    }
 }

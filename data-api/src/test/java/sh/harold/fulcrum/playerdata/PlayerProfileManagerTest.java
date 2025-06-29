@@ -53,7 +53,7 @@ class PlayerProfileManagerTest {
         PlayerDataRegistry.registerSchema(schema, backend);
         // backing is empty, so load should return null
         var profile = PlayerProfileManager.load(PLAYER_ID);
-        assertNull(profile.get(TestData.class));
+        assertEquals(new TestData(null), profile.get(TestData.class));
         // Should not cache nulls, so after setting, value is present
         profile.set(TestData.class, new TestData("baz"));
         assertEquals(new TestData("baz"), profile.get(TestData.class));
@@ -96,6 +96,21 @@ class PlayerProfileManagerTest {
         @Override
         public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
             if (data != null) backing.put(uuid, (TestData) data);
+        }
+
+        @Override
+        public <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema) {
+            T loaded = load(uuid, schema);
+            if (loaded != null) {
+                return loaded;
+            }
+            // For dummy, just return a new instance if not found
+            if (schema.type() == TestData.class) {
+                T newInstance = (T) new TestData(null);
+                save(uuid, schema, newInstance);
+                return newInstance;
+            }
+            throw new UnsupportedOperationException("Only TestData is supported for dummy creation");
         }
     }
 }

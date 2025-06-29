@@ -130,5 +130,21 @@ class PlayerDataBackendMixedTest {
         public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
             map.put(uuid, (SqlData) data);
         }
+
+        @Override
+        public <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema) {
+            T loaded = load(uuid, schema);
+            if (loaded != null) {
+                return loaded;
+            }
+            // For dummy, just return a new instance if not found
+            try {
+                T newInstance = schema.type().getDeclaredConstructor().newInstance();
+                save(uuid, schema, newInstance);
+                return newInstance;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }

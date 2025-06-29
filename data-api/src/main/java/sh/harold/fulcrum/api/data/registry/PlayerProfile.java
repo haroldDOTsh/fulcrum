@@ -16,6 +16,7 @@ public final class PlayerProfile {
     private static final Executor ASYNC_EXECUTOR = Executors.newCachedThreadPool();
     private final UUID playerId;
     private final Map<Class<?>, Object> data = new ConcurrentHashMap<>();
+    private boolean isNew = true;
 
     public PlayerProfile(UUID playerId) {
         this.playerId = playerId;
@@ -33,9 +34,10 @@ public final class PlayerProfile {
         if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
         @SuppressWarnings("unchecked")
         PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
-        T loaded = PlayerStorageManager.load(playerId, typedSchema);
+        T loaded = PlayerStorageManager.loadOrCreate(playerId, typedSchema);
         if (loaded != null) {
             data.put(schemaType, loaded);
+            isNew = false;
         }
         return loaded;
     }
@@ -56,9 +58,10 @@ public final class PlayerProfile {
             if (schema == null) throw new IllegalArgumentException("Schema not registered: " + schemaType);
             @SuppressWarnings("unchecked")
             PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
-            T loaded = PlayerStorageManager.load(playerId, typedSchema);
+            T loaded = PlayerStorageManager.loadOrCreate(playerId, typedSchema);
             if (loaded != null) {
                 data.put(schemaType, loaded);
+                isNew = false;
             }
             return loaded;
         }, ASYNC_EXECUTOR);
@@ -73,8 +76,11 @@ public final class PlayerProfile {
         if (schema == null) return fallback.get();
         @SuppressWarnings("unchecked")
         PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
-        T loaded = PlayerStorageManager.load(playerId, typedSchema);
+        T loaded = PlayerStorageManager.loadOrCreate(playerId, typedSchema);
         data.put(schemaType, loaded);
+        if (loaded != null) {
+            isNew = false;
+        }
         return loaded;
     }
 
@@ -95,6 +101,7 @@ public final class PlayerProfile {
         PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
         PlayerStorageManager.save(playerId, typedSchema, value);
         data.put(schemaType, value);
+        isNew = false;
     }
 
     public <T> CompletableFuture<Void> saveAsync(Class<T> schemaType, T value) {
@@ -107,9 +114,10 @@ public final class PlayerProfile {
      */
     public void loadAll() {
         for (PlayerDataSchema<?> schema : PlayerDataRegistry.allSchemas()) {
-            Object loaded = PlayerStorageManager.load(playerId, schema);
+            Object loaded = PlayerStorageManager.loadOrCreate(playerId, schema);
             if (loaded != null) {
                 data.put(schema.type(), loaded);
+                isNew = false;
             }
         }
     }
@@ -121,9 +129,10 @@ public final class PlayerProfile {
         List<CompletableFuture<?>> futures = new ArrayList<>();
         for (PlayerDataSchema<?> schema : PlayerDataRegistry.allSchemas()) {
             futures.add(CompletableFuture.runAsync(() -> {
-                Object loaded = PlayerStorageManager.load(playerId, schema);
+                Object loaded = PlayerStorageManager.loadOrCreate(playerId, schema);
                 if (loaded != null) {
                     data.put(schema.type(), loaded);
+                    isNew = false;
                 }
             }, ASYNC_EXECUTOR));
         }
@@ -145,6 +154,7 @@ public final class PlayerProfile {
                 saveSchema(typedSchema, entry.getValue());
             }
         }
+        isNew = false;
     }
 
     /**
@@ -163,6 +173,7 @@ public final class PlayerProfile {
                 futures.add(CompletableFuture.runAsync(() -> saveSchema(typedSchema, entry.getValue()), ASYNC_EXECUTOR));
             }
         }
+        isNew = false;
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
 
@@ -172,5 +183,9 @@ public final class PlayerProfile {
 
     public UUID getPlayerId() {
         return playerId;
+    }
+
+    public boolean isNew() {
+        return isNew;
     }
 }

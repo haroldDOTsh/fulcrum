@@ -7,6 +7,7 @@ public class PlayerDataFeature implements PluginFeature {
 
     @Override
     public void initialize(JavaPlugin plugin) {
+        StorageManager.initialize(plugin);
         plugin.getServer().getPluginManager().registerEvents(new PlayerDataLifecycleListener(), plugin);
     }
 
