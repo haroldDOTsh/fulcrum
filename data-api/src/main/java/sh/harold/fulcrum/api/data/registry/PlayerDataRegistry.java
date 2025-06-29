@@ -14,6 +14,15 @@ public final class PlayerDataRegistry {
 
     public static <T> void registerSchema(PlayerDataSchema<T> schema, PlayerDataBackend backend) {
         schemaBackends.put(schema, backend);
+        // Automatic SQL table creation and schema version enforcement
+        if (schema instanceof sh.harold.fulcrum.api.data.backend.core.AutoTableSchema<?> autoSchema &&
+            backend instanceof sh.harold.fulcrum.api.data.backend.sql.SqlDataBackend sqlBackend) {
+            try {
+                autoSchema.ensureTableAndVersion(sqlBackend.getConnection());
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to ensure table and schema version for " + schema.schemaKey(), e);
+            }
+        }
     }
 
     public static <T> PlayerDataBackend getBackend(PlayerDataSchema<T> schema) {
