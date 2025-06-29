@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.features.playerdata;
+package sh.harold.fulcrum.api.playerdata;
 
 public enum DocumentBackendType {
     JSON,

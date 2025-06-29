@@ -1,8 +1,6 @@
-package sh.harold.fulcrum.features.message;
+package sh.harold.fulcrum.api.message;
 
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.api.message.DefaultTagFormatter;
-import sh.harold.fulcrum.api.message.Message;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 
 public class MessageFeature implements PluginFeature {

@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.features.playerdata;
+package sh.harold.fulcrum.api.playerdata;
 
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
