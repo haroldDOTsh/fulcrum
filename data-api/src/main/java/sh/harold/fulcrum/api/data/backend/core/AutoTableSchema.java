@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.data.backend.core;
 
+import sh.harold.fulcrum.api.data.annotation.Column;
+import sh.harold.fulcrum.api.data.annotation.PrimaryKeyGeneration;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
 import sh.harold.fulcrum.api.data.impl.*;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
@@ -37,12 +39,23 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     private final List<ForeignKeyInfo> foreignKeys = new ArrayList<>();
     private final List<PendingForeignKey> pendingForeignKeys = new ArrayList<>();
 
+
     /**
-     * Constructs an AutoTableSchema for the given POJO class.
-     * Uses the globally configured SqlDialectProvider for dialect selection.
+     * Developer-facing constructor. Use this for all plugin and API code.
+     * The backend will handle all connection management.
+     *
+     * @param type POJO class
+     */
+    public AutoTableSchema(Class<T> type) {
+        this(type, null);
+    }
+
+    /**
+     * INTERNAL/TEST USE ONLY: Allows injection of a test connection for schema operations.
+     * Do not use in plugin or production code. The backend will manage connections.
      *
      * @param type           POJO class
-     * @param testConnection optional test connection
+     * @param testConnection optional test connection (for tests/migrations only)
      */
     public AutoTableSchema(Class<T> type, Connection testConnection) {
         this.type = type;
@@ -61,7 +74,11 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             String colName = colAnn != null && !colAnn.value().isEmpty() ? colAnn.value() : field.getName();
             String sqlType = this.dialect.getSqlType(field.getType());
             boolean isPrimary = colAnn != null && colAnn.primary();
-            columns.put(colName, new ColumnInfo(colName, sqlType, isPrimary));
+            PrimaryKeyGeneration generation = PrimaryKeyGeneration.NONE;
+            if (colAnn != null) {
+                generation = colAnn.generation();
+            }
+            columns.put(colName, new ColumnInfo(colName, sqlType, isPrimary, generation));
             fieldMap.put(colName, field);
             // Foreign key detection and validation
             var fkAnn = field.getAnnotation(ForeignKey.class);
@@ -82,6 +99,12 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             }
         }
         if (pkInfo == null) throw new IllegalStateException("No primary key found for " + type.getName());
+        // Validate PK generation for UUID
+        Field pkField = fieldMap.get(pkInfo.name);
+        if (pkField.getType() == UUID.class) {
+            if (pkInfo.generation == null) throw new IllegalStateException("Primary key UUID field must specify generation mode");
+            // NONE is allowed, but must be set manually at save time
+        }
         this.primaryKey = pkInfo;
     }
 
@@ -125,7 +148,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             foreignKeys.add(new ForeignKeyInfo(pfk.columnName, refTable, refCol, pfk.onDelete, pfk.onUpdate));
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("CREATE TABLE ").append(dialect.quoteIdentifier(tableName)).append(" (");
+        sb.append("CREATE TABLE IF NOT EXISTS ").append(dialect.quoteIdentifier(tableName)).append(" (");
         String pk = null;
         boolean first = true;
         for (var col : columns.values()) {
@@ -172,6 +195,49 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         }
     }
 
+    /**
+     * Ensures the schema_versions table exists, then creates the main table, then enforces schema versioning rules.
+     * Throws if migration or downgrade is detected.
+     */
+    public void ensureTableAndVersion(java.sql.Connection conn) throws Exception {
+        // 1. Create schema_versions table if needed (must be first)
+        String createVersionsTable = "CREATE TABLE IF NOT EXISTS " + dialect.quoteIdentifier("schema_versions") +
+                " (" + dialect.quoteIdentifier("table_name") + " TEXT PRIMARY KEY, " + dialect.quoteIdentifier("version") + " INTEGER NOT NULL)";
+        try (var stmt = conn.createStatement()) {
+            stmt.execute(createVersionsTable);
+        }
+        // 2. Create main table if needed
+        createTable(conn);
+        // 3. Check version
+        int currentVersion = getSchemaVersion();
+        Integer storedVersion = null;
+        String selectVersion = "SELECT " + dialect.quoteIdentifier("version") + " FROM " + dialect.quoteIdentifier("schema_versions") + " WHERE " + dialect.quoteIdentifier("table_name") + " = ?";
+        try (var ps = conn.prepareStatement(selectVersion)) {
+            ps.setString(1, tableName);
+            try (var rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    storedVersion = rs.getInt(1);
+                }
+            }
+        }
+        if (storedVersion == null) {
+            // First time: insert version
+            String insertVersion = "INSERT OR REPLACE INTO " + dialect.quoteIdentifier("schema_versions") +
+                    " (" + dialect.quoteIdentifier("table_name") + ", " + dialect.quoteIdentifier("version") + ") VALUES (?, ?)";
+            try (var ps = conn.prepareStatement(insertVersion)) {
+                ps.setString(1, tableName);
+                ps.setInt(2, currentVersion);
+                ps.executeUpdate();
+            }
+        } else if (storedVersion == currentVersion) {
+            // OK
+        } else if (storedVersion < currentVersion) {
+            throw new RuntimeException("Schema migration is not yet supported for table '" + tableName + "': stored version " + storedVersion + " < current version " + currentVersion);
+        } else {
+            throw new RuntimeException("Schema version for table '" + tableName + "' is newer (" + storedVersion + ") than supported by this code (" + currentVersion + "). Please update your plugin.");
+        }
+    }
+
     // Remove @Override from load/save, as TableSchema no longer declares them
     public T load(UUID uuid) {
         Connection conn = null;
@@ -212,7 +278,28 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     }
 
     public void save(UUID uuid, T data) {
-        if (uuid == null) throw new RuntimeException("Primary key (UUID) must not be null for save() on " + tableName);
+        if (uuid == null && primaryKey.generation == PrimaryKeyGeneration.PLAYER_UUID)
+            throw new RuntimeException("Primary key (UUID) must not be null for save() on " + tableName);
+        // Inject PK if needed
+        Field pkField = fieldMap.get(primaryKey.name);
+        pkField.setAccessible(true);
+        try {
+            Object current = pkField.get(data);
+            if (current == null) {
+                UUID effectiveId = null;
+                if (primaryKey.generation == PrimaryKeyGeneration.PLAYER_UUID) {
+                    if (uuid == null) throw new IllegalStateException("PLAYER_UUID generation requires UUID");
+                    effectiveId = uuid;
+                } else if (primaryKey.generation == PrimaryKeyGeneration.RANDOM_UUID) {
+                    effectiveId = UUID.randomUUID();
+                } else if (primaryKey.generation == PrimaryKeyGeneration.NONE) {
+                    throw new IllegalStateException("Primary key must be set manually for NONE generation mode");
+                }
+                if (effectiveId != null) pkField.set(data, effectiveId);
+            }
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Failed to set primary key field", e);
+        }
         StringBuilder sql = new StringBuilder();
         sql.append("INSERT OR REPLACE INTO ").append(dialect.quoteIdentifier(tableName)).append(" (");
         StringJoiner cols = new StringJoiner(", ");
@@ -300,11 +387,13 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         final String name;
         final String sqlType;
         final boolean primary;
+        final PrimaryKeyGeneration generation;
 
-        ColumnInfo(String name, String sqlType, boolean primary) {
+        ColumnInfo(String name, String sqlType, boolean primary, PrimaryKeyGeneration generation) {
             this.name = name;
             this.sqlType = sqlType;
             this.primary = primary;
+            this.generation = generation;
         }
     }
 

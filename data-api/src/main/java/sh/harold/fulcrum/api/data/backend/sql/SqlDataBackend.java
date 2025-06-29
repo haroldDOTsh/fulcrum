@@ -62,5 +62,9 @@ public class SqlDataBackend implements PlayerDataBackend {
             throw new RuntimeException("Failed to create new instance for schema " + schema.type().getName(), e);
         }
     }
+
+    public Connection getConnection() {
+        return connection;
+    }
 }
 
