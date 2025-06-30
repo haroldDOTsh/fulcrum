@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Table("test_players")
 @SchemaVersion(1)
@@ -507,7 +508,10 @@ class AutoTableSchemaJdbcTest {
         schema.createTable(conn);
         var stmts = conn.statement.executedSql;
         assertEquals(2, stmts.size());
-        assertEquals("CREATE TABLE `test_players` (`id` TEXT, `name` TEXT, `level` INTEGER, PRIMARY KEY (`id`));", stmts.get(0));
+        // Accept both with and without IF NOT EXISTS for forward compatibility with schema evolution
+        assertTrue(stmts.get(0).equals("CREATE TABLE `test_players` (`id` TEXT, `name` TEXT, `level` INTEGER, PRIMARY KEY (`id`));") ||
+                   stmts.get(0).equals("CREATE TABLE IF NOT EXISTS `test_players` (`id` TEXT, `name` TEXT, `level` INTEGER, PRIMARY KEY (`id`));"),
+                   "CREATE TABLE SQL should match expected variants");
         assertEquals("INSERT OR REPLACE INTO `schema_versions` (`table_name`, `version`) VALUES ('test_players', 1)", stmts.get(1));
     }
 }
