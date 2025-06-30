@@ -16,6 +16,8 @@ dependencies {
     testImplementation("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
     // MockBukkit for Bukkit API mocking
     //implementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.59.0")
+    testImplementation("org.mockito:mockito-core:5.2.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.2.0")
 }
 
 java {

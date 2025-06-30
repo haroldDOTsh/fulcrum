@@ -17,6 +17,13 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import java.lang.reflect.Field;
 import java.util.*;
+import sh.harold.fulcrum.command.Suggestions;
+import sh.harold.fulcrum.command.SuggestionResolver;
+import sh.harold.fulcrum.command.SuggestionProviderAdapter;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import java.util.concurrent.CompletableFuture;
+import sh.harold.fulcrum.command.CommandContext;
+import sh.harold.fulcrum.command.CommandExecutor;
 
 public final class CommandRegistrationBridge {
     private CommandRegistrationBridge() {}
@@ -44,17 +51,23 @@ public final class CommandRegistrationBridge {
                         case "org.bukkit.entity.Player" -> StringArgumentType.word(); // Player name, resolve later
                         default -> null;
                     };
+                    // Suggestion integration
+                    SuggestionProviderAdapter suggestionProvider = SuggestionResolver.resolve(field, def.implementationClass());
                     if (type != null) {
-                        argBuilder = ((ArgumentBuilder<CommandSourceStack, ?>) RequiredArgumentBuilder.argument(arg.value(), type));
+                        RequiredArgumentBuilder<CommandSourceStack, ?> reqArg = RequiredArgumentBuilder.argument(arg.value(), type);
+                        if (suggestionProvider != null) {
+                            reqArg.suggests((ctx, suggestionsBuilder) -> suggestionProvider.apply(ctx, suggestionsBuilder));
+                        }
+                        argBuilder = ((ArgumentBuilder<CommandSourceStack, ?>) reqArg);
                     }
                 }
 
                 argBuilder = argBuilder.executes(ctx -> {
                     try {
                         var instance = def.implementationClass().getDeclaredConstructor().newInstance();
-                        // Inject arguments
-                        ArgumentInjector.inject(new CommandContext(ctx.getSource().getSender()) {
-                            @Override
+                        // Inject arguments using a runtime CommandContext that delegates to Brigadier
+                        sh.harold.fulcrum.command.CommandContext runtimeCtx = new sh.harold.fulcrum.command.CommandContext(ctx.getSource().getSender()) {
+                            @SuppressWarnings("unchecked")
                             public <T> T argument(String name, Class<T> type) {
                                 Object value = null;
                                 if (type == String.class) {
@@ -65,10 +78,11 @@ public final class CommandRegistrationBridge {
                                     var playerName = ctx.getArgument(name, String.class);
                                     value = plugin.getServer().getPlayerExact(playerName);
                                 }
-                                return type.cast(value);
+                                return (T) value;
                             }
-                        }, instance);
-                        instance.execute(new CommandContext(ctx.getSource().getSender()));
+                        };
+                        ArgumentInjector.inject(runtimeCtx, instance);
+                        ((sh.harold.fulcrum.command.CommandExecutor) instance).execute(runtimeCtx);
                         return 1;
                     } catch (Exception e) {
                         plugin.getLogger().warning("Failed to execute command: " + e.getMessage());
@@ -79,7 +93,7 @@ public final class CommandRegistrationBridge {
                 var rootNode = ((LiteralArgumentBuilder<CommandSourceStack>) argBuilder).build();
                 event.registrar().register(rootNode);
 
-                for (var alias : def.aliases()) {
+                for (String alias : def.aliases()) {
                     event.registrar().register(
                         LiteralArgumentBuilder.<CommandSourceStack>literal(alias).redirect(rootNode).build()
                     );
