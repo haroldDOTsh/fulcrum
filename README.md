@@ -1,207 +1,106 @@
-# Fulcrum - Modular Minecraft Spigot Plugin System
+# Eternum Core Technical Overview
 
-Fulcrum is a multi-module Gradle project providing a modular API system for Minecraft Spigot plugins. It features a styled messaging system with automatic translation management, statistics tracking, and data persistence.
+This document provides a technical overview of the Eternum Core project, a multi-module Java project for Minecraft
+plugin development.
 
-## Quick Start - Messaging API
+## High-Level Architecture
 
-```java
-import sh.harold.fulcrum.message.Message;
-import sh.harold.fulcrum.message.GenericResponse;
+The project follows a modular architecture that separates concerns into distinct API and implementation modules. This
+design promotes loose coupling, reusability, and platform independence for the core data logic.
 
-// Direct messages (immediate send)
-Message.success(playerId, "banking.deposit.success", 1000, "coins");
-Message.info(playerId, "player.balance.current", 15750);
-Message.error(playerId, GenericResponse.NO_PERMISSION);
+* **API-First Design:** The project is split into `api` and `core` modules. The `api` modules define interfaces and data
+  structures, while the `core` module provides the concrete implementation for the Minecraft server environment.
+* **Dependency Flow:** The dependencies flow from the implementation to the APIs: `player-core` -> `data-api` ->
+  `message-api`. This ensures that the API modules remain independent of any specific Minecraft platform.
+* **Platform-Agnostic APIs:** The `message-api` and `data-api` modules are platform-agnostic, containing no references
+  to Minecraft-specific libraries like Spigot or Paper.
+* **Extensible Backend System:** The `data-api` uses an extensible backend system, allowing for different database
+  technologies (SQL, MongoDB, JSON) to be used for data storage.
 
-// Tagged messages (require .send())
-Message.success(playerId, "admin.command.reload")
-    .staff()
-    .system()
-    .send();
+## Module Map
 
-// Broadcasting
-Message.broadcastInfo("server.restart.warning", 5)
-    .system()
-    .send();
+The project consists of the following Gradle modules:
+
+```mermaid
+graph TD
+    subgraph Project Structure
+        A[player-core] --> B(data-api)
+        B --> C(message-api)
+    end
 ```
 
-## Project Structure
+| Module            | Purpose                                                                          | Key Packages & Classes                                                             | Dependencies  |
+|:------------------|:---------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------|:--------------|
+| **`message-api`** | A platform-agnostic library for creating and sending styled messages to players. | `sh.harold.fulcrum.message`                                                        | None          |
+| **`data-api`**    | A platform-agnostic API for managing persistent player data.                     | `sh.harold.fulcrum.api`, `sh.harold.fulcrum.backend`, `sh.harold.fulcrum.registry` | `message-api` |
+| **`player-core`** | The main Minecraft (Paper) plugin that implements the APIs.                      | `sh.harold.fulcrum.playerdata`, `sh.harold.fulcrum.core`                           | `data-api`    |
 
-```
-fulcrum/
-├── internal-core/            # Main Spigot plugin
-├── message-api/              # Styled messaging with tags
-├── stats-api/                # Statistics tracking
-├── data-api/                 # Data persistence
-└── MESSAGING_API.md          # Detailed messaging documentation
-```
+---
 
-### stats-api
-Provides a flexible statistics system similar to Hypixel SkyBlock:
-- `StatType` enum defines available stat types (damage, health, defense, etc.)
-- `StatProvider` interface allows different sources to contribute stat values
-- `StatService` interface manages providers and calculates total stats
+### 1. `message-api`
 
-### message-api
-A templated messaging system for consistent player communication:
-- `MessageKey` enum defines common message keys
-- `MessageService` interface handles formatting, localization, and parameter replacement
-- Supports multiple languages and custom message templates
+This module provides a fluent API for building complex, translatable, and styleable messages.
 
-### data-api
-A lightweight ORM-like system for data persistence:
-- `DataModel` interface defines the base structure for data objects
-- `DataService` interface provides async/sync save/load operations
-- Supports JSON/YAML serialization with caching
+* **Purpose:** To abstract away the complexities of Minecraft's chat component system and provide a simple, unified way
+  to send messages.
+* **Key Features:**
+    * **Builder Pattern:** `MessageBuilder` provides a fluent interface for constructing messages with text, colors, and
+      styles.
+    * **Localization:** `TranslationUtil` supports internationalization (i18n) through key-based translation lookups.
+    * **Styling:** `MessageStyle` and `ColorUtil` allow for applying colors and text decorations.
+* **File Layout:**
+    * `src/main/java/sh/harold/fulcrum/message/`: Core message classes.
+    * `src/main/java/sh/harold/fulcrum/message/util/`: Utility classes for color and translation.
 
-## Building the Project
+---
 
-```bash
-# Build all modules
-./gradlew build
+### 2. `data-api`
 
-# Build the main plugin (creates a shaded JAR)
-./gradlew :internal-core:shadowJar
+This is the heart of the data management system. It defines a complete abstraction layer for player data persistence.
 
-# Clean and build
-./gradlew clean build
-```
+* **Purpose:** To provide a consistent and extensible way to store and retrieve player data, regardless of the
+  underlying storage technology or server platform.
+* **Key Architectural Decisions:**
+    * **Data-Access-Object (DAO) Pattern:** The `PlayerProfile` class acts as a DAO, representing a player's data and
+      providing methods to access and modify it.
+    * **Schema Definition via Annotations:** The API uses annotations like `@Table`, `@Column`, and `@ForeignKey` to
+      define the database schema from plain Java objects (POJOs). The `AutoTableSchema` class processes these
+      annotations to create the necessary database tables.
+    * **Storage Backend Abstraction:** The `PlayerDataBackend` interface defines a contract for storage implementations.
+      The project provides several backends out-of-the-box:
+        * `JsonFileBackend`: Stores data in local JSON files.
+        * `SqlDataBackend`: Stores data in a SQL database, with `SqliteDialect` and `PostgresDialect` for different
+          database systems.
+        * `MongoDataBackend`: Stores data in a MongoDB collection.
+    * **Registry and Manager Classes:**
+        * `PlayerDataRegistry`: Manages the registration of data schemas.
+        * `PlayerProfileManager`: Manages the lifecycle of `PlayerProfile` objects.
+        * `PlayerStorageManager`: Manages the underlying storage backends.
+* **File Layout:**
+    * `src/main/java/sh/harold/fulcrum/api/`: Annotations and interfaces for defining data schemas.
+    * `src/main/java/sh/harold/fulcrum/backend/`: Implementations of the different storage backends.
+    * `src/main/java/sh/harold/fulcrum/registry/`: Classes for managing data schemas and player profiles.
 
-The main plugin JAR will be created at `internal-core/build/libs/internal-core-1.0.0.jar`.
+---
 
-## Usage Examples
+### 3. `player-core`
 
-### Using the Stats API
+This module is the concrete implementation of the APIs for the Paper Minecraft server platform.
 
-```java
-// Get the stat service
-StatService statService = FulcrumPlugin.getStatService();
-
-// Register a stat provider
-statService.registerProvider(new MyStatProvider());
-
-// Calculate a player's total damage stat
-UUID playerId = player.getUniqueId();
-double totalDamage = statService.calculateStat(playerId, StatType.DAMAGE);
-
-// Get detailed breakdown
-Map<String, Double> breakdown = statService.getStatBreakdown(playerId, StatType.DAMAGE);
-```
-
-### Using the Message API
-
-```java
-import sh.harold.fulcrum.message.Message;
-import sh.harold.fulcrum.message.GenericResponse;
-
-// Direct messages (immediate send)
-Message.success(playerId, "banking.deposit.success", 1000, "coins");
-Message.info(playerId, "player.balance.current", 15750);
-Message.error(playerId, GenericResponse.NO_PERMISSION);
-
-// Tagged messages (require .send())
-Message.success(playerId, "admin.command.reload")
-    .staff()
-    .system()
-    .send();
-
-Message.info(playerId, "server.maintenance.scheduled", "2 hours")
-    .system()
-    .send();
-
-// Broadcasting
-Message.broadcastInfo("server.restart.warning", 5)
-    .system()
-    .send();
-```
-
-### Using the Data API
-
-```java
-// Get the data service
-DataService dataService = FulcrumPlugin.getDataService();
-
-// Load player data asynchronously
-dataService.load(playerId, PlayerData.class)
-    .thenAccept(optionalData -> {
-        PlayerData data = optionalData.orElseGet(() -> {
-            PlayerData newData = dataService.create(playerId, PlayerData.class);
-            newData.setDisplayName(player.getName());
-            return newData;
-        });
-        
-        // Modify data
-        data.setLastSeen(System.currentTimeMillis());
-        
-        // Save data
-        dataService.save(data);
-    });
-
-// Synchronous operations (use sparingly)
-Optional<PlayerData> data = dataService.loadSync(playerId, PlayerData.class);
-```
-
-## Static Accessors
-
-Other plugins can access Fulcrum services through static methods:
-
-```java
-// Check if Fulcrum is loaded
-if (FulcrumPlugin.isLoaded()) {
-    StatService stats = FulcrumPlugin.getStatService();
-    MessageService messages = FulcrumPlugin.getMessageService();
-    DataService data = FulcrumPlugin.getDataService();
-}
-```
-
-## Adding Dependencies
-
-To use Fulcrum APIs in your own plugin, add the API modules as dependencies:
-
-```kotlin
-dependencies {
-    compileOnly("sh.harold.fulcrum:stats-api:1.0.0")
-    compileOnly("sh.harold.fulcrum:message-api:1.0.0")
-    compileOnly("sh.harold.fulcrum:data-api:1.0.0")
-}
-```
-
-Then ensure your plugin depends on Fulcrum in your `plugin.yml`:
-
-```yaml
-depend: [Fulcrum]
-```
-
-## Requirements
-
-- Java 21
-- Spigot 1.21.6+
-- Gradle 8.0+
-
-## Message Styles & Tags
-
-The messaging system provides consistent styling:
-
-| Style | Colors | Usage |
-|-------|--------|-------|
-| SUCCESS | Green base, Yellow args | Successful operations |
-| INFO | Gray base, Aqua args | Information messages |
-| DEBUG | Dark gray all | Debug output |
-| ERROR | Red all | Error messages |
-
-Available tags:
-- `.staff()` - `&c[STAFF]&r` - Staff actions
-- `.daemon()` - `&5[DAEMON]&r` - System processes  
-- `.debug()` - `&8[DEBUG]&r` - Debug information
-- `.system()` - `&b[SYSTEM]&r` - System messages
-
-Translation keys follow `feature.detail.detail` format and create files at `/plugins/internal-core/lang/{feature}/en_us.yml`.
-
-## Documentation
-
-- `MESSAGING_API.md` - Complete messaging API documentation
-- `copilot-instructions.md` - AI assistant integration guide
-
-## License
-
-This project is provided as an example implementation. Modify as needed for your specific use case.
+* **Purpose:** To integrate the `data-api` with a running Minecraft server, handle player lifecycle events, and provide
+  commands for administration.
+* **Entry Point:** The `sh.harold.fulcrum.PlayerDataPlugin` class is the main plugin entry point, extending
+  `JavaPlugin`.
+* **Wiring and Initialization:**
+    1. On plugin startup, `PlayerDataPlugin` reads the `database-config.yml` file to determine which storage backend to
+       use.
+    2. It instantiates the appropriate `PlayerDataBackend` (e.g., `SqlDataBackend`).
+    3. The `StorageManager` is initialized with the chosen backend.
+    4. The `PlayerDataLifecycleListener` is registered to listen for player join and quit events, which triggers the
+       loading and saving of `PlayerProfile` objects.
+* **Platform-Specific Logic:** This module contains all the Paper-specific code, such as event listeners, command
+  executors, and references to the Bukkit/Paper API.
+* **File Layout:**
+    * `src/main/java/sh/harold/fulcrum/playerdata/`: The main plugin class and event listeners.
+    * `src/main/java/sh/harold/fulcrum/core/`: Core plugin logic, including the `StorageManager`.
+    * `src/main/resources/`: Plugin configuration files (`plugin.yml`, `database-config.yml`).

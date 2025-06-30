@@ -1,122 +1,296 @@
-# Fulcrum Messaging API
+# Fulcrum Message API: A Developer's Guide
 
-Consistent styled messaging system with automatic localization, file management, and chainable tags.
+The Fulcrum Message API provides a powerful, standardized system for sending styled, localizable messages to players.
+It's designed to be simple to use while handling all the complexity of translation management, formatting, and styling
+behind the scenes.
 
-## Features
+This guide is documentation-by-example. Less talk, more code.
 
-- Predefined message styles (SUCCESS, INFO, DEBUG, ERROR, RAW)
-- Automatic translation file creation and management
-- Chainable message tags for prefixes
-- Legacy color code to Adventure Component conversion
-- Namespaced translation keys with organized file structure
+---
 
-## Basic Usage
+## 1. Setup for Plugin Developers
 
-```java
-import sh.harold.fulcrum.message.Message;
-import sh.harold.fulcrum.message.GenericResponse;
+To use the `message-api` in your plugin, you only need to do two things.
 
-UUID playerId = player.getUniqueId();
+### 1.1. Add the API to Your Build
 
-// Direct send (immediate)
-Message.success(playerId, "banking.deposit.success", 1000, "coins");
-Message.info(playerId, "player.balance.current", 15750);
-Message.debug(playerId, "debug.profile.current", "hardcore");
-Message.error(playerId, "economy.insufficient_funds", 1000, 750);
-Message.error(playerId, GenericResponse.NO_PERMISSION);
-Message.raw(playerId, "custom.rainbow.message", "awesome");
+Add `message-api` as a dependency in your `build.gradle.kts` or `build.gradle` file.
 
-// Chain with tags (requires .send())
-Message.success(playerId, "admin.command.executed", "reload")
-    .staff()
-    .system()
-    .send();
+**`build.gradle.kts` (Kotlin DSL)**
 
-Message.info(playerId, "server.status.update", "online")
-    .daemon()
-    .send();
-
-Message.debug(playerId, "performance.metrics", 85.2)
-    .debug()
-    .send();
-
-// Broadcasting
-Message.broadcastSuccess("server.event.started", "PvP Tournament");
-Message.broadcastInfo("server.restart.warning", 5)
-    .system()
-    .send();
-```
-
-## Message Styles
-
-| Style | Base Color | Arg Color | Usage |
-|-------|------------|-----------|-------|
-| SUCCESS | `&a` Green | `&e` Yellow | Successful operations |
-| INFO | `&7` Gray | `&b` Aqua | Informational messages |
-| DEBUG | `&8` Dark Gray | `&8` Dark Gray | Debug information |
-| ERROR | `&c` Red | `&c` Red | Error messages |
-| RAW | Custom | Custom | Uses translation file colors |
-
-## Available Tags
-
-| Tag | Prefix | Usage |
-|-----|--------|-------|
-| `.staff()` | `&c[STAFF]&r` | Staff-only actions |
-| `.daemon()` | `&5[DAEMON]&r` | System/daemon processes |
-| `.debug()` | `&8[DEBUG]&r` | Debug information |
-| `.system()` | `&b[SYSTEM]&r` | System messages |
-
-## Translation Keys
-
-Format: `feature.detail.detail`
-
-- `banking.deposit.success` → `/plugins/internal-core/lang/banking/en_us.yml`
-- `player.balance.current` → `/plugins/internal-core/lang/player/en_us.yml`
-- `admin.command.executed` → `/plugins/internal-core/lang/admin/en_us.yml`
-
-## File Structure
-
-```
-/plugins/internal-core/lang/
-├── banking/en_us.yml
-├── player/en_us.yml
-└── admin/en_us.yml
-```
-
-Example `banking/en_us.yml`:
-```yaml
-deposit:
-  success: "Successfully deposited {0} {1}!"
-withdraw:
-  success: "Successfully withdrew {0} {1}!"
-```
-
-## Setup
-
-```java
-public class YourPlugin extends JavaPlugin {
-    @Override
-    public void onEnable() {
-        MessageService messageService = new FulcrumMessageService(this);
-        Message.setMessageService(messageService);
-    }
+```kotlin
+dependencies {
+    compileOnly("sh.harold.fulcrum:message-api:1.0-SNAPSHOT") // Replace with the latest version
 }
 ```
 
-## Generic Responses
+**`build.gradle` (Groovy DSL)**
 
-```java
-GenericResponse.GENERIC_ERROR      // "An error occurred!"
-GenericResponse.NO_PERMISSION      // "You don't have permission!"
-GenericResponse.PLAYER_NOT_FOUND   // "Player not found!"
-GenericResponse.INVALID_ARGUMENT   // "Invalid argument!"
-GenericResponse.INSUFFICIENT_FUNDS // "Not enough money!"
+```groovy
+dependencies {
+    compileOnly 'sh.harold.fulcrum:message-api:1.0-SNAPSHOT' // Replace with the latest version
+}
 ```
 
-## Important Notes
+### 1.2. Declare a Dependency on the Core Plugin
 
-- Direct calls (`Message.success()`) send immediately
-- Chained calls require `.send()` to actually send the message
-- Translation files are created automatically with placeholders
-- Arguments use `{0}`, `{1}`, `{2}` format in translation files
-- Legacy color codes are converted to Adventure Components automatically
+Add `FulcrumPlayerData` to the `depend` list in your `plugin.yml` file. This is critical, as it ensures the message
+service is running before your plugin loads.
+
+**`plugin.yml`**
+
+```yaml
+name: MyAwesomePlugin
+version: 1.0
+main: com.example.myplugin.MyPlugin
+depend: [ FulcrumPlayerData ]
+```
+
+That's it! You do **not** need to register or initialize the `MessageService` yourself. You can now use the `Message`
+facade anywhere in your plugin.
+
+---
+
+## 2. Sending Messages to Players
+
+All messages are sent using the `Message` facade. You provide a localization key and any arguments to fill in. The
+system automatically handles finding the right translation for the player's locale.
+
+### 2.1. Basic Styled Messages
+
+These methods send a message immediately.
+
+```java
+import sh.harold.fulcrum.api.message.Message;
+
+import java.util.UUID;
+
+UUID playerId = player.getUniqueId();
+
+// Success Message
+// -> lang/en_US/banking.yml: "You successfully deposited $1,000.00 into your account."
+Message.
+
+success("banking.deposit.success")
+    .
+
+arg("$1,000.00")
+    .
+
+send(playerId);
+
+// Informational Message
+// -> lang/en_US/skills.yml: "Your Woodcutting level is now 50."
+Message.
+
+info("skills.levelup")
+    .
+
+arg(50)
+    .
+
+send(playerId);
+
+// Error Message
+// -> lang/en_US/generic.yml: "You do not have permission to do that."
+Message.
+
+error("generic.no_permission").
+
+send(playerId);
+
+// Debug Message (often for developers/admins)
+// -> lang/en_US/debug.yml: "Player data for Notch saved successfully."
+Message.
+
+debug("debug.player.data_saved")
+    .
+
+arg("Notch")
+    .
+
+send(playerId);
+
+// Raw Message (uses colors from the translation file)
+// -> lang/en_US/custom.yml: "<gold>A <bold><red>DRAGON</red></bold> has appeared!"
+Message.
+
+raw("custom.dragon_event").
+
+send(playerId);
+```
+
+### 2.2. Using Pre-defined `GenericResponse` Enums
+
+For common situations, you can use an enum instead of a key.
+
+```java
+import sh.harold.fulcrum.api.message.Message;
+import sh.harold.fulcrum.api.message.GenericResponse;
+
+import java.util.UUID;
+
+UUID playerId = player.getUniqueId();
+
+// -> lang/en_US/generic.yml: "An unknown error occurred."
+Message.
+
+error(playerId, GenericResponse.ERROR);
+```
+
+---
+
+## 3. Chaining Tags for Prefixes
+
+You can chain tags to a message to add prefixes. Chained messages require `.send()` to be called.
+
+```java
+import sh.harold.fulcrum.api.message.Message;
+
+import java.util.UUID;
+
+UUID playerId = player.getUniqueId();
+
+// [SYSTEM] [STAFF] The server is restarting in 5 minutes.
+Message.
+
+info("server.restart_warning")
+    .
+
+arg(5)
+    .
+
+system() // Adds a [SYSTEM] prefix
+    .
+
+staff()  // Adds a [STAFF] prefix
+    .
+
+send(playerId);
+
+// [DAEMON] Purged 2,450 old records from the database.
+Message.
+
+success("database.purge.complete")
+    .
+
+arg("2,450")
+    .
+
+daemon()
+    .
+
+send(playerId);
+```
+
+### Available Tags
+
+| Method      | Resulting Prefix |
+|-------------|------------------|
+| `.system()` | `[SYSTEM]`       |
+| `.staff()`  | `[STAFF]`        |
+| `.daemon()` | `[DAEMON]`       |
+| `.debug()`  | `[DEBUG]`        |
+
+---
+
+## 4. Broadcasting Messages
+
+Broadcasting sends a message to all online players. The syntax is identical to sending a message to a single player.
+
+```java
+import sh.harold.fulcrum.api.message.Message;
+
+// Broadcasts a success message to everyone.
+// -> "The 'Summer Festival' event has started!"
+Message.success("event.start").
+arg("Summer Festival")
+    .
+
+broadcast();
+
+// Broadcasts a tagged message.
+// -> "[SYSTEM] The server will be going down for maintenance in 1 hour."
+Message.
+
+info("server.maintenance")
+    .
+
+arg("1 hour")
+    .
+
+system()
+    .
+
+broadcast();
+```
+
+---
+
+## 5. Getting a Message as a Component
+
+If you need to use a message in a GUI, scoreboard, or other custom component, you can get the formatted `Component`
+object instead of sending it.
+
+```java
+import sh.harold.fulcrum.api.message.Message;
+import net.kyori.adventure.text.Component;
+
+import java.util.UUID;
+
+UUID playerId = player.getUniqueId();
+
+// Get a formatted component for the player's locale.
+Component motd = Message.raw("server.motd")
+        .arg(player.getName())
+        .get(playerId);
+
+// You can now use the 'motd' component wherever you need it.
+player.
+
+sendPlayerListHeader(motd);
+```
+
+---
+
+## 6. Localization (`lang`) Files
+
+The message system is built around localization files. `player-core` automatically creates and manages these for you.
+
+### 6.1. Key Structure
+
+Message keys are namespaces that map directly to a file path.
+
+- `banking.deposit.success` → `lang/en_US/banking.yml`
+- `skills.levelup` → `lang/en_US/skills.yml`
+- `generic.no_permission` → `lang/en_US/generic.yml`
+
+### 6.2. File Structure Example
+
+The `lang` folder is located inside the `player-core` plugin directory.
+
+```
+/plugins/FulcrumPlayerData/
+└── lang/
+    └── en_US/
+        ├── banking.yml
+        ├── skills.yml
+        └── generic.yml
+```
+
+### 6.3. Example Translation File
+
+Arguments in the file are referenced using `{0}`, `{1}`, `{2}`, etc.
+
+**`lang/en_US/banking.yml`**
+
+```yaml
+deposit:
+  success: "You successfully deposited <yellow>{0}</yellow> into your account."
+  insufficient_funds: "<red>You cannot withdraw {0}, you only have {1}.</red>"
+withdraw:
+  success: "You withdrew <yellow>{0}</yellow>."
+```
+
+If you use a key that doesn't exist (e.g., `banking.transfer.failed`), the system will **automatically add it** to the
+correct file with a placeholder message, making it easy to add new messages.
