@@ -1,19 +1,16 @@
 package sh.harold.fulcrum.command;
 
-import com.mojang.brigadier.suggestion.Suggestions;
-import com.mojang.brigadier.context.CommandContext;
-import org.bukkit.command.CommandSender;
-import org.bukkit.entity.Player;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.logging.Logger;
 
 public final class SuggestionResolver {
     private static final Logger LOGGER = Logger.getLogger(SuggestionResolver.class.getName());
 
-    private SuggestionResolver() {}
+    private SuggestionResolver() {
+    }
 
     public static SuggestionProviderAdapter resolve(Field field, Object executor) {
         sh.harold.fulcrum.command.Suggestions suggestions = field.getAnnotation(sh.harold.fulcrum.command.Suggestions.class);

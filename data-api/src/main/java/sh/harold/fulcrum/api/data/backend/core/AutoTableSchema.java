@@ -3,7 +3,10 @@ package sh.harold.fulcrum.api.data.backend.core;
 import sh.harold.fulcrum.api.data.annotation.Column;
 import sh.harold.fulcrum.api.data.annotation.PrimaryKeyGeneration;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
-import sh.harold.fulcrum.api.data.impl.*;
+import sh.harold.fulcrum.api.data.impl.ForeignKey;
+import sh.harold.fulcrum.api.data.impl.SchemaVersion;
+import sh.harold.fulcrum.api.data.impl.Table;
+import sh.harold.fulcrum.api.data.impl.TableSchema;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 
 import java.lang.reflect.Field;
@@ -102,7 +105,8 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         // Validate PK generation for UUID
         Field pkField = fieldMap.get(pkInfo.name);
         if (pkField.getType() == UUID.class) {
-            if (pkInfo.generation == null) throw new IllegalStateException("Primary key UUID field must specify generation mode");
+            if (pkInfo.generation == null)
+                throw new IllegalStateException("Primary key UUID field must specify generation mode");
             // NONE is allowed, but must be set manually at save time
         }
         this.primaryKey = pkInfo;

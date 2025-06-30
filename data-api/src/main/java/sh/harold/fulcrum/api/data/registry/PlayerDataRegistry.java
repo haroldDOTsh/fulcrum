@@ -16,7 +16,7 @@ public final class PlayerDataRegistry {
         schemaBackends.put(schema, backend);
         // Automatic SQL table creation and schema version enforcement
         if (schema instanceof sh.harold.fulcrum.api.data.backend.core.AutoTableSchema<?> autoSchema &&
-            backend instanceof sh.harold.fulcrum.api.data.backend.sql.SqlDataBackend sqlBackend) {
+                backend instanceof sh.harold.fulcrum.api.data.backend.sql.SqlDataBackend sqlBackend) {
             try {
                 autoSchema.ensureTableAndVersion(sqlBackend.getConnection());
             } catch (Exception e) {

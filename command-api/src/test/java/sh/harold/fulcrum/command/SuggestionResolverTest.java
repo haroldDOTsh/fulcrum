@@ -1,13 +1,14 @@
 package sh.harold.fulcrum.command;
 
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assertions;
-import java.lang.reflect.Field;
-import java.util.List;
-import sh.harold.fulcrum.command.testdata.StaticExample;
+import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.command.testdata.BadExample;
 import sh.harold.fulcrum.command.testdata.DynamicExample;
 import sh.harold.fulcrum.command.testdata.EnumExample;
-import sh.harold.fulcrum.command.testdata.BadExample;
+import sh.harold.fulcrum.command.testdata.StaticExample;
+
+import java.lang.reflect.Field;
+import java.util.List;
 
 class SuggestionResolverTest {
     @Test
@@ -17,6 +18,7 @@ class SuggestionResolverTest {
         List<String> suggestions = SuggestionResolver.resolveValues(field, ex);
         Assertions.assertTrue(suggestions.contains("ADMIN"));
     }
+
     @Test
     void dynamicSuggestionsTest() throws Exception {
         var ex = new DynamicExample();
@@ -24,6 +26,7 @@ class SuggestionResolverTest {
         List<String> suggestions = SuggestionResolver.resolveValues(field, ex);
         Assertions.assertTrue(suggestions.contains("Alice"));
     }
+
     @Test
     void enumFallbackTest() throws Exception {
         var ex = new EnumExample();
@@ -31,6 +34,7 @@ class SuggestionResolverTest {
         List<String> suggestions = SuggestionResolver.resolveValues(field, ex);
         Assertions.assertTrue(suggestions.contains("A")); // assuming EnumExample.Mode.A exists
     }
+
     @Test
     void missingMethodTest() throws Exception {
         var ex = new BadExample();

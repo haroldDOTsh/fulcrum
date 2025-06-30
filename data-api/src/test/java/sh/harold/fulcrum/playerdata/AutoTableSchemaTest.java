@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.annotation.Column;
+import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.impl.SchemaVersion;
 import sh.harold.fulcrum.api.data.impl.Table;
 

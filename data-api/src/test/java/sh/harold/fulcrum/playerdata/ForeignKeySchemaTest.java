@@ -2,12 +2,12 @@ package sh.harold.fulcrum.playerdata;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.data.annotation.Column;
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.backend.sql.PostgresDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialectProvider;
 import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
-import sh.harold.fulcrum.api.data.annotation.Column;
 import sh.harold.fulcrum.api.data.impl.ForeignKey;
 import sh.harold.fulcrum.api.data.impl.Table;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;

@@ -1,9 +1,11 @@
 package sh.harold.fulcrum.command;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.command.annotations.*;
+import sh.harold.fulcrum.command.annotations.Aliases;
+import sh.harold.fulcrum.command.annotations.Command;
+import sh.harold.fulcrum.command.annotations.Rank;
+import sh.harold.fulcrum.command.annotations.RankLevel;
 
-import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -13,7 +15,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @Rank(RankLevel.ADMIN)
 class TestCommand implements CommandExecutor {
     @Override
-    public void execute(CommandContext ctx) {}
+    public void execute(CommandContext ctx) {
+    }
 }
 
 public class CommandScannerTest {
@@ -30,7 +33,8 @@ public class CommandScannerTest {
 
     @Test
     void testScanIgnoresNonCommand() {
-        class NotACommand {}
+        class NotACommand {
+        }
         var defs = CommandScanner.scan(Set.of(NotACommand.class));
         assertTrue(defs.isEmpty());
     }

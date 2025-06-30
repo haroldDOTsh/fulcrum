@@ -27,10 +27,12 @@ dependencies {
     // Other runtime deps
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
     implementation("org.yaml:snakeyaml:2.2")
+    implementation("io.github.classgraph:classgraph:4.8.173")
 
     // (Optional test setup)
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation(project(":command-api"))
 }
 
 val targetJavaVersion = 21
