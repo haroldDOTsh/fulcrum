@@ -12,8 +12,10 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
     // JUnit 5 for testing
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    // Paper API for test classpath (for CommandSender)
+    testImplementation("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
     // MockBukkit for Bukkit API mocking
-    implementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.59.0")
+    //implementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.59.0")
 }
 
 java {
