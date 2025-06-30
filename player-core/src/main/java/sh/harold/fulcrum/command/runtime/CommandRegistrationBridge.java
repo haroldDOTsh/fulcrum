@@ -19,11 +19,12 @@ public final class CommandRegistrationBridge {
             for (var def : definitions) {
                 LiteralCommandNode<CommandSourceStack> rootNode = LiteralArgumentBuilder
                     .<CommandSourceStack>literal(def.name())
-                    .requires(src -> src.getBukkitSender().hasPermission("command." + def.name()))
+                    .requires(src -> src.getSender().hasPermission("command." + def.name())) // vanilla-compatible permission check
                     .executes(ctx -> {
                         try {
                             var instance = def.implementationClass().getDeclaredConstructor().newInstance();
-                            instance.execute(new CommandContext(ctx.getSource().getBukkitSender()));
+                            // Use getSender() for vanilla parity (Audience, not just Bukkit)
+                            instance.execute(new CommandContext(ctx.getSource().getSender()));
                             return 1;
                         } catch (Exception e) {
                             plugin.getLogger().warning("Failed to execute command: " + e.getMessage());
