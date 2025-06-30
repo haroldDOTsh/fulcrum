@@ -1,13 +1,11 @@
 package sh.harold.fulcrum.command;
 
-import java.lang.reflect.Field;
-import java.util.Objects;
-
 /**
  * Injects command arguments into fields annotated with @Argument in a CommandExecutor.
  */
 public final class ArgumentInjector {
-    private ArgumentInjector() {}
+    private ArgumentInjector() {
+    }
 
     public static void inject(CommandContext ctx, CommandExecutor executor) {
         java.util.Objects.requireNonNull(ctx);
