@@ -19,6 +19,7 @@ repositories {
 dependencies {
     implementation(project(":data-api"))
     implementation(project(":message-api"))
+    implementation(project(":command-api"))
 
     // Paper API
     compileOnly("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
@@ -81,6 +82,7 @@ tasks.named<ShadowJar>("shadowJar") {
 
     relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
     relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
+    relocate("sh.harold.fulcrum.api.command", "sh.harold.internal.api.command")
 }
 
 
