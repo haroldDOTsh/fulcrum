@@ -10,5 +10,6 @@ pluginManagement {
 include(
     "message-api",
     "data-api",
-    "player-core"
+    "player-core",
+    "command-api"
 )
