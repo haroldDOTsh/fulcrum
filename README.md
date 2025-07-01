@@ -89,7 +89,7 @@ This module is the concrete implementation of the APIs for the Paper Minecraft s
 
 * **Purpose:** To integrate the `data-api` with a running Minecraft server, handle player lifecycle events, and provide
   commands for administration.
-* **Entry Point:** The `sh.harold.fulcrum.PlayerDataPlugin` class is the main plugin entry point, extending
+* **Entry Point:** The `sh.harold.fulcrum.FulcrumPlugin` class is the main plugin entry point, extending
   `JavaPlugin`.
 * **Wiring and Initialization:**
     1. On plugin startup, `PlayerDataPlugin` reads the `database-config.yml` file to determine which storage backend to
