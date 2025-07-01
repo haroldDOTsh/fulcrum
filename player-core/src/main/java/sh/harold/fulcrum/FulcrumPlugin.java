@@ -8,9 +8,7 @@ import sh.harold.fulcrum.feature.identity.IdentityFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
 
-import java.awt.*;
-
-public final class PlayerDataPlugin extends JavaPlugin {
+public final class FulcrumPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
