@@ -1,5 +1,9 @@
 package sh.harold.fulcrum.command;
 
+import sh.harold.fulcrum.command.annotations.Suggestions;
+import io.papermc.paper.command.brigadier.CommandSourceStack;
+import net.kyori.adventure.audience.Audience;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -9,32 +13,38 @@ import java.util.logging.Logger;
 public final class SuggestionResolver {
     private static final Logger LOGGER = Logger.getLogger(SuggestionResolver.class.getName());
 
-    private SuggestionResolver() {
-    }
+    private SuggestionResolver() {}
 
+    /**
+     * Resolves a suggestion provider for a command argument field, using only Paper API and Adventure Audience.
+     * The suggestion method should accept either no arguments (static) or an Audience (dynamic).
+     */
     public static SuggestionProviderAdapter resolve(Field field, Object executor) {
-        sh.harold.fulcrum.command.Suggestions suggestions = field.getAnnotation(sh.harold.fulcrum.command.Suggestions.class);
+        Suggestions suggestions = field.getAnnotation(Suggestions.class);
         Class<?> type = field.getType();
         if (suggestions == null) {
-            // Fallback for known types is handled in player-core, so just return null here
+            // No suggestions specified
             return null;
         }
-        // Custom suggestions
         String methodName = suggestions.value();
         boolean dynamic = suggestions.dynamic();
         try {
-            java.lang.reflect.Method method;
+            Method method;
             if (dynamic) {
-                method = executor.getClass().getMethod(methodName, org.bukkit.command.CommandSender.class);
+                // Dynamic: method(Audience)
+                method = executor.getClass().getMethod(methodName, Audience.class);
             } else {
+                // Static: method()
                 method = executor.getClass().getMethod(methodName);
             }
             if (dynamic) {
                 return (ctx, builder) -> {
-                    org.bukkit.command.CommandSender sender = (org.bukkit.command.CommandSender) ctx.getSource();
+                    // CommandSourceStack is the Paper context for Brigadier
+                    CommandSourceStack sourceStack = (CommandSourceStack) ctx.getSource();
+                    Audience audience = (Audience) sourceStack.getSender();
                     try {
                         @SuppressWarnings("unchecked")
-                        java.util.List<String> result = (java.util.List<String>) method.invoke(executor, sender);
+                        List<String> result = (List<String>) method.invoke(executor, audience);
                         result.forEach(builder::suggest);
                         return builder.buildFuture();
                     } catch (Exception e) {
@@ -44,7 +54,7 @@ public final class SuggestionResolver {
                 };
             } else {
                 @SuppressWarnings("unchecked")
-                java.util.List<String> staticList = (java.util.List<String>) method.invoke(executor);
+                List<String> staticList = (List<String>) method.invoke(executor);
                 return (ctx, builder) -> {
                     staticList.forEach(builder::suggest);
                     return builder.buildFuture();
@@ -58,9 +68,12 @@ public final class SuggestionResolver {
         return null;
     }
 
-    // Library-agnostic suggestion resolver for testing
+    /**
+     * Library-agnostic suggestion resolver for testing (static only, no Bukkit).
+     * Only supports static suggestion methods or enum fallback.
+     */
     static List<String> resolveValues(Field field, Object executor) {
-        sh.harold.fulcrum.command.Suggestions suggestions = field.getAnnotation(sh.harold.fulcrum.command.Suggestions.class);
+        Suggestions suggestions = field.getAnnotation(Suggestions.class);
         Class<?> type = field.getType();
         if (suggestions != null) {
             String methodName = suggestions.value();
@@ -68,8 +81,8 @@ public final class SuggestionResolver {
             try {
                 Method method;
                 if (dynamic) {
-                    method = executor.getClass().getMethod(methodName, org.bukkit.command.CommandSender.class);
-                    // For test, just pass null as sender
+                    // For test, just pass null as Audience
+                    method = executor.getClass().getMethod(methodName, Audience.class);
                     @SuppressWarnings("unchecked")
                     List<String> result = (List<String>) method.invoke(executor, (Object) null);
                     return result;

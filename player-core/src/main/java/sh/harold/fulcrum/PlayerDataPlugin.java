@@ -11,6 +11,7 @@ public final class PlayerDataPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        sh.harold.fulcrum.command.runtime.FulcrumCommandsBootstrap.bootstrap(this);
         FeatureManager.register(new PlayerDataFeature());
         FeatureManager.register(new MessageFeature());
         FeatureManager.register(new IdentityFeature());

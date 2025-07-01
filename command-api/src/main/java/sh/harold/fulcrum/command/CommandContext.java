@@ -1,16 +1,23 @@
 package sh.harold.fulcrum.command;
 
-import org.bukkit.command.CommandSender;
+import io.papermc.paper.command.brigadier.CommandSourceStack;
+import net.kyori.adventure.audience.Audience;
 
 public class CommandContext {
-    private final CommandSender sender;
+    private final CommandSourceStack sourceStack;
+    private final Audience audience;
 
-    public CommandContext(CommandSender sender) {
-        this.sender = sender;
+    public CommandContext(CommandSourceStack sourceStack) {
+        this.sourceStack = sourceStack;
+        this.audience = sourceStack.getSender();
     }
 
-    public CommandSender getSender() {
-        return sender;
+    public CommandSourceStack getSourceStack() {
+        return sourceStack;
+    }
+
+    public Audience getAudience() {
+        return audience;
     }
 
     /**

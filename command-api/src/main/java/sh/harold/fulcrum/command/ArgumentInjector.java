@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.command;
 
+import sh.harold.fulcrum.command.annotations.Argument;
+
 /**
  * Injects command arguments into fields annotated with @Argument in a CommandExecutor.
  */
