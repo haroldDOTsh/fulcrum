@@ -3,19 +3,23 @@ package sh.harold.fulcrum;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
-import sh.harold.fulcrum.command.runtime.CommandFeature;
+import sh.harold.fulcrum.feature.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.feature.identity.IdentityFeature;
+import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
+
+import java.awt.*;
 
 public final class PlayerDataPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        sh.harold.fulcrum.command.runtime.FulcrumCommandsBootstrap.bootstrap(this);
+        CommandRegistrar.hook(this);
+
         FeatureManager.register(new PlayerDataFeature());
         FeatureManager.register(new MessageFeature());
         FeatureManager.register(new IdentityFeature());
-        FeatureManager.register(new CommandFeature());
+        FeatureManager.register(new GamemodeFeature());
 
         FeatureManager.initializeAll(this);
     }
