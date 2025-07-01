@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.message;
 
+import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 
@@ -48,16 +49,21 @@ public interface MessageService {
 
     Component getStyledMessageWithTags(Locale locale, MessageStyle style, String translationKey, List<MessageTag> tags, Object... args);
 
-    void sendMacroMessageWithTags(UUID playerId, MessageStyle style, String macroKey, List<MessageTag> tags, Object... args);
-
-    void broadcastMacroMessageWithTags(MessageStyle style, String macroKey, List<MessageTag> tags, Object... args);
-
-    Component getMacroMessageWithTags(UUID playerId, MessageStyle style, String macroKey, List<MessageTag> tags, Object... args);
-
-    Component getMacroMessageWithTags(Locale locale, MessageStyle style, String macroKey, List<MessageTag> tags, Object... args);
-
     void setTagFormatter(TagFormatter formatter);
 
     Locale getPlayerLocale(UUID uniqueId);
+
+    // New: Audience-based API
+    void sendMessage(Audience audience, Component message);
+
+    void sendStyledMessage(Audience audience, MessageStyle style, String translationKey, Object... args);
+
+    void sendGenericResponse(Audience audience, GenericResponse response);
+
+    Component getStyledMessage(Audience audience, MessageStyle style, String translationKey, Object... args);
+
+    void sendStyledMessageWithTags(Audience audience, MessageStyle style, String translationKey, List<MessageTag> tags, Object... args);
+
+    Component getStyledMessageWithTags(Audience audience, MessageStyle style, String translationKey, List<MessageTag> tags, Object... args);
 }
 

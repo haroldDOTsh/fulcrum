@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.message;
 
+import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
@@ -20,16 +21,12 @@ public class YamlMessageService implements MessageService {
     private final Path langDirectory;
     // Structure: <Feature, <Locale, Config>>
     private final Map<String, Map<Locale, FileConfiguration>> translations = new HashMap<>();
-    private final Map<String, String> macroMapping = new HashMap<>(); // New: Macro to translation key mapping
     private final Locale defaultLocale = Locale.US;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
     private TagFormatter tagFormatter = new DefaultTagFormatter();
 
     public YamlMessageService(Path pluginDataFolder) {
         this.langDirectory = pluginDataFolder.resolve("lang");
-        // Initialize macro mapping (for demonstration)
-        macroMapping.put("no_permission", "generic.no_permission");
-        macroMapping.put("on_cooldown", "generic.on_cooldown");
         try {
             if (Files.notExists(langDirectory)) {
                 Files.createDirectories(langDirectory);
@@ -90,10 +87,6 @@ public class YamlMessageService implements MessageService {
         } catch (IOException e) {
             Bukkit.getLogger().severe("Failed to load translation feature: " + e.getMessage());
         }
-    }
-
-    private String resolveMacroKey(String macroKey) {
-        return macroMapping.getOrDefault(macroKey, macroKey); // If macro not found, treat as translation key
     }
 
     @Override
@@ -185,37 +178,55 @@ public class YamlMessageService implements MessageService {
     }
 
     @Override
-    public void sendMacroMessageWithTags(UUID playerId, MessageStyle style, String macroKey, List<MessageTag> tags, Object... args) {
-        String translationKey = resolveMacroKey(macroKey);
-        sendStyledMessageWithTags(playerId, style, translationKey, tags, args);
+    public Locale getPlayerLocale(UUID uniqueId) {
+        Player player = Bukkit.getPlayer(uniqueId);
+        return player != null ? player.locale() : defaultLocale;
+    }
+
+    // --- Audience-based API ---
+    @Override
+    public void sendMessage(Audience audience, Component message) {
+        if (audience != null && message != null) {
+            audience.sendMessage(message);
+        }
     }
 
     @Override
-    public void broadcastMacroMessageWithTags(MessageStyle style, String macroKey, List<MessageTag> tags, Object... args) {
-        String translationKey = resolveMacroKey(macroKey);
-        broadcastStyledMessageWithTags(style, translationKey, tags, args);
+    public void sendStyledMessage(Audience audience, MessageStyle style, String translationKey, Object... args) {
+        sendMessage(audience, getStyledMessage(audience, style, translationKey, args));
     }
 
     @Override
-    public Component getMacroMessageWithTags(UUID playerId, MessageStyle style, String macroKey, List<MessageTag> tags, Object... args) {
-        String translationKey = resolveMacroKey(macroKey);
-        return getStyledMessageWithTags(playerId, style, translationKey, tags, args);
+    public void sendGenericResponse(Audience audience, GenericResponse response) {
+        sendStyledMessage(audience, MessageStyle.ERROR, response.getKey());
     }
 
     @Override
-    public Component getMacroMessageWithTags(Locale locale, MessageStyle style, String macroKey, List<MessageTag> tags, Object... args) {
-        String translationKey = resolveMacroKey(macroKey);
+    public Component getStyledMessage(Audience audience, MessageStyle style, String translationKey, Object... args) {
+        Locale locale = defaultLocale;
+        // Try to get locale from Player if possible
+        if (audience instanceof org.bukkit.entity.Player player) {
+            locale = player.locale();
+        }
+        return getStyledMessage(locale, style, translationKey, args);
+    }
+
+    @Override
+    public void sendStyledMessageWithTags(Audience audience, MessageStyle style, String translationKey, List<MessageTag> tags, Object... args) {
+        sendMessage(audience, getStyledMessageWithTags(audience, style, translationKey, tags, args));
+    }
+
+    @Override
+    public Component getStyledMessageWithTags(Audience audience, MessageStyle style, String translationKey, List<MessageTag> tags, Object... args) {
+        Locale locale = defaultLocale;
+        if (audience instanceof org.bukkit.entity.Player player) {
+            locale = player.locale();
+        }
         return getStyledMessageWithTags(locale, style, translationKey, tags, args);
     }
 
     @Override
     public void setTagFormatter(TagFormatter formatter) {
         this.tagFormatter = formatter;
-    }
-
-    @Override
-    public Locale getPlayerLocale(UUID uniqueId) {
-        Player player = Bukkit.getPlayer(uniqueId);
-        return player != null ? player.locale() : defaultLocale;
     }
 }

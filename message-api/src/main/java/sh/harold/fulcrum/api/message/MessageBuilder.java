@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.message;
 
+import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 
 import java.util.ArrayList;
@@ -9,24 +10,18 @@ import java.util.UUID;
 public class MessageBuilder {
 
     private final MessageStyle style;
-    private final MessageType type;
     private final String messageIdentifier;
     private final Object[] args;
     private final List<MessageTag> tags = new ArrayList<>();
 
-    private MessageBuilder(MessageStyle style, MessageType type, String messageIdentifier, Object... args) {
+    private MessageBuilder(MessageStyle style, String messageIdentifier, Object... args) {
         this.style = style;
-        this.type = type;
         this.messageIdentifier = messageIdentifier;
         this.args = args;
     }
 
     public static MessageBuilder key(MessageStyle style, String key, Object... args) {
-        return new MessageBuilder(style, MessageType.KEY, key, args);
-    }
-
-    public static MessageBuilder macro(MessageStyle style, String macroKey, Object... args) {
-        return new MessageBuilder(style, MessageType.MACRO, macroKey, args);
+        return new MessageBuilder(style, key, args);
     }
 
     public MessageBuilder staff() {
@@ -50,27 +45,23 @@ public class MessageBuilder {
     }
 
     public void send(UUID playerUuid) {
-        if (type == MessageType.KEY) {
-            Message.getService().sendStyledMessageWithTags(playerUuid, style, messageIdentifier, tags, args);
-        } else if (type == MessageType.MACRO) {
-            Message.getService().sendMacroMessageWithTags(playerUuid, style, messageIdentifier, tags, args);
-        }
+        // Only KEY type remains
+        Message.getService().sendStyledMessageWithTags(playerUuid, style, messageIdentifier, tags, args);
     }
 
     public void broadcast() {
-        if (type == MessageType.KEY) {
-            Message.getService().broadcastStyledMessageWithTags(style, messageIdentifier, tags, args);
-        } else if (type == MessageType.MACRO) {
-            Message.getService().broadcastMacroMessageWithTags(style, messageIdentifier, tags, args);
-        }
+        Message.getService().broadcastStyledMessageWithTags(style, messageIdentifier, tags, args);
     }
 
     public Component get(UUID playerUuid) {
-        if (type == MessageType.KEY) {
-            return Message.getService().getStyledMessageWithTags(playerUuid, style, messageIdentifier, tags, args);
-        } else if (type == MessageType.MACRO) {
-            return Message.getService().getMacroMessageWithTags(playerUuid, style, messageIdentifier, tags, args);
-        }
-        return null; // Should not happen
+        return Message.getService().getStyledMessageWithTags(playerUuid, style, messageIdentifier, tags, args);
+    }
+
+    public void send(Audience audience) {
+        Message.getService().sendStyledMessageWithTags(audience, style, messageIdentifier, tags, args);
+    }
+
+    public Component get(Audience audience) {
+        return Message.getService().getStyledMessageWithTags(audience, style, messageIdentifier, tags, args);
     }
 }
