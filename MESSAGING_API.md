@@ -1,296 +1,243 @@
-# Fulcrum Message API: A Developer's Guide
-
-The Fulcrum Message API provides a powerful, standardized system for sending styled, localizable messages to players.
-It's designed to be simple to use while handling all the complexity of translation management, formatting, and styling
-behind the scenes.
-
-This guide is documentation-by-example. Less talk, more code.
+# Fulcrum/Eternum Message API: Developer Guide
 
 ---
 
-## 1. Setup for Plugin Developers
+> **Changelog (2025-06-30):**
+> - Added overload methods to the Message API that accept `net.kyori.adventure.audience.Audience` directly for all send/broadcast operations. See examples below.
 
-To use the `message-api` in your plugin, you only need to do two things.
+The Message API provides a robust, platform-agnostic, and localizable messaging system for Minecraft plugins, built on the [Adventure](https://docs.adventure.kyori.net/) library. It supports styled messages, localization, macro messages, and a fluent API for message construction.
+
+---
+
+## 1. Setup
 
 ### 1.1. Add the API to Your Build
 
-Add `message-api` as a dependency in your `build.gradle.kts` or `build.gradle` file.
-
-**`build.gradle.kts` (Kotlin DSL)**
+Add `message-api` as a dependency in your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    compileOnly("sh.harold.fulcrum:message-api:1.0-SNAPSHOT") // Replace with the latest version
+    implementation(project(":message-api"))
+    implementation("net.kyori:adventure-api:4.17.0")
+    implementation("net.kyori:adventure-text-minimessage:4.17.0")
 }
 ```
 
-**`build.gradle` (Groovy DSL)**
+If using as a plugin, also add:
 
-```groovy
-dependencies {
-    compileOnly 'sh.harold.fulcrum:message-api:1.0-SNAPSHOT' // Replace with the latest version
-}
+```kotlin
+compileOnly("sh.harold.fulcrum:message-api:1.0-SNAPSHOT") // Replace with latest version
 ```
 
-### 1.2. Declare a Dependency on the Core Plugin
+### 1.2. Plugin Dependency
 
-Add `FulcrumPlayerData` to the `depend` list in your `plugin.yml` file. This is critical, as it ensures the message
-service is running before your plugin loads.
-
-**`plugin.yml`**
+Add `FulcrumPlayerData` to your `plugin.yml`'s `depend` list:
 
 ```yaml
-name: MyAwesomePlugin
-version: 1.0
-main: com.example.myplugin.MyPlugin
 depend: [ FulcrumPlayerData ]
 ```
 
-That's it! You do **not** need to register or initialize the `MessageService` yourself. You can now use the `Message`
-facade anywhere in your plugin.
+---
+
+## 2. Initialization
+
+**You do NOT need to register or initialize the MessageService yourself.**
+The runtime plugin (`player-core`) handles all setup automatically. You can use the `Message` facade anywhere in your plugin code without extra configuration.
 
 ---
 
-## 2. Sending Messages to Players
+## 3. Sending Messages
 
-All messages are sent using the `Message` facade. You provide a localization key and any arguments to fill in. The
-system automatically handles finding the right translation for the player's locale.
+> **New in 2025:** All `send` and `broadcast` methods are now overloaded to accept an `Audience` directly, in addition to UUIDs. This allows you to send messages to any Adventure-compatible audience (e.g., players, console, groups) without needing to resolve UUIDs.
 
-### 2.1. Basic Styled Messages
-
-These methods send a message immediately.
+### 3.1. Basic Styled Messages
 
 ```java
 import sh.harold.fulcrum.api.message.Message;
-
+import net.kyori.adventure.audience.Audience;
 import java.util.UUID;
 
 UUID playerId = player.getUniqueId();
+Audience audience = player;
 
-// Success Message
-// -> lang/en_US/banking.yml: "You successfully deposited $1,000.00 into your account."
-Message.
+// Success (by UUID)
+Message.success("banking.deposit.success").arg("$1,000.00").send(playerId);
+// Success (by Audience)
+Message.success("banking.deposit.success").arg("$1,000.00").send(audience);
 
-success("banking.deposit.success")
-    .
+// Info (by Audience)
+Message.info("skills.levelup").arg(50).send(audience);
 
-arg("$1,000.00")
-    .
+// Error (by Audience)
+Message.error("generic.no_permission").send(audience);
 
-send(playerId);
+// Debug (by Audience)
+Message.debug("debug.player.data_saved").arg("Notch").send(audience);
 
-// Informational Message
-// -> lang/en_US/skills.yml: "Your Woodcutting level is now 50."
-Message.
-
-info("skills.levelup")
-    .
-
-arg(50)
-    .
-
-send(playerId);
-
-// Error Message
-// -> lang/en_US/generic.yml: "You do not have permission to do that."
-Message.
-
-error("generic.no_permission").
-
-send(playerId);
-
-// Debug Message (often for developers/admins)
-// -> lang/en_US/debug.yml: "Player data for Notch saved successfully."
-Message.
-
-debug("debug.player.data_saved")
-    .
-
-arg("Notch")
-    .
-
-send(playerId);
-
-// Raw Message (uses colors from the translation file)
-// -> lang/en_US/custom.yml: "<gold>A <bold><red>DRAGON</red></bold> has appeared!"
-Message.
-
-raw("custom.dragon_event").
-
-send(playerId);
+// Raw (MiniMessage colors, by Audience)
+Message.raw("custom.dragon_event").send(audience);
 ```
 
-### 2.2. Using Pre-defined `GenericResponse` Enums
-
-For common situations, you can use an enum instead of a key.
+### 3.2. Broadcasting
 
 ```java
-import sh.harold.fulcrum.api.message.Message;
-import sh.harold.fulcrum.api.message.GenericResponse;
-
-import java.util.UUID;
-
-UUID playerId = player.getUniqueId();
-
-// -> lang/en_US/generic.yml: "An unknown error occurred."
-Message.
-
-error(playerId, GenericResponse.ERROR);
+// Broadcast to all players
+Message.success("event.start").arg("Summer Festival").broadcast();
+// Broadcast to a custom audience (e.g., staff)
+Message.info("server.maintenance").arg("1 hour").system().broadcast(audience);
 ```
 
 ---
 
-## 3. Chaining Tags for Prefixes
+## 4. Chaining Tags
 
-You can chain tags to a message to add prefixes. Chained messages require `.send()` to be called.
+Add context tags for prefixes:
 
 ```java
-import sh.harold.fulcrum.api.message.Message;
-
-import java.util.UUID;
-
-UUID playerId = player.getUniqueId();
-
-// [SYSTEM] [STAFF] The server is restarting in 5 minutes.
-Message.
-
-info("server.restart_warning")
-    .
-
-arg(5)
-    .
-
-system() // Adds a [SYSTEM] prefix
-    .
-
-staff()  // Adds a [STAFF] prefix
-    .
-
-send(playerId);
-
-// [DAEMON] Purged 2,450 old records from the database.
-Message.
-
-success("database.purge.complete")
-    .
-
-arg("2,450")
-    .
-
-daemon()
-    .
-
-send(playerId);
+Message.info("server.restart_warning").arg(5).system().staff().send(playerId);
+Message.success("database.purge.complete").arg("2,450").daemon().send(playerId);
 ```
 
-### Available Tags
-
-| Method      | Resulting Prefix |
-|-------------|------------------|
-| `.system()` | `[SYSTEM]`       |
-| `.staff()`  | `[STAFF]`        |
-| `.daemon()` | `[DAEMON]`       |
-| `.debug()`  | `[DEBUG]`        |
+**Available tags:** `.system()`, `.staff()`, `.daemon()`, `.debug()`
 
 ---
 
-## 4. Broadcasting Messages
+## 5. Retrieving Components
 
-Broadcasting sends a message to all online players. The syntax is identical to sending a message to a single player.
-
-```java
-import sh.harold.fulcrum.api.message.Message;
-
-// Broadcasts a success message to everyone.
-// -> "The 'Summer Festival' event has started!"
-Message.success("event.start").
-arg("Summer Festival")
-    .
-
-broadcast();
-
-// Broadcasts a tagged message.
-// -> "[SYSTEM] The server will be going down for maintenance in 1 hour."
-Message.
-
-info("server.maintenance")
-    .
-
-arg("1 hour")
-    .
-
-system()
-    .
-
-broadcast();
-```
-
----
-
-## 5. Getting a Message as a Component
-
-If you need to use a message in a GUI, scoreboard, or other custom component, you can get the formatted `Component`
-object instead of sending it.
+For GUIs, scoreboards, etc.:
 
 ```java
-import sh.harold.fulcrum.api.message.Message;
 import net.kyori.adventure.text.Component;
-
-import java.util.UUID;
-
-UUID playerId = player.getUniqueId();
-
-// Get a formatted component for the player's locale.
-Component motd = Message.raw("server.motd")
-        .arg(player.getName())
-        .get(playerId);
-
-// You can now use the 'motd' component wherever you need it.
-player.
-
-sendPlayerListHeader(motd);
+Component motd = Message.raw("server.motd").arg(player.getName()).get(playerId);
+player.sendPlayerListHeader(motd);
 ```
 
 ---
 
-## 6. Localization (`lang`) Files
+## 6. Localization
 
-The message system is built around localization files. `player-core` automatically creates and manages these for you.
+- Message keys map to YAML files:  
+  `banking.deposit.success` → `lang/en_US/banking.yml`
+- Arguments use `{0}`, `{1}` in YAML, or `%s`/`%d` if using Java formatting.
 
-### 6.1. Key Structure
-
-Message keys are namespaces that map directly to a file path.
-
-- `banking.deposit.success` → `lang/en_US/banking.yml`
-- `skills.levelup` → `lang/en_US/skills.yml`
-- `generic.no_permission` → `lang/en_US/generic.yml`
-
-### 6.2. File Structure Example
-
-The `lang` folder is located inside the `player-core` plugin directory.
-
-```
-/plugins/FulcrumPlayerData/
-└── lang/
-    └── en_US/
-        ├── banking.yml
-        ├── skills.yml
-        └── generic.yml
-```
-
-### 6.3. Example Translation File
-
-Arguments in the file are referenced using `{0}`, `{1}`, `{2}`, etc.
-
-**`lang/en_US/banking.yml`**
-
+**Example `lang/en_US/banking.yml`:**
 ```yaml
 deposit:
   success: "You successfully deposited <yellow>{0}</yellow> into your account."
   insufficient_funds: "<red>You cannot withdraw {0}, you only have {1}.</red>"
-withdraw:
-  success: "You withdrew <yellow>{0}</yellow>."
 ```
 
-If you use a key that doesn't exist (e.g., `banking.transfer.failed`), the system will **automatically add it** to the
-correct file with a placeholder message, making it easy to add new messages.
+If a key is missing, it is auto-added with a placeholder.
+
+---
+
+## 7. Integration Example
+
+```java
+import sh.harold.fulcrum.api.message.Message;
+import sh.harold.fulcrum.registry.PlayerProfileManager;
+import sh.harold.fulcrum.registry.PlayerProfile;
+
+public void displayPlayerBalance(UUID playerId) {
+    PlayerProfileManager.getProfile(playerId).thenAccept(profileOpt -> {
+        if (profileOpt.isPresent()) {
+            var profile = profileOpt.get();
+            Message.info("player.balance.current", profile.getBalance()).send(playerId);
+        } else {
+            Message.error("player.not_found").send(playerId);
+        }
+    });
+}
+```
+
+---
+
+## 8. Building
+
+```powershell
+./gradlew :message-api:build
+```
+
+---
+
+## 9. API Reference & Usage Guide
+
+### 9.1. Message Entry Points
+
+- `Message.success(String key)`
+- `Message.info(String key)`
+- `Message.error(String key)`
+- `Message.debug(String key)`
+- `Message.raw(String key)`
+
+### 9.2. Generic Responses
+
+- `GenericResponse.ERROR` → "generic.error"
+- `GenericResponse.ERROR_GENERAL` → "generic.error.general"
+- `GenericResponse.ERROR_NO_PERMISSION` → "generic.error.nopermission"
+- `GenericResponse.ERROR_COOLDOWN` → "generic.error.cooldown"
+
+Use with:
+```java
+Message.error(playerId, GenericResponse.ERROR_NO_PERMISSION);
+Message.error(audience, GenericResponse.ERROR_COOLDOWN);
+```
+
+### 9.3. Sending & Broadcasting
+
+All message types support:
+- `.send(UUID playerId)`
+- `.send(Audience audience)`
+- `.broadcast()` (to all players)
+- `.broadcast(Audience audience)` (to a custom audience)
+
+### 9.4. Arguments
+
+- `.arg(Object value)` — Add a single argument (repeatable)
+- `.args(Object... values)` — Add multiple arguments
+
+### 9.5. Tags (Context Prefixes)
+
+Chainable for context and formatting:
+- `.system()` — System message prefix
+- `.staff()` — Staff-only prefix
+- `.daemon()` — Daemon/background prefix
+- `.debug()` — Debug prefix
+
+Tags can be chained in any order, e.g.:
+```java
+Message.info("server.restart").system().staff().send(audience);
+```
+
+### 9.6. Retrieving Components
+
+- `.get(UUID playerId)` — Returns `Component` for a player
+- `.get(Audience audience)` — Returns `Component` for an audience
+
+### 9.7. MessageStyle Enum
+
+- `MessageStyle.SUCCESS`
+- `MessageStyle.INFO`
+- `MessageStyle.ERROR`
+- `MessageStyle.DEBUG`
+
+### 9.8. Localization
+
+- Message keys map to YAML files: `lang/<locale>/<namespace>.yml`
+- Arguments: `{0}`, `{1}` in YAML, or `%s`/`%d` for Java formatting
+- Missing keys are auto-added with a placeholder
+
+### 9.9. Audience Support
+
+All `send`, `broadcast`, and `get` methods accept both `UUID` and `Audience`.
+
+---
+
+## 10. Notes
+
+- The API is pure Java, no direct Bukkit/Paper dependencies.
+- All runtime plugin code should use the `player-core` module; shared code lives in `-api` modules.
+
+---
+
+**This consolidated documentation supersedes all previous Message API docs.**
