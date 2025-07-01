@@ -2,11 +2,13 @@ package sh.harold.fulcrum.command.runtime;
 
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ScanResult;
+
 import java.util.HashSet;
 import java.util.Set;
 
 public final class CommandScanner {
-    private CommandScanner() {}
+    private CommandScanner() {
+    }
 
     /**
      * Finds all classes in the given classloader and base package that are annotated with @Command

@@ -510,8 +510,8 @@ class AutoTableSchemaJdbcTest {
         assertEquals(2, stmts.size());
         // Accept both with and without IF NOT EXISTS for forward compatibility with schema evolution
         assertTrue(stmts.get(0).equals("CREATE TABLE `test_players` (`id` TEXT, `name` TEXT, `level` INTEGER, PRIMARY KEY (`id`));") ||
-                   stmts.get(0).equals("CREATE TABLE IF NOT EXISTS `test_players` (`id` TEXT, `name` TEXT, `level` INTEGER, PRIMARY KEY (`id`));"),
-                   "CREATE TABLE SQL should match expected variants");
+                        stmts.get(0).equals("CREATE TABLE IF NOT EXISTS `test_players` (`id` TEXT, `name` TEXT, `level` INTEGER, PRIMARY KEY (`id`));"),
+                "CREATE TABLE SQL should match expected variants");
         assertEquals("INSERT OR REPLACE INTO `schema_versions` (`table_name`, `version`) VALUES ('test_players', 1)", stmts.get(1));
     }
 }

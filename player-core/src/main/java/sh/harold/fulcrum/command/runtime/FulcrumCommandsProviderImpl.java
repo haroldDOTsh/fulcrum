@@ -1,8 +1,9 @@
 package sh.harold.fulcrum.command.runtime;
 
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.command.FulcrumCommandsProvider;
 import sh.harold.fulcrum.command.CommandExecutor;
+import sh.harold.fulcrum.command.FulcrumCommandsProvider;
+
 import java.util.List;
 import java.util.logging.Level;
 

@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.command;
 
-import sh.harold.fulcrum.command.annotations.Suggestions;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.audience.Audience;
+import sh.harold.fulcrum.command.annotations.Suggestions;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -13,7 +13,8 @@ import java.util.logging.Logger;
 public final class SuggestionResolver {
     private static final Logger LOGGER = Logger.getLogger(SuggestionResolver.class.getName());
 
-    private SuggestionResolver() {}
+    private SuggestionResolver() {
+    }
 
     /**
      * Resolves a suggestion provider for a command argument field, using only Paper API and Adventure Audience.

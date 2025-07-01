@@ -5,12 +5,7 @@ import sh.harold.fulcrum.api.message.Message;
 import sh.harold.fulcrum.command.CommandContext;
 import sh.harold.fulcrum.command.CommandExecutor;
 import sh.harold.fulcrum.command.CommandExecutorType;
-import sh.harold.fulcrum.command.annotations.Command;
-import sh.harold.fulcrum.command.annotations.Aliases;
-import sh.harold.fulcrum.command.annotations.Argument;
-import sh.harold.fulcrum.command.annotations.Suggestions;
-import sh.harold.fulcrum.command.annotations.Cooldown;
-import sh.harold.fulcrum.command.annotations.Executor;
+import sh.harold.fulcrum.command.annotations.*;
 
 
 /**

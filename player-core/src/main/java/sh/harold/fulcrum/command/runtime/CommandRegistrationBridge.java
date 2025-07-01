@@ -1,6 +1,8 @@
 package sh.harold.fulcrum.command.runtime;
 
 import com.mojang.brigadier.arguments.ArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
@@ -8,28 +10,25 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import net.kyori.adventure.audience.Audience;
+import org.bukkit.command.ConsoleCommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.message.GenericResponse;
 import sh.harold.fulcrum.api.message.Message;
-import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.arguments.IntegerArgumentType;
-import java.lang.reflect.Field;
-import java.util.*;
 
+import java.lang.reflect.Field;
 import java.time.Instant;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.UUID;
-import org.bukkit.entity.Player;
-import org.bukkit.command.ConsoleCommandSender;
 
 
 public final class CommandRegistrationBridge {
-    private CommandRegistrationBridge() {}
-
     // Per-player cooldowns: UUID -> (Command class -> Instant)
     private static final Map<UUID, Map<Class<?>, Instant>> cooldowns = new ConcurrentHashMap<>();
     // Bypass set (UUIDs)
     private static final Set<UUID> bypassCooldown = ConcurrentHashMap.newKeySet();
+    private CommandRegistrationBridge() {
+    }
 
     public static void registerCommands(JavaPlugin plugin, Collection<?> definitions, Commands registrar) {
         for (var def : definitions) {
@@ -56,13 +55,15 @@ public final class CommandRegistrationBridge {
                         case "sh.harold.fulcrum.command.annotations.Cooldown" -> {
                             try {
                                 cooldownSeconds = (int) ann.annotationType().getMethod("seconds").invoke(ann);
-                            } catch (Exception ignored) {}
+                            } catch (Exception ignored) {
+                            }
                         }
                         case "sh.harold.fulcrum.command.annotations.Executor" -> {
                             try {
                                 Object val = ann.annotationType().getMethod("value").invoke(ann);
                                 execTypeName = val.toString();
-                            } catch (Exception ignored) {}
+                            } catch (Exception ignored) {
+                            }
                         }
                     }
                 }
@@ -217,15 +218,15 @@ public final class CommandRegistrationBridge {
                 final java.lang.reflect.Constructor<?> finalRuntimeCtxCtor = runtimeCtxCtor;
                 final java.lang.reflect.Method finalExecMethod = execMethod;
                 LiteralArgumentBuilder<CommandSourceStack> rootBuilder = LiteralArgumentBuilder.<CommandSourceStack>literal(name)
-                    .requires(src -> {
-                        var sender = src.getSender();
-                        if (!sender.hasPermission("command." + name)) return false;
-                        return switch (finalExecTypeName) {
-                            case "PLAYER" -> sender instanceof Player;
-                            case "CONSOLE" -> sender instanceof ConsoleCommandSender;
-                            default -> true;
-                        };
-                    });
+                        .requires(src -> {
+                            var sender = src.getSender();
+                            if (!sender.hasPermission("command." + name)) return false;
+                            return switch (finalExecTypeName) {
+                                case "PLAYER" -> sender instanceof Player;
+                                case "CONSOLE" -> sender instanceof ConsoleCommandSender;
+                                default -> true;
+                            };
+                        });
                 if (argChain != null) {
                     rootBuilder.then(argChain);
                 } else {
@@ -296,7 +297,7 @@ public final class CommandRegistrationBridge {
 
                 for (String alias : aliases) {
                     registrar.register(
-                        LiteralArgumentBuilder.<CommandSourceStack>literal(alias).redirect(rootNode).build()
+                            LiteralArgumentBuilder.<CommandSourceStack>literal(alias).redirect(rootNode).build()
                     );
                 }
             } catch (Exception e) {

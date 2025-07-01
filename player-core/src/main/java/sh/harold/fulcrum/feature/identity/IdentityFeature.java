@@ -1,7 +1,6 @@
 package sh.harold.fulcrum.feature.identity;
 
 import org.bukkit.plugin.java.JavaPlugin;
-
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 import sh.harold.fulcrum.api.playerdata.StorageManager;

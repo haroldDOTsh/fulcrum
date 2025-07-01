@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.api.message;
 
 import net.kyori.adventure.audience.Audience;
+
 import java.util.UUID;
 
 /**
@@ -55,15 +56,19 @@ public class Message {
     public static MessageBuilder success(GenericResponse response, Object... args) {
         return success(response.getKey(), args);
     }
+
     public static MessageBuilder info(GenericResponse response, Object... args) {
         return info(response.getKey(), args);
     }
+
     public static MessageBuilder debug(GenericResponse response, Object... args) {
         return debug(response.getKey(), args);
     }
+
     public static MessageBuilder error(GenericResponse response, Object... args) {
         return error(response.getKey(), args);
     }
+
     public static MessageBuilder raw(GenericResponse response, Object... args) {
         return raw(response.getKey(), args);
     }

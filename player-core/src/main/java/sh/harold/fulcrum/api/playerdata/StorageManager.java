@@ -5,10 +5,10 @@ import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.backend.json.JsonFileBackend;
 import sh.harold.fulcrum.api.data.backend.mongo.MongoDataBackend;
+import sh.harold.fulcrum.api.data.backend.sql.PostgresDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDataBackend;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
 import sh.harold.fulcrum.api.data.backend.sql.SqliteDialect;
-import sh.harold.fulcrum.api.data.backend.sql.PostgresDialect;
 
 import java.io.File;
 import java.io.FileInputStream;

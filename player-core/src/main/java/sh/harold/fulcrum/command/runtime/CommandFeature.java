@@ -2,6 +2,7 @@ package sh.harold.fulcrum.command.runtime;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -32,12 +33,12 @@ public final class CommandFeature implements PluginFeature {
                     clazz.getDeclaredConstructor();
                     // Build CommandDefinition reflectively
                     var defCtor = Class.forName("sh.harold.fulcrum.command.CommandDefinition")
-                        .getConstructor(String.class, String[].class, Class.class);
+                            .getConstructor(String.class, String[].class, Class.class);
                     String name = (String) cmdAnn.getClass().getMethod("value").invoke(cmdAnn);
                     Object def = defCtor.newInstance(
-                        name,
-                        new String[0],
-                        clazz
+                            name,
+                            new String[0],
+                            clazz
                     );
                     definitions.add(def);
                     logger.info("[command-core] Registered command class: " + clazz.getSimpleName() + " (" + name + ")");

@@ -15,7 +15,9 @@ import org.bukkit.plugin.java.JavaPlugin;
  */
 public final class FulcrumCommands {
     private static volatile FulcrumCommandsProvider provider;
-    private FulcrumCommands() {}
+
+    private FulcrumCommands() {
+    }
 
     /**
      * Called by the runtime to provide the actual registration implementation.

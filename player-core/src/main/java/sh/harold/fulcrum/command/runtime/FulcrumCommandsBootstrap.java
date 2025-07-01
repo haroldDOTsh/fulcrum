@@ -7,7 +7,8 @@ import sh.harold.fulcrum.command.FulcrumCommands;
  * Registers the FulcrumCommandsProvider implementation on plugin startup.
  */
 public final class FulcrumCommandsBootstrap {
-    private FulcrumCommandsBootstrap() {}
+    private FulcrumCommandsBootstrap() {
+    }
 
     public static void bootstrap(JavaPlugin plugin) {
         // Register the runtime provider implementation
