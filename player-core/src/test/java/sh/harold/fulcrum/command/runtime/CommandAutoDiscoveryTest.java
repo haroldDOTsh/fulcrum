@@ -2,6 +2,8 @@ package sh.harold.fulcrum.command.runtime;
 
 
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.command.annotations.Argument;
+
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -25,7 +27,7 @@ class CommandAutoDiscoveryTest {
     @sh.harold.fulcrum.command.annotations.Command("test")
     public static class TestCommand implements sh.harold.fulcrum.command.CommandExecutor {
         public static final AtomicBoolean executed = new AtomicBoolean(false);
-        @sh.harold.fulcrum.command.Argument("player") public String player;
+        @Argument("player") public String player;
         @Override
         public void execute(sh.harold.fulcrum.command.CommandContext ctx) {
             executed.set(true);
