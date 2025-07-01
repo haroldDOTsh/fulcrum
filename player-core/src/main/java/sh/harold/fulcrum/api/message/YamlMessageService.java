@@ -49,7 +49,7 @@ public class YamlMessageService implements MessageService {
         }
     }
 
-    void loadTranslations() {
+    public void loadTranslations() {
         translations.clear();
         try (Stream<Path> featureDirs = Files.walk(langDirectory, 1)) {
             featureDirs
