@@ -4,6 +4,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 import sh.harold.fulcrum.api.playerdata.StorageManager;
+import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 
 
@@ -18,6 +19,8 @@ public final class IdentityFeature implements PluginFeature {
         plugin.getLogger().info("[IdentityFeature] Registered IdentityData schema.");
         // Register the IdentityListener for player join events
         plugin.getServer().getPluginManager().registerEvents(new IdentityListener(), plugin);
+
+        CommandRegistrar.register(new TestCommand().build());
     }
 
     @Override
