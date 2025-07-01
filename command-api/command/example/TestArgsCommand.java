@@ -27,7 +27,7 @@ public final class TestArgsCommand implements CommandExecutor {
     public void execute(CommandContext ctx) {
         Audience audience = ctx.getAudience();
         // Use Message API for all runtime messages
-        Message.info("args.string", stringArg).send(audience);
-        Message.info("args.int", intArg).send(audience);
+        Message.info("args.string", stringArg).staff().send(audience);
+        Message.info("args.int", intArg).debug().send(audience);
     }
 }

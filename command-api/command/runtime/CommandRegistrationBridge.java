@@ -164,7 +164,7 @@ public final class CommandRegistrationBridge {
                                     var last = map.getOrDefault(finalImplClass, Instant.EPOCH);
                                     if (now.isBefore(last.plusSeconds(finalCooldownSeconds))) {
                                         long left = last.plusSeconds(finalCooldownSeconds).getEpochSecond() - now.getEpochSecond();
-                                        Message.error(GenericResponse.ERROR_COOLDOWN).send(audience);
+                                        Message.error(GenericResponse.ERROR_COOLDOWN).staff().debug().daemon().system().send(audience);
                                         return 0;
                                     }
                                     map.put(finalImplClass, now);
@@ -251,7 +251,7 @@ public final class CommandRegistrationBridge {
                                 var last = map.getOrDefault(finalImplClass, Instant.EPOCH);
                                 if (now.isBefore(last.plusSeconds(finalCooldownSeconds))) {
                                     long left = last.plusSeconds(finalCooldownSeconds).getEpochSecond() - now.getEpochSecond();
-                                    Message.error(GenericResponse.ERROR_COOLDOWN).send(audience);
+                                    Message.error(GenericResponse.ERROR_COOLDOWN).staff().debug().daemon().system().send(audience);
                                     return 0;
                                 }
                                 map.put(finalImplClass, now);
