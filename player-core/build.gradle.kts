@@ -77,10 +77,6 @@ tasks.named<ShadowJar>("shadowJar") {
     )      // From jackson-databind, jackson-core, jackson-annotations
     relocate("com.mongodb", "sh.harold.libraries.mongodb")                // From mongodb-driver-sync
     relocate("org.bson", "sh.harold.libraries.bson")                      // From bson + bson-record-codec
-    relocate(
-        "net.kyori",
-        "sh.harold.libraries.kyori"
-    )                    // From adventure-api, minimessage, examination
 
     relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
     relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
