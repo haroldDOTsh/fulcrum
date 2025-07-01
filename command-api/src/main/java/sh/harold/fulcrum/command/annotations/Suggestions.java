@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.command;
+package sh.harold.fulcrum.command.annotations;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

@@ -1,4 +1,6 @@
-package sh.harold.fulcrum.command;
+package sh.harold.fulcrum.command.annotations;
+
+import sh.harold.fulcrum.command.CommandExecutorType;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -7,4 +9,6 @@ import java.lang.annotation.Target;
 
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Sync {}
+public @interface Executor {
+    CommandExecutorType value();
+}
