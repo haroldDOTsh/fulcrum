@@ -29,9 +29,9 @@ A modern, annotation-driven command registration and execution system for Paper 
 
 ```java
 import sh.harold.fulcrum.command.annotations.Argument;
-import sh.harold.fulcrum.command.Sync;
-import sh.harold.fulcrum.command.Cooldown;
-import sh.harold.fulcrum.command.Executor;
+import sh.harold.fulcrum.command.annotations.Sync;
+import sh.harold.fulcrum.command.annotations.Cooldown;
+import sh.harold.fulcrum.command.annotations.Executor;
 import sh.harold.fulcrum.command.CommandExecutorType;
 
 @Sync
@@ -117,6 +117,26 @@ List<CommandDefinition> definitions = List.of(
 );
 CommandRegistrationBridge.registerCommands(plugin, definitions);
 ```
+
+---
+
+## Developer-Friendly Command Registration
+
+You can now register all your @Command-annotated command classes automatically with a single call:
+
+```java
+import sh.harold.fulcrum.command.FulcrumCommands;
+
+@Override
+public void onEnable() {
+    FulcrumCommands.register(this); // Registers all @Command classes in your plugin
+}
+```
+
+- Only classes in your plugin's package, annotated with @Command and implementing CommandExecutor, are discovered.
+- Classes must have a public no-arg constructor.
+- Invalid classes are ignored with a warning in the log.
+- This is idempotent and safe to call multiple times (per plugin).
 
 ---
 
