@@ -2,6 +2,7 @@ package sh.harold.fulcrum.command.runtime;
 
 
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.command.runtime.CommandScanner;
 import sh.harold.fulcrum.command.annotations.Argument;
 
 import java.util.Set;
