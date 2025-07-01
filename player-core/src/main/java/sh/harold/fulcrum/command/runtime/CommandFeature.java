@@ -49,11 +49,10 @@ public final class CommandFeature implements PluginFeature {
             }
             if (!definitions.isEmpty()) {
                 try {
-                    var bridge = Class.forName("sh.harold.fulcrum.command.runtime.CommandRegistrationBridge");
-                    var method = bridge.getMethod("registerCommands", JavaPlugin.class, java.util.Collection.class);
-                    method.invoke(null, plugin, definitions);
+                    // Pass the event registrar directly to the bridge for registration
+                    sh.harold.fulcrum.command.runtime.CommandRegistrationBridge.registerCommands(plugin, definitions, event.registrar());
                 } catch (Exception e) {
-                    logger.warning("[command-core] Failed to register commands: " + e.getMessage());
+                    logger.log(java.util.logging.Level.WARNING, "[command-core] Failed to register commands", e);
                 }
             }
         });
