@@ -1,6 +1,6 @@
 package sh.harold.fulcrum.command.testdata;
 
-import sh.harold.fulcrum.command.Argument;
+import sh.harold.fulcrum.command.annotations.Argument;
 
 public class EnumExample {
     @Argument("mode")

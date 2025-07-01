@@ -1,7 +1,7 @@
 package sh.harold.fulcrum.command.testdata;
 
-import sh.harold.fulcrum.command.Argument;
-import sh.harold.fulcrum.command.Suggestions;
+import sh.harold.fulcrum.command.annotations.Argument;
+import sh.harold.fulcrum.command.annotations.Suggestions;
 
 public class BadExample {
     @Suggestions("nope")
