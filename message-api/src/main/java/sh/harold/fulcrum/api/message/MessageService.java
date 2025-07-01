@@ -10,6 +10,14 @@ import java.util.UUID;
 
 public interface MessageService {
 
+    /**
+     * Optionally set the argument count context for placeholder generation. Default is no-op.
+     * Implementations that support dynamic placeholder generation should override this.
+     */
+    default void setArgCountContext(int argCount) {
+        // No-op by default
+    }
+
     String getTranslation(String key, Locale locale);
 
     void sendMessage(UUID playerUuid, Component message);

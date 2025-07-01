@@ -18,6 +18,8 @@ public class MessageBuilder {
         this.style = style;
         this.messageIdentifier = messageIdentifier;
         this.args = args;
+        // Pass argument count to MessageService for placeholder generation if needed
+        Message.getService().setArgCountContext(args != null ? args.length : 0);
     }
 
     public static MessageBuilder key(MessageStyle style, String key, Object... args) {

@@ -17,6 +17,13 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class YamlMessageService implements MessageService {
+    // ThreadLocal to allow Message API to pass argument count for placeholder generation
+    private static final ThreadLocal<Integer> ARG_COUNT_CONTEXT = new ThreadLocal<>();
+
+    @Override
+    public void setArgCountContext(int argCount) {
+        ARG_COUNT_CONTEXT.set(argCount);
+    }
 
     private final Path langDirectory;
     // Structure: <Feature, <Locale, Config>>
@@ -26,42 +33,23 @@ public class YamlMessageService implements MessageService {
     private TagFormatter tagFormatter = new DefaultTagFormatter();
 
     public YamlMessageService(Path pluginDataFolder) {
-        this.langDirectory = pluginDataFolder.resolve("lang");
+        // Avoid double-nesting /lang/lang
+        if (pluginDataFolder.getFileName() != null && pluginDataFolder.getFileName().toString().equalsIgnoreCase("lang")) {
+            this.langDirectory = pluginDataFolder;
+        } else {
+            this.langDirectory = pluginDataFolder.resolve("lang");
+        }
         try {
             if (Files.notExists(langDirectory)) {
                 Files.createDirectories(langDirectory);
             }
-            saveDefaultLanguageFile();
             loadTranslations();
         } catch (IOException e) {
             Bukkit.getLogger().severe("Failed to create or load language directory: " + e.getMessage());
         }
     }
 
-    private void saveDefaultLanguageFile() throws IOException {
-        Path genericLangDir = langDirectory.resolve("generic");
-        if (Files.notExists(genericLangDir)) {
-            Files.createDirectories(genericLangDir);
-        }
-
-        Path defaultFile = genericLangDir.resolve("en_US.yml");
-        if (Files.notExists(defaultFile)) {
-            try (InputStream in = getClass().getClassLoader().getResourceAsStream("lang/generic/en_US.yml")) {
-                if (in != null) {
-                    Files.copy(in, defaultFile);
-                } else {
-                    // Create a default file with a sample key if resource is missing
-                    FileConfiguration config = new YamlConfiguration();
-                    config.set("error", "&cAn error occurred.");
-                    config.set("no_permission", "&cYou do not have permission to do that.");
-                    config.set("on_cooldown", "&cYou are on cooldown for %s seconds.");
-                    config.save(defaultFile.toFile());
-                }
-            }
-        }
-    }
-
-    private void loadTranslations() {
+    void loadTranslations() {
         translations.clear();
         try (Stream<Path> featureDirs = Files.walk(langDirectory, 1)) {
             featureDirs
@@ -100,17 +88,52 @@ public class YamlMessageService implements MessageService {
         String path = parts[1];
 
         Map<Locale, FileConfiguration> featureTranslations = translations.get(feature);
-        if (featureTranslations == null) {
-            return key; // Feature not found
+        FileConfiguration config = null;
+        if (featureTranslations != null) {
+            config = featureTranslations.getOrDefault(locale, featureTranslations.get(defaultLocale));
+            if (config != null && config.contains(path)) {
+                return config.getString(path, key);
+            }
         }
 
-        FileConfiguration config = featureTranslations.getOrDefault(locale, featureTranslations.get(defaultLocale));
-        if (config != null) {
-            return config.getString(path, key);
+        // If missing, create the file and key dynamically
+        try {
+            Path featureDir = langDirectory.resolve(feature);
+            if (Files.notExists(featureDir)) {
+                Files.createDirectories(featureDir);
+            }
+            String localeName = locale.toLanguageTag().replace("-", "_");
+            Path langFile = featureDir.resolve(localeName + ".yml");
+            FileConfiguration newConfig;
+            if (Files.exists(langFile)) {
+                newConfig = YamlConfiguration.loadConfiguration(langFile.toFile());
+            } else {
+                newConfig = new YamlConfiguration();
+            }
+            if (!newConfig.contains(path)) {
+                // Use ThreadLocal context if set, otherwise fallback to 1
+                int argCount = 1;
+                Integer ctx = ARG_COUNT_CONTEXT.get();
+                if (ctx != null) {
+                    argCount = ctx;
+                    ARG_COUNT_CONTEXT.remove();
+                }
+                StringBuilder sb = new StringBuilder(key);
+                for (int i = 0; i < argCount; i++) {
+                    sb.append(" {arg").append(i + 1).append("}");
+                }
+                newConfig.set(path, sb.toString());
+                newConfig.save(langFile.toFile());
+            }
+            // Reload into memory
+            translations.computeIfAbsent(feature, f -> new HashMap<>()).put(locale, newConfig);
+        } catch (IOException e) {
+            Bukkit.getLogger().severe("Failed to create missing translation for '" + key + "': " + e.getMessage());
         }
-
         return key;
     }
+
+    // (No hacks: argument count is now passed via ThreadLocal from Message API)
 
     private Component deserialize(String message) {
         return miniMessage.deserialize(message);
@@ -228,5 +251,23 @@ public class YamlMessageService implements MessageService {
     @Override
     public void setTagFormatter(TagFormatter formatter) {
         this.tagFormatter = formatter;
+    }
+
+    @Override
+    public Component getStyledMessage(Locale locale, MessageStyle style, String translationKey, Object... args) {
+        String raw = getTranslation(translationKey, locale);
+        // Replace placeholders with colored arguments and add style prefix
+        StringBuilder sb = new StringBuilder();
+        sb.append(style.getPrefix());
+        String result = raw;
+        int argCount = args != null ? args.length : 0;
+        String argumentColor = style.getArgumentColorTag();
+        for (int i = 0; i < argCount; i++) {
+            String placeholder = "{arg" + (i + 1) + "}";
+            String coloredArg = argumentColor.isEmpty() ? String.valueOf(args[i]) : argumentColor + args[i] + "</" + argumentColor.substring(1);
+            result = result.replace(placeholder, coloredArg);
+        }
+        sb.append(result);
+        return deserialize(sb.toString());
     }
 }
