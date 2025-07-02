@@ -5,9 +5,16 @@ import java.util.List;
 /**
  * Metadata for a CoreModule.
  */
+import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.FulcrumModule;
+
+/**
+ * Runtime metadata for a loaded Fulcrum module.
+ */
 public record ModuleMetadata(
     String name,
+    List<String> dependsOn,
     String description,
-    List<String> authors,
-    String version
+    JavaPlugin plugin,
+    FulcrumModule instance
 ) {}

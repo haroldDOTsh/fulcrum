@@ -7,8 +7,12 @@ import sh.harold.fulcrum.feature.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.feature.identity.IdentityFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
+import sh.harold.fulcrum.module.ModuleManager;
+import sh.harold.fulcrum.FulcrumPlatform;
 
 public final class FulcrumPlugin extends JavaPlugin {
+    private ModuleManager moduleManager;
+    private FulcrumPlatform platform;
 
     @Override
     public void onEnable() {
@@ -20,10 +24,18 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new GamemodeFeature());
 
         FeatureManager.initializeAll(this);
+
+        // Initialize platform and module system
+        this.platform = new FulcrumPlatform();
+        this.moduleManager = new ModuleManager(getLogger());
+        moduleManager.loadAll(this, platform);
     }
 
     @Override
     public void onDisable() {
+        if (moduleManager != null) {
+            moduleManager.disableAll();
+        }
         FeatureManager.shutdownAll();
     }
 }
