@@ -13,6 +13,10 @@ public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
     private FulcrumPlatform platform;
 
+    public ModuleManager getModuleManager() {
+        return moduleManager;
+    }
+
     @Override
     public void onEnable() {
         CommandRegistrar.hook(this);

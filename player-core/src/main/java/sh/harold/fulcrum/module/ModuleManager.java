@@ -42,6 +42,24 @@ public class ModuleManager {
                 module
             ));
         }
+
+        // Strict validation: ensure every required module is present and valid
+        List<String> missing = new ArrayList<>();
+        for (String required : allowedModules) {
+            if (!discovered.containsKey(required)) {
+                missing.add(required);
+            }
+        }
+        if (!missing.isEmpty()) {
+            org.bukkit.Bukkit.getLogger().severe("[Fulcrum] The following required modules are missing or invalid:");
+            for (String name : missing) {
+                org.bukkit.Bukkit.getLogger().severe(" - " + name);
+            }
+            org.bukkit.Bukkit.getLogger().severe("[Fulcrum] Server is shutting down due to incomplete runtime configuration.");
+            org.bukkit.Bukkit.shutdown();
+            return;
+        }
+
         List<ModuleMetadata> sorted;
         try {
             sorted = DependencyResolver.resolve(
