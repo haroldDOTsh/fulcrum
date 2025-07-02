@@ -24,24 +24,21 @@ public final class FulcrumPlugin extends JavaPlugin {
 
         FeatureManager.initializeAll(this);
 
-        // --- ENVIRONMENT/ENVIRONMENT.YML TEST STUB ---
         try {
             String role = EnvironmentSelector.loadRole(new java.io.File("."));
-            getLogger().info("Fulcrum runtime role: " + role);
-
             RuntimeEnvironment env = EnvironmentLoader.load(this);
-            java.util.List<String> modules = env.getModulesFor(role);
+            java.util.List<String> allowedModules = env.getModulesFor(role);
 
-            getLogger().info("Modules for this role: " + modules);
+            getLogger().info("Fulcrum runtime role: " + role);
+            getLogger().info("Modules for this role: " + allowedModules);
+
+            this.platform = new FulcrumPlatform();
+            this.moduleManager = new ModuleManager(getLogger());
+            moduleManager.loadModules(allowedModules, platform);
         } catch (java.io.IOException e) {
-            getLogger().severe("Failed to load runtime environment: " + e.getMessage());
-            getServer().shutdown(); // Optional safety
+            getLogger().severe("Failed to load environment: " + e.getMessage());
+            getServer().shutdown();
         }
-
-        // Initialize platform and module system
-        this.platform = new FulcrumPlatform();
-        this.moduleManager = new ModuleManager(getLogger());
-        moduleManager.loadAll(this, platform);
     }
 
     @Override

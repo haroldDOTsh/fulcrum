@@ -14,46 +14,38 @@ import java.util.logging.Logger;
  * Manages runtime loading and lifecycle of external Fulcrum modules.
  */
 public class ModuleManager {
-    private final List<ModuleMetadata> loadedModules = new ArrayList<>();
+    private List<ModuleMetadata> loadedModules = new ArrayList<>();
     private final Logger logger;
 
     public ModuleManager(Logger logger) {
         this.logger = logger;
     }
 
-    public void loadAll(JavaPlugin corePlugin, FulcrumPlatform platform) {
-        List<ModuleMetadata> discovered = new ArrayList<>();
+    /**
+     * Loads and enables only the modules listed in allowedModules, respecting dependencies.
+     */
+    public void loadModules(List<String> allowedModules, FulcrumPlatform platform) {
+        Map<String, ModuleMetadata> discovered = new HashMap<>();
         for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
-            if (plugin == corePlugin) continue;
-            if (!(plugin instanceof JavaPlugin javaPlugin)) continue;
-            var meta = javaPlugin.getPluginMeta(); // Paper API
-            if (!meta.getPluginDependencies().contains(corePlugin.getName())) {
-                logger.fine("[Module] Skipping " + plugin.getName() + ": no Fulcrum dependency");
-                continue;
-            }
-            if (!(plugin instanceof FulcrumModule moduleInstance)) {
-                logger.warning("[Module] Skipping " + plugin.getName() + ": does not implement FulcrumModule");
-                continue;
-            }
+            if (!(plugin instanceof FulcrumModule module)) continue;
             ModuleInfo info = plugin.getClass().getAnnotation(ModuleInfo.class);
-            if (info == null) {
-                logger.warning("[Module] Skipping " + plugin.getName() + ": missing @ModuleInfo annotation");
+            if (info == null) continue;
+            if (!allowedModules.contains(info.name())) {
+                plugin.getLogger().info("[Fulcrum] Skipping module: " + info.name() + " (not in role config)");
                 continue;
             }
-            List<String> dependsOn = Arrays.asList(info.dependsOn());
-            ModuleMetadata metadata = new ModuleMetadata(
+            discovered.put(info.name(), new ModuleMetadata(
                 info.name(),
-                dependsOn,
+                List.of(info.dependsOn()),
                 info.description(),
-                javaPlugin,
-                moduleInstance
-            );
-            discovered.add(metadata);
+                (JavaPlugin) plugin,
+                module
+            ));
         }
         List<ModuleMetadata> sorted;
         try {
             sorted = DependencyResolver.resolve(
-                discovered,
+                new ArrayList<>(discovered.values()),
                 ModuleMetadata::name,
                 ModuleMetadata::dependsOn
             );
@@ -61,26 +53,28 @@ public class ModuleManager {
             logger.severe(e.getMessage());
             return;
         }
-        for (ModuleMetadata module : sorted) {
+        loadedModules = new ArrayList<>();
+        for (ModuleMetadata meta : sorted) {
             try {
-                module.instance().onEnable(platform);
-                logger.info("[Module] Enabled: " + module.name());
-                loadedModules.add(module);
+                meta.instance().onEnable(platform);
+                logger.info("[Fulcrum] Enabled module: " + meta.name());
+                loadedModules.add(meta);
             } catch (Exception e) {
-                logger.severe("[Module] Failed to enable: " + module.name() + ": " + e.getMessage());
+                logger.severe("[Fulcrum] Failed to enable module: " + meta.name());
+                e.printStackTrace();
             }
         }
     }
 
     public void disableAll() {
-        ListIterator<ModuleMetadata> it = loadedModules.listIterator(loadedModules.size());
-        while (it.hasPrevious()) {
-            ModuleMetadata module = it.previous();
+        for (int i = loadedModules.size() - 1; i >= 0; i--) {
+            ModuleMetadata meta = loadedModules.get(i);
             try {
-                module.instance().onDisable();
-                logger.info("[Module] Disabled: " + module.name());
+                meta.instance().onDisable();
+                logger.info("[Fulcrum] Disabled module: " + meta.name());
             } catch (Exception e) {
-                logger.severe("[Module] Failed to disable: " + module.name() + ": " + e.getMessage());
+                logger.severe("Error disabling module: " + meta.name());
+                e.printStackTrace();
             }
         }
         loadedModules.clear();
