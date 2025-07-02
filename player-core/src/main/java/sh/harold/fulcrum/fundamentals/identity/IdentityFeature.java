@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.feature.identity;
+package sh.harold.fulcrum.fundamentals.identity;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;

@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.feature.identity;
+package sh.harold.fulcrum.fundamentals.identity;
 
 import sh.harold.fulcrum.api.data.annotation.Column;
 import sh.harold.fulcrum.api.data.annotation.PrimaryKeyGeneration;

@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.feature.gamemode;
+package sh.harold.fulcrum.fundamentals.gamemode;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;

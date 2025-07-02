@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.feature.identity;
+package sh.harold.fulcrum.fundamentals.identity;
 
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;

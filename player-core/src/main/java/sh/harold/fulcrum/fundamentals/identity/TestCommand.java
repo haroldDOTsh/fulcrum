@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.feature.identity;
+package sh.harold.fulcrum.fundamentals.identity;
 
 import static io.papermc.paper.command.brigadier.Commands.*;
 import static io.papermc.paper.command.brigadier.argument.ArgumentTypes.*;

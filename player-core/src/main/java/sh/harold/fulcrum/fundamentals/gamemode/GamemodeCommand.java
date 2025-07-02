@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.feature.gamemode;
+package sh.harold.fulcrum.fundamentals.gamemode;
 
 import static io.papermc.paper.command.brigadier.Commands.*;
 import static io.papermc.paper.command.brigadier.argument.ArgumentTypes.*;
