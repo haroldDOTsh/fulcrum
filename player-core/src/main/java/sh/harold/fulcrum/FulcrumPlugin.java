@@ -8,6 +8,7 @@ import sh.harold.fulcrum.fundamentals.identity.IdentityFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
 import sh.harold.fulcrum.module.ModuleManager;
+import sh.harold.fulcrum.module.ModuleFeature;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
@@ -24,6 +25,8 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new PlayerDataFeature());
         FeatureManager.register(new MessageFeature());
         FeatureManager.register(new IdentityFeature());
+        FeatureManager.register(new ModuleFeature());
+
         FeatureManager.register(new GamemodeFeature());
 
         FeatureManager.initializeAll(this);
