@@ -4,6 +4,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 import sh.harold.fulcrum.api.playerdata.StorageManager;
+import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.api.rank.RankService;
@@ -16,31 +17,40 @@ import sh.harold.fulcrum.api.rank.model.MonthlyRankData;
 public final class RankFeature implements PluginFeature {
 
     private static RankManager rankManager;
-    private static RankDisplayManager displayManager;
-    private static RankEventListener eventListener;
     private static RankExpirationTask expirationTask;
 
     @Override
+    public void initialize(JavaPlugin plugin, DependencyContainer container) {
+        // Initialize using the container
+        initialize(plugin);
+        
+        // Register services in the dependency container
+        if (rankManager != null) {
+            container.register(RankService.class, rankManager);
+            plugin.getLogger().info("[RankFeature] Registered RankService in dependency container.");
+        }
+    }
+    
+    @Override
     public void initialize(JavaPlugin plugin) {
+        plugin.getLogger().info("[RankFeature] Starting initialization... (Priority: " + getPriority() + ")");
+        
         // Register the MonthlyRankData schema with the data registry
-        PlayerDataRegistry.registerSchema(
-                new AutoTableSchema<>(MonthlyRankData.class),
-                StorageManager.getStructuredBackend()
-        );
-        plugin.getLogger().info("[RankFeature] Registered MonthlyRankData schema.");
+        plugin.getLogger().info("[RankFeature] Attempting to access StorageManager.getStructuredBackend()...");
+        try {
+            PlayerDataRegistry.registerSchema(
+                    new AutoTableSchema<>(MonthlyRankData.class),
+                    StorageManager.getStructuredBackend()
+            );
+            plugin.getLogger().info("[RankFeature] Successfully registered MonthlyRankData schema.");
+        } catch (IllegalStateException e) {
+            plugin.getLogger().severe("[RankFeature] FAILED to access StorageManager: " + e.getMessage());
+            throw e;
+        }
 
         // Initialize the rank manager
         rankManager = new RankManager();
         plugin.getLogger().info("[RankFeature] Initialized RankManager.");
-
-        // Initialize the display manager
-        displayManager = new RankDisplayManager(rankManager, plugin);
-        plugin.getLogger().info("[RankFeature] Initialized RankDisplayManager.");
-
-        // Initialize and register the event listener
-        eventListener = new RankEventListener(displayManager);
-        plugin.getServer().getPluginManager().registerEvents(eventListener, plugin);
-        plugin.getLogger().info("[RankFeature] Registered RankEventListener.");
 
         // Initialize and start the expiration task
         expirationTask = new RankExpirationTask(plugin);
@@ -51,13 +61,14 @@ public final class RankFeature implements PluginFeature {
         CommandRegistrar.register(new RankCommands().build());
         plugin.getLogger().info("[RankFeature] Registered rank commands.");
 
-        // Update all online players' displays on startup
-        displayManager.updateAllPlayerTablists().thenRun(() -> {
-            plugin.getLogger().info("[RankFeature] Updated all online player displays.");
-        });
-
         // Note: IdentityData schema is already registered by IdentityFeature
         // The rank system enhances the existing IdentityData with proper enum types
+    }
+    
+    @Override
+    public int getPriority() {
+        // Rank feature should initialize after player data (priority 50)
+        return 60;
     }
 
     @Override
@@ -70,8 +81,6 @@ public final class RankFeature implements PluginFeature {
         
         // Clean up any resources if needed
         rankManager = null;
-        displayManager = null;
-        eventListener = null;
     }
 
     /**
@@ -83,17 +92,6 @@ public final class RankFeature implements PluginFeature {
             throw new IllegalStateException("RankFeature has not been initialized yet");
         }
         return rankManager;
-    }
-
-    /**
-     * Get the global rank display manager instance.
-     * @return The RankDisplayManager implementation
-     */
-    public static RankDisplayManager getRankDisplayManager() {
-        if (displayManager == null) {
-            throw new IllegalStateException("RankFeature has not been initialized yet");
-        }
-        return displayManager;
     }
 
     /**
@@ -112,6 +110,6 @@ public final class RankFeature implements PluginFeature {
      * @return true if the rank system is ready to use
      */
     public static boolean isInitialized() {
-        return rankManager != null && displayManager != null && expirationTask != null;
+        return rankManager != null && expirationTask != null;
     }
 }

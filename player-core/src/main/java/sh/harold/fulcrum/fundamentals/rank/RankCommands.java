@@ -1,12 +1,9 @@
 package sh.harold.fulcrum.fundamentals.rank;
 
 import static io.papermc.paper.command.brigadier.Commands.*;
-import static io.papermc.paper.command.brigadier.argument.ArgumentTypes.*;
 
-import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -14,10 +11,7 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import sh.harold.fulcrum.api.message.Message;
@@ -32,7 +26,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 /**
  * Administrative commands for rank management using Paper's Brigadier API.
@@ -446,14 +439,9 @@ public final class RankCommands {
         CommandSender sender = ctx.getSource().getSender();
 
         try {
-            // Update all online players' displays
-            RankDisplayManager displayManager = RankFeature.getRankDisplayManager();
-            displayManager.updateAllPlayerTablists().thenRun(() -> {
-                Message.success("rank.reload.success").send(sender);
-            }).exceptionally(throwable -> {
-                Message.error("rank.reload.failed", throwable.getMessage()).send(sender);
-                return null;
-            });
+            // The rank system core functionality doesn't require reloading
+            // Display updates are handled by external formatting systems
+            Message.success("rank.reload.success").send(sender);
         } catch (Exception e) {
             Message.error("rank.reload.failed", e.getMessage()).send(sender);
         }
