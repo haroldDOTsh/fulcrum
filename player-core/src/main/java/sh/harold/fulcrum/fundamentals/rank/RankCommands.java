@@ -36,21 +36,21 @@ public final class RankCommands {
     // Suggestion providers for rank enums
     private static final SuggestionProvider<CommandSourceStack> PACKAGE_RANK_SUGGESTIONS = (context, builder) -> {
         Arrays.stream(PackageRank.values())
-                .map(rank -> rank.name().toLowerCase())
+                .map(Enum::name)
                 .forEach(builder::suggest);
         return builder.buildFuture();
     };
 
     private static final SuggestionProvider<CommandSourceStack> FUNCTIONAL_RANK_SUGGESTIONS = (context, builder) -> {
         Arrays.stream(FunctionalRank.values())
-                .map(rank -> rank.name().toLowerCase())
+                .map(Enum::name)
                 .forEach(builder::suggest);
         return builder.buildFuture();
     };
 
     private static final SuggestionProvider<CommandSourceStack> MONTHLY_RANK_SUGGESTIONS = (context, builder) -> {
         Arrays.stream(MonthlyPackageRank.values())
-                .map(rank -> rank.name().toLowerCase().replace("_plus", "+"))
+                .map(Enum::name)
                 .forEach(builder::suggest);
         return builder.buildFuture();
     };
@@ -69,7 +69,6 @@ public final class RankCommands {
         return literal("rank")
                 .requires(source -> source.getSender().hasPermission("fulcrum.rank"))
                 .then(buildInfoCommand())
-                .then(buildSetCommand())
                 .then(buildGrantCommand())
                 .then(buildRemoveCommand())
                 .then(buildListCommand())
@@ -87,24 +86,20 @@ public final class RankCommands {
                         .executes(this::executeInfo));
     }
 
-    private LiteralArgumentBuilder<CommandSourceStack> buildSetCommand() {
-        return literal("set")
+
+    private LiteralArgumentBuilder<CommandSourceStack> buildGrantCommand() {
+        return literal("grant")
                 .requires(source -> source.getSender().hasPermission("fulcrum.rank.admin"))
                 .then(literal("package")
                         .then(argument("player", ArgumentTypes.player())
                                 .then(argument("rank", StringArgumentType.word())
                                         .suggests(PACKAGE_RANK_SUGGESTIONS)
-                                        .executes(this::executeSetPackage))))
+                                        .executes(this::executeGrantPackage))))
                 .then(literal("functional")
                         .then(argument("player", ArgumentTypes.player())
                                 .then(argument("rank", StringArgumentType.word())
                                         .suggests(FUNCTIONAL_RANK_SUGGESTIONS)
-                                        .executes(this::executeSetFunctional))));
-    }
-
-    private LiteralArgumentBuilder<CommandSourceStack> buildGrantCommand() {
-        return literal("grant")
-                .requires(source -> source.getSender().hasPermission("fulcrum.rank.admin"))
+                                        .executes(this::executeGrantFunctional))))
                 .then(literal("monthly")
                         .then(argument("player", ArgumentTypes.player())
                                 .then(argument("rank", StringArgumentType.word())
@@ -144,7 +139,7 @@ public final class RankCommands {
         
         List<Player> targets = resolver.resolve(ctx.getSource());
         if (targets.isEmpty()) {
-            Message.error("rank.error.player-not-found", "No players found").send(sender);
+            Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
             return 0;
         }
 
@@ -166,12 +161,12 @@ public final class RankCommands {
                             rankService.getMonthlyRank(playerId).thenAccept(monthlyRank -> {
                                 // Send results back on main thread
                                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                                    Message.info("rank.info.header", target.getName()).send(sender);
-                                    Message.info("rank.info.effective", effectiveRank.getEffectiveDisplayName(), effectiveRank.getEffectiveColorCode()).send(sender);
-                                    Message.info("rank.info.functional", functionalRank != null ? functionalRank.getDisplayName() : "None").send(sender);
-                                    Message.info("rank.info.package", packageRank.getDisplayName()).send(sender);
-                                    Message.info("rank.info.monthly", monthlyRank != null ? monthlyRank.getDisplayName() : "None").send(sender);
-                                    Message.info("rank.info.priority", effectiveRank.effectivePriority().name()).send(sender);
+                                    Message.info("rank.info.header", target.getName()).staff().send(sender);
+                                    Message.info("rank.info.effective", effectiveRank.getEffectiveDisplayName(), effectiveRank.getEffectiveColorCode()).staff().send(sender);
+                                    Message.info("rank.info.functional", functionalRank != null ? functionalRank.getDisplayName() : "None").staff().send(sender);
+                                    Message.info("rank.info.package", packageRank.getDisplayName()).staff().send(sender);
+                                    Message.info("rank.info.monthly", monthlyRank != null ? monthlyRank.getDisplayName() : "None").staff().send(sender);
+                                    Message.info("rank.info.priority", effectiveRank.effectivePriority().name()).staff().send(sender);
                                 });
                             });
                         });
@@ -179,7 +174,7 @@ public final class RankCommands {
                 });
             }).exceptionally(throwable -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.error("rank.error.failed-to-load", throwable.getMessage()).send(sender);
+                    Message.error("rank.error.failed-to-load", throwable.getMessage()).staff().send(sender);
                 });
                 return null;
             });
@@ -188,23 +183,23 @@ public final class RankCommands {
         return 1;
     }
 
-    private int executeSetPackage(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+    private int executeGrantPackage(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         CommandSender sender = ctx.getSource().getSender();
         PlayerSelectorArgumentResolver resolver = ctx.getArgument("player", PlayerSelectorArgumentResolver.class);
         String rankName = ctx.getArgument("rank", String.class);
 
         List<Player> targets = resolver.resolve(ctx.getSource());
         if (targets.isEmpty()) {
-            Message.error("rank.error.player-not-found", "No players found").send(sender);
+            Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
             return 0;
         }
 
         PackageRank rank;
         try {
-            rank = PackageRank.valueOf(rankName.toUpperCase());
+            rank = PackageRank.valueOf(rankName);
         } catch (IllegalArgumentException e) {
-            Message.error("rank.error.invalid-package-rank", rankName, 
-                Arrays.toString(PackageRank.values())).send(sender);
+            Message.error("rank.error.invalid-package-rank", rankName,
+                Arrays.toString(PackageRank.values())).staff().send(sender);
             return 0;
         }
 
@@ -216,7 +211,7 @@ public final class RankCommands {
         Bukkit.getScheduler().runTaskAsynchronously(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
             rankService.setPackageRank(playerId, rank).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.success("rank.set.package.success", target.getName(), rank.getDisplayName()).send(sender);
+                    Message.success("rank.set.package.success", target.getName(), rank.getDisplayName()).staff().send(sender);
                     
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
@@ -226,7 +221,7 @@ public final class RankCommands {
                 });
             }).exceptionally(throwable -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.error("rank.error.failed-to-set", throwable.getMessage()).send(sender);
+                    Message.error("rank.error.failed-to-set", throwable.getMessage()).staff().send(sender);
                 });
                 return null;
             });
@@ -235,23 +230,23 @@ public final class RankCommands {
         return 1;
     }
 
-    private int executeSetFunctional(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+    private int executeGrantFunctional(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         CommandSender sender = ctx.getSource().getSender();
         PlayerSelectorArgumentResolver resolver = ctx.getArgument("player", PlayerSelectorArgumentResolver.class);
         String rankName = ctx.getArgument("rank", String.class);
 
         List<Player> targets = resolver.resolve(ctx.getSource());
         if (targets.isEmpty()) {
-            Message.error("rank.error.player-not-found", "No players found").send(sender);
+            Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
             return 0;
         }
 
         FunctionalRank rank;
         try {
-            rank = FunctionalRank.valueOf(rankName.toUpperCase());
+            rank = FunctionalRank.valueOf(rankName);
         } catch (IllegalArgumentException e) {
-            Message.error("rank.error.invalid-functional-rank", rankName, 
-                Arrays.toString(FunctionalRank.values())).send(sender);
+            Message.error("rank.error.invalid-functional-rank", rankName,
+                Arrays.toString(FunctionalRank.values())).staff().send(sender);
             return 0;
         }
 
@@ -263,7 +258,7 @@ public final class RankCommands {
         Bukkit.getScheduler().runTaskAsynchronously(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
             rankService.setFunctionalRank(playerId, rank).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.success("rank.set.functional.success", target.getName(), rank.getDisplayName()).send(sender);
+                    Message.success("rank.set.functional.success", target.getName(), rank.getDisplayName()).staff().send(sender);
                     
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
@@ -273,7 +268,7 @@ public final class RankCommands {
                 });
             }).exceptionally(throwable -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.error("rank.error.failed-to-set", throwable.getMessage()).send(sender);
+                    Message.error("rank.error.failed-to-set", throwable.getMessage()).staff().send(sender);
                 });
                 return null;
             });
@@ -290,16 +285,16 @@ public final class RankCommands {
 
         List<Player> targets = resolver.resolve(ctx.getSource());
         if (targets.isEmpty()) {
-            Message.error("rank.error.player-not-found", "No players found").send(sender);
+            Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
             return 0;
         }
 
         MonthlyPackageRank rank;
         try {
-            rank = MonthlyPackageRank.valueOf(rankName.toUpperCase().replace("+", "_PLUS"));
+            rank = MonthlyPackageRank.valueOf(rankName);
         } catch (IllegalArgumentException e) {
-            Message.error("rank.error.invalid-monthly-rank", rankName, 
-                Arrays.toString(MonthlyPackageRank.values())).send(sender);
+            Message.error("rank.error.invalid-monthly-rank", rankName,
+                Arrays.toString(MonthlyPackageRank.values())).staff().send(sender);
             return 0;
         }
 
@@ -307,7 +302,7 @@ public final class RankCommands {
         try {
             duration = parseDuration(durationStr);
         } catch (IllegalArgumentException e) {
-            Message.error("rank.error.invalid-duration", durationStr).send(sender);
+            Message.error("rank.error.invalid-duration", durationStr).staff().send(sender);
             return 0;
         }
 
@@ -320,7 +315,7 @@ public final class RankCommands {
             rankService.grantMonthlyRank(playerId, rank, duration).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
                     Message.success("rank.grant.monthly.success", target.getName(), rank.getDisplayName(), 
-                        formatDuration(duration)).send(sender);
+                        formatDuration(duration)).staff().send(sender);
                     
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
@@ -330,7 +325,7 @@ public final class RankCommands {
                 });
             }).exceptionally(throwable -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.error("rank.error.failed-to-grant", throwable.getMessage()).send(sender);
+                    Message.error("rank.error.failed-to-grant", throwable.getMessage()).staff().send(sender);
                 });
                 return null;
             });
@@ -345,7 +340,7 @@ public final class RankCommands {
 
         List<Player> targets = resolver.resolve(ctx.getSource());
         if (targets.isEmpty()) {
-            Message.error("rank.error.player-not-found", "No players found").send(sender);
+            Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
             return 0;
         }
 
@@ -357,7 +352,7 @@ public final class RankCommands {
         Bukkit.getScheduler().runTaskAsynchronously(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
             rankService.setFunctionalRank(playerId, null).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.success("rank.remove.functional.success", target.getName()).send(sender);
+                    Message.success("rank.remove.functional.success", target.getName()).staff().send(sender);
                     
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
@@ -367,7 +362,7 @@ public final class RankCommands {
                 });
             }).exceptionally(throwable -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.error("rank.error.failed-to-remove", throwable.getMessage()).send(sender);
+                    Message.error("rank.error.failed-to-remove", throwable.getMessage()).staff().send(sender);
                 });
                 return null;
             });
@@ -382,7 +377,7 @@ public final class RankCommands {
 
         List<Player> targets = resolver.resolve(ctx.getSource());
         if (targets.isEmpty()) {
-            Message.error("rank.error.player-not-found", "No players found").send(sender);
+            Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
             return 0;
         }
 
@@ -394,7 +389,7 @@ public final class RankCommands {
         Bukkit.getScheduler().runTaskAsynchronously(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
             rankService.removeMonthlyRank(playerId).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.success("rank.remove.monthly.success", target.getName()).send(sender);
+                    Message.success("rank.remove.monthly.success", target.getName()).staff().send(sender);
                     
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
@@ -404,7 +399,7 @@ public final class RankCommands {
                 });
             }).exceptionally(throwable -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.error("rank.error.failed-to-remove", throwable.getMessage()).send(sender);
+                    Message.error("rank.error.failed-to-remove", throwable.getMessage()).staff().send(sender);
                 });
                 return null;
             });
@@ -416,20 +411,20 @@ public final class RankCommands {
     private int executeList(CommandContext<CommandSourceStack> ctx) {
         CommandSender sender = ctx.getSource().getSender();
 
-        Message.info("rank.list.header").send(sender);
-        Message.info("rank.list.section", "Package Ranks").send(sender);
+        Message.info("rank.list.header").staff().send(sender);
+        Message.info("rank.list.section", "Package Ranks").staff().send(sender);
         for (PackageRank rank : PackageRank.values()) {
-            Message.info("rank.list.item", rank.name(), rank.getDisplayName(), rank.getColorCode()).send(sender);
+            Message.info("rank.list.item", rank.name(), rank.getDisplayName(), rank.getColorCode()).staff().send(sender);
         }
 
-        Message.info("rank.list.section", "Functional Ranks").send(sender);
+        Message.info("rank.list.section", "Functional Ranks").staff().send(sender);
         for (FunctionalRank rank : FunctionalRank.values()) {
-            Message.info("rank.list.item", rank.name(), rank.getDisplayName(), rank.getColorCode()).send(sender);
+            Message.info("rank.list.item", rank.name(), rank.getDisplayName(), rank.getColorCode()).staff().send(sender);
         }
 
-        Message.info("rank.list.section", "Monthly Ranks").send(sender);
+        Message.info("rank.list.section", "Monthly Ranks").staff().send(sender);
         for (MonthlyPackageRank rank : MonthlyPackageRank.values()) {
-            Message.info("rank.list.item", rank.name(), rank.getDisplayName(), rank.getColorCode()).send(sender);
+            Message.info("rank.list.item", rank.name(), rank.getDisplayName(), rank.getColorCode()).staff().send(sender);
         }
 
         return 1;
@@ -441,9 +436,9 @@ public final class RankCommands {
         try {
             // The rank system core functionality doesn't require reloading
             // Display updates are handled by external formatting systems
-            Message.success("rank.reload.success").send(sender);
+            Message.success("rank.reload.success").staff().send(sender);
         } catch (Exception e) {
-            Message.error("rank.reload.failed", e.getMessage()).send(sender);
+            Message.error("rank.reload.failed", e.getMessage()).staff().send(sender);
         }
 
         return 1;
