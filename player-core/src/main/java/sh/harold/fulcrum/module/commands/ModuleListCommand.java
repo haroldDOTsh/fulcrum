@@ -18,20 +18,48 @@ public final class ModuleListCommand {
     }
 
     public LiteralCommandNode<CommandSourceStack> build() {
-        return literal("fulcrummodules")
+        return literal("runtimeinfo")
                 .requires(source -> source.getSender().hasPermission("fulcrum.modules.list"))
                 .then(literal("list")
                         .executes(ctx -> {
                             CommandSourceStack source = ctx.getSource();
                             var sender = source.getSender();
 
+                            // Check if moduleManager is null
+                            if (moduleManager == null) {
+                                sender.sendMessage(Component.text("Module system is not initialized.", NamedTextColor.RED));
+                                return 1;
+                            }
+
                             sender.sendMessage(Component.text("Loaded Fulcrum Modules:", NamedTextColor.GOLD));
 
-                            for (ModuleMetadata metadata : moduleManager.getLoadedModules()) {
+                            var loadedModules = moduleManager.getLoadedModules();
+                            if (loadedModules == null || loadedModules.isEmpty()) {
+                                sender.sendMessage(Component.text("No modules are currently loaded.", NamedTextColor.YELLOW));
+                                return 1;
+                            }
+
+                            for (ModuleMetadata metadata : loadedModules) {
+                                // Add null checks for safety
+                                if (metadata == null) {
+                                    continue;
+                                }
+                                
+                                String name = metadata.name();
+                                String description = metadata.description();
+                                
+                                // Handle null values gracefully
+                                if (name == null) {
+                                    name = "Unknown Module";
+                                }
+                                if (description == null) {
+                                    description = "No description available";
+                                }
+                                
                                 Component line = Component.text("• ", NamedTextColor.GRAY)
-                                        .append(Component.text(metadata.name(), NamedTextColor.GREEN))
+                                        .append(Component.text(name, NamedTextColor.GREEN))
                                         .append(Component.text(" - ", NamedTextColor.DARK_GRAY))
-                                        .append(Component.text(metadata.description(), NamedTextColor.WHITE));
+                                        .append(Component.text(description, NamedTextColor.WHITE));
                                 sender.sendMessage(line);
                             }
 

@@ -12,11 +12,19 @@ public final class IdentityFeature implements PluginFeature {
 
     @Override
     public void initialize(JavaPlugin plugin) {
-        PlayerDataRegistry.registerSchema(
-                new AutoTableSchema<>(IdentityData.class),
-                StorageManager.getStructuredBackend()           // or getDocumentBackend() for JSON
-        );
-        plugin.getLogger().info("[IdentityFeature] Registered IdentityData schema.");
+        plugin.getLogger().info("[IdentityFeature] Starting initialization... (Priority: " + getPriority() + ")");
+        
+        plugin.getLogger().info("[IdentityFeature] Attempting to access StorageManager.getStructuredBackend()...");
+        try {
+            PlayerDataRegistry.registerSchema(
+                    new AutoTableSchema<>(IdentityData.class),
+                    StorageManager.getStructuredBackend()           // or getDocumentBackend() for JSON
+            );
+            plugin.getLogger().info("[IdentityFeature] Successfully registered IdentityData schema.");
+        } catch (IllegalStateException e) {
+            plugin.getLogger().severe("[IdentityFeature] FAILED to access StorageManager: " + e.getMessage());
+            throw e;
+        }
         // Register the IdentityListener for player join events
         plugin.getServer().getPluginManager().registerEvents(new IdentityListener(), plugin);
 
@@ -26,5 +34,11 @@ public final class IdentityFeature implements PluginFeature {
     @Override
     public void shutdown() {
         // No shutdown logic for now
+    }
+    
+    @Override
+    public int getPriority() {
+        // Identity feature depends on PlayerData, so should initialize after it
+        return 50;
     }
 }
