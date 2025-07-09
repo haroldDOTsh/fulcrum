@@ -11,5 +11,5 @@ include(
     "message-api",
     "data-api",
     "player-core",
-    "command-api"
+    "rank-api"
 )

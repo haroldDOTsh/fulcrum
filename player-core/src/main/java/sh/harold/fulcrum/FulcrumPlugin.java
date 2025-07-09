@@ -5,6 +5,7 @@ import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.identity.IdentityFeature;
+import sh.harold.fulcrum.fundamentals.rank.RankFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
 import sh.harold.fulcrum.module.ModuleManager;
@@ -28,6 +29,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ModuleFeature());
 
         FeatureManager.register(new GamemodeFeature());
+        FeatureManager.register(new RankFeature());
 
         FeatureManager.initializeAll(this);
 

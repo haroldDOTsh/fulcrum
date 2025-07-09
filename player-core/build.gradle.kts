@@ -19,7 +19,7 @@ repositories {
 dependencies {
     implementation(project(":data-api"))
     implementation(project(":message-api"))
-    implementation(project(":command-api"))
+    implementation(project(":rank-api"))
 
     // Paper API
     compileOnly("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
@@ -32,7 +32,6 @@ dependencies {
     // (Optional test setup)
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
-    testImplementation(project(":command-api"))
 }
 
 val targetJavaVersion = 21
@@ -80,7 +79,6 @@ tasks.named<ShadowJar>("shadowJar") {
 
     relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
     relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
-    relocate("sh.harold.fulcrum.api.command", "sh.harold.internal.api.command")
 }
 
 
