@@ -28,6 +28,10 @@ dependencies {
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
     implementation("org.yaml:snakeyaml:2.2")
     implementation("io.github.classgraph:classgraph:4.8.173")
+    
+    // Redis dependencies
+    implementation("redis.clients:jedis:5.1.0")
+    implementation("org.apache.commons:commons-pool2:2.12.0")
 
     // (Optional test setup)
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
