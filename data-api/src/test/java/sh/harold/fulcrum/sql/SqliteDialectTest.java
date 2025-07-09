@@ -7,9 +7,15 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SqliteDialectTest {
     private final SqliteDialect dialect = new SqliteDialect();
+
+    // Test enum for enum type mapping test
+    enum TestEnum {
+        VALUE1, VALUE2
+    }
 
     @Test
     void testTypeMappings() {
@@ -25,6 +31,18 @@ class SqliteDialectTest {
         assertEquals("REAL", dialect.getSqlType(Double.class));
         assertEquals("REAL", dialect.getSqlType(float.class));
         assertEquals("REAL", dialect.getSqlType(Float.class));
+    }
+
+    @Test
+    void testEnumTypeMapping() {
+        // Test that enum types are mapped to TEXT
+        assertEquals("TEXT", dialect.getSqlType(TestEnum.class));
+    }
+
+    @Test
+    void testUnsupportedType() {
+        // Test that unsupported types throw an exception
+        assertThrows(IllegalArgumentException.class, () -> dialect.getSqlType(Object.class));
     }
 
     @Test

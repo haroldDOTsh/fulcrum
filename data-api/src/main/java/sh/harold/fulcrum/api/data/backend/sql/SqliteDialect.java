@@ -17,6 +17,12 @@ public final class SqliteDialect implements SqlDialect {
         if (javaType == boolean.class || javaType == Boolean.class) return "BOOLEAN";
         if (javaType == double.class || javaType == Double.class) return "REAL";
         if (javaType == float.class || javaType == Float.class) return "REAL";
+        
+        // Handle enum types - store as TEXT (enum name)
+        if (javaType.isEnum()) {
+            return "TEXT";
+        }
+        
         throw new IllegalArgumentException("Unsupported Java type: " + javaType);
     }
 

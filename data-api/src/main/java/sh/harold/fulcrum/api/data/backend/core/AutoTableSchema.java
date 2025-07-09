@@ -359,15 +359,27 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         if (type == int.class || type == Integer.class) return rs.getInt(col);
         if (type == long.class || type == Long.class) return rs.getLong(col);
         if (type == boolean.class || type == Boolean.class) return rs.getBoolean(col);
+        if (type.isEnum()) {
+            String enumName = rs.getString(col);
+            if (enumName == null) return null;
+            // Convert string back to enum
+            return Enum.valueOf((Class<? extends Enum>) type, enumName);
+        }
         throw new IllegalArgumentException("Unsupported type: " + type.getName());
     }
 
     private void setPreparedStatementValue(PreparedStatement ps, int idx, Object value, Class<?> type) throws Exception {
+        System.out.println("[DEBUG] setPreparedStatementValue: idx=" + idx + ", value=" + value + ", type=" + type.getName() + ", isEnum=" + type.isEnum());
+        
         if (type == UUID.class) ps.setString(idx, value == null ? null : value.toString());
         else if (type == String.class) ps.setString(idx, (String) value);
         else if (type == int.class || type == Integer.class) ps.setInt(idx, (Integer) value);
         else if (type == long.class || type == Long.class) ps.setLong(idx, (Long) value);
         else if (type == boolean.class || type == Boolean.class) ps.setBoolean(idx, (Boolean) value);
+        else if (type.isEnum()) {
+            // Store enum as its name (string representation)
+            ps.setString(idx, value == null ? null : ((Enum<?>) value).name());
+        }
         else throw new IllegalArgumentException("Unsupported type: " + type.getName());
     }
 

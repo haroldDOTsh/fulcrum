@@ -17,6 +17,12 @@ public final class PostgresDialect implements SqlDialect {
         if (javaType == boolean.class || javaType == Boolean.class) return "BOOLEAN";
         if (javaType == double.class || javaType == Double.class) return "DOUBLE PRECISION";
         if (javaType == float.class || javaType == Float.class) return "REAL";
+        
+        // Handle enum types - store as VARCHAR with reasonable length
+        if (javaType.isEnum()) {
+            return "VARCHAR(64)";
+        }
+        
         throw new IllegalArgumentException("Unsupported Java type: " + javaType);
     }
 
