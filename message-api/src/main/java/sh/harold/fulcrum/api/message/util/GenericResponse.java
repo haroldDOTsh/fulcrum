@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.api.message;
+package sh.harold.fulcrum.api.message.util;
 
 public enum GenericResponse {
     ERROR("generic.error"),

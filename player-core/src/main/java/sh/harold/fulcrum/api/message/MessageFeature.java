@@ -2,6 +2,7 @@ package sh.harold.fulcrum.api.message;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.message.command.MessageReloadCommand;
+import sh.harold.fulcrum.api.message.util.DefaultTagFormatter;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 

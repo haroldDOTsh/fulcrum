@@ -3,6 +3,9 @@ package sh.harold.fulcrum.api.message;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import sh.harold.fulcrum.api.message.util.GenericResponse;
+import sh.harold.fulcrum.api.message.util.MessageTag;
+import sh.harold.fulcrum.api.message.util.TagFormatter;
 
 import java.util.List;
 import java.util.Locale;
@@ -10,10 +13,6 @@ import java.util.UUID;
 
 public interface MessageService {
 
-    /**
-     * Optionally set the argument count context for placeholder generation. Default is no-op.
-     * Implementations that support dynamic placeholder generation should override this.
-     */
     default void setArgCountContext(int argCount) {
         // No-op by default
     }
@@ -61,7 +60,6 @@ public interface MessageService {
 
     Locale getPlayerLocale(UUID uniqueId);
 
-    // New: Audience-based API
     void sendMessage(Audience audience, Component message);
 
     void sendStyledMessage(Audience audience, MessageStyle style, String translationKey, Object... args);

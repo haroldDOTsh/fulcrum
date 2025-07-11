@@ -1,13 +1,10 @@
 package sh.harold.fulcrum.api.message;
 
 import net.kyori.adventure.audience.Audience;
+import sh.harold.fulcrum.api.message.util.GenericResponse;
 
 import java.util.UUID;
 
-/**
- * Main message class providing static methods for consistent message formatting.
- * This class serves as the primary interface for developers to send styled messages.
- */
 public class Message {
 
     private static MessageService messageService;
@@ -47,12 +44,10 @@ public class Message {
         return MessageBuilder.key(MessageStyle.RAW, key, args);
     }
 
-    // New: Overload for Audience
     public static void error(Audience audience, GenericResponse response) {
         getService().sendGenericResponse(audience, response);
     }
 
-    // Overloads for enums (GenericResponse) for all message types
     public static MessageBuilder success(GenericResponse response, Object... args) {
         return success(response.getKey(), args);
     }

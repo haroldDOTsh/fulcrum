@@ -7,7 +7,7 @@ public enum MessageStyle {
     INFO(NamedTextColor.GRAY, NamedTextColor.AQUA),
     DEBUG(NamedTextColor.DARK_GRAY, NamedTextColor.DARK_GRAY),
     ERROR(NamedTextColor.RED, NamedTextColor.RED),
-    RAW(NamedTextColor.WHITE, null); // null for no specific argument color
+    RAW(NamedTextColor.WHITE, null);
 
     private final NamedTextColor color;
     private final NamedTextColor argumentColor;

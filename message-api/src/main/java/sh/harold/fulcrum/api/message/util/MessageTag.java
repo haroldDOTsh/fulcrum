@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.api.message;
+package sh.harold.fulcrum.api.message.util;
 
 public class MessageTag {
     private final String key;

@@ -2,6 +2,7 @@ package sh.harold.fulcrum.api.message;
 
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
+import sh.harold.fulcrum.api.message.util.MessageTag;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,7 +48,6 @@ public class MessageBuilder {
     }
 
     public void send(UUID playerUuid) {
-        // Only KEY type remains
         Message.getService().sendStyledMessageWithTags(playerUuid, style, messageIdentifier, tags, args);
     }
 
