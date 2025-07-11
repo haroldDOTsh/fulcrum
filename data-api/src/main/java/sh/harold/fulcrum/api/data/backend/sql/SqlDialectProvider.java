@@ -1,9 +1,5 @@
 package sh.harold.fulcrum.api.data.backend.sql;
 
-/**
- * Thread-safe global provider for the current SqlDialect.
- * Used by AutoTableSchema to determine which dialect to use if none is provided.
- */
 public final class SqlDialectProvider {
     private static volatile SqlDialect currentDialect = new SqliteDialect(); // sensible default
 

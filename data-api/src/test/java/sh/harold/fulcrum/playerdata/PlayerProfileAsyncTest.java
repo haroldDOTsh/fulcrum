@@ -57,14 +57,14 @@ class PlayerProfileAsyncTest {
     void getAsyncThrowsIfSchemaMissing() {
         var profile = new PlayerProfile(PLAYER_ID);
         var ex = assertThrows(CompletionException.class, () -> profile.getAsync(TestStats.class).join());
-        assertTrue(ex.getCause() instanceof IllegalArgumentException);
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause());
     }
 
     @Test
     void saveAsyncThrowsIfSchemaMissing() {
         var profile = new PlayerProfile(PLAYER_ID);
         var ex = assertThrows(CompletionException.class, () -> profile.saveAsync(TestStats.class, new TestStats(1)).join());
-        assertTrue(ex.getCause() instanceof IllegalArgumentException);
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause());
     }
 
     @Test
@@ -75,9 +75,9 @@ class PlayerProfileAsyncTest {
         var profile = new PlayerProfile(PLAYER_ID);
         // Use raw type to bypass compile-time check
         @SuppressWarnings("rawtypes")
-        PlayerProfile rawProfile = (PlayerProfile) profile;
+        PlayerProfile rawProfile = profile;
         var ex = assertThrows(CompletionException.class, () -> rawProfile.saveAsync((Class) TestStats.class, (Object) "not stats").join());
-        assertTrue(ex.getCause() instanceof IllegalArgumentException);
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause());
     }
 
     @Test

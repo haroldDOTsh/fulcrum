@@ -14,9 +14,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/**
- * SQL backend for player data using TableSchema logic with batch operation support.
- */
 public class SqlDataBackend implements PlayerDataBackend {
     private static final Logger LOGGER = Logger.getLogger(SqlDataBackend.class.getName());
     private final Connection connection;
@@ -69,20 +66,20 @@ public class SqlDataBackend implements PlayerDataBackend {
     public Connection getConnection() {
         return connection;
     }
-    
+
     @Override
     public int saveBatch(Map<UUID, Map<PlayerDataSchema<?>, Object>> entries) {
         int savedCount = 0;
         boolean originalAutoCommit = true;
-        
+
         try {
             // Use transaction for batch operations
             originalAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
-            
+
             for (Map.Entry<UUID, Map<PlayerDataSchema<?>, Object>> playerEntry : entries.entrySet()) {
                 UUID playerId = playerEntry.getKey();
-                
+
                 for (Map.Entry<PlayerDataSchema<?>, Object> schemaEntry : playerEntry.getValue().entrySet()) {
                     try {
                         @SuppressWarnings("unchecked")
@@ -91,16 +88,16 @@ public class SqlDataBackend implements PlayerDataBackend {
                         savedCount++;
                     } catch (Exception e) {
                         LOGGER.log(Level.WARNING, "Failed to save batch entry for player " + playerId +
-                                 ", schema " + schemaEntry.getKey().schemaKey(), e);
+                                ", schema " + schemaEntry.getKey().schemaKey(), e);
                     }
                 }
             }
-            
+
             connection.commit();
             if (savedCount > 0) {
                 LOGGER.log(Level.INFO, "Batch saved {0} entries to SQL database", savedCount);
             }
-            
+
         } catch (SQLException e) {
             try {
                 connection.rollback();
@@ -116,20 +113,20 @@ public class SqlDataBackend implements PlayerDataBackend {
                 LOGGER.log(Level.WARNING, "Failed to restore auto-commit mode", e);
             }
         }
-        
+
         return savedCount;
     }
-    
+
     @Override
     public <T> boolean saveChangedFields(UUID uuid, PlayerDataSchema<T> schema, T data, Collection<String> changedFields) {
-        // For SQL, we could potentially implement field-level updates, but for now we save the entire object
-        // This could be optimized in the future to generate UPDATE statements for only changed fields
+        // we could potentially implement field-level updates, but for now we save the entire object
+        // could be optimized in the future to generate UPDATE statements for only changed fields
         try {
             save(uuid, schema, data);
             return true;
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to save changed fields for player " + uuid +
-                     ", schema " + schema.schemaKey(), e);
+                    ", schema " + schema.schemaKey(), e);
             return false;
         }
     }

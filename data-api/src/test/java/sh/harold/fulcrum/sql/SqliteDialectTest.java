@@ -12,11 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class SqliteDialectTest {
     private final SqliteDialect dialect = new SqliteDialect();
 
-    // Test enum for enum type mapping test
-    enum TestEnum {
-        VALUE1, VALUE2
-    }
-
     @Test
     void testTypeMappings() {
         assertEquals("TEXT", dialect.getSqlType(UUID.class));
@@ -55,5 +50,10 @@ class SqliteDialectTest {
     void testUpsertStatement() {
         String sql = dialect.getUpsertStatement("test_table", List.of("id", "name"), List.of("id"));
         assertEquals("INSERT OR REPLACE INTO `test_table` (`id`, `name`) VALUES (?, ?)", sql);
+    }
+
+    // Test enum for enum type mapping test
+    enum TestEnum {
+        VALUE1, VALUE2
     }
 }

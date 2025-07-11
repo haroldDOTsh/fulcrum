@@ -3,10 +3,6 @@ package sh.harold.fulcrum.api.data.backend.sql;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * PostgreSQL dialect implementation for Fulcrum Data API.
- * Provides type mapping, identifier quoting, and upsert logic for PostgreSQL.
- */
 public final class PostgresDialect implements SqlDialect {
     @Override
     public String getSqlType(Class<?> javaType) {
@@ -17,12 +13,12 @@ public final class PostgresDialect implements SqlDialect {
         if (javaType == boolean.class || javaType == Boolean.class) return "BOOLEAN";
         if (javaType == double.class || javaType == Double.class) return "DOUBLE PRECISION";
         if (javaType == float.class || javaType == Float.class) return "REAL";
-        
+
         // Handle enum types - store as VARCHAR with reasonable length
         if (javaType.isEnum()) {
             return "VARCHAR(64)";
         }
-        
+
         throw new IllegalArgumentException("Unsupported Java type: " + javaType);
     }
 

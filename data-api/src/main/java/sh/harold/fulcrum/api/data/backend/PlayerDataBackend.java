@@ -6,16 +6,13 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Unified backend interface for player data storage (SQL, JSON, etc).
- */
 public interface PlayerDataBackend {
     <T> T load(UUID uuid, PlayerDataSchema<T> schema);
 
     <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data);
 
     <T> T loadOrCreate(UUID uuid, PlayerDataSchema<T> schema);
-    
+
     /**
      * Saves multiple data entries in a batch operation for better performance.
      * This method is optimized for bulk operations and dirty data persistence.
@@ -41,14 +38,14 @@ public interface PlayerDataBackend {
         }
         return savedCount;
     }
-    
+
     /**
      * Saves only specific changed fields for a player data entry.
      * This method is used for optimized dirty data persistence when only certain fields have changed.
      *
-     * @param uuid The player UUID
-     * @param schema The data schema
-     * @param data The complete data object
+     * @param uuid          The player UUID
+     * @param schema        The data schema
+     * @param data          The complete data object
      * @param changedFields The specific fields that have changed (optional, can be null for full save)
      * @return true if save was successful, false otherwise
      */

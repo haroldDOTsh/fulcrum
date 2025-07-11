@@ -3,10 +3,6 @@ package sh.harold.fulcrum.api.data.backend.sql;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * SQLite dialect implementation for Fulcrum Data API.
- * Provides type mapping, identifier quoting, and upsert logic for SQLite.
- */
 public final class SqliteDialect implements SqlDialect {
     @Override
     public String getSqlType(Class<?> javaType) {
@@ -17,12 +13,12 @@ public final class SqliteDialect implements SqlDialect {
         if (javaType == boolean.class || javaType == Boolean.class) return "BOOLEAN";
         if (javaType == double.class || javaType == Double.class) return "REAL";
         if (javaType == float.class || javaType == Float.class) return "REAL";
-        
+
         // Handle enum types - store as TEXT (enum name)
         if (javaType.isEnum()) {
             return "TEXT";
         }
-        
+
         throw new IllegalArgumentException("Unsupported Java type: " + javaType);
     }
 
@@ -33,7 +29,6 @@ public final class SqliteDialect implements SqlDialect {
 
     @Override
     public String getUpsertStatement(String table, List<String> columns, List<String> conflictKeys) {
-        // SQLite: INSERT OR REPLACE INTO ...
         String cols = String.join(", ", columns.stream().map(this::quoteIdentifier).toList());
         String vals = String.join(", ", columns.stream().map(c -> "?").toList());
         return "INSERT OR REPLACE INTO " + quoteIdentifier(table) + " (" + cols + ") VALUES (" + vals + ")";

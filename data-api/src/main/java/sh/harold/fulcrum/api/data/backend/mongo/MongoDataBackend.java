@@ -2,26 +2,18 @@ package sh.harold.fulcrum.api.data.backend.mongo;
 
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.ReplaceOneModel;
 import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.WriteModel;
-import com.mongodb.client.model.ReplaceOneModel;
 import org.bson.Document;
 import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.impl.JsonSchema;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/**
- * MongoDB backend for persistent player data storage with batch operation support.
- * Suitable for use with JsonSchema<T>.
- */
 public class MongoDataBackend implements PlayerDataBackend {
     private static final Logger LOGGER = Logger.getLogger(MongoDataBackend.class.getName());
     private final MongoCollection<Document> collection;
@@ -70,50 +62,50 @@ public class MongoDataBackend implements PlayerDataBackend {
         save(uuid, schema, newInstance);
         return newInstance;
     }
-    
+
     @Override
     public int saveBatch(Map<UUID, Map<PlayerDataSchema<?>, Object>> entries) {
         List<WriteModel<Document>> writeModels = new ArrayList<>();
         int totalEntries = 0;
-        
+
         for (Map.Entry<UUID, Map<PlayerDataSchema<?>, Object>> playerEntry : entries.entrySet()) {
             UUID playerId = playerEntry.getKey();
-            
+
             for (Map.Entry<PlayerDataSchema<?>, Object> schemaEntry : playerEntry.getValue().entrySet()) {
                 try {
                     PlayerDataSchema<?> schema = schemaEntry.getKey();
                     Object data = schemaEntry.getValue();
-                    
+
                     if (!(schema instanceof JsonSchema)) {
                         LOGGER.log(Level.WARNING, "Skipping non-JsonSchema entry for player {0}: {1}",
-                                 new Object[]{playerId, schema.getClass().getSimpleName()});
+                                new Object[]{playerId, schema.getClass().getSimpleName()});
                         continue;
                     }
-                    
+
                     @SuppressWarnings("unchecked")
                     JsonSchema<Object> jsonSchema = (JsonSchema<Object>) schema;
                     String json = jsonSchema.serialize(playerId, data);
                     Document doc = Document.parse(json);
                     doc.put("_id", playerId.toString());
-                    
+
                     writeModels.add(new ReplaceOneModel<>(
-                        Filters.eq("_id", playerId.toString()),
-                        doc,
-                        new ReplaceOptions().upsert(true)
+                            Filters.eq("_id", playerId.toString()),
+                            doc,
+                            new ReplaceOptions().upsert(true)
                     ));
-                    
+
                     totalEntries++;
                 } catch (Exception e) {
                     LOGGER.log(Level.WARNING, "Failed to prepare batch entry for player " + playerId +
-                             ", schema " + schemaEntry.getKey().schemaKey(), e);
+                            ", schema " + schemaEntry.getKey().schemaKey(), e);
                 }
             }
         }
-        
+
         if (writeModels.isEmpty()) {
             return 0;
         }
-        
+
         try {
             collection.bulkWrite(writeModels);
             LOGGER.log(Level.INFO, "Batch saved {0} entries to MongoDB", totalEntries);
@@ -123,7 +115,7 @@ public class MongoDataBackend implements PlayerDataBackend {
             return 0;
         }
     }
-    
+
     @Override
     public <T> boolean saveChangedFields(UUID uuid, PlayerDataSchema<T> schema, T data, Collection<String> changedFields) {
         // For MongoDB, we don't have field-level granularity in this implementation,
@@ -133,7 +125,7 @@ public class MongoDataBackend implements PlayerDataBackend {
             return true;
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to save changed fields for player " + uuid +
-                     ", schema " + schema.schemaKey(), e);
+                    ", schema " + schema.schemaKey(), e);
             return false;
         }
     }

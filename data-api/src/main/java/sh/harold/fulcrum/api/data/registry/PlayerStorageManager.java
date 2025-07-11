@@ -5,35 +5,27 @@ import sh.harold.fulcrum.api.data.dirty.DirtyDataManager;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
 
 import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/**
- * Manages player data storage operations with integrated dirty data tracking support.
- */
 public final class PlayerStorageManager {
     private static final Logger LOGGER = Logger.getLogger(PlayerStorageManager.class.getName());
-    
+    private static final Map<UUID, Long> lastPersistenceTime = new ConcurrentHashMap<>();
+    private static final Object configurationLock = new Object();
     // Configuration for dirty data tracking
     private static boolean dirtyTrackingEnabled = true;
     private static Duration persistenceInterval = Duration.ofMinutes(5);
     private static boolean eventBasedPersistence = true;
     private static boolean timeBasedPersistence = true;
-    
     // Internal state for persistence management
     private static ScheduledExecutorService persistenceExecutor;
-    private static final Map<UUID, Long> lastPersistenceTime = new ConcurrentHashMap<>();
-    private static final Object configurationLock = new Object();
-    
+
     private PlayerStorageManager() {
     }
-    
+
     /**
      * Initializes the storage manager with persistence configuration.
      *
@@ -45,15 +37,15 @@ public final class PlayerStorageManager {
             persistenceInterval = config.persistenceInterval;
             eventBasedPersistence = config.eventBasedPersistence;
             timeBasedPersistence = config.timeBasedPersistence;
-            
+
             if (timeBasedPersistence && persistenceExecutor == null) {
                 startTimedPersistence();
             }
-            
+
             LOGGER.info("PlayerStorageManager initialized with dirty tracking: " + dirtyTrackingEnabled);
         }
     }
-    
+
     /**
      * Shuts down the storage manager and cleans up resources.
      */
@@ -92,14 +84,14 @@ public final class PlayerStorageManager {
         if (backend == null) throw new IllegalStateException("No backend registered for schema: " + schema.schemaKey());
         return backend.loadOrCreate(playerId, schema);
     }
-    
+
     /**
      * Saves data and marks it as dirty if dirty tracking is enabled.
      * This method integrates with the dirty data system for deferred persistence.
      *
-     * @param playerId The player ID
-     * @param schema The data schema
-     * @param data The data to save
+     * @param playerId  The player ID
+     * @param schema    The data schema
+     * @param data      The data to save
      * @param immediate Whether to save immediately or defer to dirty tracking
      */
     public static <T> void saveWithDirtyTracking(UUID playerId, PlayerDataSchema<T> schema, T data, boolean immediate) {
@@ -108,11 +100,11 @@ public final class PlayerStorageManager {
             save(playerId, schema, data);
             return;
         }
-        
+
         // Mark as dirty for deferred persistence
         if (DirtyDataManager.isInitialized()) {
             DirtyDataManager.markDirty(playerId, schema.schemaKey(), data, DirtyDataEntry.ChangeType.UPDATE);
-            
+
             // Trigger event-based persistence if enabled
             if (eventBasedPersistence) {
                 triggerEventBasedPersistence(playerId);
@@ -122,7 +114,7 @@ public final class PlayerStorageManager {
             save(playerId, schema, data);
         }
     }
-    
+
     /**
      * Saves only dirty data for the specified player.
      *
@@ -133,14 +125,14 @@ public final class PlayerStorageManager {
         if (!dirtyTrackingEnabled || !DirtyDataManager.isInitialized()) {
             return 0;
         }
-        
+
         int persistedCount = DirtyDataManager.persistDirtyData(playerId);
         if (persistedCount > 0) {
             lastPersistenceTime.put(playerId, System.currentTimeMillis());
         }
         return persistedCount;
     }
-    
+
     /**
      * Asynchronously saves only dirty data for the specified player.
      *
@@ -151,7 +143,7 @@ public final class PlayerStorageManager {
         if (!dirtyTrackingEnabled || !DirtyDataManager.isInitialized()) {
             return CompletableFuture.completedFuture(0);
         }
-        
+
         return DirtyDataManager.persistDirtyDataAsync(playerId)
                 .thenApply(count -> {
                     if (count > 0) {
@@ -160,7 +152,7 @@ public final class PlayerStorageManager {
                     return count;
                 });
     }
-    
+
     /**
      * Saves all dirty data across all players.
      *
@@ -170,10 +162,10 @@ public final class PlayerStorageManager {
         if (!dirtyTrackingEnabled || !DirtyDataManager.isInitialized()) {
             return 0;
         }
-        
+
         return DirtyDataManager.persistAllDirtyData();
     }
-    
+
     /**
      * Asynchronously saves all dirty data across all players.
      *
@@ -183,10 +175,10 @@ public final class PlayerStorageManager {
         if (!dirtyTrackingEnabled || !DirtyDataManager.isInitialized()) {
             return CompletableFuture.completedFuture(0);
         }
-        
+
         return DirtyDataManager.persistAllDirtyDataAsync();
     }
-    
+
     /**
      * Checks if a player has dirty data.
      *
@@ -197,10 +189,10 @@ public final class PlayerStorageManager {
         if (!dirtyTrackingEnabled || !DirtyDataManager.isInitialized()) {
             return false;
         }
-        
+
         return DirtyDataManager.getCache().isDirty(playerId);
     }
-    
+
     /**
      * Gets the count of dirty data entries for a player.
      *
@@ -211,10 +203,10 @@ public final class PlayerStorageManager {
         if (!dirtyTrackingEnabled || !DirtyDataManager.isInitialized()) {
             return 0;
         }
-        
+
         return DirtyDataManager.getCache().getDirtyCount(playerId);
     }
-    
+
     /**
      * Configures the dirty data persistence interval.
      *
@@ -230,7 +222,7 @@ public final class PlayerStorageManager {
             }
         }
     }
-    
+
     /**
      * Enables or disables dirty data tracking.
      *
@@ -242,7 +234,7 @@ public final class PlayerStorageManager {
             LOGGER.info("Dirty data tracking " + (enabled ? "enabled" : "disabled"));
         }
     }
-    
+
     /**
      * Enables or disables event-based persistence.
      *
@@ -254,7 +246,7 @@ public final class PlayerStorageManager {
             LOGGER.info("Event-based persistence " + (enabled ? "enabled" : "disabled"));
         }
     }
-    
+
     /**
      * Enables or disables time-based persistence.
      *
@@ -272,7 +264,7 @@ public final class PlayerStorageManager {
             LOGGER.info("Time-based persistence " + (enabled ? "enabled" : "disabled"));
         }
     }
-    
+
     /**
      * Triggers event-based persistence for a specific player.
      *
@@ -281,7 +273,7 @@ public final class PlayerStorageManager {
     private static void triggerEventBasedPersistence(UUID playerId) {
         Long lastTime = lastPersistenceTime.get(playerId);
         long currentTime = System.currentTimeMillis();
-        
+
         // Only trigger if enough time has passed since last persistence
         if (lastTime == null || (currentTime - lastTime) > persistenceInterval.toMillis() / 2) {
             CompletableFuture.runAsync(() -> {
@@ -293,7 +285,7 @@ public final class PlayerStorageManager {
             });
         }
     }
-    
+
     /**
      * Starts the time-based persistence task.
      */
@@ -301,13 +293,13 @@ public final class PlayerStorageManager {
         if (persistenceExecutor != null) {
             return;
         }
-        
+
         persistenceExecutor = Executors.newScheduledThreadPool(1, r -> {
             Thread t = new Thread(r, "PlayerStorageManager-Persistence");
             t.setDaemon(true);
             return t;
         });
-        
+
         persistenceExecutor.scheduleAtFixedRate(() -> {
             try {
                 int savedCount = saveAllDirtyData();
@@ -318,23 +310,22 @@ public final class PlayerStorageManager {
                 LOGGER.log(Level.WARNING, "Time-based persistence failed", e);
             }
         }, persistenceInterval.toMillis(), persistenceInterval.toMillis(), TimeUnit.MILLISECONDS);
-        
+
         LOGGER.info("Started time-based persistence with interval: " + persistenceInterval);
     }
-    
-    /**
-     * Configuration class for storage manager.
-     */
+
+
     public static class StorageManagerConfig {
         public boolean dirtyTrackingEnabled = true;
         public Duration persistenceInterval = Duration.ofMinutes(5);
         public boolean eventBasedPersistence = true;
         public boolean timeBasedPersistence = true;
-        
-        public StorageManagerConfig() {}
-        
+
+        public StorageManagerConfig() {
+        }
+
         public StorageManagerConfig(boolean dirtyTrackingEnabled, Duration persistenceInterval,
-                                   boolean eventBasedPersistence, boolean timeBasedPersistence) {
+                                    boolean eventBasedPersistence, boolean timeBasedPersistence) {
             this.dirtyTrackingEnabled = dirtyTrackingEnabled;
             this.persistenceInterval = persistenceInterval;
             this.eventBasedPersistence = eventBasedPersistence;

@@ -16,21 +16,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.*;
 
-/**
- * TableSchema implementation that generates SQL DDL/DML from annotated POJOs.
- * Now supports pluggable SQL dialects for cross-database compatibility.
- *
- * <p>Usage example:
- * <pre>
- *   SqlDialect dialect = new SqliteDialect();
- *   AutoTableSchema<MyPojo> schema = new AutoTableSchema<>(MyPojo.class, null, dialect);
- * </pre>
- *
- * <p>Legacy usage (deprecated):
- * <pre>
- *   AutoTableSchema<MyPojo> schema = new AutoTableSchema<>(MyPojo.class, null);
- * </pre>
- */
 public class AutoTableSchema<T> extends TableSchema<T> {
     private final Class<T> type;
     private final String tableName;
@@ -242,7 +227,6 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         }
     }
 
-    // Remove @Override from load/save, as TableSchema no longer declares them
     public T load(UUID uuid) {
         Connection conn = null;
         PreparedStatement ps = null;
@@ -370,20 +354,17 @@ public class AutoTableSchema<T> extends TableSchema<T> {
 
     private void setPreparedStatementValue(PreparedStatement ps, int idx, Object value, Class<?> type) throws Exception {
         System.out.println("[DEBUG] setPreparedStatementValue: idx=" + idx + ", value=" + value + ", type=" + type.getName() + ", isEnum=" + type.isEnum());
-        
+
         if (type == UUID.class) ps.setString(idx, value == null ? null : value.toString());
         else if (type == String.class) ps.setString(idx, (String) value);
         else if (type == int.class || type == Integer.class) ps.setInt(idx, (Integer) value);
         else if (type == long.class || type == Long.class) ps.setLong(idx, (Long) value);
         else if (type == boolean.class || type == Boolean.class) ps.setBoolean(idx, (Boolean) value);
         else if (type.isEnum()) {
-            // Store enum as its name (string representation)
             ps.setString(idx, value == null ? null : ((Enum<?>) value).name());
-        }
-        else throw new IllegalArgumentException("Unsupported type: " + type.getName());
+        } else throw new IllegalArgumentException("Unsupported type: " + type.getName());
     }
 
-    // Override to provide a JDBC connection (to be implemented by the user or injected)
     protected Connection getConnection() throws Exception {
         if (testConnection != null) return testConnection;
         throw new UnsupportedOperationException("getConnection() must be implemented by the user");

@@ -16,14 +16,11 @@ import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/**
- * Represents a player's data profile with integrated dirty data tracking support.
- * This class automatically tracks data modifications and can defer persistence using the dirty data system.
- */
+
 public final class PlayerProfile {
     private static final Logger LOGGER = Logger.getLogger(PlayerProfile.class.getName());
     private static final Executor ASYNC_EXECUTOR = Executors.newCachedThreadPool();
-    
+
     private final UUID playerId;
     private final Map<Class<?>, Object> data = new ConcurrentHashMap<>();
     private boolean isNew = true;
@@ -32,11 +29,11 @@ public final class PlayerProfile {
     public PlayerProfile(UUID playerId) {
         this.playerId = playerId;
     }
-    
+
     /**
      * Constructs a PlayerProfile with configurable dirty tracking.
      *
-     * @param playerId The player ID
+     * @param playerId             The player ID
      * @param dirtyTrackingEnabled Whether to enable dirty tracking for this profile
      */
     public PlayerProfile(UUID playerId, boolean dirtyTrackingEnabled) {
@@ -44,9 +41,6 @@ public final class PlayerProfile {
         this.dirtyTrackingEnabled = dirtyTrackingEnabled;
     }
 
-    /**
-     * Internal, synchronous. Requires prior load or safe context.
-     */
     @SuppressWarnings("unchecked")
     public <T> T get(Class<T> schemaType) {
         if (data.containsKey(schemaType)) return (T) data.get(schemaType);
@@ -64,9 +58,6 @@ public final class PlayerProfile {
         return loaded;
     }
 
-    /**
-     * Safe async version of get(...)
-     */
     public <T> CompletableFuture<T> getAsync(Class<T> schemaType) {
         if (data.containsKey(schemaType)) {
             @SuppressWarnings("unchecked")
@@ -109,7 +100,7 @@ public final class PlayerProfile {
     public <T> void set(Class<T> schemaType, T value) {
         if (value == null) return;
         data.put(schemaType, value);
-        
+
         // Mark as dirty if dirty tracking is enabled
         if (dirtyTrackingEnabled && DirtyDataManager.isInitialized()) {
             var schema = PlayerDataRegistry.allSchemas().stream()
@@ -124,13 +115,13 @@ public final class PlayerProfile {
     public <T> void save(Class<T> schemaType, T value) {
         save(schemaType, value, false);
     }
-    
+
     /**
      * Saves data with option to force immediate persistence.
      *
      * @param schemaType The schema type
-     * @param value The value to save
-     * @param immediate Whether to save immediately or use dirty tracking
+     * @param value      The value to save
+     * @param immediate  Whether to save immediately or use dirty tracking
      */
     public <T> void save(Class<T> schemaType, T value, boolean immediate) {
         if (value == null) return;
@@ -142,14 +133,14 @@ public final class PlayerProfile {
             throw new IllegalArgumentException("Value type does not match schema: " + value.getClass());
         @SuppressWarnings("unchecked")
         PlayerDataSchema<T> typedSchema = (PlayerDataSchema<T>) schema;
-        
+
         // Use dirty tracking if enabled and not forced immediate
         if (dirtyTrackingEnabled && !immediate) {
             PlayerStorageManager.saveWithDirtyTracking(playerId, typedSchema, value, false);
         } else {
             PlayerStorageManager.save(playerId, typedSchema, value);
         }
-        
+
         data.put(schemaType, value);
         isNew = false;
     }
@@ -157,13 +148,13 @@ public final class PlayerProfile {
     public <T> CompletableFuture<Void> saveAsync(Class<T> schemaType, T value) {
         return saveAsync(schemaType, value, false);
     }
-    
+
     /**
      * Asynchronously saves data with option to force immediate persistence.
      *
      * @param schemaType The schema type
-     * @param value The value to save
-     * @param immediate Whether to save immediately or use dirty tracking
+     * @param value      The value to save
+     * @param immediate  Whether to save immediately or use dirty tracking
      */
     public <T> CompletableFuture<Void> saveAsync(Class<T> schemaType, T value, boolean immediate) {
         if (value == null) return CompletableFuture.completedFuture(null);
@@ -206,7 +197,7 @@ public final class PlayerProfile {
     public void saveAll() {
         saveAll(false);
     }
-    
+
     /**
      * Synchronous save of all loaded data with option to force immediate persistence.
      *
@@ -233,7 +224,7 @@ public final class PlayerProfile {
     public CompletableFuture<Void> saveAllAsync() {
         return saveAllAsync(false);
     }
-    
+
     /**
      * Asynchronous save of all loaded data with option to force immediate persistence.
      *
@@ -259,7 +250,7 @@ public final class PlayerProfile {
     private <T> void saveSchema(PlayerDataSchema<T> schema, Object value) {
         saveSchema(schema, value, false);
     }
-    
+
     private <T> void saveSchema(PlayerDataSchema<T> schema, Object value, boolean immediate) {
         T castedValue = schema.type().cast(value);
         if (dirtyTrackingEnabled && !immediate) {
@@ -276,69 +267,37 @@ public final class PlayerProfile {
     public boolean isNew() {
         return isNew;
     }
-    
-    /**
-     * Checks if this profile has any dirty data.
-     *
-     * @return true if the profile has dirty data, false otherwise
-     */
+
+
     public boolean hasDirtyData() {
         return PlayerStorageManager.hasDirtyData(playerId);
     }
-    
-    /**
-     * Gets the count of dirty data entries for this profile.
-     *
-     * @return The count of dirty data entries
-     */
+
+
     public int getDirtyDataCount() {
         return PlayerStorageManager.getDirtyDataCount(playerId);
     }
-    
-    /**
-     * Saves only the dirty data for this profile.
-     *
-     * @return The number of dirty entries that were persisted
-     */
+
+
     public int saveDirtyData() {
         return PlayerStorageManager.saveDirtyData(playerId);
     }
-    
-    /**
-     * Asynchronously saves only the dirty data for this profile.
-     *
-     * @return A CompletableFuture containing the number of dirty entries that were persisted
-     */
+
+
     public CompletableFuture<Integer> saveDirtyDataAsync() {
         return PlayerStorageManager.saveDirtyDataAsync(playerId);
     }
-    
-    /**
-     * Enables or disables dirty tracking for this profile.
-     *
-     * @param enabled Whether to enable dirty tracking
-     */
-    public void setDirtyTrackingEnabled(boolean enabled) {
-        this.dirtyTrackingEnabled = enabled;
-        LOGGER.log(Level.INFO, "Dirty tracking {0} for player {1}",
-                  new Object[]{enabled ? "enabled" : "disabled", playerId});
-    }
-    
-    /**
-     * Checks if dirty tracking is enabled for this profile.
-     *
-     * @return true if dirty tracking is enabled, false otherwise
-     */
+
     public boolean isDirtyTrackingEnabled() {
         return dirtyTrackingEnabled;
     }
-    
-    /**
-     * Flushes all dirty data for this profile by persisting it immediately.
-     * This method saves all dirty data and clears the dirty flags.
-     *
-     * @return A CompletableFuture that completes when all dirty data has been flushed
-     */
+
+    public void setDirtyTrackingEnabled(boolean enabled) {
+        this.dirtyTrackingEnabled = enabled;
+        LOGGER.log(Level.INFO, "Dirty tracking {0} for player {1}",
+                new Object[]{enabled ? "enabled" : "disabled", playerId});
+    }
+
     public CompletableFuture<Integer> flushDirtyData() {
         return saveDirtyDataAsync();
     }
