@@ -77,10 +77,6 @@ public final class PlayerDataQueryRegistry {
      */
     private static QueryBuilderFactory queryBuilderFactory;
     
-    /**
-     * Configuration for the query registry.
-     */
-    private static QueryBuilderConfiguration configuration;
     
     // Private constructor to prevent instantiation
     private PlayerDataQueryRegistry() {
@@ -169,9 +165,6 @@ public final class PlayerDataQueryRegistry {
         
         // Always create a new factory for the specific backend
         queryBuilderFactory = new QueryBuilderFactory(backend);
-        if (configuration != null) {
-            configuration.applyTo(queryBuilderFactory);
-        }
         
         return queryBuilderFactory.createQueryBuilder(schema);
     }
@@ -261,17 +254,6 @@ public final class PlayerDataQueryRegistry {
             .collect(Collectors.toSet());
     }
     
-    /**
-     * Sets the configuration for the query registry.
-     *
-     * @param config The configuration
-     */
-    public static void setConfiguration(QueryBuilderConfiguration config) {
-        configuration = config;
-        if (queryBuilderFactory != null) {
-            config.applyTo(queryBuilderFactory);
-        }
-    }
     
     /**
      * Clears all registered queryable schemas.
