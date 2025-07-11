@@ -1,11 +1,25 @@
 package sh.harold.fulcrum.api.data.backend;
 
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
+import sh.harold.fulcrum.api.data.query.CrossSchemaQueryBuilder;
+import sh.harold.fulcrum.api.data.query.CrossSchemaResult;
+import sh.harold.fulcrum.api.data.integration.QueryBuilderFactory;
+import sh.harold.fulcrum.api.data.integration.CrossSchemaPlayerDataBackend;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
+/**
+ * Core interface for player data storage backends.
+ * This interface defines the contract for storing and retrieving player data
+ * across different storage implementations (SQL, MongoDB, JSON files, etc).
+ *
+ * <p>Enhanced with query builder support for cross-schema queries while
+ * maintaining backwards compatibility with existing implementations.</p>
+ */
 public interface PlayerDataBackend {
     <T> T load(UUID uuid, PlayerDataSchema<T> schema);
 
@@ -57,5 +71,100 @@ public interface PlayerDataBackend {
             System.err.println("Failed to save changed fields for player " + uuid + ", schema " + schema.schemaKey() + ": " + e.getMessage());
             return false;
         }
+    }
+    
+    // ========================
+    // Query Builder Support
+    // ========================
+    
+    /**
+     * Creates a query builder for cross-schema queries.
+     * This default implementation wraps the backend with query support.
+     *
+     * @param rootSchema The root schema to start the query from
+     * @param <T> The type of the schema data
+     * @return A new CrossSchemaQueryBuilder instance
+     * @since 2.0
+     */
+    default <T> CrossSchemaQueryBuilder createQueryBuilder(PlayerDataSchema<T> rootSchema) {
+        QueryBuilderFactory factory = new QueryBuilderFactory(this);
+        return factory.createQueryBuilder(rootSchema);
+    }
+    
+    /**
+     * Creates a query builder for cross-schema queries using a schema class.
+     * 
+     * @param schemaClass The root schema class to start the query from
+     * @param <T> The type of the schema data
+     * @return A new CrossSchemaQueryBuilder instance
+     * @since 2.0
+     */
+    default <T> CrossSchemaQueryBuilder createQueryBuilder(Class<? extends PlayerDataSchema<T>> schemaClass) {
+        try {
+            PlayerDataSchema<T> schema = schemaClass.getDeclaredConstructor().newInstance();
+            return createQueryBuilder(schema);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to instantiate schema: " + schemaClass.getName(), e);
+        }
+    }
+    
+    /**
+     * Executes a cross-schema query asynchronously.
+     * 
+     * @param query The query to execute
+     * @return A CompletableFuture containing the query results
+     * @since 2.0
+     */
+    default CompletableFuture<List<CrossSchemaResult>> executeQuery(CrossSchemaQueryBuilder query) {
+        return query.executeAsync();
+    }
+    
+    /**
+     * Gets a query builder factory configured for this backend.
+     * 
+     * @return A QueryBuilderFactory instance
+     * @since 2.0
+     */
+    default QueryBuilderFactory getQueryBuilderFactory() {
+        return new QueryBuilderFactory(this);
+    }
+    
+    /**
+     * Checks if this backend supports native cross-schema queries.
+     * Backends can override this to indicate they have optimized query support.
+     * 
+     * @return true if the backend has native query support
+     * @since 2.0
+     */
+    default boolean supportsNativeQueries() {
+        return false;
+    }
+    
+    /**
+     * Wraps this backend with enhanced query capabilities.
+     * 
+     * @return A CrossSchemaPlayerDataBackend instance
+     * @since 2.0
+     */
+    default CrossSchemaPlayerDataBackend withQuerySupport() {
+        if (this instanceof CrossSchemaPlayerDataBackend) {
+            return (CrossSchemaPlayerDataBackend) this;
+        }
+        return new CrossSchemaPlayerDataBackend(this);
+    }
+    
+    /**
+     * Gets backend-specific metadata for optimization hints.
+     * Backends can override this to provide information about their capabilities.
+     * 
+     * @return A map of metadata key-value pairs
+     * @since 2.0
+     */
+    default Map<String, Object> getBackendMetadata() {
+        return Map.of(
+            "type", this.getClass().getSimpleName(),
+            "supportsNativeQueries", supportsNativeQueries(),
+            "supportsBatchOperations", true
+        );
     }
 }
