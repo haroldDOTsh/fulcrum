@@ -39,15 +39,15 @@ import java.util.stream.Stream;
  * <p>Example usage:</p>
  * <pre>{@code
  * PlayerDataQueryManager manager = PlayerDataQueryManager.getInstance();
- * 
- * // Find all MVP++ players in the Titans guild
- * List<PlayerProfile> mvpPlusPlayers = manager
- *     .findPlayers()
- *     .withRank("MVP++")
- *     .inGuild("Titans")
+ *
+ * // Find all MVP++ players in the Titans guild using explicit schema and column names
+ * List<CrossSchemaResult> results = manager
+ *     .createQuery(RankSchema.class)
+ *     .where("rank", Predicates.equalTo("MVP++"))
+ *     .where("guild", Predicates.equalTo("Titans"))
  *     .executeAsync()
  *     .get();
- * 
+ *
  * // Get paginated results
  * PaginationSupport.Page<CrossSchemaResult> page = manager
  *     .createQuery(RankSchema.class)
@@ -150,15 +150,6 @@ public class PlayerDataQueryManager {
             throw new IllegalStateException("No backend registered for schema: " + schema.schemaKey());
         }
         return new QueryBuilderFactory(backend).createQueryBuilder(schema);
-    }
-    
-    /**
-     * Creates a player finder for common player queries.
-     *
-     * @return A new player finder
-     */
-    public PlayerFinder findPlayers() {
-        return new PlayerFinder(this);
     }
     
     /**
@@ -318,69 +309,6 @@ public class PlayerDataQueryManager {
             .limit(entriesToRemove)
             .map(Map.Entry::getKey)
             .forEach(queryCache::remove);
-    }
-    
-    /**
-     * Fluent interface for finding players with common criteria.
-     */
-    public static class PlayerFinder {
-        private final PlayerDataQueryManager manager;
-        private final Map<String, Predicate<?>> criteria = new HashMap<>();
-        private PlayerDataSchema<?> primarySchema;
-        
-        private PlayerFinder(PlayerDataQueryManager manager) {
-            this.manager = manager;
-        }
-        
-        public PlayerFinder withRank(String rank) {
-            criteria.put("rank", obj -> rank.equals(obj));
-            return this;
-        }
-        
-        public PlayerFinder withMinLevel(int minLevel) {
-            criteria.put("level", obj -> obj instanceof Number && ((Number) obj).intValue() >= minLevel);
-            return this;
-        }
-        
-        public PlayerFinder inGuild(String guildName) {
-            criteria.put("guild", obj -> guildName.equals(obj));
-            return this;
-        }
-        
-        public PlayerFinder online() {
-            criteria.put("online", obj -> Boolean.TRUE.equals(obj));
-            return this;
-        }
-        
-        public PlayerFinder withCustomCriteria(String field, Predicate<?> predicate) {
-            criteria.put(field, predicate);
-            return this;
-        }
-        
-        public PlayerFinder fromSchema(PlayerDataSchema<?> schema) {
-            this.primarySchema = schema;
-            return this;
-        }
-        
-        public CompletableFuture<List<PlayerProfile>> executeAsync() {
-            if (primarySchema == null) {
-                // Default to a common schema - this would need to be determined based on criteria
-                throw new IllegalStateException("No primary schema specified");
-            }
-            
-            CrossSchemaQueryBuilder query = manager.createQuery(primarySchema);
-            
-            // Apply criteria
-            criteria.forEach((field, predicate) -> query.where(field, predicate));
-            
-            return query.executeAsync()
-                .thenCompose(results -> {
-                    Set<UUID> playerIds = results.stream()
-                        .map(CrossSchemaResult::getPlayerUuid)
-                        .collect(Collectors.toSet());
-                    return manager.getPlayerProfiles(playerIds);
-                });
-        }
     }
     
     /**
