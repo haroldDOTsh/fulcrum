@@ -42,8 +42,34 @@ public class SqlDataBackend implements PlayerDataBackend {
     @Override
     public <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data) {
         AutoTableSchema<T> autoSchema = getAutoTableSchema(schema);
-        autoSchema.save(uuid, data);
-        LOGGER.info("Saved SQL data for " + uuid + " with schema " + schema.schemaKey());
+        boolean originalAutoCommit = true;
+        
+        try {
+            // Check current autoCommit state and set to true if needed
+            originalAutoCommit = connection.getAutoCommit();
+            if (!originalAutoCommit) {
+                connection.setAutoCommit(true);
+                LOGGER.fine("Temporarily enabled autoCommit for save operation");
+            }
+            
+            autoSchema.save(uuid, data);
+            LOGGER.info("Saved SQL data for " + uuid + " with schema " + schema.schemaKey());
+            
+        } catch (SQLException e) {
+            LOGGER.log(Level.WARNING, "Failed to save SQL data for " + uuid +
+                    " with schema " + schema.schemaKey(), e);
+            throw new RuntimeException("SQL save operation failed", e);
+        } finally {
+            try {
+                // Restore original autoCommit state
+                if (connection.getAutoCommit() != originalAutoCommit) {
+                    connection.setAutoCommit(originalAutoCommit);
+                    LOGGER.fine("Restored original autoCommit state: " + originalAutoCommit);
+                }
+            } catch (SQLException e) {
+                LOGGER.log(Level.WARNING, "Failed to restore autoCommit state to " + originalAutoCommit, e);
+            }
+        }
     }
 
     @Override
