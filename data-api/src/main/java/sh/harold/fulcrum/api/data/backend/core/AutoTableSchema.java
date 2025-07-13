@@ -1,7 +1,6 @@
 package sh.harold.fulcrum.api.data.backend.core;
 
-import sh.harold.fulcrum.api.data.annotation.Column;
-import sh.harold.fulcrum.api.data.annotation.PrimaryKeyGeneration;
+import sh.harold.fulcrum.api.data.annotation.*;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDialect;
 import sh.harold.fulcrum.api.data.impl.ForeignKey;
 import sh.harold.fulcrum.api.data.impl.SchemaVersion;
@@ -26,6 +25,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     private final SqlDialect dialect;
     private final List<ForeignKeyInfo> foreignKeys = new ArrayList<>();
     private final List<PendingForeignKey> pendingForeignKeys = new ArrayList<>();
+    private final List<IndexInfo> indexes = new ArrayList<>();
 
 
     /**
@@ -73,7 +73,19 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             if (fkAnn != null) {
                 pendingForeignKeys.add(new PendingForeignKey(colName, fkAnn.references(), fkAnn.field(), fkAnn.onDelete(), fkAnn.onUpdate()));
             }
+            
+            // Process field-level @Index annotations
+            var indexAnn = field.getAnnotation(Index.class);
+            if (indexAnn != null) {
+                String indexName = indexAnn.name().isEmpty() ?
+                    generateIndexName(tableName, colName) : indexAnn.name();
+                indexes.add(new IndexInfo(indexName, new String[]{colName},
+                    new IndexOrder[]{indexAnn.order()}, indexAnn.unique()));
+            }
         }
+        
+        // Process class-level @Indexes annotations
+        processCompositeIndexes(type);
         // 2. If no @Column(primary = true), fallback to id/uuid
         ColumnInfo pkInfo = columns.values().stream().filter(c -> c.primary).findFirst().orElse(null);
         if (pkInfo == null) {
@@ -177,6 +189,14 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         try (var stmt = conn.createStatement()) {
             stmt.execute(sql);
         }
+        
+        // Create indexes
+        for (String indexSql : getCreateIndexStatements()) {
+            try (var stmt = conn.createStatement()) {
+                stmt.execute(indexSql);
+            }
+        }
+        
         String versionSql = "INSERT OR REPLACE INTO " + dialect.quoteIdentifier("schema_versions") +
                 " (" + dialect.quoteIdentifier("table_name") + ", " + dialect.quoteIdentifier("version") + ") VALUES ('" + tableName + "', " + getSchemaVersion() + ")";
         try (var stmt = conn.createStatement()) {
@@ -380,6 +400,63 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         return tableName;
     }
 
+    /**
+     * Generates CREATE INDEX statements for all indexes defined on this table.
+     *
+     * @return List of CREATE INDEX SQL statements
+     */
+    public List<String> getCreateIndexStatements() {
+        List<String> statements = new ArrayList<>();
+        for (IndexInfo index : indexes) {
+            if (index.columnNames.length == 1) {
+                statements.add(dialect.createIndexStatement(
+                    index.name, tableName, index.columnNames[0],
+                    index.orders[0], index.unique));
+            } else {
+                statements.add(dialect.createCompositeIndexStatement(
+                    index.name, tableName, index.columnNames,
+                    index.orders, index.unique));
+            }
+        }
+        return statements;
+    }
+
+    /**
+     * Generates an index name following the convention: idx_{tableName}_{columnName}
+     * For composite indexes: idx_{tableName}_{col1}_{col2}...
+     */
+    private String generateIndexName(String tableName, String... columnNames) {
+        StringBuilder sb = new StringBuilder("idx_");
+        sb.append(tableName);
+        for (String colName : columnNames) {
+            sb.append("_").append(colName);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Processes class-level @Indexes annotations to extract composite index definitions
+     */
+    private void processCompositeIndexes(Class<T> type) {
+        Indexes indexesAnn = type.getAnnotation(Indexes.class);
+        if (indexesAnn != null) {
+            for (CompositeIndex compositeIndex : indexesAnn.value()) {
+                String indexName = compositeIndex.name().isEmpty() ?
+                    generateIndexName(tableName, compositeIndex.fields()) : compositeIndex.name();
+                
+                // Validate that all referenced fields exist
+                for (String fieldName : compositeIndex.fields()) {
+                    if (!fieldMap.containsKey(fieldName)) {
+                        throw new IllegalArgumentException("Composite index references non-existent field: " + fieldName + " in " + type.getName());
+                    }
+                }
+                
+                indexes.add(new IndexInfo(indexName, compositeIndex.fields(),
+                    compositeIndex.orders(), compositeIndex.unique()));
+            }
+        }
+    }
+
     private static class ColumnInfo {
         final String name;
         final String sqlType;
@@ -424,6 +501,24 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             this.refField = refField;
             this.onDelete = onDelete;
             this.onUpdate = onUpdate;
+        }
+    }
+
+    /**
+     * Metadata for database indexes
+     */
+    private static class IndexInfo {
+        final String name;
+        final String[] columnNames;
+        final IndexOrder[] orders;
+        final boolean unique;
+
+        IndexInfo(String name, String[] columnNames, IndexOrder[] orders, boolean unique) {
+            this.name = name;
+            this.columnNames = columnNames;
+            this.orders = orders.length > 0 ? orders :
+                Arrays.stream(columnNames).map(c -> IndexOrder.ASC).toArray(IndexOrder[]::new);
+            this.unique = unique;
         }
     }
 }
