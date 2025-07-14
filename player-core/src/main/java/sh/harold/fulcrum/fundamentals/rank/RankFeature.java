@@ -9,6 +9,7 @@ import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.api.rank.model.MonthlyRankData;
+import sh.harold.fulcrum.api.rank.model.MonthlyRankHistoryData;
 
 /**
  * Plugin feature that registers the rank system with the platform.
@@ -43,6 +44,13 @@ public final class RankFeature implements PluginFeature {
                     StorageManager.getStructuredBackend()
             );
             plugin.getLogger().info("[RankFeature] Successfully registered MonthlyRankData schema.");
+            
+            // Register the new MonthlyRankHistoryData schema for historical tracking
+            PlayerDataRegistry.registerSchema(
+                    new AutoTableSchema<>(MonthlyRankHistoryData.class),
+                    StorageManager.getStructuredBackend()
+            );
+            plugin.getLogger().info("[RankFeature] Successfully registered MonthlyRankHistoryData schema.");
         } catch (IllegalStateException e) {
             plugin.getLogger().severe("[RankFeature] FAILED to access StorageManager: " + e.getMessage());
             throw e;

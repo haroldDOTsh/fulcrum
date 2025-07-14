@@ -4,6 +4,7 @@ import sh.harold.fulcrum.api.rank.enums.FunctionalRank;
 import sh.harold.fulcrum.api.rank.enums.MonthlyPackageRank;
 import sh.harold.fulcrum.api.rank.enums.PackageRank;
 import sh.harold.fulcrum.api.rank.model.EffectiveRank;
+import sh.harold.fulcrum.api.rank.model.MonthlyRankHistoryData;
 
 import java.time.Duration;
 import java.util.List;
@@ -104,4 +105,24 @@ public interface RankService {
      * Get all players who have active monthly ranks.
      */
     CompletableFuture<List<UUID>> getPlayersWithActiveMonthlyRank();
+
+    // ===== HISTORICAL MONTHLY RANK METHODS =====
+
+    /**
+     * Get the complete monthly rank history for a player.
+     * Returns all monthly ranks this player has ever had, ordered by grant time (newest first).
+     */
+    CompletableFuture<List<MonthlyRankHistoryData>> getMonthlyRankHistory(UUID playerId);
+
+    /**
+     * Get the currently active monthly rank data for a player (including expiration details).
+     * Returns null if the player has no active monthly rank.
+     */
+    CompletableFuture<MonthlyRankHistoryData> getActiveMonthlyRankData(UUID playerId);
+
+    /**
+     * Get all expired monthly ranks for a player.
+     * Useful for showing what ranks a player previously had.
+     */
+    CompletableFuture<List<MonthlyRankHistoryData>> getExpiredMonthlyRanks(UUID playerId);
 }

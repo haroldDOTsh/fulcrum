@@ -69,6 +69,7 @@ public final class RankCommands {
         return literal("rank")
                 .requires(source -> source.getSender().hasPermission("fulcrum.rank"))
                 .then(buildInfoCommand())
+                .then(buildHistoryCommand())
                 .then(buildGrantCommand())
                 .then(buildRemoveCommand())
                 .then(buildListCommand())
@@ -84,6 +85,12 @@ public final class RankCommands {
         return literal("info")
                 .then(argument("player", ArgumentTypes.player())
                         .executes(this::executeInfo));
+    }
+
+    private LiteralArgumentBuilder<CommandSourceStack> buildHistoryCommand() {
+        return literal("history")
+                .then(argument("player", ArgumentTypes.player())
+                        .executes(this::executeHistory));
     }
 
 
@@ -175,6 +182,66 @@ public final class RankCommands {
             }).exceptionally(throwable -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
                     Message.error("rank.error.failed-to-load", throwable.getMessage()).staff().send(sender);
+                });
+                return null;
+            });
+        });
+
+        return 1;
+    }
+
+    private int executeHistory(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        CommandSender sender = ctx.getSource().getSender();
+        PlayerSelectorArgumentResolver resolver = ctx.getArgument("player", PlayerSelectorArgumentResolver.class);
+        
+        List<Player> targets = resolver.resolve(ctx.getSource());
+        if (targets.isEmpty()) {
+            Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
+            return 0;
+        }
+
+        Player target = targets.get(0);
+        UUID playerId = target.getUniqueId();
+        RankService rankService = RankFeature.getRankService();
+
+        // Execute async operations to get monthly rank history
+        Bukkit.getScheduler().runTaskAsynchronously(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
+            // Get current active monthly rank
+            rankService.getActiveMonthlyRankData(playerId).thenAccept(activeRank -> {
+                // Get complete monthly rank history
+                rankService.getMonthlyRankHistory(playerId).thenAccept(history -> {
+                    // Get expired monthly ranks
+                    rankService.getExpiredMonthlyRanks(playerId).thenAccept(expiredRanks -> {
+                        // Send results back on main thread
+                        Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
+                            Message.info("rank.history.header", target.getName()).staff().send(sender);
+                            
+                            // Show current active rank
+                            if (activeRank != null) {
+                                long remainingDays = activeRank.getRemainingDays();
+                                Message.info("rank.history.current",
+                                    activeRank.rank.getDisplayName(),
+                                    remainingDays + " day" + (remainingDays != 1 ? "s" : "")
+                                ).staff().send(sender);
+                            } else {
+                                Message.info("rank.history.no-current").staff().send(sender);
+                            }
+                            
+                            // Show full history (for now just count since we haven't implemented the actual database queries)
+                            Message.info("rank.history.total", history.size()).staff().send(sender);
+                            Message.info("rank.history.expired", expiredRanks.size()).staff().send(sender);
+                            
+                            // Note: In a real implementation, we would show detailed history here
+                            // This demonstrates the structure for when the database queries are implemented
+                            if (history.isEmpty() && expiredRanks.isEmpty()) {
+                                Message.info("rank.history.none", target.getName()).staff().send(sender);
+                            }
+                        });
+                    });
+                });
+            }).exceptionally(throwable -> {
+                Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
+                    Message.error("rank.error.failed-to-load-history", throwable.getMessage()).staff().send(sender);
                 });
                 return null;
             });

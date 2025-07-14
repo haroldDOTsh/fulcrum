@@ -10,10 +10,16 @@ import sh.harold.fulcrum.api.rank.enums.RankPriority;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.api.rank.model.EffectiveRank;
 import sh.harold.fulcrum.api.rank.model.MonthlyRankData;
+import sh.harold.fulcrum.api.rank.model.MonthlyRankHistoryData;
+import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
+import sh.harold.fulcrum.api.data.query.CrossSchemaQueryBuilder;
+import sh.harold.fulcrum.api.data.query.QueryFilter;
+import sh.harold.fulcrum.api.data.query.SortOrder;
 
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * Core implementation of rank logic and calculations.
@@ -21,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public class RankManager implements RankService {
 
+    private final AutoTableSchema<MonthlyRankHistoryData> monthlyRankSchema = new AutoTableSchema<>(MonthlyRankHistoryData.class);
 
     @Override
     public CompletableFuture<EffectiveRank> getEffectiveRank(UUID playerId) {
@@ -31,13 +38,9 @@ public class RankManager implements RankService {
             }
 
             IdentityData identity = profile.get(IdentityData.class);
-            MonthlyRankData monthlyData = profile.get(MonthlyRankData.class);
-
-            // Check if monthly rank is active
-            MonthlyPackageRank activeMonthly = null;
-            if (monthlyData != null && monthlyData.isActive()) {
-                activeMonthly = monthlyData.rank;
-            }
+            
+            // Get active monthly rank from denormalized field (for performance)
+            MonthlyPackageRank activeMonthly = identity.monthlyPackageRank;
 
             // Determine effective priority
             RankPriority priority = RankPriority.getEffectivePriority(
@@ -107,12 +110,8 @@ public class RankManager implements RankService {
     public CompletableFuture<MonthlyPackageRank> getMonthlyRank(UUID playerId) {
         return CompletableFuture.supplyAsync(() -> {
             PlayerProfile profile = getPlayerProfile(playerId);
-            MonthlyRankData monthlyData = profile.get(MonthlyRankData.class);
-            
-            if (monthlyData != null && monthlyData.isActive()) {
-                return monthlyData.rank;
-            }
-            return null;
+            IdentityData identity = profile.get(IdentityData.class);
+            return identity.monthlyPackageRank;
         });
     }
 
@@ -144,28 +143,40 @@ public class RankManager implements RankService {
     public CompletableFuture<Void> grantMonthlyRank(UUID playerId, MonthlyPackageRank rank, Duration duration) {
         return CompletableFuture.runAsync(() -> {
             PlayerProfile profile = getPlayerProfile(playerId);
-            MonthlyRankData monthlyData = profile.get(MonthlyRankData.class, () -> new MonthlyRankData());
             
-            monthlyData.uuid = playerId;
-            monthlyData.rank = rank;
-            monthlyData.grantedAt = System.currentTimeMillis();
-            monthlyData.expiresAt = System.currentTimeMillis() + duration.toMillis();
-            monthlyData.grantedBy = "SYSTEM"; // Could be parameterized
-            monthlyData.autoRenew = false;
+            // Create new historical record
+            MonthlyRankHistoryData historyData = new MonthlyRankHistoryData();
+            historyData.uuid = playerId;
+            historyData.rank = rank;
+            historyData.grantedAt = System.currentTimeMillis();
+            historyData.expiresAt = System.currentTimeMillis() + duration.toMillis();
+            historyData.grantedBy = "SYSTEM"; // Could be parameterized
+            historyData.autoRenew = false;
             
-            profile.saveAsync(MonthlyRankData.class, monthlyData);
+            // Save to historical table
+            profile.saveAsync(MonthlyRankHistoryData.class, historyData);
+            
+            // Update denormalized field in identity for performance
+            IdentityData identity = profile.get(IdentityData.class);
+            identity.monthlyPackageRank = rank;
+            profile.saveAsync(IdentityData.class, identity);
         });
     }
 
     @Override
     public CompletableFuture<Void> removeMonthlyRank(UUID playerId) {
-        return CompletableFuture.runAsync(() -> {
-            PlayerProfile profile = getPlayerProfile(playerId);
-            MonthlyRankData monthlyData = profile.get(MonthlyRankData.class);
-            
-            if (monthlyData != null) {
-                monthlyData.expiresAt = System.currentTimeMillis(); // Set to expired
-                profile.saveAsync(MonthlyRankData.class, monthlyData);
+        return getActiveMonthlyRankData(playerId).thenAccept(activeRank -> {
+            if (activeRank != null) {
+                PlayerProfile profile = getPlayerProfile(playerId);
+                
+                // Expire the current active rank
+                activeRank.expiresAt = System.currentTimeMillis();
+                profile.saveAsync(MonthlyRankHistoryData.class, activeRank);
+                
+                // Update denormalized field
+                IdentityData identity = profile.get(IdentityData.class);
+                identity.monthlyPackageRank = null;
+                profile.saveAsync(IdentityData.class, identity);
             }
         });
     }
@@ -192,34 +203,137 @@ public class RankManager implements RankService {
 
     @Override
     public CompletableFuture<Void> expireMonthlyRanks() {
-        return CompletableFuture.runAsync(() -> {
-            // TODO: Implement bulk expiration logic
-            // This would need to query all monthly rank data and expire outdated ones
-        });
+        return CrossSchemaQueryBuilder
+            .from(monthlyRankSchema)
+            .where(QueryFilter.lessThan("expiresAt", System.currentTimeMillis(), monthlyRankSchema))
+            .orderBy("expiresAt", SortOrder.Direction.ASC)
+            .executeAsync()
+            .thenApply(results ->
+                results.stream()
+                    .map(result -> result.<MonthlyRankHistoryData>getData(monthlyRankSchema))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList())
+            )
+            .thenAccept(expiredRanks -> {
+                for (MonthlyRankHistoryData expiredRank : expiredRanks) {
+                    // Update the denormalized field in IdentityData to remove expired rank
+                    PlayerProfile profile = getPlayerProfile(expiredRank.uuid);
+                    IdentityData identity = profile.get(IdentityData.class);
+                    
+                    // Only clear if this was the active rank
+                    if (identity.monthlyPackageRank == expiredRank.rank) {
+                        identity.monthlyPackageRank = null;
+                        profile.saveAsync(IdentityData.class, identity);
+                    }
+                }
+            });
     }
 
     @Override
     public CompletableFuture<List<UUID>> getPlayersWithRank(PackageRank rank) {
+        // Query IdentityData for players with specific PackageRank
         return CompletableFuture.supplyAsync(() -> {
-            // TODO: Implement database query for players with specific rank
+            // This would typically use CrossSchemaQueryBuilder with IdentityData schema
+            // For now, returning empty list as IdentityData schema implementation is not shown
             return new ArrayList<>();
+            // TODO: Implement with IdentityData schema when available:
+            // return CrossSchemaQueryBuilder
+            //     .from(identityDataSchema)
+            //     .where("packageRank", QueryFilter.equals("packageRank", rank, identityDataSchema).getPredicate())
+            //     .executeAsync()
+            //     .thenApply(results -> results.stream()
+            //         .map(result -> result.getData(IdentityData.class).uuid)
+            //         .collect(Collectors.toList()));
         });
     }
 
     @Override
     public CompletableFuture<List<UUID>> getPlayersWithFunctionalRank(FunctionalRank rank) {
+        // Query IdentityData for players with specific FunctionalRank
         return CompletableFuture.supplyAsync(() -> {
-            // TODO: Implement database query for players with specific functional rank
+            // This would typically use CrossSchemaQueryBuilder with IdentityData schema
+            // For now, returning empty list as IdentityData schema implementation is not shown
             return new ArrayList<>();
+            // TODO: Implement with IdentityData schema when available:
+            // return CrossSchemaQueryBuilder
+            //     .from(identityDataSchema)
+            //     .where("functionalRank", QueryFilter.equals("functionalRank", rank, identityDataSchema).getPredicate())
+            //     .executeAsync()
+            //     .thenApply(results -> results.stream()
+            //         .map(result -> result.getData(IdentityData.class).uuid)
+            //         .collect(Collectors.toList()));
         });
     }
 
     @Override
     public CompletableFuture<List<UUID>> getPlayersWithActiveMonthlyRank() {
-        return CompletableFuture.supplyAsync(() -> {
-            // TODO: Implement database query for players with active monthly ranks
-            return new ArrayList<>();
-        });
+        // Query for all players with active monthly ranks
+        return CrossSchemaQueryBuilder
+            .from(monthlyRankSchema)
+            .where(QueryFilter.greaterThan("expiresAt", System.currentTimeMillis(), monthlyRankSchema))
+            .executeAsync()
+            .thenApply(results ->
+                results.stream()
+                    .map(result -> result.<MonthlyRankHistoryData>getData(monthlyRankSchema))
+                    .filter(Objects::nonNull)
+                    .map(data -> data.uuid)
+                    .distinct()
+                    .collect(Collectors.toList())
+            );
+    }
+
+    // ===== HISTORICAL MONTHLY RANK METHODS =====
+
+    @Override
+    public CompletableFuture<List<MonthlyRankHistoryData>> getMonthlyRankHistory(UUID playerId) {
+        // Query for all monthly rank history for a specific player
+        return CrossSchemaQueryBuilder
+            .from(monthlyRankSchema)
+            .where(QueryFilter.equals("uuid", playerId, monthlyRankSchema))
+            .orderBy("grantedAt", SortOrder.Direction.DESC)
+            .executeAsync()
+            .thenApply(results ->
+                results.stream()
+                    .map(result -> result.<MonthlyRankHistoryData>getData(monthlyRankSchema))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList())
+            );
+    }
+
+    @Override
+    public CompletableFuture<MonthlyRankHistoryData> getActiveMonthlyRankData(UUID playerId) {
+        // Query for current active monthly rank for a specific player
+        return CrossSchemaQueryBuilder
+            .from(monthlyRankSchema)
+            .where(QueryFilter.equals("uuid", playerId, monthlyRankSchema))
+            .where(QueryFilter.greaterThan("expiresAt", System.currentTimeMillis(), monthlyRankSchema))
+            .orderBy("expiresAt", SortOrder.Direction.DESC)
+            .limit(1)
+            .executeAsync()
+            .thenApply(results ->
+                results.stream()
+                    .map(result -> result.<MonthlyRankHistoryData>getData(monthlyRankSchema))
+                    .filter(Objects::nonNull)
+                    .findFirst()
+                    .orElse(null)
+            );
+    }
+
+    @Override
+    public CompletableFuture<List<MonthlyRankHistoryData>> getExpiredMonthlyRanks(UUID playerId) {
+        // Query for expired monthly ranks for a specific player
+        return CrossSchemaQueryBuilder
+            .from(monthlyRankSchema)
+            .where(QueryFilter.equals("uuid", playerId, monthlyRankSchema))
+            .where(QueryFilter.lessThan("expiresAt", System.currentTimeMillis(), monthlyRankSchema))
+            .orderBy("expiresAt", SortOrder.Direction.DESC)
+            .executeAsync()
+            .thenApply(results ->
+                results.stream()
+                    .map(result -> result.<MonthlyRankHistoryData>getData(monthlyRankSchema))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList())
+            );
     }
 
     // ===== HELPER METHODS =====
