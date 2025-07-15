@@ -30,4 +30,16 @@ public class GenericJsonSchema extends JsonSchema<PluginJsonData> {
     public String serialize(UUID uuid, PluginJsonData data) {
         return data.toJsonString();
     }
+
+    @Override
+    public PluginJsonData deserialize(java.sql.ResultSet rs) {
+        try {
+            String uuidStr = rs.getString("uuid");
+            String jsonData = rs.getString("data");
+            UUID uuid = uuidStr != null ? UUID.fromString(uuidStr) : null;
+            return deserialize(uuid, jsonData);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to deserialize " + schemaKey + " from ResultSet", e);
+        }
+    }
 }
