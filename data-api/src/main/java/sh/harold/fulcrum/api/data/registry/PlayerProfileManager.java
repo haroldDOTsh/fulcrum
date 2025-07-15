@@ -5,6 +5,7 @@ import sh.harold.fulcrum.api.data.query.CrossSchemaResult;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -41,10 +42,39 @@ public final class PlayerProfileManager {
     }
 
     public static void unload(UUID playerId) {
+        LOGGER.info("[DIAGNOSTIC] PlayerProfileManager.unload() called for player: " + playerId);
+        
         var profile = profiles.remove(playerId);
         if (profile != null) {
+            LOGGER.info("[DIAGNOSTIC] Profile found for player: " + playerId);
+            
+            // Check if profile has dirty data before saving
+            int dirtyCount = profile.getDirtyDataCount();
+            LOGGER.info("[DIAGNOSTIC] Player " + playerId + " has " + dirtyCount + " dirty data entries before save");
+            
             LOGGER.info("Unloading and saving player profile for " + playerId + ".");
-            profile.saveAll();
+            LOGGER.info("[DIAGNOSTIC] Calling profile.saveAll()...");
+            
+            try {
+                profile.saveAll();
+                LOGGER.info("[DIAGNOSTIC] profile.saveAll() completed successfully for player: " + playerId);
+                
+                // Check dirty data count after save
+                int dirtyCountAfter = profile.getDirtyDataCount();
+                LOGGER.info("[DIAGNOSTIC] Player " + playerId + " has " + dirtyCountAfter + " dirty data entries after save");
+                
+                // Verify save was successful
+                if (dirtyCountAfter > 0) {
+                    LOGGER.warning("[DIAGNOSTIC] WARNING: Player " + playerId + " still has " + dirtyCountAfter + " dirty data entries after save - this may indicate a persistence issue");
+                }
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "[DIAGNOSTIC] CRITICAL: Failed to save profile during unload for player " + playerId, e);
+                // Re-add profile to prevent data loss
+                profiles.put(playerId, profile);
+                throw new RuntimeException("Failed to save profile during unload for player " + playerId, e);
+            }
+        } else {
+            LOGGER.info("[DIAGNOSTIC] No profile found for player: " + playerId + " (already unloaded or never loaded)");
         }
     }
     
@@ -115,15 +145,31 @@ public final class PlayerProfileManager {
     public static void unloadAll() {
         LOGGER.info("Unloading all " + profiles.size() + " player profiles...");
         
+        int successCount = 0;
+        int failureCount = 0;
+        List<UUID> failedProfiles = new ArrayList<>();
+        
         // Save all profiles
         for (PlayerProfile profile : profiles.values()) {
-            profile.saveAll();
+            try {
+                profile.saveAll();
+                successCount++;
+            } catch (Exception e) {
+                failureCount++;
+                failedProfiles.add(profile.getPlayerId());
+                LOGGER.log(Level.SEVERE, "Failed to save profile during unloadAll for player " + profile.getPlayerId(), e);
+            }
         }
         
-        // Clear the cache
+        // Clear the cache (even for failed saves to prevent memory leaks)
         profiles.clear();
         
-        LOGGER.info("All player profiles unloaded successfully.");
+        if (failureCount > 0) {
+            LOGGER.log(Level.WARNING, "Unloaded all profiles with {0} successes and {1} failures. Failed profiles: {2}",
+                    new Object[]{successCount, failureCount, failedProfiles});
+        } else {
+            LOGGER.info("All " + successCount + " player profiles unloaded successfully.");
+        }
     }
     
 }

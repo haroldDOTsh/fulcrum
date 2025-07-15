@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.data.registry;
 
+import sh.harold.fulcrum.api.data.annotation.Index;
 import sh.harold.fulcrum.api.data.dirty.DirtyDataEntry;
 import sh.harold.fulcrum.api.data.dirty.DirtyDataManager;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
@@ -21,6 +22,7 @@ public final class PlayerProfile {
     private static final Logger LOGGER = Logger.getLogger(PlayerProfile.class.getName());
     private static final Executor ASYNC_EXECUTOR = Executors.newCachedThreadPool();
 
+    @Index(name = "idx_player_id")
     private final UUID playerId;
     private final Map<Class<?>, Object> data = new ConcurrentHashMap<>();
     private boolean isNew = true;
@@ -195,7 +197,7 @@ public final class PlayerProfile {
      * Synchronous save of all loaded data
      */
     public void saveAll() {
-        saveAll(false);
+        saveAll(true);
     }
 
     /**

@@ -38,6 +38,18 @@ public final class DirtyDataManager {
      * @throws IllegalStateException    if already initialized
      */
     public static void initialize(DirtyDataCache cache) {
+        initialize(cache, true);
+    }
+    
+    /**
+     * Initializes the dirty data manager with the specified cache implementation.
+     *
+     * @param cache The dirty data cache implementation to use
+     * @param enableAutomaticPersistence Whether to enable automatic persistence timer
+     * @throws IllegalArgumentException if cache is null
+     * @throws IllegalStateException    if already initialized
+     */
+    public static void initialize(DirtyDataCache cache, boolean enableAutomaticPersistence) {
         if (cache == null) {
             throw new IllegalArgumentException("cache cannot be null");
         }
@@ -54,8 +66,13 @@ public final class DirtyDataManager {
                 return t;
             });
 
-            if (autoPersistInterval.toMillis() > 0) {
+            // Only start automatic persistence if enabled AND interval is set
+            // This prevents duplicate timer systems when PlayerStorageManager handles time-based persistence
+            if (enableAutomaticPersistence && autoPersistInterval.toMillis() > 0) {
                 startAutomaticPersistence();
+                LOGGER.info("DirtyDataManager automatic persistence enabled with interval: " + autoPersistInterval);
+            } else {
+                LOGGER.info("DirtyDataManager automatic persistence disabled - delegating to PlayerStorageManager");
             }
 
             if (autoCleanupEnabled) {
@@ -99,14 +116,24 @@ public final class DirtyDataManager {
 
 
     public static void markDirty(UUID playerId, String schemaKey, Object data, DirtyDataEntry.ChangeType changeType) {
+        LOGGER.info("[DIAGNOSTIC] DirtyDataManager.markDirty() called for player: " + playerId +
+                   ", schemaKey: " + schemaKey + ", changeType: " + changeType);
+        
         ensureInitialized();
 
         try {
+            LOGGER.info("[DIAGNOSTIC] Cache instance: " + (dirtyDataCache != null ? dirtyDataCache.getClass().getSimpleName() : "null"));
+            LOGGER.info("[DIAGNOSTIC] Calling dirtyDataCache.markDirty()...");
+            
             dirtyDataCache.markDirty(playerId, schemaKey, data, changeType);
+            
+            LOGGER.info("[DIAGNOSTIC] dirtyDataCache.markDirty() completed successfully");
             LOGGER.log(Level.FINE, "Marked data as dirty for player {0}, schema {1}, change type {2}",
                     new Object[]{playerId, schemaKey, changeType});
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to mark data as dirty", e);
+            LOGGER.log(Level.WARNING, "[DIAGNOSTIC] FAILED to mark data as dirty for player " + playerId +
+                      ", schema " + schemaKey + ": " + e.getMessage(), e);
+            throw e;
         }
     }
 
@@ -323,22 +350,35 @@ public final class DirtyDataManager {
 
     private static boolean persistEntry(DirtyDataEntry entry) {
         try {
+            LOGGER.log(Level.INFO, "[DEBUG] Attempting to persist dirty data entry: playerId={0}, schemaKey={1}, changeType={2}",
+                new Object[]{entry.getPlayerId(), entry.getSchemaKey(), entry.getChangeType()});
+            
             // Skip DELETE operations that don't have data
             if (entry.getChangeType() == DirtyDataEntry.ChangeType.DELETE && entry.getData() == null) {
+                LOGGER.log(Level.INFO, "[DEBUG] Skipping DELETE operation with no data");
                 return true;
             }
 
             // Find the schema for this entry
             PlayerDataSchema<?> schema = null;
-            for (PlayerDataSchema<?> registeredSchema : PlayerDataRegistry.allSchemas()) {
+            Collection<PlayerDataSchema<?>> allSchemas = PlayerDataRegistry.allSchemas();
+            LOGGER.log(Level.INFO, "[DEBUG] Looking for schema '{0}' among {1} registered schemas",
+                new Object[]{entry.getSchemaKey(), allSchemas.size()});
+            
+            for (PlayerDataSchema<?> registeredSchema : allSchemas) {
+                LOGGER.log(Level.INFO, "[DEBUG] Checking schema: {0} (key: {1})",
+                    new Object[]{registeredSchema.getClass().getSimpleName(), registeredSchema.schemaKey()});
                 if (registeredSchema.schemaKey().equals(entry.getSchemaKey())) {
                     schema = registeredSchema;
+                    LOGGER.log(Level.INFO, "[DEBUG] Found matching schema: {0}", schema.getClass().getSimpleName());
                     break;
                 }
             }
 
             if (schema == null) {
-                LOGGER.log(Level.WARNING, "No schema found for dirty data entry: {0}", entry.getSchemaKey());
+                LOGGER.log(Level.WARNING, "[DEBUG] SCHEMA RESOLUTION FAILED - No schema found for dirty data entry: {0}", entry.getSchemaKey());
+                LOGGER.log(Level.WARNING, "[DEBUG] Available schemas: {0}",
+                    allSchemas.stream().map(s -> s.schemaKey()).toArray());
                 return false;
             }
 
@@ -347,12 +387,15 @@ public final class DirtyDataManager {
             PlayerDataSchema<Object> typedSchema = (PlayerDataSchema<Object>) schema;
 
             if (entry.getData() != null) {
+                LOGGER.log(Level.INFO, "[DEBUG] Calling PlayerStorageManager.save with schema: {0}, data: {1}",
+                    new Object[]{typedSchema.schemaKey(), entry.getData().getClass().getSimpleName()});
                 PlayerStorageManager.save(entry.getPlayerId(), typedSchema, entry.getData());
+                LOGGER.log(Level.INFO, "[DEBUG] Successfully persisted dirty data entry for player {0}", entry.getPlayerId());
             }
 
             return true;
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to persist dirty data entry: " + entry, e);
+            LOGGER.log(Level.WARNING, "[DEBUG] PERSIST ENTRY FAILED: " + entry, e);
             return false;
         }
     }

@@ -3,12 +3,14 @@ package sh.harold.fulcrum.api.data.backend;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
 import sh.harold.fulcrum.api.data.query.CrossSchemaQueryBuilder;
 import sh.harold.fulcrum.api.data.query.CrossSchemaResult;
+import sh.harold.fulcrum.api.data.query.QueryFilter;
 import sh.harold.fulcrum.api.data.integration.QueryBuilderFactory;
 import sh.harold.fulcrum.api.data.integration.CrossSchemaPlayerDataBackend;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -21,6 +23,20 @@ import java.util.concurrent.CompletableFuture;
  * maintaining backwards compatibility with existing implementations.</p>
  */
 public interface PlayerDataBackend {
+
+    /**
+     * Queries data from the backend using filters and pagination.
+     * Backends can override this method to provide optimized query support.
+     *
+     * @param schema The schema to query
+     * @param filters The filters to apply
+     * @param limit The maximum number of results to return (optional)
+     * @param offset The starting index for pagination (optional)
+     * @return A map of UUIDs to data objects matching the query
+     */
+    default Map<UUID, Object> query(PlayerDataSchema<?> schema, List<QueryFilter> filters, Optional<Integer> limit, Optional<Integer> offset) {
+        throw new UnsupportedOperationException("Query method not implemented for this backend.");
+    }
     <T> T load(UUID uuid, PlayerDataSchema<T> schema);
 
     <T> void save(UUID uuid, PlayerDataSchema<T> schema, T data);
