@@ -15,6 +15,16 @@ import java.util.Objects;
  * @since 1.0
  */
 public class SortOrder {
+    /**
+     * Compares two CrossSchemaResult objects based on sorting criteria.
+     * @param r1 The first result to compare.
+     * @param r2 The second result to compare.
+     * @return Comparison result as an integer.
+     */
+    public int compare(CrossSchemaResult r1, CrossSchemaResult r2) {
+        // Implement comparison logic based on sorting criteria
+        return 0; // Placeholder implementation
+    }
     
     private final String fieldName;
     private final Direction direction;

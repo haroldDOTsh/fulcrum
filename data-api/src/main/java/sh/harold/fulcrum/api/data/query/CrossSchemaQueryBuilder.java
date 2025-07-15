@@ -106,7 +106,7 @@ public class CrossSchemaQueryBuilder {
     
     /**
      * Adds a filter condition to the query for a specific schema.
-     * 
+     *
      * @param field The field name to filter on
      * @param predicate The predicate to apply
      * @param schema The schema this filter applies to
@@ -114,6 +114,20 @@ public class CrossSchemaQueryBuilder {
      */
     public CrossSchemaQueryBuilder where(String field, Predicate<?> predicate, PlayerDataSchema<?> schema) {
         filters.add(new QueryFilter(field, predicate, schema));
+        return this;
+    }
+    
+    /**
+     * Adds a filter condition to the query using an existing QueryFilter.
+     * This method preserves operator information for SQL compatibility.
+     *
+     * @param filter The QueryFilter to add
+     * @return This builder for method chaining
+     */
+    public CrossSchemaQueryBuilder where(QueryFilter filter) {
+        if (filter != null) {
+            filters.add(filter);
+        }
         return this;
     }
     
@@ -731,13 +745,27 @@ public class CrossSchemaQueryBuilder {
         
         /**
          * Adds a filter condition to the join.
-         * 
+         *
          * @param field The field name to filter on
          * @param predicate The predicate to apply
          * @return This JoinBuilder for method chaining
          */
         public JoinBuilder where(String field, Predicate<?> predicate) {
             joinFilters.add(new QueryFilter(field, predicate, joinSchema));
+            return this;
+        }
+        
+        /**
+         * Adds a filter condition to the join using an existing QueryFilter.
+         * This method preserves operator information for SQL compatibility.
+         *
+         * @param filter The QueryFilter to add
+         * @return This JoinBuilder for method chaining
+         */
+        public JoinBuilder where(QueryFilter filter) {
+            if (filter != null) {
+                joinFilters.add(filter);
+            }
             return this;
         }
         

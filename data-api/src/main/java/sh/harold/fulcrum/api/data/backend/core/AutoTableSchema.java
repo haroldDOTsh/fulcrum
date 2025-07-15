@@ -26,6 +26,7 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     private final List<ForeignKeyInfo> foreignKeys = new ArrayList<>();
     private final List<PendingForeignKey> pendingForeignKeys = new ArrayList<>();
     private final List<IndexInfo> indexes = new ArrayList<>();
+    private static java.util.function.Supplier<Connection> connectionProvider;
 
 
     /**
@@ -387,7 +388,21 @@ public class AutoTableSchema<T> extends TableSchema<T> {
 
     protected Connection getConnection() throws Exception {
         if (testConnection != null) return testConnection;
-        throw new UnsupportedOperationException("getConnection() must be implemented by the user");
+        if (connectionProvider != null) {
+            Connection conn = connectionProvider.get();
+            if (conn != null) return conn;
+        }
+        throw new UnsupportedOperationException("No connection available - connection provider not set");
+    }
+
+    /**
+     * Sets the global connection provider for AutoTableSchema instances.
+     * This should be called during backend initialization.
+     *
+     * @param provider The connection provider function
+     */
+    public static void setConnectionProvider(java.util.function.Supplier<Connection> provider) {
+        connectionProvider = provider;
     }
 
     @Override
@@ -398,6 +413,23 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     @Override
     public String schemaKey() {
         return tableName;
+    }
+
+    @Override
+    public T deserialize(ResultSet rs) {
+        try {
+            T instance = instantiate();
+            for (var entry : columns.entrySet()) {
+                String col = entry.getKey();
+                Field field = fieldMap.get(col);
+                field.setAccessible(true);
+                Object value = getValueFromResultSet(rs, col, field.getType());
+                field.set(instance, value);
+            }
+            return instance;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to deserialize " + type.getSimpleName() + " from ResultSet", e);
+        }
     }
 
     /**
@@ -521,4 +553,16 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             this.unique = unique;
         }
     }
+@Override
+public boolean equals(Object obj) {
+    if (this == obj) return true;
+    if (obj == null || getClass() != obj.getClass()) return false;
+    AutoTableSchema<?> that = (AutoTableSchema<?>) obj;
+    return type.equals(that.type);
+}
+
+@Override
+public int hashCode() {
+    return type.hashCode();
+}
 }
