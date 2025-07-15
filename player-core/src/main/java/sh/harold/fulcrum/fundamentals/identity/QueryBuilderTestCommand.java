@@ -6,6 +6,7 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import sh.harold.fulcrum.api.data.query.CrossSchemaQueryBuilder;
 import sh.harold.fulcrum.api.data.query.CrossSchemaResult;
+import sh.harold.fulcrum.api.data.query.QueryFilter;
 import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 import sh.harold.fulcrum.api.message.Message;
@@ -36,8 +37,8 @@ public class QueryBuilderTestCommand {
                         
                         CompletableFuture<List<CrossSchemaResult>> queryFuture = CrossSchemaQueryBuilder
                             .from(identitySchema)
-                            .where("functionalRank", rank -> "ADMIN".equals(rank != null ? rank.toString() : null))
-                            .where("monthlyPackageRank", rank -> "MVP_PLUS_PLUS".equals(rank != null ? rank.toString() : null))
+                            .where(QueryFilter.equals("functionalRank", "ADMIN", identitySchema))
+                            .where(QueryFilter.equals("monthlyPackageRank", "MVP_PLUS_PLUS", identitySchema))
                             .executeAsync();
                             
                         // Add timeout handling

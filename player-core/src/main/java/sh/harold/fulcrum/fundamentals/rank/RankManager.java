@@ -15,10 +15,12 @@ import sh.harold.fulcrum.api.data.backend.core.AutoTableSchema;
 import sh.harold.fulcrum.api.data.query.CrossSchemaQueryBuilder;
 import sh.harold.fulcrum.api.data.query.QueryFilter;
 import sh.harold.fulcrum.api.data.query.SortOrder;
+import sh.harold.fulcrum.api.data.dirty.DirtyDataManager;
 
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
@@ -27,7 +29,9 @@ import java.util.stream.Collectors;
  */
 public class RankManager implements RankService {
 
+    private static final Logger LOGGER = Logger.getLogger(RankManager.class.getName());
     private final AutoTableSchema<MonthlyRankHistoryData> monthlyRankSchema = new AutoTableSchema<>(MonthlyRankHistoryData.class);
+    private final AutoTableSchema<MonthlyRankData> monthlyRankDataSchema = new AutoTableSchema<>(MonthlyRankData.class);
 
     @Override
     public CompletableFuture<EffectiveRank> getEffectiveRank(UUID playerId) {
@@ -120,10 +124,23 @@ public class RankManager implements RankService {
     @Override
     public CompletableFuture<Void> setFunctionalRank(UUID playerId, FunctionalRank rank) {
         return CompletableFuture.runAsync(() -> {
+            LOGGER.info("[DIAGNOSTIC] RankManager.setFunctionalRank() called for player: " + playerId + ", rank: " + rank);
+            
+            // Check DirtyDataManager initialization status
+            boolean dirtyManagerInitialized = DirtyDataManager.isInitialized();
+            LOGGER.info("[DIAGNOSTIC] DirtyDataManager.isInitialized(): " + dirtyManagerInitialized);
+            
             PlayerProfile profile = getPlayerProfile(playerId);
             IdentityData identity = profile.get(IdentityData.class);
+            
+            LOGGER.info("[DIAGNOSTIC] Retrieved IdentityData for player: " + playerId + ", current functional rank: " + identity.functionalRank);
+            
             identity.functionalRank = rank;
+            LOGGER.info("[DIAGNOSTIC] Updated functional rank in IdentityData to: " + rank);
+            
+            LOGGER.info("[DIAGNOSTIC] Calling profile.saveAsync() for IdentityData...");
             profile.saveAsync(IdentityData.class, identity);
+            LOGGER.info("[DIAGNOSTIC] profile.saveAsync() call completed for IdentityData");
         });
     }
 
@@ -144,6 +161,8 @@ public class RankManager implements RankService {
         return CompletableFuture.runAsync(() -> {
             PlayerProfile profile = getPlayerProfile(playerId);
             
+            System.out.println("[DEBUG] grantMonthlyRank called for player: " + playerId + ", rank: " + rank);
+            
             // Create new historical record
             MonthlyRankHistoryData historyData = new MonthlyRankHistoryData();
             historyData.uuid = playerId;
@@ -154,7 +173,27 @@ public class RankManager implements RankService {
             historyData.autoRenew = false;
             
             // Save to historical table
+            System.out.println("[DEBUG] Saving MonthlyRankHistoryData to monthly_ranks_history table");
             profile.saveAsync(MonthlyRankHistoryData.class, historyData);
+            
+            // Create/update MonthlyRankData record for monthly_ranks table
+            System.out.println("[DEBUG] Creating/updating MonthlyRankData record for monthly_ranks table");
+            MonthlyRankData monthlyData = new MonthlyRankData();
+            monthlyData.uuid = playerId;  // This will overwrite existing record due to PLAYER_UUID primary key
+            monthlyData.rank = rank;
+            monthlyData.grantedAt = System.currentTimeMillis();
+            monthlyData.expiresAt = System.currentTimeMillis() + duration.toMillis();
+            monthlyData.grantedBy = "SYSTEM";
+            monthlyData.autoRenew = false;
+            
+            try {
+                profile.saveAsync(MonthlyRankData.class, monthlyData);
+                System.out.println("[DEBUG] Successfully saved MonthlyRankData to monthly_ranks table");
+            } catch (Exception e) {
+                System.err.println("[ERROR] Failed to save MonthlyRankData: " + e.getMessage());
+                // Note: MonthlyRankHistoryData was already saved, so history is preserved
+                // but current active rank table may be inconsistent
+            }
             
             // Update denormalized field in identity for performance
             IdentityData identity = profile.get(IdentityData.class);
@@ -169,14 +208,36 @@ public class RankManager implements RankService {
             if (activeRank != null) {
                 PlayerProfile profile = getPlayerProfile(playerId);
                 
-                // Expire the current active rank
+                System.out.println("[DEBUG] removeMonthlyRank called for player: " + playerId);
+                
+                // Expire the current active rank in history table
                 activeRank.expiresAt = System.currentTimeMillis();
                 profile.saveAsync(MonthlyRankHistoryData.class, activeRank);
+                System.out.println("[DEBUG] Expired MonthlyRankHistoryData record in monthly_ranks_history");
+                
+                // EDGE CASE: Also need to expire/remove MonthlyRankData record
+                try {
+                    // Get current MonthlyRankData record and expire it
+                    MonthlyRankData currentData = new MonthlyRankData();
+                    currentData.uuid = playerId;
+                    currentData.rank = activeRank.rank;
+                    currentData.grantedAt = activeRank.grantedAt;
+                    currentData.expiresAt = System.currentTimeMillis(); // Set to expired
+                    currentData.grantedBy = activeRank.grantedBy;
+                    currentData.autoRenew = activeRank.autoRenew;
+                    
+                    profile.saveAsync(MonthlyRankData.class, currentData);
+                    System.out.println("[DEBUG] Expired MonthlyRankData record in monthly_ranks table");
+                } catch (Exception e) {
+                    System.err.println("[ERROR] Failed to expire MonthlyRankData: " + e.getMessage());
+                    // History table was updated successfully, but current table may be inconsistent
+                }
                 
                 // Update denormalized field
                 IdentityData identity = profile.get(IdentityData.class);
                 identity.monthlyPackageRank = null;
                 profile.saveAsync(IdentityData.class, identity);
+                System.out.println("[DEBUG] Cleared monthly rank from IdentityData");
             }
         });
     }
