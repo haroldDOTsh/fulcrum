@@ -17,6 +17,7 @@ import java.util.UUID;
  * - Active rank lookups (uuid + expiresAt)
  * - Historical ordering (grantedAt)
  * - Expiration cleanup (expiresAt)
+ * - Rank-specific expiration queries (rank + expiresAt)
  */
 @Table("monthly_ranks_history")
 @SchemaVersion(1)
@@ -30,6 +31,11 @@ import java.util.UUID;
         name = "idx_uuid_granted",
         fields = {"uuid", "grantedAt"},
         orders = {IndexOrder.ASC, IndexOrder.DESC}
+    ),
+    @CompositeIndex(
+        name = "idx_rank_expires_at",
+        fields = {"rank", "expiresAt"},
+        orders = {IndexOrder.ASC, IndexOrder.DESC}
     )
 })
 public class MonthlyRankHistoryData {
@@ -40,6 +46,7 @@ public class MonthlyRankHistoryData {
     @Index(name = "idx_player_uuid")  // For player-specific queries
     public UUID uuid;
 
+    @Index(name = "idx_rank")  // For rank-specific queries across all players
     public MonthlyPackageRank rank;
     
     @Index(name = "idx_expires_at", order = IndexOrder.DESC)  // For active rank queries and cleanup
