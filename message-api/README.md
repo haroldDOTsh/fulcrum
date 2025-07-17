@@ -49,18 +49,18 @@ UUID playerId = player.getUniqueId();
 Audience audience = player;
 
 // Success (by UUID)
-Message.success("banking.deposit.success").arg("$1,000.00").send(playerId);
+Message.success("banking.deposit.success").send(playerId);
 // Success (by Audience)
-Message.success("banking.deposit.success").arg("$1,000.00").send(audience);
+Message.success("banking.deposit.success", 10000).send(audience);
 
 // Info (by Audience)
-Message.info("skills.levelup").arg(50).send(audience);
+Message.info("skills.levelup", player.level).send(audience);
 
 // Error (by Audience)
 Message.error("generic.no_permission").send(audience);
 
 // Debug (by Audience)
-Message.debug("debug.player.data_saved").arg("Notch").send(audience);
+Message.debug("debug.player.data_saved", playerName).send(audience);
 
 // Raw (MiniMessage colors, by Audience)
 Message.raw("custom.dragon_event").send(audience);
@@ -166,8 +166,18 @@ All message types support:
 
 ### Arguments
 
-- `.arg(Object value)` — Add a single argument (repeatable)
-- `.args(Object... values)` — Add multiple arguments
+Arguments are passed directly to the Message facade methods as varargs parameters:
+
+```java
+// Single argument
+Message.info("skills.levelup", player.level).send(audience);
+
+// Multiple arguments
+Message.success("banking.deposit.success", 10000, "Gold").send(playerId);
+Message.info("server.maintenance", "1 hour", "scheduled").send(audience);
+```
+
+Arguments are substituted into the localized message using `{0}`, `{1}`, etc. in the YAML files.
 
 ### Tags (Context Prefixes)
 
