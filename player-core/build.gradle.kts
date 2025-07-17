@@ -5,6 +5,7 @@ plugins {
     java
     id("com.gradleup.shadow") version "9.0.0-beta17"
     id("xyz.jpenilla.run-paper") version "2.3.1"
+    id("io.papermc.paperweight.userdev") version "2.0.0-beta.18"
 }
 
 group = "sh.harold"
@@ -21,8 +22,8 @@ dependencies {
     implementation(project(":message-api"))
     implementation(project(":rank-api"))
 
-    // Paper API
-    compileOnly("io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT")
+    // Paper API (temporary fallback until userdev configuration is resolved)
+    paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.7-R0.1-SNAPSHOT")
 
     // Other runtime deps
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
@@ -43,6 +44,8 @@ val targetJavaVersion = 21
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(targetJavaVersion))
 }
+
+
 
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
@@ -93,7 +96,7 @@ tasks.named("build") {
 
 // Ensure runServer uses the shaded jar
 tasks.named<RunServer>("runServer") {
-    minecraftVersion("1.21.6")
+    minecraftVersion("1.21.7")
     dependsOn(tasks.named("shadowJar"))
     pluginJars.setFrom(tasks.named<ShadowJar>("shadowJar").map { it.archiveFile })
 }
