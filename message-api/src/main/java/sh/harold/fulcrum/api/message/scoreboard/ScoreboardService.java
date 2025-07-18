@@ -72,15 +72,15 @@ public interface ScoreboardService {
 
     /**
      * Flashes a temporary module to a player's scoreboard for a specified duration.
-     * The module will be inserted at the specified priority and then removed after the duration.
-     * 
+     * The module will be inserted at the specified moduleIndex and then removed after the duration.
+     *
      * @param playerId the UUID of the player
-     * @param priority the priority of the module (higher values appear first)
+     * @param moduleIndex the index of the module position to replace (0-based)
      * @param module the module to flash
      * @param duration the duration to show the module
      * @throws IllegalArgumentException if any parameter is null or duration is negative
      */
-    void flashModule(UUID playerId, int priority, ScoreboardModule module, Duration duration);
+    void flashModule(UUID playerId, int moduleIndex, ScoreboardModule module, Duration duration);
 
     /**
      * Sets a custom title for a specific player's scoreboard.
