@@ -3,20 +3,21 @@ package sh.harold.fulcrum.api.message.scoreboard;
 import sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule;
 import sh.harold.fulcrum.api.message.scoreboard.registry.ScoreboardDefinition;
 
-import java.util.TreeMap;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Fluent builder for creating scoreboard definitions.
  * This class provides a convenient way to configure scoreboards with modules,
  * titles, and other settings before registering them with the service.
- * 
+ *
  * <p>Usage example:
  * <pre>{@code
  * Scoreboard.define("lobby")
  *     .title("&6&lLobby Server")
- *     .module(0, StatsModule.create())
- *     .module(1, RankModule.create())
- *     .module(2, ServerInfoModule.create())
+ *     .module(StatsModule.create())
+ *     .module(RankModule.create())
+ *     .module(ServerInfoModule.create())
  *     .register();
  * }</pre>
  */
@@ -24,7 +25,7 @@ public class ScoreboardBuilder {
 
     private final String scoreboardId;
     private String title;
-    private final TreeMap<Integer, ScoreboardModule> modules = new TreeMap<>();
+    private final List<ScoreboardModule> modules = new ArrayList<>();
 
     /**
      * Creates a new ScoreboardBuilder with the given scoreboard ID.
@@ -52,23 +53,36 @@ public class ScoreboardBuilder {
     }
 
     /**
-     * Adds a module to the scoreboard with the specified priority.
-     * Modules are displayed in priority order (higher values appear first).
-     * 
-     * @param priority the priority of the module (higher values appear first)
+     * Adds a module to the scoreboard at the end of the list.
+     * Modules are displayed in insertion order.
+     *
      * @param module the module to add
      * @return this builder instance for method chaining
      * @throws IllegalArgumentException if module is null
-     * @throws IllegalStateException if a module with the same priority already exists
      */
-    public ScoreboardBuilder module(int priority, ScoreboardModule module) {
+    public ScoreboardBuilder module(ScoreboardModule module) {
         if (module == null) {
             throw new IllegalArgumentException("Module cannot be null");
         }
-        if (modules.containsKey(priority)) {
-            throw new IllegalStateException("A module with priority " + priority + " already exists");
+        modules.add(module);
+        return this;
+    }
+
+    /**
+     * Adds a module to the scoreboard at the specified index.
+     * Modules are displayed in insertion order.
+     *
+     * @param index the index where to insert the module (0-based)
+     * @param module the module to add
+     * @return this builder instance for method chaining
+     * @throws IllegalArgumentException if module is null
+     * @throws IndexOutOfBoundsException if index is out of bounds
+     */
+    public ScoreboardBuilder module(int index, ScoreboardModule module) {
+        if (module == null) {
+            throw new IllegalArgumentException("Module cannot be null");
         }
-        modules.put(priority, module);
+        modules.add(index, module);
         return this;
     }
 
@@ -114,17 +128,17 @@ public class ScoreboardBuilder {
     }
 
     /**
-     * Gets a copy of the current modules map.
-     * 
-     * @return a copy of the modules map
+     * Gets a copy of the current modules list.
+     *
+     * @return a copy of the modules list
      */
-    public TreeMap<Integer, ScoreboardModule> getModules() {
-        return new TreeMap<>(modules);
+    public List<ScoreboardModule> getModules() {
+        return new ArrayList<>(modules);
     }
 
     /**
      * Gets the number of modules currently configured.
-     * 
+     *
      * @return the number of modules
      */
     public int getModuleCount() {
@@ -132,23 +146,24 @@ public class ScoreboardBuilder {
     }
 
     /**
-     * Checks if a module with the given priority exists.
-     * 
-     * @param priority the priority to check
-     * @return true if a module with the given priority exists, false otherwise
+     * Checks if a module exists at the given index.
+     *
+     * @param index the index to check (0-based)
+     * @return true if a module exists at the given index, false otherwise
      */
-    public boolean hasModule(int priority) {
-        return modules.containsKey(priority);
+    public boolean hasModule(int index) {
+        return index >= 0 && index < modules.size();
     }
 
     /**
-     * Removes a module with the given priority.
-     * 
-     * @param priority the priority of the module to remove
+     * Removes a module at the given index.
+     *
+     * @param index the index of the module to remove (0-based)
      * @return this builder instance for method chaining
+     * @throws IndexOutOfBoundsException if index is out of bounds
      */
-    public ScoreboardBuilder removeModule(int priority) {
-        modules.remove(priority);
+    public ScoreboardBuilder removeModule(int index) {
+        modules.remove(index);
         return this;
     }
 

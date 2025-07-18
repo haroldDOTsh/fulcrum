@@ -105,14 +105,14 @@ public class Scoreboard {
     /**
      * Flashes a temporary module to a player's scoreboard for a specified duration.
      * The module will be shown temporarily and then the previous content will be restored.
-     * 
+     *
      * @param playerId the UUID of the player
-     * @param priority the priority of the module (higher values appear first)
+     * @param moduleIndex the index of the module position to replace (0-based)
      * @param module the module to flash
      * @param duration the duration to show the module
      * @throws IllegalArgumentException if any parameter is null or duration is negative
      */
-    public static void flash(UUID playerId, int priority, ScoreboardModule module, Duration duration) {
+    public static void flash(UUID playerId, int moduleIndex, ScoreboardModule module, Duration duration) {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
@@ -122,7 +122,7 @@ public class Scoreboard {
         if (duration == null || duration.isNegative()) {
             throw new IllegalArgumentException("Duration cannot be null or negative");
         }
-        getService().flashModule(playerId, priority, module, duration);
+        getService().flashModule(playerId, moduleIndex, module, duration);
     }
 
     /**
