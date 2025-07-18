@@ -141,33 +141,33 @@ public interface PlayerScoreboardManager {
 
     /**
      * Starts a flash operation for a player.
-     * 
+     *
      * @param playerId the UUID of the player
-     * @param priority the priority of the flash module
+     * @param moduleIndex the index of the module position to replace (0-based)
      * @param module the module to flash
      * @param duration the duration of the flash
      * @throws IllegalArgumentException if any parameter is null or duration is negative
      */
-    void startFlash(UUID playerId, int priority, ScoreboardModule module, Duration duration);
+    void startFlash(UUID playerId, int moduleIndex, ScoreboardModule module, Duration duration);
 
     /**
      * Stops a flash operation for a player.
-     * 
+     *
      * @param playerId the UUID of the player
-     * @param priority the priority of the flash module to stop
+     * @param moduleIndex the index of the module position to stop flashing
      * @throws IllegalArgumentException if playerId is null
      */
-    void stopFlash(UUID playerId, int priority);
+    void stopFlash(UUID playerId, int moduleIndex);
 
     /**
-     * Checks if a player has an active flash at the given priority.
-     * 
+     * Checks if a player has an active flash at the given module index.
+     *
      * @param playerId the UUID of the player
-     * @param priority the priority to check
-     * @return true if there's an active flash at the priority, false otherwise
+     * @param moduleIndex the module index to check
+     * @return true if there's an active flash at the module index, false otherwise
      * @throws IllegalArgumentException if playerId is null
      */
-    boolean hasActiveFlash(UUID playerId, int priority);
+    boolean hasActiveFlash(UUID playerId, int moduleIndex);
 
     /**
      * Stops all active flashes for a player.

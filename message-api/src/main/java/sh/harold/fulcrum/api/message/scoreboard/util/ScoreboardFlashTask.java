@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * Task for managing scoreboard flash functionality.
@@ -19,25 +20,26 @@ import java.util.concurrent.TimeUnit;
 public class ScoreboardFlashTask implements Runnable {
 
     private final UUID playerId;
-    private final int priority;
+    private final int moduleIndex;
     private final ScoreboardModule flashModule;
     private final PlayerScoreboardManager playerManager;
     private final Duration duration;
     private final long createdTime;
     private volatile boolean cancelled;
     private volatile ScheduledFuture<?> scheduledFuture;
+    private volatile Consumer<UUID> refreshCallback;
 
     /**
      * Creates a new ScoreboardFlashTask.
-     * 
+     *
      * @param playerId the UUID of the player
-     * @param priority the priority of the flash module
+     * @param moduleIndex the index of the module position to replace (0-based)
      * @param flashModule the module to flash
      * @param playerManager the player manager to use for cleanup
      * @param duration the duration of the flash
      * @throws IllegalArgumentException if any parameter is null or duration is negative
      */
-    public ScoreboardFlashTask(UUID playerId, int priority, ScoreboardModule flashModule,
+    public ScoreboardFlashTask(UUID playerId, int moduleIndex, ScoreboardModule flashModule,
                               PlayerScoreboardManager playerManager, Duration duration) {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
@@ -53,7 +55,7 @@ public class ScoreboardFlashTask implements Runnable {
         }
 
         this.playerId = playerId;
-        this.priority = priority;
+        this.moduleIndex = moduleIndex;
         this.flashModule = flashModule;
         this.playerManager = playerManager;
         this.duration = duration;
@@ -69,10 +71,15 @@ public class ScoreboardFlashTask implements Runnable {
 
         try {
             // Stop the flash operation
-            playerManager.stopFlash(playerId, priority);
+            playerManager.stopFlash(playerId, moduleIndex);
             
             // Mark the player's scoreboard for refresh to update the display
             playerManager.markForRefresh(playerId);
+            
+            // Trigger immediate refresh if callback is available
+            if (refreshCallback != null) {
+                refreshCallback.accept(playerId);
+            }
             
         } catch (Exception e) {
             // Log the error but don't throw it to prevent scheduler issues
@@ -92,8 +99,13 @@ public class ScoreboardFlashTask implements Runnable {
         
         // Immediately stop the flash
         try {
-            playerManager.stopFlash(playerId, priority);
+            playerManager.stopFlash(playerId, moduleIndex);
             playerManager.markForRefresh(playerId);
+            
+            // Trigger immediate refresh if callback is available
+            if (refreshCallback != null) {
+                refreshCallback.accept(playerId);
+            }
         } catch (Exception e) {
             System.err.println("Error during flash task cancellation for player " + playerId + ": " + e.getMessage());
         }
@@ -101,7 +113,7 @@ public class ScoreboardFlashTask implements Runnable {
 
     /**
      * Gets the UUID of the player this task is for.
-     * 
+     *
      * @return the player UUID
      */
     public UUID getPlayerId() {
@@ -109,12 +121,12 @@ public class ScoreboardFlashTask implements Runnable {
     }
 
     /**
-     * Gets the priority of the flash module.
-     * 
-     * @return the priority
+     * Gets the module index of the flash module.
+     *
+     * @return the module index
      */
-    public int getPriority() {
-        return priority;
+    public int getModuleIndex() {
+        return moduleIndex;
     }
 
     /**
@@ -176,11 +188,20 @@ public class ScoreboardFlashTask implements Runnable {
     /**
      * Sets the scheduled future for this task.
      * This is used for proper cancellation handling.
-     * 
+     *
      * @param future the scheduled future
      */
     public void setScheduledFuture(ScheduledFuture<?> future) {
         this.scheduledFuture = future;
+    }
+    
+    /**
+     * Sets a callback to trigger immediate refresh when the flash expires.
+     *
+     * @param callback the refresh callback
+     */
+    public void setRefreshCallback(Consumer<UUID> callback) {
+        this.refreshCallback = callback;
     }
 
     /**
@@ -217,25 +238,25 @@ public class ScoreboardFlashTask implements Runnable {
 
     /**
      * Creates a new flash task for the given parameters.
-     * 
+     *
      * @param playerId the UUID of the player
-     * @param priority the priority of the flash module
+     * @param moduleIndex the index of the module position to replace (0-based)
      * @param flashModule the module to flash
      * @param playerManager the player manager to use for cleanup
      * @param duration the duration of the flash
      * @return a new ScoreboardFlashTask
      * @throws IllegalArgumentException if any parameter is invalid
      */
-    public static ScoreboardFlashTask create(UUID playerId, int priority, ScoreboardModule flashModule,
+    public static ScoreboardFlashTask create(UUID playerId, int moduleIndex, ScoreboardModule flashModule,
                                            PlayerScoreboardManager playerManager, Duration duration) {
-        return new ScoreboardFlashTask(playerId, priority, flashModule, playerManager, duration);
+        return new ScoreboardFlashTask(playerId, moduleIndex, flashModule, playerManager, duration);
     }
 
     @Override
     public String toString() {
         return "ScoreboardFlashTask{" +
                 "playerId=" + playerId +
-                ", priority=" + priority +
+                ", moduleIndex=" + moduleIndex +
                 ", flashModule=" + flashModule.getModuleId() +
                 ", duration=" + duration +
                 ", cancelled=" + cancelled +
@@ -249,7 +270,7 @@ public class ScoreboardFlashTask implements Runnable {
         if (this == obj) return true;
         if (obj == null || getClass() != obj.getClass()) return false;
         ScoreboardFlashTask that = (ScoreboardFlashTask) obj;
-        return priority == that.priority &&
+        return moduleIndex == that.moduleIndex &&
                 playerId.equals(that.playerId) &&
                 flashModule.getModuleId().equals(that.flashModule.getModuleId());
     }
@@ -257,7 +278,7 @@ public class ScoreboardFlashTask implements Runnable {
     @Override
     public int hashCode() {
         int result = playerId.hashCode();
-        result = 31 * result + priority;
+        result = 31 * result + moduleIndex;
         result = 31 * result + flashModule.getModuleId().hashCode();
         return result;
     }

@@ -1,11 +1,13 @@
 package sh.harold.fulcrum.api.message.scoreboard.player;
 
 import sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule;
+import sh.harold.fulcrum.api.message.scoreboard.util.ScoreboardFlashTask;
 
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 /**
  * Represents the scoreboard state for an individual player.
@@ -22,6 +24,7 @@ public class PlayerScoreboardState {
     private volatile boolean needsRefresh;
     private final Map<String, ModuleOverride> moduleOverrides = new ConcurrentHashMap<>();
     private final Map<Integer, FlashState> activeFlashes = new ConcurrentHashMap<>();
+    private final Map<Integer, ScheduledFuture<?>> activeFlashTasks = new ConcurrentHashMap<>();
     private final long createdTime;
     private volatile long lastUpdated;
 
@@ -176,14 +179,14 @@ public class PlayerScoreboardState {
     }
 
     /**
-     * Starts a flash operation at the given priority.
-     * 
-     * @param priority the priority of the flash
+     * Starts a flash operation at the given module index.
+     *
+     * @param moduleIndex the index of the module position to replace (0-based)
      * @param module the module to flash
      * @param duration the duration of the flash
      * @throws IllegalArgumentException if module is null or duration is negative
      */
-    public void startFlash(int priority, ScoreboardModule module, Duration duration) {
+    public void startFlash(int moduleIndex, ScoreboardModule module, Duration duration) {
         if (module == null) {
             throw new IllegalArgumentException("Module cannot be null");
         }
@@ -191,44 +194,85 @@ public class PlayerScoreboardState {
             throw new IllegalArgumentException("Duration cannot be null or negative");
         }
         
+        // Cancel any existing flash task at this module index
+        stopFlash(moduleIndex);
+        
         FlashState flashState = new FlashState(module, System.currentTimeMillis() + duration.toMillis());
-        activeFlashes.put(priority, flashState);
+        activeFlashes.put(moduleIndex, flashState);
+        this.lastUpdated = System.currentTimeMillis();
+    }
+    
+    /**
+     * Starts a flash operation with a scheduled task for automatic expiration.
+     *
+     * @param moduleIndex the index of the module position to replace (0-based)
+     * @param module the module to flash
+     * @param duration the duration of the flash
+     * @param scheduledTask the scheduled task for automatic expiration
+     * @throws IllegalArgumentException if module is null or duration is negative
+     */
+    public void startFlashWithTask(int moduleIndex, ScoreboardModule module, Duration duration, ScheduledFuture<?> scheduledTask) {
+        if (module == null) {
+            throw new IllegalArgumentException("Module cannot be null");
+        }
+        if (duration == null || duration.isNegative()) {
+            throw new IllegalArgumentException("Duration cannot be null or negative");
+        }
+        
+        // Cancel any existing flash task at this module index
+        stopFlash(moduleIndex);
+        
+        FlashState flashState = new FlashState(module, System.currentTimeMillis() + duration.toMillis());
+        activeFlashes.put(moduleIndex, flashState);
+        
+        // Store the scheduled task for proper cleanup
+        if (scheduledTask != null) {
+            activeFlashTasks.put(moduleIndex, scheduledTask);
+        }
+        
         this.lastUpdated = System.currentTimeMillis();
     }
 
     /**
-     * Stops a flash operation at the given priority.
-     * 
-     * @param priority the priority of the flash to stop
+     * Stops a flash operation at the given module index.
+     *
+     * @param moduleIndex the index of the module position to stop flashing
      */
-    public void stopFlash(int priority) {
-        activeFlashes.remove(priority);
+    public void stopFlash(int moduleIndex) {
+        activeFlashes.remove(moduleIndex);
+        
+        // Cancel any scheduled task for this flash
+        ScheduledFuture<?> task = activeFlashTasks.remove(moduleIndex);
+        if (task != null && !task.isDone()) {
+            task.cancel(false);
+        }
+        
         this.lastUpdated = System.currentTimeMillis();
     }
 
     /**
-     * Gets the flash state at the given priority.
-     * 
-     * @param priority the priority to check
-     * @return the flash state, or null if no flash is active at this priority
+     * Gets the flash state at the given module index.
+     *
+     * @param moduleIndex the module index to check
+     * @return the flash state, or null if no flash is active at this module index
      */
-    public FlashState getFlashState(int priority) {
-        FlashState state = activeFlashes.get(priority);
+    public FlashState getFlashState(int moduleIndex) {
+        FlashState state = activeFlashes.get(moduleIndex);
         if (state != null && state.isExpired()) {
-            activeFlashes.remove(priority);
+            activeFlashes.remove(moduleIndex);
             return null;
         }
         return state;
     }
 
     /**
-     * Checks if a flash is active at the given priority.
-     * 
-     * @param priority the priority to check
+     * Checks if a flash is active at the given module index.
+     *
+     * @param moduleIndex the module index to check
      * @return true if a flash is active, false otherwise
      */
-    public boolean hasActiveFlash(int priority) {
-        return getFlashState(priority) != null;
+    public boolean hasActiveFlash(int moduleIndex) {
+        return getFlashState(moduleIndex) != null;
     }
 
     /**

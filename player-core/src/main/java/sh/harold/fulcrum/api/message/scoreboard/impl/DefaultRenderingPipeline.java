@@ -26,15 +26,41 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
     private final PlayerScoreboardManager playerManager;
     private final ColorCodeProcessor colorProcessor;
     
-    private int maxLines = 13;
+    private int maxLines = 15;
     private String staticBottomLine = "&7play.example.com";
     private boolean blockSeparationEnabled = true;
-    private String blockSeparationCharacter = " ";
+    private String blockSeparationCharacter = "§r"; // Kept for backward compatibility
+    private int separatorCounter = 0;
 
     public DefaultRenderingPipeline(TitleManager titleManager, PlayerScoreboardManager playerManager) {
         this.titleManager = titleManager;
         this.playerManager = playerManager;
         this.colorProcessor = new ColorCodeProcessor();
+    }
+    
+    /**
+     * Generates a unique separator using incremental spaces to ensure each separator
+     * has unique content for Minecraft's scoreboard system.
+     */
+    private String generateUniqueSeparator() {
+        if (separatorCounter == 0) {
+            separatorCounter++;
+            return ""; // First separator: empty string
+        }
+        
+        StringBuilder separator = new StringBuilder();
+        for (int i = 0; i < separatorCounter; i++) {
+            separator.append(" ");
+        }
+        separatorCounter++;
+        return separator.toString();
+    }
+    
+    /**
+     * Resets the separator counter for a new rendering cycle.
+     */
+    private void resetSeparatorCounter() {
+        separatorCounter = 0;
     }
 
     @Override
@@ -45,6 +71,9 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         if (definition == null) {
             throw new IllegalArgumentException("Definition cannot be null");
         }
+
+        // Reset separator counter for new rendering cycle
+        resetSeparatorCounter();
 
         String title = renderTitle(playerId, definition);
         List<String> content = renderContent(playerId, definition);
@@ -64,52 +93,98 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
             throw new IllegalArgumentException("Definition cannot be null");
         }
 
-        List<String> rawContent = new ArrayList<>();
+        // Reset separator counter for new rendering cycle
+        resetSeparatorCounter();
+        
+        List<List<String>> moduleBlocks = new ArrayList<>();
         
         // Get player state for overrides and flash content
         PlayerScoreboardState playerState = playerManager.getPlayerState(playerId);
         
-        // Collect content from modules in descending priority order
-        Map<Integer, ScoreboardModule> modules = definition.getModulesDescending();
+        // Collect content from modules in insertion order
+        List<ScoreboardModule> modules = definition.getModules();
         
-        // Add flash content first (highest priority)
-        if (playerState != null) {
-            Map<Integer, PlayerScoreboardState.FlashState> activeFlashes = playerState.getActiveFlashes();
-            for (Map.Entry<Integer, PlayerScoreboardState.FlashState> entry : activeFlashes.entrySet()) {
-                PlayerScoreboardState.FlashState flashState = entry.getValue();
-                if (flashState != null && !flashState.isExpired()) {
-                    ScoreboardModule module = flashState.getModule();
-                    if (module != null) {
-                        List<String> moduleContent = module.getContentProvider().getContent(playerId);
-                        if (moduleContent != null) {
-                            rawContent.addAll(moduleContent);
-                        }
+        // DEBUG: Starting module processing
+        System.out.println("DEBUG: Starting module processing for " + modules.size() + " modules");
+        
+        // Process modules in insertion order, with flash replacements
+        for (int i = 0; i < modules.size(); i++) {
+            ScoreboardModule module = modules.get(i);
+            if (module != null) {
+                // Check if there's a flash replacement for this module index
+                ScoreboardModule effectiveModule = module;
+                if (playerState != null) {
+                    Map<Integer, PlayerScoreboardState.FlashState> activeFlashes = playerState.getActiveFlashes();
+                    PlayerScoreboardState.FlashState flashState = activeFlashes.get(i);
+                    if (flashState != null && !flashState.isExpired()) {
+                        effectiveModule = flashState.getModule();
+                        // DEBUG: Flash replacement
+                        System.out.println("DEBUG: Module at index " + i + " replaced by flash: " + effectiveModule.getModuleId());
                     }
                 }
-            }
-        }
-        
-        // Add regular modules (respecting overrides)
-        for (Map.Entry<Integer, ScoreboardModule> entry : modules.entrySet()) {
-            ScoreboardModule module = entry.getValue();
-            if (module != null) {
+                
                 // Check if module is overridden for this player
                 boolean moduleEnabled = true;
                 if (playerState != null) {
-                    ModuleOverride override = playerState.getModuleOverride(module.getModuleId());
+                    ModuleOverride override = playerState.getModuleOverride(effectiveModule.getModuleId());
                     moduleEnabled = (override == null) || override.isEnabled();
                 }
                 
                 if (moduleEnabled) {
-                    List<String> moduleContent = module.getContentProvider().getContent(playerId);
+                    List<String> moduleContent = effectiveModule.getContentProvider().getContent(playerId);
                     if (moduleContent != null && !moduleContent.isEmpty()) {
-                        rawContent.addAll(moduleContent);
+                        // DEBUG: Module content processing
+                        System.out.println("DEBUG: Module " + effectiveModule.getModuleId() + " at index " + i + " added " + moduleContent.size() + " lines");
+                        moduleBlocks.add(new ArrayList<>(moduleContent));
                     }
                 }
             }
         }
         
-        return processContent(playerId, rawContent);
+        List<String> processedContent = processModuleBlocks(playerId, moduleBlocks);
+        // DEBUG: Final processed content
+        System.out.println("DEBUG: Final processed content has " + processedContent.size() + " lines");
+        return processedContent;
+    }
+
+    /**
+     * Processes module blocks by adding proper separations between modules
+     * and handling color codes for each line.
+     */
+    private List<String> processModuleBlocks(UUID playerId, List<List<String>> moduleBlocks) {
+        if (playerId == null) {
+            throw new IllegalArgumentException("Player ID cannot be null");
+        }
+        if (moduleBlocks == null) {
+            throw new IllegalArgumentException("Module blocks cannot be null");
+        }
+
+        List<String> processed = new ArrayList<>();
+        
+        // Process each module block
+        for (int i = 0; i < moduleBlocks.size(); i++) {
+            List<String> moduleContent = moduleBlocks.get(i);
+            
+            // Add separator between modules (but not before the first module)
+            if (i > 0 && blockSeparationEnabled) {
+                processed.add(generateUniqueSeparator());
+            }
+            
+            // Process color codes for each line in the module
+            for (String line : moduleContent) {
+                if (line != null) {
+                    processed.add(processColorCodes(line));
+                }
+            }
+        }
+        
+        // Add static bottom line
+        processed = addStaticBottomLine(processed);
+        
+        // Apply line limit (reserve last line for static content)
+        processed = applyLineLimit(processed);
+        
+        return processed;
     }
 
     @Override
@@ -134,6 +209,9 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
             throw new IllegalArgumentException("Raw content cannot be null");
         }
 
+        // Reset separator counter for new processing cycle
+        resetSeparatorCounter();
+
         List<String> processed = new ArrayList<>();
         
         // Process color codes for each line
@@ -151,7 +229,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         // Add static bottom line
         processed = addStaticBottomLine(processed);
         
-        // Apply line limit
+        // Apply line limit (reserve last line for static content)
         processed = applyLineLimit(processed);
         
         return processed;
@@ -163,11 +241,14 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
             throw new IllegalArgumentException("Content cannot be null");
         }
         
-        if (content.size() <= maxLines) {
+        // Use 14 lines (reserve line 15 for static content)
+        int usableLines = maxLines - 1;
+        
+        if (content.size() <= usableLines) {
             return new ArrayList<>(content);
         }
         
-        return new ArrayList<>(content.subList(0, maxLines));
+        return new ArrayList<>(content.subList(0, usableLines));
     }
 
     @Override
@@ -176,16 +257,21 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
             throw new IllegalArgumentException("Content cannot be null");
         }
         
-        List<String> result = new ArrayList<>();
-        boolean first = true;
+        // DEBUG: Block separation processing
+        System.out.println("DEBUG: addBlockSeparations input: " + content.size() + " lines");
+        System.out.println("DEBUG: Block separation enabled: " + blockSeparationEnabled);
         
-        for (String line : content) {
-            if (!first && !line.trim().isEmpty()) {
-                result.add(blockSeparationCharacter);
-            }
-            result.add(line);
-            first = false;
+        if (!blockSeparationEnabled) {
+            return new ArrayList<>(content);
         }
+        
+        // This method is now primarily used for backward compatibility
+        // The new processModuleBlocks method handles proper module separation
+        // For legacy content that doesn't use module blocks, just return as-is
+        List<String> result = new ArrayList<>(content);
+        
+        // DEBUG: Block separation output
+        System.out.println("DEBUG: addBlockSeparations output: " + result.size() + " lines");
         
         return result;
     }
@@ -201,7 +287,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         if (staticBottomLine != null && !staticBottomLine.trim().isEmpty()) {
             // Add separator if there's existing content
             if (!result.isEmpty()) {
-                result.add(" ");
+                result.add(generateUniqueSeparator());
             }
             result.add(processColorCodes(staticBottomLine));
         }

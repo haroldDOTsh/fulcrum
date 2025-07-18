@@ -8,6 +8,7 @@ import sh.harold.fulcrum.api.message.scoreboard.player.PlayerScoreboardState;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 /**
  * Default implementation of PlayerScoreboardManager.
@@ -164,7 +165,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
     }
 
     @Override
-    public void startFlash(UUID playerId, int priority, ScoreboardModule module, Duration duration) {
+    public void startFlash(UUID playerId, int moduleIndex, ScoreboardModule module, Duration duration) {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
@@ -176,31 +177,57 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         }
         
         PlayerScoreboardState state = playerStates.computeIfAbsent(playerId, PlayerScoreboardState::new);
-        state.startFlash(priority, module, duration);
+        state.startFlash(moduleIndex, module, duration);
+        state.markForRefresh();
+    }
+    
+    /**
+     * Starts a flash operation with a scheduled task for automatic expiration.
+     *
+     * @param playerId the UUID of the player
+     * @param moduleIndex the index of the module position to replace (0-based)
+     * @param module the module to flash
+     * @param duration the duration of the flash
+     * @param scheduledTask the scheduled task for automatic expiration
+     * @throws IllegalArgumentException if any parameter is null or duration is negative
+     */
+    public void startFlashWithTask(UUID playerId, int moduleIndex, ScoreboardModule module, Duration duration, ScheduledFuture<?> scheduledTask) {
+        if (playerId == null) {
+            throw new IllegalArgumentException("Player ID cannot be null");
+        }
+        if (module == null) {
+            throw new IllegalArgumentException("Module cannot be null");
+        }
+        if (duration == null || duration.isNegative()) {
+            throw new IllegalArgumentException("Duration cannot be null or negative");
+        }
+        
+        PlayerScoreboardState state = playerStates.computeIfAbsent(playerId, PlayerScoreboardState::new);
+        state.startFlashWithTask(moduleIndex, module, duration, scheduledTask);
         state.markForRefresh();
     }
 
     @Override
-    public void stopFlash(UUID playerId, int priority) {
+    public void stopFlash(UUID playerId, int moduleIndex) {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
         
         PlayerScoreboardState state = playerStates.get(playerId);
         if (state != null) {
-            state.stopFlash(priority);
+            state.stopFlash(moduleIndex);
             state.markForRefresh();
         }
     }
 
     @Override
-    public boolean hasActiveFlash(UUID playerId, int priority) {
+    public boolean hasActiveFlash(UUID playerId, int moduleIndex) {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
         
         PlayerScoreboardState state = playerStates.get(playerId);
-        return state != null && state.hasActiveFlash(priority);
+        return state != null && state.hasActiveFlash(moduleIndex);
     }
 
     @Override
