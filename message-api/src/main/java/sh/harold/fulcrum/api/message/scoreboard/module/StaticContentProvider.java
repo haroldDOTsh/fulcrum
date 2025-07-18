@@ -8,14 +8,14 @@ import java.util.UUID;
 /**
  * Implementation of ContentProvider for static content.
  * This provider returns fixed content that does not change over time.
- * 
+ *
  * <p>Static content providers are ideal for:
  * <ul>
  *   <li>Fixed information like server names or IP addresses</li>
  *   <li>Constant labels and headers</li>
  *   <li>Separator lines and formatting</li>
  * </ul>
- * 
+ *
  * <p>Example usage:
  * <pre>{@code
  * ContentProvider provider = new StaticContentProvider(Arrays.asList(
@@ -32,7 +32,7 @@ public class StaticContentProvider implements ContentProvider {
 
     /**
      * Creates a new StaticContentProvider with the given content.
-     * 
+     *
      * @param content the list of content lines
      * @throws IllegalArgumentException if content is null
      */
@@ -42,8 +42,8 @@ public class StaticContentProvider implements ContentProvider {
 
     /**
      * Creates a new StaticContentProvider with the given content and line limit.
-     * 
-     * @param content the list of content lines
+     *
+     * @param content  the list of content lines
      * @param maxLines the maximum number of lines to return, or -1 for no limit
      * @throws IllegalArgumentException if content is null or maxLines is less than -1
      */
@@ -60,7 +60,7 @@ public class StaticContentProvider implements ContentProvider {
 
     /**
      * Creates a new StaticContentProvider with a single line of content.
-     * 
+     *
      * @param line the content line
      * @throws IllegalArgumentException if line is null
      */
@@ -110,7 +110,7 @@ public class StaticContentProvider implements ContentProvider {
 
     /**
      * Gets the original content list.
-     * 
+     *
      * @return a copy of the original content list
      */
     public List<String> getOriginalContent() {
@@ -119,7 +119,7 @@ public class StaticContentProvider implements ContentProvider {
 
     /**
      * Gets the number of content lines.
-     * 
+     *
      * @return the number of content lines
      */
     public int getContentSize() {
@@ -128,7 +128,7 @@ public class StaticContentProvider implements ContentProvider {
 
     /**
      * Checks if the content is empty.
-     * 
+     *
      * @return true if the content is empty, false otherwise
      */
     public boolean isEmpty() {

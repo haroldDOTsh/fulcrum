@@ -17,7 +17,7 @@ public class GamemodeFeature implements PluginFeature {
     public void shutdown() {
         // No shutdown logic for now
     }
-    
+
     @Override
     public int getPriority() {
         return 60; // After MessageService (priority 1)

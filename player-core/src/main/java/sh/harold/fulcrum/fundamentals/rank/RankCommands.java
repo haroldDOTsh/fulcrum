@@ -1,7 +1,5 @@
 package sh.harold.fulcrum.fundamentals.rank;
 
-import static io.papermc.paper.command.brigadier.Commands.*;
-
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -15,17 +13,20 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import sh.harold.fulcrum.api.message.Message;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.api.rank.enums.FunctionalRank;
 import sh.harold.fulcrum.api.rank.enums.MonthlyPackageRank;
 import sh.harold.fulcrum.api.rank.enums.PackageRank;
 import sh.harold.fulcrum.api.rank.events.RankChangeEvent;
-import sh.harold.fulcrum.api.rank.RankService;
 
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+
+import static io.papermc.paper.command.brigadier.Commands.argument;
+import static io.papermc.paper.command.brigadier.Commands.literal;
 
 /**
  * Administrative commands for rank management using Paper's Brigadier API.
@@ -143,7 +144,7 @@ public final class RankCommands {
     private int executeInfo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         CommandSender sender = ctx.getSource().getSender();
         PlayerSelectorArgumentResolver resolver = ctx.getArgument("player", PlayerSelectorArgumentResolver.class);
-        
+
         List<Player> targets = resolver.resolve(ctx.getSource());
         if (targets.isEmpty()) {
             Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
@@ -157,10 +158,10 @@ public final class RankCommands {
         // Execute async operations
         Bukkit.getScheduler().runTaskAsynchronously(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
             CompletableFuture.allOf(
-                rankService.getEffectiveRank(playerId),
-                rankService.getFunctionalRank(playerId),
-                rankService.getPackageRank(playerId),
-                rankService.getMonthlyRank(playerId)
+                    rankService.getEffectiveRank(playerId),
+                    rankService.getFunctionalRank(playerId),
+                    rankService.getPackageRank(playerId),
+                    rankService.getMonthlyRank(playerId)
             ).thenAccept(ignored -> {
                 rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
                     rankService.getFunctionalRank(playerId).thenAccept(functionalRank -> {
@@ -193,7 +194,7 @@ public final class RankCommands {
     private int executeHistory(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         CommandSender sender = ctx.getSource().getSender();
         PlayerSelectorArgumentResolver resolver = ctx.getArgument("player", PlayerSelectorArgumentResolver.class);
-        
+
         List<Player> targets = resolver.resolve(ctx.getSource());
         if (targets.isEmpty()) {
             Message.error("rank.error.player-not-found", "No players found").staff().send(sender);
@@ -215,22 +216,22 @@ public final class RankCommands {
                         // Send results back on main thread
                         Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
                             Message.info("rank.history.header", target.getName()).staff().send(sender);
-                            
+
                             // Show current active rank
                             if (activeRank != null) {
                                 long remainingDays = activeRank.getRemainingDays();
                                 Message.info("rank.history.current",
-                                    activeRank.rank.getDisplayName(),
-                                    remainingDays + " day" + (remainingDays != 1 ? "s" : "")
+                                        activeRank.rank.getDisplayName(),
+                                        remainingDays + " day" + (remainingDays != 1 ? "s" : "")
                                 ).staff().send(sender);
                             } else {
                                 Message.info("rank.history.no-current").staff().send(sender);
                             }
-                            
+
                             // Show full history (for now just count since we haven't implemented the actual database queries)
                             Message.info("rank.history.total", history.size()).staff().send(sender);
                             Message.info("rank.history.expired", expiredRanks.size()).staff().send(sender);
-                            
+
                             // Note: In a real implementation, we would show detailed history here
                             // This demonstrates the structure for when the database queries are implemented
                             if (history.isEmpty() && expiredRanks.isEmpty()) {
@@ -266,7 +267,7 @@ public final class RankCommands {
             rank = PackageRank.valueOf(rankName);
         } catch (IllegalArgumentException e) {
             Message.error("rank.error.invalid-package-rank", rankName,
-                Arrays.toString(PackageRank.values())).staff().send(sender);
+                    Arrays.toString(PackageRank.values())).staff().send(sender);
             return 0;
         }
 
@@ -279,7 +280,7 @@ public final class RankCommands {
             rankService.setPackageRank(playerId, rank).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
                     Message.success("rank.set.package.success", target.getName(), rank.getDisplayName()).staff().send(sender);
-                    
+
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
                         RankChangeEvent event = new RankChangeEvent(playerId, null, effectiveRank, RankChangeEvent.RankChangeType.PACKAGE_RANK_CHANGED);
@@ -313,7 +314,7 @@ public final class RankCommands {
             rank = FunctionalRank.valueOf(rankName);
         } catch (IllegalArgumentException e) {
             Message.error("rank.error.invalid-functional-rank", rankName,
-                Arrays.toString(FunctionalRank.values())).staff().send(sender);
+                    Arrays.toString(FunctionalRank.values())).staff().send(sender);
             return 0;
         }
 
@@ -326,7 +327,7 @@ public final class RankCommands {
             rankService.setFunctionalRank(playerId, rank).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
                     Message.success("rank.set.functional.success", target.getName(), rank.getDisplayName()).staff().send(sender);
-                    
+
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
                         RankChangeEvent event = new RankChangeEvent(playerId, null, effectiveRank, RankChangeEvent.RankChangeType.FUNCTIONAL_RANK_SET);
@@ -361,7 +362,7 @@ public final class RankCommands {
             rank = MonthlyPackageRank.valueOf(rankName);
         } catch (IllegalArgumentException e) {
             Message.error("rank.error.invalid-monthly-rank", rankName,
-                Arrays.toString(MonthlyPackageRank.values())).staff().send(sender);
+                    Arrays.toString(MonthlyPackageRank.values())).staff().send(sender);
             return 0;
         }
 
@@ -381,9 +382,9 @@ public final class RankCommands {
         Bukkit.getScheduler().runTaskAsynchronously(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
             rankService.grantMonthlyRank(playerId, rank, duration).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
-                    Message.success("rank.grant.monthly.success", target.getName(), rank.getDisplayName(), 
-                        formatDuration(duration)).staff().send(sender);
-                    
+                    Message.success("rank.grant.monthly.success", target.getName(), rank.getDisplayName(),
+                            formatDuration(duration)).staff().send(sender);
+
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
                         RankChangeEvent event = new RankChangeEvent(playerId, null, effectiveRank, RankChangeEvent.RankChangeType.MONTHLY_RANK_GRANTED);
@@ -420,7 +421,7 @@ public final class RankCommands {
             rankService.setFunctionalRank(playerId, null).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
                     Message.success("rank.remove.functional.success", target.getName()).staff().send(sender);
-                    
+
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
                         RankChangeEvent event = new RankChangeEvent(playerId, null, effectiveRank, RankChangeEvent.RankChangeType.FUNCTIONAL_RANK_REMOVED);
@@ -457,7 +458,7 @@ public final class RankCommands {
             rankService.removeMonthlyRank(playerId).thenRun(() -> {
                 Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
                     Message.success("rank.remove.monthly.success", target.getName()).staff().send(sender);
-                    
+
                     // Fire rank change event
                     rankService.getEffectiveRank(playerId).thenAccept(effectiveRank -> {
                         RankChangeEvent event = new RankChangeEvent(playerId, null, effectiveRank, RankChangeEvent.RankChangeType.MONTHLY_RANK_REMOVED);
@@ -518,7 +519,7 @@ public final class RankCommands {
         if (durationStr.matches("\\d+[dwhmsDWHMS]")) {
             char unit = durationStr.charAt(durationStr.length() - 1);
             int amount = Integer.parseInt(durationStr.substring(0, durationStr.length() - 1));
-            
+
             return switch (Character.toLowerCase(unit)) {
                 case 's' -> Duration.ofSeconds(amount);
                 case 'm' -> Duration.ofMinutes(amount);

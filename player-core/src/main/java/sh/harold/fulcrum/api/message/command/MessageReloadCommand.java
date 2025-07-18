@@ -11,14 +11,15 @@ import sh.harold.fulcrum.api.message.Message;
 import sh.harold.fulcrum.api.message.YamlMessageService;
 
 public final class MessageReloadCommand {
-    private MessageReloadCommand() {}
+    private MessageReloadCommand() {
+    }
 
     public static LiteralCommandNode<CommandSourceStack> create(@NotNull YamlMessageService service) {
         return LiteralArgumentBuilder
-            .<CommandSourceStack>literal("messagereload")
-            .requires(source -> source.getSender().hasPermission("fulcrum.message.reload"))
-            .executes(ctx -> execute(ctx, service))
-            .build();
+                .<CommandSourceStack>literal("messagereload")
+                .requires(source -> source.getSender().hasPermission("fulcrum.message.reload"))
+                .executes(ctx -> execute(ctx, service))
+                .build();
     }
 
     private static int execute(CommandContext<CommandSourceStack> ctx, YamlMessageService service) {

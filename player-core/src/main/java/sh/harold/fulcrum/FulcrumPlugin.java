@@ -10,8 +10,8 @@ import sh.harold.fulcrum.fundamentals.rank.RankFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
-import sh.harold.fulcrum.module.ModuleManager;
 import sh.harold.fulcrum.module.ModuleFeature;
+import sh.harold.fulcrum.module.ModuleManager;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
@@ -26,7 +26,7 @@ public final class FulcrumPlugin extends JavaPlugin {
     public void onEnable() {
         // Initialize dependency container
         container = new DependencyContainer();
-        
+
         CommandRegistrar.hook(this);
 
         // Register features
@@ -52,16 +52,16 @@ public final class FulcrumPlugin extends JavaPlugin {
             // Create platform with dependency container
             this.platform = new FulcrumPlatform(container);
             this.moduleManager = new ModuleManager(getLogger());
-            
+
             // Register ModuleManager in the container
             container.register(ModuleManager.class, moduleManager);
-            
+
             // Re-initialize ModuleFeature now that ModuleManager is available
             ModuleFeature moduleFeature = FeatureManager.getFeature(ModuleFeature.class);
             if (moduleFeature != null && !moduleFeature.areCommandsRegistered()) {
                 moduleFeature.initialize(this, container);
             }
-            
+
             moduleManager.loadModules(allowedModules, platform);
         } catch (java.io.IOException e) {
             getLogger().severe("Failed to load environment: " + e.getMessage());

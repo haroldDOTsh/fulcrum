@@ -8,16 +8,17 @@ public interface PluginFeature {
      * Features should retrieve dependencies from the container rather than
      * directly from the plugin to avoid initialization order issues.
      *
-     * @param plugin The plugin instance
+     * @param plugin    The plugin instance
      * @param container The dependency container (optional, for backward compatibility)
      */
     default void initialize(JavaPlugin plugin, DependencyContainer container) {
         // Default implementation for backward compatibility
         initialize(plugin);
     }
-    
+
     /**
      * Legacy initialization method.
+     *
      * @deprecated Use initialize(JavaPlugin, DependencyContainer) instead
      */
     @Deprecated
@@ -31,7 +32,7 @@ public interface PluginFeature {
     default void shutdown() {
         // This method is optional
     }
-    
+
     /**
      * Get the initialization priority for this feature.
      * Lower values initialize first. Default is 100.
@@ -41,9 +42,10 @@ public interface PluginFeature {
     default int getPriority() {
         return 100;
     }
-    
+
     /**
      * Get the dependencies required by this feature.
+     *
      * @return Array of service classes this feature depends on
      */
     default Class<?>[] getDependencies() {

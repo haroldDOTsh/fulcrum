@@ -30,7 +30,7 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
     private static final int MAX_CHARACTERS_PER_LINE = 128; // 1.21 supports longer lines
     private static final int MAX_LINES = 15;
     private static final String OBJECTIVE_NAME = "fulcrum_sb";
-    
+
     // Track active scoreboards for each player
     private final ConcurrentHashMap<UUID, Objective> activeObjectives = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Scoreboard> activeScoreboards = new ConcurrentHashMap<>();
@@ -57,12 +57,12 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (scoreboard == null) {
             throw new IllegalArgumentException("Scoreboard cannot be null");
         }
-        
+
         Player player = Bukkit.getPlayer(playerId);
         if (player == null) {
             return;
         }
-        
+
         try {
             if (nmsAvailable) {
                 displayScoreboardNMS(playerId, scoreboard);
@@ -81,70 +81,70 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (player == null) {
             return;
         }
-        
+
         try {
             ServerPlayer serverPlayer = ((CraftPlayer) player).getHandle();
-            
+
             // Clear existing scoreboard if any
             hideScoreboard(playerId);
-            
+
             // Create new scoreboard and objective
             Scoreboard nmsScoreboard = new Scoreboard();
             Objective objective = nmsScoreboard.addObjective(
-                OBJECTIVE_NAME,
-                ObjectiveCriteria.DUMMY,
-                Component.literal(scoreboard.getEffectiveTitle()),
-                ObjectiveCriteria.RenderType.INTEGER,
-                false,
-                null
+                    OBJECTIVE_NAME,
+                    ObjectiveCriteria.DUMMY,
+                    Component.literal(scoreboard.getEffectiveTitle()),
+                    ObjectiveCriteria.RenderType.INTEGER,
+                    false,
+                    null
             );
-            
+
             // Create and send objective packet
-            ClientboundSetObjectivePacket createObjectivePacket = 
-                new ClientboundSetObjectivePacket(objective, ClientboundSetObjectivePacket.METHOD_ADD);
+            ClientboundSetObjectivePacket createObjectivePacket =
+                    new ClientboundSetObjectivePacket(objective, ClientboundSetObjectivePacket.METHOD_ADD);
             serverPlayer.connection.send(createObjectivePacket);
-            
+
             // Display the objective on the sidebar
-            ClientboundSetDisplayObjectivePacket displayPacket = 
-                new ClientboundSetDisplayObjectivePacket(net.minecraft.world.scores.DisplaySlot.SIDEBAR, objective);
+            ClientboundSetDisplayObjectivePacket displayPacket =
+                    new ClientboundSetDisplayObjectivePacket(net.minecraft.world.scores.DisplaySlot.SIDEBAR, objective);
             serverPlayer.connection.send(displayPacket);
-            
+
             // Add content lines
             List<String> content = scoreboard.getContent();
             int score = content.size();
-            
+
             // DEBUG: PacketRenderer processing
             System.out.println("DEBUG: PacketRenderer processing " + content.size() + " lines");
-            
+
             for (String line : content) {
                 if (line == null) {
                     Bukkit.getLogger().warning("Scoreboard line is null for player " + playerId + ", skipping...");
                     continue;
                 }
-                
+
                 // Handle empty lines to ensure compatibility with Minecraft's scoreboard requirements
                 // Note: Only apply §r to truly empty strings, not whitespace-only strings which are unique separators
                 if (line.isEmpty()) {
                     line = "§r";
                 }
-                
+
                 if (line.length() > MAX_CHARACTERS_PER_LINE) {
                     line = line.substring(0, MAX_CHARACTERS_PER_LINE);
                 }
-                
+
                 // DEBUG: Line processing
                 System.out.println("DEBUG: Line " + (content.size() - score + 1) + ": '" + line + "' (score: " + score + ")");
-                
+
                 // Create score packet - fixed to use Optional.empty() instead of null
                 ClientboundSetScorePacket scorePacket =
-                    new ClientboundSetScorePacket(line, OBJECTIVE_NAME, score--, Optional.empty(), Optional.empty());
+                        new ClientboundSetScorePacket(line, OBJECTIVE_NAME, score--, Optional.empty(), Optional.empty());
                 serverPlayer.connection.send(scorePacket);
             }
-            
+
             // Track active scoreboard
             activeObjectives.put(playerId, objective);
             activeScoreboards.put(playerId, nmsScoreboard);
-            
+
         } catch (Exception e) {
             Bukkit.getLogger().severe("Failed to display NMS scoreboard for player " + playerId + ": " + e.getMessage());
             e.printStackTrace();
@@ -158,40 +158,40 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (player == null) {
             return;
         }
-        
+
         try {
             // Create new scoreboard
             org.bukkit.scoreboard.Scoreboard bukkitScoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
             org.bukkit.scoreboard.Objective objective = bukkitScoreboard.registerNewObjective(
-                "fulcrum_sb", 
-                "dummy", 
-                scoreboard.getEffectiveTitle()
+                    "fulcrum_sb",
+                    "dummy",
+                    scoreboard.getEffectiveTitle()
             );
-            
+
             objective.setDisplaySlot(org.bukkit.scoreboard.DisplaySlot.SIDEBAR);
-            
+
             // Set content lines
             List<String> content = scoreboard.getContent();
             int score = content.size();
-            
+
             for (String line : content) {
                 // Handle empty lines to ensure compatibility with Minecraft's scoreboard requirements
                 // Note: Only apply §r to truly empty strings, not whitespace-only strings which are unique separators
                 if (line.isEmpty()) {
                     line = "§r";
                 }
-                
+
                 if (line.length() > MAX_CHARACTERS_PER_LINE) {
                     line = line.substring(0, MAX_CHARACTERS_PER_LINE);
                 }
-                
+
                 org.bukkit.scoreboard.Score lineScore = objective.getScore(line);
                 lineScore.setScore(score--);
             }
-            
+
             // Set player's scoreboard
             player.setScoreboard(bukkitScoreboard);
-            
+
         } catch (Exception e) {
             Bukkit.getLogger().warning("Failed to display Bukkit scoreboard for player " + playerId + ": " + e.getMessage());
         }
@@ -205,7 +205,7 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (scoreboard == null) {
             throw new IllegalArgumentException("Scoreboard cannot be null");
         }
-        
+
         // For this implementation, we'll recreate the scoreboard for efficiency
         displayScoreboard(playerId, scoreboard);
     }
@@ -215,25 +215,25 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         Player player = Bukkit.getPlayer(playerId);
         if (player == null) {
             return;
         }
-        
+
         Objective objective = activeObjectives.get(playerId);
         if (objective != null && nmsAvailable) {
             try {
                 ServerPlayer serverPlayer = ((CraftPlayer) player).getHandle();
-                
+
                 // Update the objective's display name
                 objective.setDisplayName(Component.literal(title != null ? title : ""));
-                
+
                 // Send updated objective packet
-                ClientboundSetObjectivePacket updatePacket = 
-                    new ClientboundSetObjectivePacket(objective, ClientboundSetObjectivePacket.METHOD_CHANGE);
+                ClientboundSetObjectivePacket updatePacket =
+                        new ClientboundSetObjectivePacket(objective, ClientboundSetObjectivePacket.METHOD_CHANGE);
                 serverPlayer.connection.send(updatePacket);
-                
+
             } catch (Exception e) {
                 Bukkit.getLogger().warning("Failed to update NMS title for player " + playerId + ": " + e.getMessage());
             }
@@ -255,7 +255,7 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         Player player = Bukkit.getPlayer(playerId);
         if (player == null) {
             // Still clean up tracking even if player is offline
@@ -263,22 +263,22 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
             activeScoreboards.remove(playerId);
             return;
         }
-        
+
         Objective objective = activeObjectives.get(playerId);
         if (objective != null && nmsAvailable) {
             try {
                 ServerPlayer serverPlayer = ((CraftPlayer) player).getHandle();
-                
+
                 // Remove the objective from display
-                ClientboundSetDisplayObjectivePacket hidePacket = 
-                    new ClientboundSetDisplayObjectivePacket(net.minecraft.world.scores.DisplaySlot.SIDEBAR, null);
+                ClientboundSetDisplayObjectivePacket hidePacket =
+                        new ClientboundSetDisplayObjectivePacket(net.minecraft.world.scores.DisplaySlot.SIDEBAR, null);
                 serverPlayer.connection.send(hidePacket);
-                
+
                 // Remove the objective completely
-                ClientboundSetObjectivePacket removePacket = 
-                    new ClientboundSetObjectivePacket(objective, ClientboundSetObjectivePacket.METHOD_REMOVE);
+                ClientboundSetObjectivePacket removePacket =
+                        new ClientboundSetObjectivePacket(objective, ClientboundSetObjectivePacket.METHOD_REMOVE);
                 serverPlayer.connection.send(removePacket);
-                
+
             } catch (Exception e) {
                 Bukkit.getLogger().warning("Failed to hide NMS scoreboard for player " + playerId + ": " + e.getMessage());
             }
@@ -286,7 +286,7 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
             // Fallback to Bukkit API
             player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
         }
-        
+
         // Clean up tracking
         activeObjectives.remove(playerId);
         activeScoreboards.remove(playerId);
@@ -297,7 +297,7 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         return activeObjectives.containsKey(playerId);
     }
 
@@ -309,7 +309,7 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (scoreboard == null) {
             throw new IllegalArgumentException("Scoreboard cannot be null");
         }
-        
+
         // Hide current scoreboard and display new one
         hideScoreboard(playerId);
         displayScoreboard(playerId, scoreboard);
@@ -320,7 +320,7 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         hideScoreboard(playerId);
     }
 
@@ -354,19 +354,19 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         if (scoreboard == null) {
             throw new IllegalArgumentException("Scoreboard cannot be null");
         }
-        
+
         // Check line count
         if (scoreboard.getLineCount() > MAX_LINES) {
             return false;
         }
-        
+
         // Check each line length
         for (String line : scoreboard.getContent()) {
             if (line != null && line.length() > MAX_CHARACTERS_PER_LINE) {
                 return false;
             }
         }
-        
+
         return true;
     }
 
@@ -376,12 +376,12 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
     }
 
     @Override
-    public void setPacketBatchingEnabled(boolean enabled) {
-        this.packetBatchingEnabled = enabled;
+    public boolean isPacketBatchingEnabled() {
+        return packetBatchingEnabled;
     }
 
     @Override
-    public boolean isPacketBatchingEnabled() {
-        return packetBatchingEnabled;
+    public void setPacketBatchingEnabled(boolean enabled) {
+        this.packetBatchingEnabled = enabled;
     }
 }

@@ -13,10 +13,10 @@ public class MessageFeature implements PluginFeature {
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         YamlMessageService service = new YamlMessageService(plugin.getDataFolder().toPath().resolve("lang"));
         service.setTagFormatter(new DefaultTagFormatter());
-        
+
         // Register MessageService in the DependencyContainer instead of using static setter
         container.register(MessageService.class, service);
-        
+
         // Keep backward compatibility by also setting static service
         Message.setMessageService(service);
 
@@ -27,7 +27,7 @@ public class MessageFeature implements PluginFeature {
     public void shutdown() {
         // No-op
     }
-    
+
     @Override
     public int getPriority() {
         return 1; // Highest priority - loads first

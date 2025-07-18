@@ -9,7 +9,8 @@ import java.io.*;
  * Loads the runtime environment configuration from environment.yml, generating a stub if missing.
  */
 public final class EnvironmentLoader {
-    private EnvironmentLoader() {}
+    private EnvironmentLoader() {
+    }
 
     public static RuntimeEnvironment load(JavaPlugin plugin) throws IOException {
         File file = new File(plugin.getDataFolder(), "environment.yml");

@@ -13,37 +13,37 @@ import java.util.concurrent.CompletableFuture;
  * adding monitoring, resilience, and other cross-cutting concerns.
  */
 public abstract class DirtyCacheWrapper implements DirtyDataCache {
-    
+
     protected final DirtyDataCache delegate;
-    
+
     /**
      * Creates a new cache wrapper.
-     * 
+     *
      * @param delegate The underlying cache implementation
      */
     public DirtyCacheWrapper(DirtyDataCache delegate) {
         this.delegate = delegate;
     }
-    
+
     /**
      * Called before each operation for monitoring purposes.
-     * 
+     *
      * @param operation The operation name
      */
     protected void onOperation(String operation) {
         // Default implementation does nothing
     }
-    
+
     /**
      * Called when an operation encounters an error.
-     * 
+     *
      * @param operation The operation name
-     * @param error The error that occurred
+     * @param error     The error that occurred
      */
     protected void onError(String operation, Exception error) {
         // Default implementation does nothing
     }
-    
+
     @Override
     public void markDirty(UUID playerId, String schemaKey, Object data, DirtyDataEntry.ChangeType changeType) {
         onOperation("markDirty");
@@ -54,7 +54,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public boolean isDirty(UUID playerId, String schemaKey) {
         onOperation("isDirty");
@@ -65,7 +65,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public boolean isDirty(UUID playerId) {
         onOperation("isDirty");
@@ -76,7 +76,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public Collection<DirtyDataEntry> getDirtyEntries(UUID playerId) {
         onOperation("getDirtyEntries");
@@ -87,7 +87,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public Collection<DirtyDataEntry> getAllDirtyEntries() {
         onOperation("getAllDirtyEntries");
@@ -98,7 +98,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public Collection<DirtyDataEntry> getDirtyEntriesOlderThan(Instant threshold) {
         onOperation("getDirtyEntriesOlderThan");
@@ -109,7 +109,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public void clearDirty(UUID playerId, String schemaKey) {
         onOperation("clearDirty");
@@ -120,7 +120,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public void clearDirty(UUID playerId) {
         onOperation("clearDirty");
@@ -131,7 +131,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public void clearAllDirty() {
         onOperation("clearAllDirty");
@@ -142,7 +142,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public int getDirtyCount(UUID playerId) {
         onOperation("getDirtyCount");
@@ -153,7 +153,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public int getTotalDirtyCount() {
         onOperation("getTotalDirtyCount");
@@ -164,12 +164,12 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public boolean supportsPersistence() {
         return delegate.supportsPersistence();
     }
-    
+
     @Override
     public void cleanup() {
         onOperation("cleanup");
@@ -180,7 +180,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public CompletableFuture<Void> markDirtyAsync(UUID playerId, String schemaKey, Object data, DirtyDataEntry.ChangeType changeType) {
         onOperation("markDirtyAsync");
@@ -191,7 +191,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public CompletableFuture<Collection<DirtyDataEntry>> getDirtyEntriesAsync(UUID playerId) {
         onOperation("getDirtyEntriesAsync");
@@ -202,7 +202,7 @@ public abstract class DirtyCacheWrapper implements DirtyDataCache {
             throw e;
         }
     }
-    
+
     @Override
     public CompletableFuture<Void> clearDirtyAsync(UUID playerId, String schemaKey) {
         onOperation("clearDirtyAsync");

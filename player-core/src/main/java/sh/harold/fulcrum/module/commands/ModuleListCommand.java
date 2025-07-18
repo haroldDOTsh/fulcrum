@@ -1,13 +1,13 @@
 package sh.harold.fulcrum.module.commands;
 
-import static io.papermc.paper.command.brigadier.Commands.literal;
-
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import sh.harold.fulcrum.module.ModuleManager;
 import sh.harold.fulcrum.module.ModuleMetadata;
+
+import static io.papermc.paper.command.brigadier.Commands.literal;
 
 public final class ModuleListCommand {
 
@@ -44,10 +44,10 @@ public final class ModuleListCommand {
                                 if (metadata == null) {
                                     continue;
                                 }
-                                
+
                                 String name = metadata.name();
                                 String description = metadata.description();
-                                
+
                                 // Handle null values gracefully
                                 if (name == null) {
                                     name = "Unknown Module";
@@ -55,7 +55,7 @@ public final class ModuleListCommand {
                                 if (description == null) {
                                     description = "No description available";
                                 }
-                                
+
                                 Component line = Component.text("• ", NamedTextColor.GRAY)
                                         .append(Component.text(name, NamedTextColor.GREEN))
                                         .append(Component.text(" - ", NamedTextColor.DARK_GRAY))

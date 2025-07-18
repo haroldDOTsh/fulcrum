@@ -6,7 +6,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.FulcrumModule;
 import sh.harold.fulcrum.FulcrumPlatform;
 
-import java.lang.annotation.Annotation;
 import java.util.*;
 import java.util.logging.Logger;
 
@@ -14,8 +13,8 @@ import java.util.logging.Logger;
  * Manages runtime loading and lifecycle of external Fulcrum modules.
  */
 public class ModuleManager {
-    private List<ModuleMetadata> loadedModules = new ArrayList<>();
     private final Logger logger;
+    private List<ModuleMetadata> loadedModules = new ArrayList<>();
 
     public ModuleManager(Logger logger) {
         this.logger = logger;
@@ -35,11 +34,11 @@ public class ModuleManager {
                 continue;
             }
             discovered.put(info.name(), new ModuleMetadata(
-                info.name(),
-                List.of(info.dependsOn()),
-                info.description(),
-                (JavaPlugin) plugin,
-                module
+                    info.name(),
+                    List.of(info.dependsOn()),
+                    info.description(),
+                    (JavaPlugin) plugin,
+                    module
             ));
         }
 
@@ -63,9 +62,9 @@ public class ModuleManager {
         List<ModuleMetadata> sorted;
         try {
             sorted = DependencyResolver.resolve(
-                new ArrayList<>(discovered.values()),
-                ModuleMetadata::name,
-                ModuleMetadata::dependsOn
+                    new ArrayList<>(discovered.values()),
+                    ModuleMetadata::name,
+                    ModuleMetadata::dependsOn
             );
         } catch (Exception e) {
             logger.severe(e.getMessage());

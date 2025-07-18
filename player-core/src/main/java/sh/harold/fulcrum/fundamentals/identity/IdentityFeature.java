@@ -14,7 +14,7 @@ public final class IdentityFeature implements PluginFeature {
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         plugin.getLogger().info("[IdentityFeature] Starting initialization... (Priority: " + getPriority() + ")");
-        
+
         plugin.getLogger().info("[IdentityFeature] Attempting to access StorageManager.getStructuredBackend()...");
         try {
             PlayerDataRegistry.registerSchema(
@@ -38,7 +38,7 @@ public final class IdentityFeature implements PluginFeature {
     public void shutdown() {
         // No shutdown logic for now
     }
-    
+
     @Override
     public int getPriority() {
         // Identity feature depends on PlayerData and MessageService, so should initialize after them

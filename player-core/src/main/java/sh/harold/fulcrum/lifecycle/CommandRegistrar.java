@@ -13,7 +13,8 @@ public final class CommandRegistrar {
     private static final List<LiteralCommandNode<CommandSourceStack>> pending = new ArrayList<>();
     private static boolean registered = false;
 
-    private CommandRegistrar() {}
+    private CommandRegistrar() {
+    }
 
     public static void register(LiteralCommandNode<CommandSourceStack> command) {
         pending.add(command);

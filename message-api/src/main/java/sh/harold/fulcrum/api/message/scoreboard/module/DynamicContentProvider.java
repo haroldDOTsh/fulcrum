@@ -9,14 +9,14 @@ import java.util.function.Supplier;
 /**
  * Implementation of ContentProvider for dynamic content.
  * This provider uses a Supplier to generate content that can change over time.
- * 
+ *
  * <p>Dynamic content providers are ideal for:
  * <ul>
  *   <li>Live statistics (player count, server status)</li>
  *   <li>Time-based information (current time, countdowns)</li>
  *   <li>Real-time data (player rankings, scores)</li>
  * </ul>
- * 
+ *
  * <p>Example usage:
  * <pre>{@code
  * // Simple dynamic content
@@ -24,7 +24,7 @@ import java.util.function.Supplier;
  *     "&7Time: &a" + getCurrentTime(),
  *     "&7Players: &a" + getOnlinePlayerCount()
  * ));
- * 
+ *
  * // Player-specific dynamic content
  * ContentProvider playerProvider = new DynamicContentProvider(playerId -> Arrays.asList(
  *     "&7Welcome, &a" + getPlayerName(playerId),
@@ -42,7 +42,7 @@ public class DynamicContentProvider implements ContentProvider {
 
     /**
      * Creates a new DynamicContentProvider with a global supplier.
-     * 
+     *
      * @param supplier the supplier that provides content
      * @throws IllegalArgumentException if supplier is null
      */
@@ -52,8 +52,8 @@ public class DynamicContentProvider implements ContentProvider {
 
     /**
      * Creates a new DynamicContentProvider with a global supplier and custom refresh interval.
-     * 
-     * @param supplier the supplier that provides content
+     *
+     * @param supplier        the supplier that provides content
      * @param refreshInterval the refresh interval in milliseconds
      * @throws IllegalArgumentException if supplier is null or refreshInterval is negative
      */
@@ -63,10 +63,10 @@ public class DynamicContentProvider implements ContentProvider {
 
     /**
      * Creates a new DynamicContentProvider with a global supplier, refresh interval, and line limit.
-     * 
-     * @param supplier the supplier that provides content
+     *
+     * @param supplier        the supplier that provides content
      * @param refreshInterval the refresh interval in milliseconds
-     * @param maxLines the maximum number of lines to return, or -1 for no limit
+     * @param maxLines        the maximum number of lines to return, or -1 for no limit
      * @throws IllegalArgumentException if supplier is null, refreshInterval is negative, or maxLines is less than -1
      */
     public DynamicContentProvider(Supplier<List<String>> supplier, long refreshInterval, int maxLines) {
@@ -88,7 +88,7 @@ public class DynamicContentProvider implements ContentProvider {
 
     /**
      * Creates a new DynamicContentProvider with a player-specific supplier.
-     * 
+     *
      * @param playerSupplier the function that provides content for specific players
      * @throws IllegalArgumentException if playerSupplier is null
      */
@@ -98,8 +98,8 @@ public class DynamicContentProvider implements ContentProvider {
 
     /**
      * Creates a new DynamicContentProvider with a player-specific supplier and custom refresh interval.
-     * 
-     * @param playerSupplier the function that provides content for specific players
+     *
+     * @param playerSupplier  the function that provides content for specific players
      * @param refreshInterval the refresh interval in milliseconds
      * @throws IllegalArgumentException if playerSupplier is null or refreshInterval is negative
      */
@@ -109,10 +109,10 @@ public class DynamicContentProvider implements ContentProvider {
 
     /**
      * Creates a new DynamicContentProvider with a player-specific supplier, refresh interval, and line limit.
-     * 
-     * @param playerSupplier the function that provides content for specific players
+     *
+     * @param playerSupplier  the function that provides content for specific players
      * @param refreshInterval the refresh interval in milliseconds
-     * @param maxLines the maximum number of lines to return, or -1 for no limit
+     * @param maxLines        the maximum number of lines to return, or -1 for no limit
      * @throws IllegalArgumentException if playerSupplier is null, refreshInterval is negative, or maxLines is less than -1
      */
     public DynamicContentProvider(Function<UUID, List<String>> playerSupplier, long refreshInterval, int maxLines) {
@@ -135,7 +135,7 @@ public class DynamicContentProvider implements ContentProvider {
     @Override
     public List<String> getContent(UUID playerId) {
         List<String> content;
-        
+
         try {
             if (playerSpecific) {
                 content = playerSupplier.apply(playerId);
@@ -146,15 +146,15 @@ public class DynamicContentProvider implements ContentProvider {
             // If content generation fails, return empty list
             return new ArrayList<>();
         }
-        
+
         if (content == null) {
             return new ArrayList<>();
         }
-        
+
         if (maxLines == -1 || content.size() <= maxLines) {
             return new ArrayList<>(content);
         }
-        
+
         return new ArrayList<>(content.subList(0, maxLines));
     }
 
@@ -206,7 +206,7 @@ public class DynamicContentProvider implements ContentProvider {
 
     /**
      * Gets the current refresh interval.
-     * 
+     *
      * @return the refresh interval in milliseconds
      */
     public long getCurrentRefreshInterval() {
@@ -215,7 +215,7 @@ public class DynamicContentProvider implements ContentProvider {
 
     /**
      * Checks if this provider is player-specific.
-     * 
+     *
      * @return true if the provider uses player-specific content, false otherwise
      */
     public boolean hasPlayerSpecificContent() {
@@ -236,9 +236,9 @@ public class DynamicContentProvider implements ContentProvider {
         if (this == obj) return true;
         if (obj == null || getClass() != obj.getClass()) return false;
         DynamicContentProvider that = (DynamicContentProvider) obj;
-        return refreshInterval == that.refreshInterval && 
-               maxLines == that.maxLines && 
-               playerSpecific == that.playerSpecific;
+        return refreshInterval == that.refreshInterval &&
+                maxLines == that.maxLines &&
+                playerSpecific == that.playerSpecific;
     }
 
     @Override

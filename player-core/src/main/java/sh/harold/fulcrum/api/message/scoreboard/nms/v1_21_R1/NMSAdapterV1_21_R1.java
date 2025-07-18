@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.api.message.scoreboard.nms.v1_21_R1;
 
+import org.bukkit.Bukkit;
 import sh.harold.fulcrum.api.message.scoreboard.nms.NMSAdapter;
 import sh.harold.fulcrum.api.message.scoreboard.render.PacketRenderer;
-import org.bukkit.Bukkit;
 
 /**
  * NMS adapter for Minecraft 1.21.6/7 (v1_21_R1).
@@ -14,7 +14,7 @@ public class NMSAdapterV1_21_R1 extends NMSAdapter {
     private static final String VERSION = "v1_21_R1";
     private static final int MAX_CHARACTERS_PER_LINE = 128; // 1.21 supports longer lines
     private static final int MAX_LINES = 15;
-    
+
     private PacketRendererV1_21_R1 packetRenderer;
 
     @Override
@@ -42,7 +42,7 @@ public class NMSAdapterV1_21_R1 extends NMSAdapter {
             Class.forName("net.minecraft.network.chat.Component");
             Class.forName("net.minecraft.server.level.ServerPlayer");
             Class.forName("net.minecraft.world.scores.criteria.ObjectiveCriteria");
-            
+
             // Check server version compatibility
             String serverVersion = Bukkit.getServer().getClass().getPackage().getName();
             return serverVersion.contains("v1_21_R1");
@@ -77,10 +77,10 @@ public class NMSAdapterV1_21_R1 extends NMSAdapter {
         if (!isCompatible()) {
             throw new UnsupportedOperationException("NMS adapter v1_21_R1 is not compatible with this server version");
         }
-        
+
         // Initialize packet renderer
         packetRenderer = new PacketRendererV1_21_R1();
-        
+
         // Verify critical NMS functionality
         try {
             // Test that we can access the required NMS classes

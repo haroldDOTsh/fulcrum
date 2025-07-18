@@ -22,19 +22,12 @@ import java.util.stream.Stream;
 public class YamlMessageService implements MessageService {
     // ThreadLocal to allow Message API to pass argument count for placeholder generation
     private static final ThreadLocal<Integer> ARG_COUNT_CONTEXT = new ThreadLocal<>();
-
-    @Override
-    public void setArgCountContext(int argCount) {
-        ARG_COUNT_CONTEXT.set(argCount);
-    }
-
     private final Path langDirectory;
     // Structure: <Feature, <Locale, Config>>
     private final Map<String, Map<Locale, FileConfiguration>> translations = new HashMap<>();
     private final Locale defaultLocale = Locale.US;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
     private TagFormatter tagFormatter = new DefaultTagFormatter();
-
     public YamlMessageService(Path pluginDataFolder) {
         // Avoid double-nesting /lang/lang
         if (pluginDataFolder.getFileName() != null && pluginDataFolder.getFileName().toString().equalsIgnoreCase("lang")) {
@@ -50,6 +43,11 @@ public class YamlMessageService implements MessageService {
         } catch (IOException e) {
             Bukkit.getLogger().severe("Failed to create or load language directory: " + e.getMessage());
         }
+    }
+
+    @Override
+    public void setArgCountContext(int argCount) {
+        ARG_COUNT_CONTEXT.set(argCount);
     }
 
     public void loadTranslations() {

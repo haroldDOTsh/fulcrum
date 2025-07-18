@@ -34,7 +34,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (scoreboardId == null) {
             throw new IllegalArgumentException("Scoreboard ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.computeIfAbsent(playerId, PlayerScoreboardState::new);
         state.setCurrentScoreboardId(scoreboardId);
         state.markForRefresh();
@@ -71,7 +71,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.computeIfAbsent(playerId, PlayerScoreboardState::new);
         state.setCustomTitle(title);
         state.markForRefresh();
@@ -115,7 +115,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (moduleId == null) {
             throw new IllegalArgumentException("Module ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.computeIfAbsent(playerId, PlayerScoreboardState::new);
         ModuleOverride override = new ModuleOverride(moduleId, enabled);
         state.setModuleOverride(moduleId, override);
@@ -130,7 +130,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (moduleId == null) {
             throw new IllegalArgumentException("Module ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         return state != null ? state.getModuleOverride(moduleId) : null;
     }
@@ -143,7 +143,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (moduleId == null) {
             throw new IllegalArgumentException("Module ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         if (state != null) {
             state.removeModuleOverride(moduleId);
@@ -159,7 +159,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (moduleId == null) {
             throw new IllegalArgumentException("Module ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         return state != null && state.hasModuleOverride(moduleId);
     }
@@ -175,19 +175,19 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (duration == null || duration.isNegative()) {
             throw new IllegalArgumentException("Duration cannot be null or negative");
         }
-        
+
         PlayerScoreboardState state = playerStates.computeIfAbsent(playerId, PlayerScoreboardState::new);
         state.startFlash(moduleIndex, module, duration);
         state.markForRefresh();
     }
-    
+
     /**
      * Starts a flash operation with a scheduled task for automatic expiration.
      *
-     * @param playerId the UUID of the player
-     * @param moduleIndex the index of the module position to replace (0-based)
-     * @param module the module to flash
-     * @param duration the duration of the flash
+     * @param playerId      the UUID of the player
+     * @param moduleIndex   the index of the module position to replace (0-based)
+     * @param module        the module to flash
+     * @param duration      the duration of the flash
      * @param scheduledTask the scheduled task for automatic expiration
      * @throws IllegalArgumentException if any parameter is null or duration is negative
      */
@@ -201,7 +201,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (duration == null || duration.isNegative()) {
             throw new IllegalArgumentException("Duration cannot be null or negative");
         }
-        
+
         PlayerScoreboardState state = playerStates.computeIfAbsent(playerId, PlayerScoreboardState::new);
         state.startFlashWithTask(moduleIndex, module, duration, scheduledTask);
         state.markForRefresh();
@@ -212,7 +212,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         if (state != null) {
             state.stopFlash(moduleIndex);
@@ -225,7 +225,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         return state != null && state.hasActiveFlash(moduleIndex);
     }
@@ -235,7 +235,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         if (state != null) {
             state.stopAllFlashes();
@@ -248,7 +248,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         if (state != null) {
             state.markForRefresh();
@@ -260,7 +260,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         return state != null && state.needsRefresh();
     }
@@ -270,7 +270,7 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
-        
+
         PlayerScoreboardState state = playerStates.get(playerId);
         if (state != null) {
             state.clearRefreshFlag();

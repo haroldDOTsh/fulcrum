@@ -5,5 +5,6 @@ package sh.harold.fulcrum;
  */
 public interface FulcrumModule {
     void onEnable(FulcrumPlatform platform);
+
     void onDisable();
 }

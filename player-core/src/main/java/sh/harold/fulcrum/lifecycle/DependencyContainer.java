@@ -12,12 +12,13 @@ import java.util.Optional;
 public class DependencyContainer {
     private final Map<Class<?>, Object> services = new HashMap<>();
     private final Map<Class<?>, ServiceProvider<?>> providers = new HashMap<>();
-    
+
     /**
      * Register a service instance.
-     * @param serviceClass The service interface or class
+     *
+     * @param serviceClass   The service interface or class
      * @param implementation The service implementation
-     * @param <T> The service type
+     * @param <T>            The service type
      */
     public <T> void register(Class<T> serviceClass, T implementation) {
         if (implementation == null) {
@@ -25,12 +26,13 @@ public class DependencyContainer {
         }
         services.put(serviceClass, implementation);
     }
-    
+
     /**
      * Register a lazy service provider.
+     *
      * @param serviceClass The service interface or class
-     * @param provider The service provider
-     * @param <T> The service type
+     * @param provider     The service provider
+     * @param <T>          The service type
      */
     public <T> void registerProvider(Class<T> serviceClass, ServiceProvider<T> provider) {
         if (provider == null) {
@@ -38,24 +40,26 @@ public class DependencyContainer {
         }
         providers.put(serviceClass, provider);
     }
-    
+
     /**
      * Get a service instance.
+     *
      * @param serviceClass The service class
-     * @param <T> The service type
+     * @param <T>          The service type
      * @return The service instance
      * @throws IllegalStateException if service is not available
      */
     public <T> T get(Class<T> serviceClass) {
         Optional<T> service = getOptional(serviceClass);
-        return service.orElseThrow(() -> 
-            new IllegalStateException("Service not available: " + serviceClass.getName()));
+        return service.orElseThrow(() ->
+                new IllegalStateException("Service not available: " + serviceClass.getName()));
     }
-    
+
     /**
      * Get a service instance if available.
+     *
      * @param serviceClass The service class
-     * @param <T> The service type
+     * @param <T>          The service type
      * @return Optional containing the service if available
      */
     @SuppressWarnings("unchecked")
@@ -65,7 +69,7 @@ public class DependencyContainer {
         if (service != null) {
             return Optional.of((T) service);
         }
-        
+
         // Check providers
         ServiceProvider<?> provider = providers.get(serviceClass);
         if (provider != null) {
@@ -76,19 +80,20 @@ public class DependencyContainer {
                 return Optional.of(instance);
             }
         }
-        
+
         return Optional.empty();
     }
-    
+
     /**
      * Check if a service is available.
+     *
      * @param serviceClass The service class
      * @return true if the service is available
      */
     public boolean isAvailable(Class<?> serviceClass) {
         return services.containsKey(serviceClass) || providers.containsKey(serviceClass);
     }
-    
+
     /**
      * Clear all registered services.
      */
@@ -96,9 +101,10 @@ public class DependencyContainer {
         services.clear();
         providers.clear();
     }
-    
+
     /**
      * Functional interface for lazy service providers.
+     *
      * @param <T> The service type
      */
     @FunctionalInterface

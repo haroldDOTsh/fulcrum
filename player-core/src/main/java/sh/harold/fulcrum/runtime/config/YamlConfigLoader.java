@@ -12,26 +12,26 @@ import java.util.logging.Logger;
 
 /**
  * YAML configuration loader for dirty cache configuration.
- * 
+ * <p>
  * This class handles loading and parsing YAML configuration files
  * for the dirty data caching system.
  */
 public class YamlConfigLoader {
-    
+
     private static final Logger LOGGER = Logger.getLogger(YamlConfigLoader.class.getName());
-    
+
     private final Yaml yaml;
-    
+
     /**
      * Creates a new YAML configuration loader.
      */
     public YamlConfigLoader() {
         this.yaml = new Yaml();
     }
-    
+
     /**
      * Loads dirty cache configuration from a YAML file.
-     * 
+     *
      * @param configPath The path to the configuration file
      * @return The loaded configuration, or defaults if loading fails
      */
@@ -47,10 +47,10 @@ public class YamlConfigLoader {
             return DirtyCacheConfig.defaults();
         }
     }
-    
+
     /**
      * Loads dirty cache configuration from a resource stream.
-     * 
+     *
      * @param resourcePath The resource path
      * @return The loaded configuration, or defaults if loading fails
      */
@@ -60,7 +60,7 @@ public class YamlConfigLoader {
                 LOGGER.warning("Configuration resource not found: " + resourcePath);
                 return DirtyCacheConfig.defaults();
             }
-            
+
             Map<String, Object> yamlData = yaml.load(inputStream);
             return parseDirtyCacheConfig(yamlData);
         } catch (IOException e) {
@@ -71,10 +71,10 @@ public class YamlConfigLoader {
             return DirtyCacheConfig.defaults();
         }
     }
-    
+
     /**
      * Parses dirty cache configuration from YAML data.
-     * 
+     *
      * @param yamlData The YAML data map
      * @return The parsed configuration
      */
@@ -82,9 +82,9 @@ public class YamlConfigLoader {
         if (yamlData == null) {
             return DirtyCacheConfig.defaults();
         }
-        
+
         DirtyCacheConfig.Builder builder = DirtyCacheConfig.builder();
-        
+
         // Parse cache section
         Map<String, Object> cacheSection = getSection(yamlData, "cache");
         if (cacheSection != null) {
@@ -96,21 +96,21 @@ public class YamlConfigLoader {
                 LOGGER.warning("Invalid cache type: " + cacheType + ", using default");
                 builder.cacheType(DirtyCacheConfig.CacheType.MEMORY);
             }
-            
+
             // Parse fallback setting
             boolean fallbackToMemory = getBoolean(cacheSection, "fallback-to-memory", true);
             builder.fallbackToMemory(fallbackToMemory);
-            
+
             // Parse entry TTL
             String entryTtlStr = getString(cacheSection, "entry-ttl", "1h");
             Duration entryTtl = parseDuration(entryTtlStr, Duration.ofHours(1));
             builder.entryTtl(entryTtl);
-            
+
             // Parse health check interval
             String healthCheckStr = getString(cacheSection, "health-check-interval", "5m");
             Duration healthCheckInterval = parseDuration(healthCheckStr, Duration.ofMinutes(5));
             builder.healthCheckInterval(healthCheckInterval);
-            
+
             // Parse Redis settings
             Map<String, Object> redisSection = getSection(cacheSection, "redis");
             if (redisSection != null) {
@@ -118,66 +118,66 @@ public class YamlConfigLoader {
                 builder.redisSettings(redisSettings);
             }
         }
-        
+
         return builder.build();
     }
-    
+
     /**
      * Parses Redis settings from YAML data.
-     * 
+     *
      * @param redisSection The Redis section from YAML
      * @return The parsed Redis settings
      */
     private DirtyCacheConfig.RedisSettings parseRedisSettings(Map<String, Object> redisSection) {
         DirtyCacheConfig.RedisSettingsBuilder builder = DirtyCacheConfig.RedisSettings.builder();
-        
+
         // Connection settings
         String host = getString(redisSection, "host", "localhost");
         builder.host(host);
-        
+
         int port = getInt(redisSection, "port", 6379);
         builder.port(port);
-        
+
         int database = getInt(redisSection, "database", 0);
         builder.database(database);
-        
+
         String password = getString(redisSection, "password", null);
         if (password != null && !password.isEmpty()) {
             builder.password(password);
         }
-        
+
         // Timeout settings
         String connectionTimeoutStr = getString(redisSection, "connection-timeout", "5s");
         Duration connectionTimeout = parseDuration(connectionTimeoutStr, Duration.ofSeconds(5));
         builder.connectionTimeout(connectionTimeout);
-        
+
         String retryDelayStr = getString(redisSection, "retry-delay", "500ms");
         Duration retryDelay = parseDuration(retryDelayStr, Duration.ofMillis(500));
         builder.retryDelay(retryDelay);
-        
+
         int maxRetries = getInt(redisSection, "max-retries", 3);
         builder.maxRetries(maxRetries);
-        
+
         // Pool settings
         Map<String, Object> poolSection = getSection(redisSection, "pool");
         if (poolSection != null) {
             int maxConnections = getInt(poolSection, "max-connections", 20);
             builder.maxConnections(maxConnections);
-            
+
             int maxIdleConnections = getInt(poolSection, "max-idle-connections", 10);
             builder.maxIdleConnections(maxIdleConnections);
-            
+
             int minIdleConnections = getInt(poolSection, "min-idle-connections", 5);
             builder.minIdleConnections(minIdleConnections);
         }
-        
+
         return builder.build();
     }
-    
+
     /**
      * Parses a duration string into a Duration object.
-     * 
-     * @param durationStr The duration string (e.g., "1h", "30m", "5s")
+     *
+     * @param durationStr  The duration string (e.g., "1h", "30m", "5s")
      * @param defaultValue The default value if parsing fails
      * @return The parsed duration
      */
@@ -185,11 +185,11 @@ public class YamlConfigLoader {
         if (durationStr == null || durationStr.isEmpty()) {
             return defaultValue;
         }
-        
+
         try {
             // Simple duration parsing - supports s, m, h suffixes
             durationStr = durationStr.trim().toLowerCase();
-            
+
             if (durationStr.endsWith("ms")) {
                 long millis = Long.parseLong(durationStr.substring(0, durationStr.length() - 2));
                 return Duration.ofMillis(millis);
@@ -212,10 +212,10 @@ public class YamlConfigLoader {
             return defaultValue;
         }
     }
-    
+
     /**
      * Gets a nested section from a YAML map.
-     * 
+     *
      * @param map The parent map
      * @param key The section key
      * @return The nested section, or null if not found
@@ -228,12 +228,12 @@ public class YamlConfigLoader {
         }
         return null;
     }
-    
+
     /**
      * Gets a string value from a YAML map.
-     * 
-     * @param map The map
-     * @param key The key
+     *
+     * @param map          The map
+     * @param key          The key
      * @param defaultValue The default value
      * @return The string value
      */
@@ -244,12 +244,12 @@ public class YamlConfigLoader {
         }
         return defaultValue;
     }
-    
+
     /**
      * Gets an integer value from a YAML map.
-     * 
-     * @param map The map
-     * @param key The key
+     *
+     * @param map          The map
+     * @param key          The key
      * @param defaultValue The default value
      * @return The integer value
      */
@@ -260,12 +260,12 @@ public class YamlConfigLoader {
         }
         return defaultValue;
     }
-    
+
     /**
      * Gets a boolean value from a YAML map.
-     * 
-     * @param map The map
-     * @param key The key
+     *
+     * @param map          The map
+     * @param key          The key
      * @param defaultValue The default value
      * @return The boolean value
      */

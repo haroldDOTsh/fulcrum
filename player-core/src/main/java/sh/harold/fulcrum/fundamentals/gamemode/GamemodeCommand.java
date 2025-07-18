@@ -1,17 +1,18 @@
 package sh.harold.fulcrum.fundamentals.gamemode;
 
-import static io.papermc.paper.command.brigadier.Commands.*;
-import static io.papermc.paper.command.brigadier.argument.ArgumentTypes.*;
-
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
-
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
 import org.bukkit.GameMode;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import sh.harold.fulcrum.api.message.Message;
+
+import static io.papermc.paper.command.brigadier.Commands.argument;
+import static io.papermc.paper.command.brigadier.Commands.literal;
+import static io.papermc.paper.command.brigadier.argument.ArgumentTypes.gameMode;
+import static io.papermc.paper.command.brigadier.argument.ArgumentTypes.player;
 
 public final class GamemodeCommand {
 

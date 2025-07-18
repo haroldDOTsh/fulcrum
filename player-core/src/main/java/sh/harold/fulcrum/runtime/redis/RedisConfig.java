@@ -5,13 +5,13 @@ import java.util.Objects;
 
 /**
  * Configuration class for Redis connection settings.
- * 
+ * <p>
  * This class holds all the configuration parameters needed to establish
  * and manage Redis connections, including connection pooling settings,
  * retry policies, and authentication details.
  */
 public class RedisConfig {
-    
+
     // Default values
     private static final String DEFAULT_HOST = "localhost";
     private static final int DEFAULT_PORT = 6379;
@@ -22,23 +22,23 @@ public class RedisConfig {
     private static final int DEFAULT_MAX_CONNECTIONS = 20;
     private static final int DEFAULT_MAX_IDLE_CONNECTIONS = 10;
     private static final int DEFAULT_MIN_IDLE_CONNECTIONS = 5;
-    
+
     // Connection settings
     private final String host;
     private final int port;
     private final int database;
     private final String password;
     private final Duration connectionTimeout;
-    
+
     // Retry settings
     private final Duration retryDelay;
     private final int maxRetries;
-    
+
     // Pool settings
     private final int maxConnections;
     private final int maxIdleConnections;
     private final int minIdleConnections;
-    
+
     private RedisConfig(Builder builder) {
         this.host = builder.host;
         this.port = builder.port;
@@ -51,37 +51,66 @@ public class RedisConfig {
         this.maxIdleConnections = builder.maxIdleConnections;
         this.minIdleConnections = builder.minIdleConnections;
     }
-    
+
     /**
      * Creates a new builder for Redis configuration.
-     * 
+     *
      * @return A new builder instance
      */
     public static Builder builder() {
         return new Builder();
     }
-    
+
     /**
      * Creates a Redis configuration with default values.
-     * 
+     *
      * @return Default Redis configuration
      */
     public static RedisConfig defaults() {
         return new Builder().build();
     }
-    
+
     // Getters
-    public String getHost() { return host; }
-    public int getPort() { return port; }
-    public int getDatabase() { return database; }
-    public String getPassword() { return password; }
-    public Duration getConnectionTimeout() { return connectionTimeout; }
-    public Duration getRetryDelay() { return retryDelay; }
-    public int getMaxRetries() { return maxRetries; }
-    public int getMaxConnections() { return maxConnections; }
-    public int getMaxIdleConnections() { return maxIdleConnections; }
-    public int getMinIdleConnections() { return minIdleConnections; }
-    
+    public String getHost() {
+        return host;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public int getDatabase() {
+        return database;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public Duration getConnectionTimeout() {
+        return connectionTimeout;
+    }
+
+    public Duration getRetryDelay() {
+        return retryDelay;
+    }
+
+    public int getMaxRetries() {
+        return maxRetries;
+    }
+
+    public int getMaxConnections() {
+        return maxConnections;
+    }
+
+    public int getMaxIdleConnections() {
+        return maxIdleConnections;
+    }
+
+    public int getMinIdleConnections() {
+        return minIdleConnections;
+    }
+
     @Override
     public String toString() {
         return "RedisConfig{" +
@@ -97,7 +126,7 @@ public class RedisConfig {
                 ", minIdleConnections=" + minIdleConnections +
                 '}';
     }
-    
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -114,14 +143,14 @@ public class RedisConfig {
                 Objects.equals(connectionTimeout, that.connectionTimeout) &&
                 Objects.equals(retryDelay, that.retryDelay);
     }
-    
+
     @Override
     public int hashCode() {
-        return Objects.hash(host, port, database, password, connectionTimeout, 
-                          retryDelay, maxRetries, maxConnections, maxIdleConnections, 
-                          minIdleConnections);
+        return Objects.hash(host, port, database, password, connectionTimeout,
+                retryDelay, maxRetries, maxConnections, maxIdleConnections,
+                minIdleConnections);
     }
-    
+
     /**
      * Builder class for creating Redis configurations.
      */
@@ -136,10 +165,10 @@ public class RedisConfig {
         private int maxConnections = DEFAULT_MAX_CONNECTIONS;
         private int maxIdleConnections = DEFAULT_MAX_IDLE_CONNECTIONS;
         private int minIdleConnections = DEFAULT_MIN_IDLE_CONNECTIONS;
-        
+
         /**
          * Sets the Redis host.
-         * 
+         *
          * @param host The Redis host
          * @return This builder
          */
@@ -147,10 +176,10 @@ public class RedisConfig {
             this.host = Objects.requireNonNull(host, "host cannot be null");
             return this;
         }
-        
+
         /**
          * Sets the Redis port.
-         * 
+         *
          * @param port The Redis port
          * @return This builder
          */
@@ -161,10 +190,10 @@ public class RedisConfig {
             this.port = port;
             return this;
         }
-        
+
         /**
          * Sets the Redis database number.
-         * 
+         *
          * @param database The database number
          * @return This builder
          */
@@ -175,10 +204,10 @@ public class RedisConfig {
             this.database = database;
             return this;
         }
-        
+
         /**
          * Sets the Redis password.
-         * 
+         *
          * @param password The password
          * @return This builder
          */
@@ -186,10 +215,10 @@ public class RedisConfig {
             this.password = password;
             return this;
         }
-        
+
         /**
          * Sets the connection timeout.
-         * 
+         *
          * @param connectionTimeout The connection timeout
          * @return This builder
          */
@@ -197,10 +226,10 @@ public class RedisConfig {
             this.connectionTimeout = Objects.requireNonNull(connectionTimeout, "connectionTimeout cannot be null");
             return this;
         }
-        
+
         /**
          * Sets the retry delay.
-         * 
+         *
          * @param retryDelay The retry delay
          * @return This builder
          */
@@ -208,10 +237,10 @@ public class RedisConfig {
             this.retryDelay = Objects.requireNonNull(retryDelay, "retryDelay cannot be null");
             return this;
         }
-        
+
         /**
          * Sets the maximum number of retries.
-         * 
+         *
          * @param maxRetries The maximum number of retries
          * @return This builder
          */
@@ -222,10 +251,10 @@ public class RedisConfig {
             this.maxRetries = maxRetries;
             return this;
         }
-        
+
         /**
          * Sets the maximum number of connections in the pool.
-         * 
+         *
          * @param maxConnections The maximum number of connections
          * @return This builder
          */
@@ -236,10 +265,10 @@ public class RedisConfig {
             this.maxConnections = maxConnections;
             return this;
         }
-        
+
         /**
          * Sets the maximum number of idle connections in the pool.
-         * 
+         *
          * @param maxIdleConnections The maximum number of idle connections
          * @return This builder
          */
@@ -250,10 +279,10 @@ public class RedisConfig {
             this.maxIdleConnections = maxIdleConnections;
             return this;
         }
-        
+
         /**
          * Sets the minimum number of idle connections in the pool.
-         * 
+         *
          * @param minIdleConnections The minimum number of idle connections
          * @return This builder
          */
@@ -264,10 +293,10 @@ public class RedisConfig {
             this.minIdleConnections = minIdleConnections;
             return this;
         }
-        
+
         /**
          * Builds the Redis configuration.
-         * 
+         *
          * @return The built configuration
          */
         public RedisConfig build() {
@@ -278,7 +307,7 @@ public class RedisConfig {
             if (maxIdleConnections > maxConnections) {
                 throw new IllegalArgumentException("maxIdleConnections cannot be greater than maxConnections");
             }
-            
+
             return new RedisConfig(this);
         }
     }

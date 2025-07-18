@@ -7,7 +7,8 @@ import java.util.function.Function;
  * Generic dependency resolver for topological sorting of modules.
  */
 public final class DependencyResolver {
-    private DependencyResolver() {}
+    private DependencyResolver() {
+    }
 
     public static <T> List<T> resolve(List<T> nodes, Function<T, String> nameExtractor, Function<T, List<String>> dependencyExtractor) {
         Map<String, T> nodeMap = new HashMap<>();

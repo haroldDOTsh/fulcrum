@@ -7,7 +7,7 @@ import java.util.UUID;
  * Represents a fully rendered scoreboard ready for display.
  * This class contains all the processed content, title, and metadata
  * needed to display a scoreboard to a player.
- * 
+ *
  * <p>RenderedScoreboard is immutable and thread-safe.
  */
 public class RenderedScoreboard {
@@ -22,17 +22,17 @@ public class RenderedScoreboard {
 
     /**
      * Creates a new RenderedScoreboard with the given parameters.
-     * 
-     * @param playerId the UUID of the player this scoreboard is for
-     * @param scoreboardId the ID of the scoreboard definition
-     * @param title the rendered title
-     * @param content the rendered content lines
+     *
+     * @param playerId          the UUID of the player this scoreboard is for
+     * @param scoreboardId      the ID of the scoreboard definition
+     * @param title             the rendered title
+     * @param content           the rendered content lines
      * @param originalLineCount the original number of lines before truncation
-     * @param wasTruncated whether the content was truncated due to line limits
+     * @param wasTruncated      whether the content was truncated due to line limits
      * @throws IllegalArgumentException if any required parameter is null
      */
-    public RenderedScoreboard(UUID playerId, String scoreboardId, String title, List<String> content, 
-                             int originalLineCount, boolean wasTruncated) {
+    public RenderedScoreboard(UUID playerId, String scoreboardId, String title, List<String> content,
+                              int originalLineCount, boolean wasTruncated) {
         if (playerId == null) {
             throw new IllegalArgumentException("Player ID cannot be null");
         }
@@ -42,7 +42,7 @@ public class RenderedScoreboard {
         if (content == null) {
             throw new IllegalArgumentException("Content cannot be null");
         }
-        
+
         this.playerId = playerId;
         this.scoreboardId = scoreboardId;
         this.title = title;
@@ -54,7 +54,7 @@ public class RenderedScoreboard {
 
     /**
      * Gets the UUID of the player this scoreboard is for.
-     * 
+     *
      * @return the player UUID
      */
     public UUID getPlayerId() {
@@ -63,7 +63,7 @@ public class RenderedScoreboard {
 
     /**
      * Gets the ID of the scoreboard definition.
-     * 
+     *
      * @return the scoreboard ID
      */
     public String getScoreboardId() {
@@ -72,7 +72,7 @@ public class RenderedScoreboard {
 
     /**
      * Gets the rendered title.
-     * 
+     *
      * @return the title, or null if no title is set
      */
     public String getTitle() {
@@ -81,7 +81,7 @@ public class RenderedScoreboard {
 
     /**
      * Gets the rendered content lines.
-     * 
+     *
      * @return an immutable list of content lines
      */
     public List<String> getContent() {
@@ -90,7 +90,7 @@ public class RenderedScoreboard {
 
     /**
      * Gets the time when this scoreboard was rendered.
-     * 
+     *
      * @return the render time in milliseconds since epoch
      */
     public long getRenderTime() {
@@ -99,7 +99,7 @@ public class RenderedScoreboard {
 
     /**
      * Gets the original number of lines before any truncation.
-     * 
+     *
      * @return the original line count
      */
     public int getOriginalLineCount() {
@@ -108,7 +108,7 @@ public class RenderedScoreboard {
 
     /**
      * Checks if the content was truncated due to line limits.
-     * 
+     *
      * @return true if the content was truncated, false otherwise
      */
     public boolean wasTruncated() {
@@ -117,7 +117,7 @@ public class RenderedScoreboard {
 
     /**
      * Gets the current number of content lines.
-     * 
+     *
      * @return the number of content lines
      */
     public int getLineCount() {
@@ -126,7 +126,7 @@ public class RenderedScoreboard {
 
     /**
      * Checks if this scoreboard has a title.
-     * 
+     *
      * @return true if the scoreboard has a title, false otherwise
      */
     public boolean hasTitle() {
@@ -135,7 +135,7 @@ public class RenderedScoreboard {
 
     /**
      * Checks if this scoreboard has content.
-     * 
+     *
      * @return true if the scoreboard has content, false otherwise
      */
     public boolean hasContent() {
@@ -145,7 +145,7 @@ public class RenderedScoreboard {
     /**
      * Gets the effective title for this scoreboard.
      * If no title is set, returns a default title.
-     * 
+     *
      * @return the effective title
      */
     public String getEffectiveTitle() {
@@ -157,7 +157,7 @@ public class RenderedScoreboard {
 
     /**
      * Gets the number of lines that were truncated.
-     * 
+     *
      * @return the number of truncated lines, or 0 if no truncation occurred
      */
     public int getTruncatedLineCount() {
@@ -166,7 +166,7 @@ public class RenderedScoreboard {
 
     /**
      * Checks if this scoreboard is empty (no content).
-     * 
+     *
      * @return true if the scoreboard is empty, false otherwise
      */
     public boolean isEmpty() {
@@ -175,7 +175,7 @@ public class RenderedScoreboard {
 
     /**
      * Creates a copy of this RenderedScoreboard with a different title.
-     * 
+     *
      * @param newTitle the new title
      * @return a new RenderedScoreboard with the updated title
      */
@@ -185,7 +185,7 @@ public class RenderedScoreboard {
 
     /**
      * Creates a copy of this RenderedScoreboard with different content.
-     * 
+     *
      * @param newContent the new content
      * @return a new RenderedScoreboard with the updated content
      * @throws IllegalArgumentException if newContent is null

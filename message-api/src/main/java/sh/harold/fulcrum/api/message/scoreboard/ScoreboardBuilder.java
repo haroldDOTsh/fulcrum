@@ -24,12 +24,12 @@ import java.util.List;
 public class ScoreboardBuilder {
 
     private final String scoreboardId;
-    private String title;
     private final List<ScoreboardModule> modules = new ArrayList<>();
+    private String title;
 
     /**
      * Creates a new ScoreboardBuilder with the given scoreboard ID.
-     * 
+     *
      * @param scoreboardId the unique identifier for the scoreboard
      * @throws IllegalArgumentException if scoreboardId is null or empty
      */
@@ -43,7 +43,7 @@ public class ScoreboardBuilder {
     /**
      * Sets the title for the scoreboard.
      * The title supports color codes and will be displayed at the top of the scoreboard.
-     * 
+     *
      * @param title the title to set (supports color codes)
      * @return this builder instance for method chaining
      */
@@ -72,10 +72,10 @@ public class ScoreboardBuilder {
      * Adds a module to the scoreboard at the specified index.
      * Modules are displayed in insertion order.
      *
-     * @param index the index where to insert the module (0-based)
+     * @param index  the index where to insert the module (0-based)
      * @param module the module to add
      * @return this builder instance for method chaining
-     * @throws IllegalArgumentException if module is null
+     * @throws IllegalArgumentException  if module is null
      * @throws IndexOutOfBoundsException if index is out of bounds
      */
     public ScoreboardBuilder module(int index, ScoreboardModule module) {
@@ -90,8 +90,8 @@ public class ScoreboardBuilder {
      * Registers the scoreboard with the ScoreboardService.
      * This method creates a ScoreboardDefinition from the current configuration
      * and registers it with the service.
-     * 
-     * @throws IllegalStateException if the ScoreboardService is not initialized
+     *
+     * @throws IllegalStateException    if the ScoreboardService is not initialized
      * @throws IllegalArgumentException if the scoreboard configuration is invalid
      */
     public void register() {
@@ -102,7 +102,7 @@ public class ScoreboardBuilder {
     /**
      * Builds a ScoreboardDefinition from the current configuration without registering it.
      * This is useful for testing or when manual registration is needed.
-     * 
+     *
      * @return a new ScoreboardDefinition instance
      */
     public ScoreboardDefinition build() {
@@ -111,7 +111,7 @@ public class ScoreboardBuilder {
 
     /**
      * Gets the scoreboard ID for this builder.
-     * 
+     *
      * @return the scoreboard ID
      */
     public String getScoreboardId() {
@@ -120,7 +120,7 @@ public class ScoreboardBuilder {
 
     /**
      * Gets the current title for this builder.
-     * 
+     *
      * @return the title, or null if not set
      */
     public String getTitle() {
@@ -169,7 +169,7 @@ public class ScoreboardBuilder {
 
     /**
      * Clears all modules from the builder.
-     * 
+     *
      * @return this builder instance for method chaining
      */
     public ScoreboardBuilder clearModules() {

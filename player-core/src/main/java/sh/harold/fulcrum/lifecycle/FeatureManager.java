@@ -2,7 +2,10 @@ package sh.harold.fulcrum.lifecycle;
 
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 
 public final class FeatureManager {
     private static final List<PluginFeature> features = new ArrayList<>();
@@ -24,16 +27,16 @@ public final class FeatureManager {
     public static void initializeAll(JavaPlugin plugin, DependencyContainer container) {
         FeatureManager.plugin = plugin;
         FeatureManager.container = container;
-        
+
         // Sort features by priority
         List<PluginFeature> sortedFeatures = new ArrayList<>(features);
         sortedFeatures.sort(Comparator.comparingInt(PluginFeature::getPriority));
-        
+
         // Validate dependencies before initialization
         for (PluginFeature feature : sortedFeatures) {
             validateDependencies(feature);
         }
-        
+
         // Initialize features in priority order
         plugin.getLogger().info("=== FEATURE INITIALIZATION ORDER ===");
         for (PluginFeature feature : sortedFeatures) {
@@ -48,16 +51,17 @@ public final class FeatureManager {
         }
         plugin.getLogger().info("=== END FEATURE INITIALIZATION ===");
     }
-    
+
     /**
      * Legacy initialization method without dependency injection.
+     *
      * @deprecated Use initializeAll(JavaPlugin, DependencyContainer) instead
      */
     @Deprecated
     public static void initializeAll(JavaPlugin plugin) {
         initializeAll(plugin, new DependencyContainer());
     }
-    
+
     /**
      * Validate that all dependencies for a feature are available.
      */
@@ -66,7 +70,7 @@ public final class FeatureManager {
         for (Class<?> dependency : dependencies) {
             if (!container.isAvailable(dependency)) {
                 plugin.getLogger().warning("Feature " + feature.getClass().getSimpleName() +
-                    " has unmet dependency: " + dependency.getSimpleName());
+                        " has unmet dependency: " + dependency.getSimpleName());
             }
         }
     }
@@ -75,7 +79,7 @@ public final class FeatureManager {
         // Shutdown in reverse order
         List<PluginFeature> reverseFeatures = new ArrayList<>(features);
         Collections.reverse(reverseFeatures);
-        
+
         for (PluginFeature feature : reverseFeatures) {
             try {
                 feature.shutdown();
@@ -86,17 +90,18 @@ public final class FeatureManager {
                 e.printStackTrace();
             }
         }
-        
+
         // Clear the container
         if (container != null) {
             container.clear();
         }
     }
-    
+
     /**
      * Get a feature by its class type.
+     *
      * @param featureClass The feature class
-     * @param <T> The feature type
+     * @param <T>          The feature type
      * @return The feature instance, or null if not found
      */
     @SuppressWarnings("unchecked")
@@ -108,7 +113,7 @@ public final class FeatureManager {
         }
         return null;
     }
-    
+
     /**
      * Clear all registered features.
      * Used mainly for testing.

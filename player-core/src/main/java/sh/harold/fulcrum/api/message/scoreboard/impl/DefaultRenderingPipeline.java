@@ -25,7 +25,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
     private final TitleManager titleManager;
     private final PlayerScoreboardManager playerManager;
     private final ColorCodeProcessor colorProcessor;
-    
+
     private int maxLines = 15;
     private String staticBottomLine = "&7play.example.com";
     private boolean blockSeparationEnabled = true;
@@ -37,7 +37,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         this.playerManager = playerManager;
         this.colorProcessor = new ColorCodeProcessor();
     }
-    
+
     /**
      * Generates a unique separator using incremental spaces to ensure each separator
      * has unique content for Minecraft's scoreboard system.
@@ -47,7 +47,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
             separatorCounter++;
             return ""; // First separator: empty string
         }
-        
+
         StringBuilder separator = new StringBuilder();
         for (int i = 0; i < separatorCounter; i++) {
             separator.append(" ");
@@ -55,7 +55,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         separatorCounter++;
         return separator.toString();
     }
-    
+
     /**
      * Resets the separator counter for a new rendering cycle.
      */
@@ -77,10 +77,10 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
 
         String title = renderTitle(playerId, definition);
         List<String> content = renderContent(playerId, definition);
-        
+
         int originalLineCount = content.size();
         boolean wasTruncated = originalLineCount > maxLines;
-        
+
         return new RenderedScoreboard(playerId, definition.getScoreboardId(), title, content, originalLineCount, wasTruncated);
     }
 
@@ -95,18 +95,18 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
 
         // Reset separator counter for new rendering cycle
         resetSeparatorCounter();
-        
+
         List<List<String>> moduleBlocks = new ArrayList<>();
-        
+
         // Get player state for overrides and flash content
         PlayerScoreboardState playerState = playerManager.getPlayerState(playerId);
-        
+
         // Collect content from modules in insertion order
         List<ScoreboardModule> modules = definition.getModules();
-        
+
         // DEBUG: Starting module processing
         System.out.println("DEBUG: Starting module processing for " + modules.size() + " modules");
-        
+
         // Process modules in insertion order, with flash replacements
         for (int i = 0; i < modules.size(); i++) {
             ScoreboardModule module = modules.get(i);
@@ -122,14 +122,14 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
                         System.out.println("DEBUG: Module at index " + i + " replaced by flash: " + effectiveModule.getModuleId());
                     }
                 }
-                
+
                 // Check if module is overridden for this player
                 boolean moduleEnabled = true;
                 if (playerState != null) {
                     ModuleOverride override = playerState.getModuleOverride(effectiveModule.getModuleId());
                     moduleEnabled = (override == null) || override.isEnabled();
                 }
-                
+
                 if (moduleEnabled) {
                     List<String> moduleContent = effectiveModule.getContentProvider().getContent(playerId);
                     if (moduleContent != null && !moduleContent.isEmpty()) {
@@ -140,7 +140,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
                 }
             }
         }
-        
+
         List<String> processedContent = processModuleBlocks(playerId, moduleBlocks);
         // DEBUG: Final processed content
         System.out.println("DEBUG: Final processed content has " + processedContent.size() + " lines");
@@ -160,16 +160,16 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         }
 
         List<String> processed = new ArrayList<>();
-        
+
         // Process each module block
         for (int i = 0; i < moduleBlocks.size(); i++) {
             List<String> moduleContent = moduleBlocks.get(i);
-            
+
             // Add separator between modules (but not before the first module)
             if (i > 0 && blockSeparationEnabled) {
                 processed.add(generateUniqueSeparator());
             }
-            
+
             // Process color codes for each line in the module
             for (String line : moduleContent) {
                 if (line != null) {
@@ -177,13 +177,13 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
                 }
             }
         }
-        
+
         // Add static bottom line
         processed = addStaticBottomLine(processed);
-        
+
         // Apply line limit (reserve last line for static content)
         processed = applyLineLimit(processed);
-        
+
         return processed;
     }
 
@@ -213,25 +213,25 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         resetSeparatorCounter();
 
         List<String> processed = new ArrayList<>();
-        
+
         // Process color codes for each line
         for (String line : rawContent) {
             if (line != null) {
                 processed.add(processColorCodes(line));
             }
         }
-        
+
         // Add block separations
         if (blockSeparationEnabled) {
             processed = addBlockSeparations(processed);
         }
-        
+
         // Add static bottom line
         processed = addStaticBottomLine(processed);
-        
+
         // Apply line limit (reserve last line for static content)
         processed = applyLineLimit(processed);
-        
+
         return processed;
     }
 
@@ -240,14 +240,14 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         if (content == null) {
             throw new IllegalArgumentException("Content cannot be null");
         }
-        
+
         // Use 14 lines (reserve line 15 for static content)
         int usableLines = maxLines - 1;
-        
+
         if (content.size() <= usableLines) {
             return new ArrayList<>(content);
         }
-        
+
         return new ArrayList<>(content.subList(0, usableLines));
     }
 
@@ -256,23 +256,23 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         if (content == null) {
             throw new IllegalArgumentException("Content cannot be null");
         }
-        
+
         // DEBUG: Block separation processing
         System.out.println("DEBUG: addBlockSeparations input: " + content.size() + " lines");
         System.out.println("DEBUG: Block separation enabled: " + blockSeparationEnabled);
-        
+
         if (!blockSeparationEnabled) {
             return new ArrayList<>(content);
         }
-        
+
         // This method is now primarily used for backward compatibility
         // The new processModuleBlocks method handles proper module separation
         // For legacy content that doesn't use module blocks, just return as-is
         List<String> result = new ArrayList<>(content);
-        
+
         // DEBUG: Block separation output
         System.out.println("DEBUG: addBlockSeparations output: " + result.size() + " lines");
-        
+
         return result;
     }
 
@@ -281,9 +281,9 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         if (content == null) {
             throw new IllegalArgumentException("Content cannot be null");
         }
-        
+
         List<String> result = new ArrayList<>(content);
-        
+
         if (staticBottomLine != null && !staticBottomLine.trim().isEmpty()) {
             // Add separator if there's existing content
             if (!result.isEmpty()) {
@@ -291,7 +291,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
             }
             result.add(processColorCodes(staticBottomLine));
         }
-        
+
         return result;
     }
 
@@ -300,7 +300,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         if (text == null) {
             throw new IllegalArgumentException("Text cannot be null");
         }
-        
+
         return ColorCodeProcessor.processLegacyCodes(text);
     }
 
@@ -309,24 +309,24 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         if (content == null) {
             throw new IllegalArgumentException("Content cannot be null");
         }
-        
+
         // Check line count
         if (content.size() > maxLines) {
             return false;
         }
-        
+
         // Check each line for validity
         for (String line : content) {
             if (line == null) {
                 return false;
             }
-            
+
             // Check line length (this would be implementation-specific)
             if (line.length() > 40) { // Example limit
                 return false;
             }
         }
-        
+
         return true;
     }
 

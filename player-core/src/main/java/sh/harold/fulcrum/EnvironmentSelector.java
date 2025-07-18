@@ -9,7 +9,8 @@ import java.nio.file.Files;
  * Selects the current runtime environment role from the ENVIRONMENT file in the server root.
  */
 public final class EnvironmentSelector {
-    private EnvironmentSelector() {}
+    private EnvironmentSelector() {
+    }
 
     public static String loadRole(File serverRoot) throws IOException {
         File file = new File(serverRoot, "ENVIRONMENT");

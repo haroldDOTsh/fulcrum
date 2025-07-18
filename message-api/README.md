@@ -33,11 +33,13 @@ depend: [ Fulcrum ]
 ## 2. Initialization
 
 **You do NOT need to register or initialize the MessageService yourself.**
-The runtime plugin (`player-core`) handles all setup automatically. You can use the `Message` facade anywhere in your plugin code without extra configuration.
+The runtime plugin (`player-core`) handles all setup automatically. You can use the `Message` facade anywhere in your
+plugin code without extra configuration.
 
 ---
 
 ## 3. Sending Messages
+
 ### 3.1. Basic Styled Messages
 
 ```java
@@ -75,7 +77,6 @@ Message.success("event.start", "Summer Festival").broadcast();
 Message.info("server.maintenance", "1 hour").system().broadcast(audience);
 ```
 
-
 ## 4. Chaining Tags
 
 Add context tags for prefixes:
@@ -104,10 +105,11 @@ player.sendPlayerListHeader(motd);
 - Message keys map to YAML files:  
   `banking.deposit.success` -> `lang/en_US/banking.yml`
 - Arguments use `{0}`, `{1}`.
-- 
+-
 - If a key is missing, it is auto-added with a placeholder. (Including args)
 
 **Example `lang/en_US/banking.yml`:**
+
 ```yaml
 deposit:
   success: "You successfully deposited {0} into your account." # Defined as deposit.success
@@ -151,6 +153,7 @@ public void displayPlayerBalance(UUID playerId) {
 - `GenericResponse.ERROR_COOLDOWN` → "generic.error.cooldown"
 
 Use with:
+
 ```java
 Message.error(playerId, GenericResponse.ERROR_NO_PERMISSION);
 Message.error(audience, GenericResponse.ERROR_COOLDOWN);
@@ -159,6 +162,7 @@ Message.error(audience, GenericResponse.ERROR_COOLDOWN);
 ### Sending & Broadcasting
 
 All message types support:
+
 - `.send(UUID playerId)`
 - `.send(Audience audience)`
 - `.broadcast()` (to all players)
@@ -182,12 +186,14 @@ Arguments are substituted into the localized message using `{0}`, `{1}`, etc. in
 ### Tags (Context Prefixes)
 
 Chainable for context and formatting:
+
 - `.system()` — System message prefix
 - `.staff()` — Staff-only prefix
 - `.daemon()` — Daemon/background prefix
 - `.debug()` — Debug prefix
 
 Tags can be chained in any order, e.g.:
+
 ```java
 Message.info("server.restart").system().staff().send(audience);
 ```

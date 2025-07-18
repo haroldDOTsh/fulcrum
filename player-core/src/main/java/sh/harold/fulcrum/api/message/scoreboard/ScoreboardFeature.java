@@ -1,54 +1,49 @@
 package sh.harold.fulcrum.api.message.scoreboard;
 
-import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.api.message.scoreboard.command.ScoreboardDebugCommand;
-import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultRenderingPipeline;
-import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultPlayerScoreboardManager;
-import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultScoreboardRegistry;
-import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultTitleManager;
-import sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule;
-import sh.harold.fulcrum.api.message.scoreboard.util.ScoreboardFlashTask;
-import sh.harold.fulcrum.api.message.scoreboard.module.StaticContentProvider;
-import sh.harold.fulcrum.api.message.scoreboard.module.DynamicContentProvider;
-import sh.harold.fulcrum.api.message.scoreboard.module.ContentProvider;
-import sh.harold.fulcrum.api.message.scoreboard.nms.NMSAdapter;
-import sh.harold.fulcrum.api.message.scoreboard.player.PlayerScoreboardManager;
-import sh.harold.fulcrum.api.message.scoreboard.registry.ScoreboardDefinition;
-import sh.harold.fulcrum.api.message.scoreboard.registry.ScoreboardRegistry;
-import sh.harold.fulcrum.api.message.scoreboard.render.PacketRenderer;
-import sh.harold.fulcrum.api.message.scoreboard.render.RenderingPipeline;
-import sh.harold.fulcrum.api.message.scoreboard.render.TitleManager;
-import sh.harold.fulcrum.api.message.scoreboard.render.RenderedScoreboard;
-import sh.harold.fulcrum.lifecycle.CommandRegistrar;
-import sh.harold.fulcrum.lifecycle.DependencyContainer;
-import sh.harold.fulcrum.lifecycle.PluginFeature;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.message.scoreboard.command.ScoreboardDebugCommand;
+import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultPlayerScoreboardManager;
+import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultRenderingPipeline;
+import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultScoreboardRegistry;
+import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultTitleManager;
+import sh.harold.fulcrum.api.message.scoreboard.module.ContentProvider;
+import sh.harold.fulcrum.api.message.scoreboard.module.DynamicContentProvider;
+import sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule;
+import sh.harold.fulcrum.api.message.scoreboard.module.StaticContentProvider;
+import sh.harold.fulcrum.api.message.scoreboard.nms.NMSAdapter;
+import sh.harold.fulcrum.api.message.scoreboard.player.PlayerScoreboardManager;
+import sh.harold.fulcrum.api.message.scoreboard.registry.ScoreboardDefinition;
+import sh.harold.fulcrum.api.message.scoreboard.registry.ScoreboardRegistry;
+import sh.harold.fulcrum.api.message.scoreboard.render.PacketRenderer;
+import sh.harold.fulcrum.api.message.scoreboard.render.RenderedScoreboard;
+import sh.harold.fulcrum.api.message.scoreboard.render.RenderingPipeline;
+import sh.harold.fulcrum.api.message.scoreboard.render.TitleManager;
+import sh.harold.fulcrum.api.message.scoreboard.util.ScoreboardFlashTask;
+import sh.harold.fulcrum.lifecycle.CommandRegistrar;
+import sh.harold.fulcrum.lifecycle.DependencyContainer;
+import sh.harold.fulcrum.lifecycle.PluginFeature;
 
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class ScoreboardFeature implements PluginFeature, Listener {
 
+    private static final String TEST_SCOREBOARD_ID = "test";
     private ScoreboardService scoreboardService;
     private DefaultPlayerScoreboardManager playerManager;
     private DefaultRenderingPipeline renderingPipeline;
     private PacketRenderer packetRenderer;
     private ScoreboardRegistry registry;
-    private static final String TEST_SCOREBOARD_ID = "test";
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -58,19 +53,19 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             plugin.getLogger().severe("Failed to create NMS adapter for server version: " + getServerVersion(plugin));
             return;
         }
-        
+
         // Create packet renderer from NMS adapter
         this.packetRenderer = nmsAdapter.createPacketRenderer();
-        
+
         // Create core implementations
         this.registry = new DefaultScoreboardRegistry();
         TitleManager titleManager = new DefaultTitleManager();
         this.playerManager = new DefaultPlayerScoreboardManager();
         this.renderingPipeline = new DefaultRenderingPipeline(titleManager, playerManager);
-        
+
         // Create main service - simple implementation without YAML configuration
         this.scoreboardService = new SimpleScoreboardService(registry, playerManager, renderingPipeline, packetRenderer);
-        
+
         // Register services in dependency container
         container.register(ScoreboardService.class, scoreboardService);
         container.register(ScoreboardRegistry.class, registry);
@@ -78,23 +73,23 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         container.register(RenderingPipeline.class, renderingPipeline);
         container.register(TitleManager.class, titleManager);
         container.register(PacketRenderer.class, packetRenderer);
-        
+
         // Create and register test scoreboard
         createTestScoreboard();
-        
+
         // Register event listener for player joins
         Bukkit.getPluginManager().registerEvents(this, plugin);
-        
+
         // Register debug commands
         ScoreboardDebugCommand debugCommand = new ScoreboardDebugCommand(
-            scoreboardService,
-            registry,
-            playerManager,
-            renderingPipeline,
-            titleManager
+                scoreboardService,
+                registry,
+                playerManager,
+                renderingPipeline,
+                titleManager
         );
         CommandRegistrar.register(debugCommand.build());
-        
+
         plugin.getLogger().info("Scoreboard feature initialized with NMS version: " + nmsAdapter.getVersionInfo());
     }
 
@@ -103,7 +98,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         if (playerManager != null) {
             playerManager.clearAllPlayerData();
         }
-        
+
         if (packetRenderer != null) {
             // Clear all active scoreboard displays
             for (int i = 0; i < packetRenderer.getActiveDisplayCount(); i++) {
@@ -120,7 +115,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
     private NMSAdapter createNMSAdapter(JavaPlugin plugin) {
         String version = getServerVersion(plugin);
-        
+
         try {
             switch (version) {
                 case "v1_21_R1":
@@ -140,115 +135,115 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         try {
             String minecraftVersion = Bukkit.getMinecraftVersion();
             plugin.getLogger().info("Detected Minecraft version: " + minecraftVersion);
-            
+
             // Map Minecraft versions to NMS versions
             String nmsVersion = mapMinecraftVersionToNMS(minecraftVersion);
             plugin.getLogger().info("Mapped to NMS version: " + nmsVersion);
-            
+
             return nmsVersion;
         } catch (Exception e) {
             plugin.getLogger().severe("Error detecting server version: " + e.getMessage());
             return "unknown";
         }
     }
-    
+
     private String mapMinecraftVersionToNMS(String minecraftVersion) {
         if (minecraftVersion == null) {
             return "unknown";
         }
-        
+
         // Map Minecraft versions to their corresponding NMS versions
         // Minecraft 1.21.6 and 1.21.7 both use v1_21_R1
         if (minecraftVersion.startsWith("1.21.6") || minecraftVersion.startsWith("1.21.7")) {
             return "v1_21_R1";
         }
-        
+
         // Add more version mappings as needed
         // if (minecraftVersion.startsWith("1.22")) {
         //     return "v1_22_R1";
         // }
-        
+
         return "unknown";
     }
-    
+
     /**
      * Creates and registers the test scoreboard with basic modules
      */
     private void createTestScoreboard() {
         Map<Integer, ScoreboardModule> modules = new HashMap<>();
-        
+
         // Header module at highest priority
         modules.put(100, new ScoreboardModule() {
             @Override
             public String getModuleId() {
                 return "header";
             }
-            
+
             @Override
             public ContentProvider getContentProvider() {
                 return new StaticContentProvider(Arrays.asList(
-                    "&atesttesttest",
-                    "&7Test Scoreboard",
-                    "&dyummy"
+                        "&atesttesttest",
+                        "&7Test Scoreboard",
+                        "&dyummy"
                 ));
             }
         });
-        
+
         // Player count module
         modules.put(90, new ScoreboardModule() {
             @Override
             public String getModuleId() {
                 return "player_count";
             }
-            
+
             @Override
             public ContentProvider getContentProvider() {
                 return new DynamicContentProvider(() -> Arrays.asList(
-                    "&7Players: &a" + Bukkit.getOnlinePlayers().size() + "/" + Bukkit.getMaxPlayers()
+                        "&7Players: &a" + Bukkit.getOnlinePlayers().size() + "/" + Bukkit.getMaxPlayers()
                 ), 5000);
             }
         });
-        
+
         // Server info module
         modules.put(80, new ScoreboardModule() {
             @Override
             public String getModuleId() {
                 return "server_info";
             }
-            
+
             @Override
             public ContentProvider getContentProvider() {
                 return new StaticContentProvider(Arrays.asList(
-                    "&7Server: &fTest Server",
-                    "&7Version: &f1.21.7"
+                        "&7Server: &fTest Server",
+                        "&7Version: &f1.21.7"
                 ));
             }
         });
-        
+
         // Footer module at lowest priority
         modules.put(10, new ScoreboardModule() {
             @Override
             public String getModuleId() {
                 return "footer";
             }
-            
+
             @Override
             public ContentProvider getContentProvider() {
                 return new StaticContentProvider(Arrays.asList(
-                    "&7Discord: &bdiscord.gg/eternum"
+                        "&7Discord: &bdiscord.gg/eternum"
                 ));
             }
         });
-        
+
         ScoreboardDefinition testScoreboard = new ScoreboardDefinition(
-            TEST_SCOREBOARD_ID,
-            "&6harold&lDOT&r&6sh",
-            modules
+                TEST_SCOREBOARD_ID,
+                "&6harold&lDOT&r&6sh",
+                modules
         );
-        
+
         scoreboardService.registerScoreboard(TEST_SCOREBOARD_ID, testScoreboard);
     }
-    
+
     /**
      * Handles player join events to automatically show the test scoreboard
      */
@@ -256,46 +251,46 @@ public class ScoreboardFeature implements PluginFeature, Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         // Show test scoreboard to player after a short delay
         Bukkit.getScheduler().runTaskLater(
-            Bukkit.getPluginManager().getPlugin("Fulcrum"),
-            () -> {
-                if (scoreboardService.isScoreboardRegistered(TEST_SCOREBOARD_ID)) {
-                    scoreboardService.showScoreboard(event.getPlayer().getUniqueId(), TEST_SCOREBOARD_ID);
-                }
-            },
-            20L // 1 second delay
+                Bukkit.getPluginManager().getPlugin("Fulcrum"),
+                () -> {
+                    if (scoreboardService.isScoreboardRegistered(TEST_SCOREBOARD_ID)) {
+                        scoreboardService.showScoreboard(event.getPlayer().getUniqueId(), TEST_SCOREBOARD_ID);
+                    }
+                },
+                20L // 1 second delay
         );
     }
-    
+
     /**
      * Simple implementation of ScoreboardService that delegates to the individual components
      * without requiring YAML configuration.
      */
     private static class SimpleScoreboardService implements ScoreboardService {
-        
+
         private final ScoreboardRegistry registry;
         private final PlayerScoreboardManager playerManager;
         private final RenderingPipeline renderingPipeline;
         private final PacketRenderer packetRenderer;
         private final ScheduledExecutorService scheduler;
-        
+
         // Active refresh tasks
         private final ConcurrentHashMap<UUID, CompletableFuture<Void>> refreshTasks = new ConcurrentHashMap<>();
-        
+
         public SimpleScoreboardService(ScoreboardRegistry registry,
-                                     PlayerScoreboardManager playerManager,
-                                     RenderingPipeline renderingPipeline,
-                                     PacketRenderer packetRenderer) {
+                                       PlayerScoreboardManager playerManager,
+                                       RenderingPipeline renderingPipeline,
+                                       PacketRenderer packetRenderer) {
             this.registry = registry;
             this.playerManager = playerManager;
             this.renderingPipeline = renderingPipeline;
             this.packetRenderer = packetRenderer;
             this.scheduler = Executors.newScheduledThreadPool(2);
-            
+
             // Register event listener and start refresh task
             Bukkit.getPluginManager().registerEvents(new PlayerListener(), Bukkit.getPluginManager().getPlugin("Fulcrum"));
             scheduler.scheduleAtFixedRate(this::refreshActiveScoreboards, 1, 1, TimeUnit.SECONDS);
         }
-        
+
         @Override
         public void registerScoreboard(String scoreboardId, ScoreboardDefinition definition) {
             if (scoreboardId == null || scoreboardId.isEmpty()) {
@@ -306,13 +301,13 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             }
             registry.register(definition);
         }
-        
+
         @Override
         public void unregisterScoreboard(String scoreboardId) {
             if (scoreboardId == null || scoreboardId.isEmpty()) {
                 throw new IllegalArgumentException("Scoreboard ID cannot be null or empty");
             }
-            
+
             // Hide scoreboard for all players currently viewing it
             for (Player player : Bukkit.getOnlinePlayers()) {
                 if (scoreboardId.equals(getCurrentScoreboardId(player.getUniqueId()))) {
@@ -321,7 +316,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             }
             registry.unregister(scoreboardId);
         }
-        
+
         @Override
         public boolean isScoreboardRegistered(String scoreboardId) {
             if (scoreboardId == null || scoreboardId.isEmpty()) {
@@ -329,7 +324,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             }
             return registry.isRegistered(scoreboardId);
         }
-        
+
         @Override
         public void showScoreboard(UUID playerId, String scoreboardId) {
             if (playerId == null) {
@@ -338,16 +333,16 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             if (scoreboardId == null) {
                 throw new IllegalArgumentException("Scoreboard ID cannot be null");
             }
-            
+
             ScoreboardDefinition definition = registry.get(scoreboardId);
             if (definition == null) {
                 throw new IllegalStateException("Scoreboard not registered: " + scoreboardId);
             }
-            
+
             playerManager.setPlayerScoreboard(playerId, scoreboardId);
             refreshPlayerScoreboard(playerId);
         }
-        
+
         @Override
         public void hideScoreboard(UUID playerId) {
             if (playerId == null) {
@@ -356,7 +351,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             packetRenderer.hideScoreboard(playerId);
             playerManager.removePlayerScoreboard(playerId);
         }
-        
+
         @Override
         public void flashModule(UUID playerId, int moduleIndex, sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule module, Duration duration) {
             if (playerId == null) {
@@ -368,19 +363,19 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             if (duration == null || duration.isNegative()) {
                 throw new IllegalArgumentException("Duration cannot be null or negative");
             }
-            
+
             // Create and schedule the flash task for automatic expiration
             ScoreboardFlashTask flashTask = new ScoreboardFlashTask(playerId, moduleIndex, module, playerManager, duration);
-            
+
             // Set the refresh callback to trigger immediate refresh on expiration
             flashTask.setRefreshCallback(this::refreshPlayerScoreboard);
-            
+
             // Schedule the task to run after the flash duration
             ScheduledFuture<?> scheduledTask = scheduler.schedule(flashTask, duration.toMillis(), TimeUnit.MILLISECONDS);
-            
+
             // Set the scheduled future on the task for proper cancellation handling
             flashTask.setScheduledFuture(scheduledTask);
-            
+
             // Start the flash with the scheduled task for automatic expiration
             if (playerManager instanceof DefaultPlayerScoreboardManager) {
                 ((DefaultPlayerScoreboardManager) playerManager).startFlashWithTask(playerId, moduleIndex, module, duration, scheduledTask);
@@ -388,57 +383,57 @@ public class ScoreboardFeature implements PluginFeature, Listener {
                 // Fallback to regular flash if not DefaultPlayerScoreboardManager
                 playerManager.startFlash(playerId, moduleIndex, module, duration);
             }
-            
+
             refreshPlayerScoreboard(playerId);
         }
-        
+
         @Override
         public void setPlayerTitle(UUID playerId, String title) {
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
-            
+
             playerManager.setPlayerTitle(playerId, title);
-            
+
             // Update only the title if player has an active scoreboard
             if (hasScoreboardDisplayed(playerId)) {
                 String processedTitle = renderingPipeline.processColorCodes(title);
                 packetRenderer.updateTitle(playerId, processedTitle);
             }
         }
-        
+
         @Override
         public void clearPlayerTitle(UUID playerId) {
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
-            
+
             playerManager.clearPlayerTitle(playerId);
             refreshPlayerScoreboard(playerId);
         }
-        
+
         @Override
         public void refreshPlayerScoreboard(UUID playerId) {
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
-            
+
             String scoreboardId = getCurrentScoreboardId(playerId);
             if (scoreboardId == null) {
                 return;
             }
-            
+
             ScoreboardDefinition definition = registry.get(scoreboardId);
             if (definition == null) {
                 return;
             }
-            
+
             // Cancel any existing refresh task
             CompletableFuture<Void> existingTask = refreshTasks.get(playerId);
             if (existingTask != null) {
                 existingTask.cancel(false);
             }
-            
+
             // Create new refresh task
             CompletableFuture<Void> refreshTask = CompletableFuture.runAsync(() -> {
                 try {
@@ -448,10 +443,10 @@ public class ScoreboardFeature implements PluginFeature, Listener {
                     Bukkit.getLogger().warning("Failed to refresh scoreboard for player " + playerId + ": " + e.getMessage());
                 }
             }, scheduler);
-            
+
             refreshTasks.put(playerId, refreshTask);
         }
-        
+
         @Override
         public String getCurrentScoreboardId(UUID playerId) {
             if (playerId == null) {
@@ -459,7 +454,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             }
             return playerManager.getCurrentScoreboardId(playerId);
         }
-        
+
         @Override
         public boolean hasScoreboardDisplayed(UUID playerId) {
             if (playerId == null) {
@@ -467,7 +462,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             }
             return playerManager.hasScoreboard(playerId);
         }
-        
+
         @Override
         public void setModuleOverride(UUID playerId, String moduleId, boolean enabled) {
             if (playerId == null) {
@@ -476,11 +471,11 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             if (moduleId == null) {
                 throw new IllegalArgumentException("Module ID cannot be null");
             }
-            
+
             playerManager.setModuleOverride(playerId, moduleId, enabled);
             refreshPlayerScoreboard(playerId);
         }
-        
+
         @Override
         public boolean isModuleOverrideEnabled(UUID playerId, String moduleId) {
             if (playerId == null) {
@@ -491,30 +486,30 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             }
             return playerManager.hasModuleOverride(playerId, moduleId);
         }
-        
+
         @Override
         public void clearPlayerData(UUID playerId) {
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
-            
+
             // Cancel any refresh tasks
             CompletableFuture<Void> refreshTask = refreshTasks.remove(playerId);
             if (refreshTask != null) {
                 refreshTask.cancel(false);
             }
-            
+
             // Clear packet renderer state
             packetRenderer.clearPlayerPackets(playerId);
-            
+
             // Clear player manager state
             playerManager.clearPlayerData(playerId);
         }
-        
+
         private void refreshActiveScoreboards() {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 UUID playerId = player.getUniqueId();
-                
+
                 // Check if player needs a refresh
                 if (playerManager.needsRefresh(playerId)) {
                     playerManager.clearRefreshFlag(playerId);
@@ -522,7 +517,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
                 }
             }
         }
-        
+
         private class PlayerListener implements Listener {
             @EventHandler
             public void onPlayerQuit(PlayerQuitEvent event) {

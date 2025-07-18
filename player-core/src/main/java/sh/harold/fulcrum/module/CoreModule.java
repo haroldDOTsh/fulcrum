@@ -1,7 +1,5 @@
 package sh.harold.fulcrum.module;
 
-import sh.harold.fulcrum.module.ModuleMetadata;
-
 /**
  * Base class for external plugin modules.
  * Logic for lifecycle and registration will be added later.
