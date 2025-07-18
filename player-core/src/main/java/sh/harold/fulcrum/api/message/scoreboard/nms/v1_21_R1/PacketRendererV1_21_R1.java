@@ -113,14 +113,31 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
             List<String> content = scoreboard.getContent();
             int score = content.size();
             
+            // DEBUG: PacketRenderer processing
+            System.out.println("DEBUG: PacketRenderer processing " + content.size() + " lines");
+            
             for (String line : content) {
+                if (line == null) {
+                    Bukkit.getLogger().warning("Scoreboard line is null for player " + playerId + ", skipping...");
+                    continue;
+                }
+                
+                // Handle empty lines to ensure compatibility with Minecraft's scoreboard requirements
+                // Note: Only apply §r to truly empty strings, not whitespace-only strings which are unique separators
+                if (line.isEmpty()) {
+                    line = "§r";
+                }
+                
                 if (line.length() > MAX_CHARACTERS_PER_LINE) {
                     line = line.substring(0, MAX_CHARACTERS_PER_LINE);
                 }
                 
-                // Create score packet
+                // DEBUG: Line processing
+                System.out.println("DEBUG: Line " + (content.size() - score + 1) + ": '" + line + "' (score: " + score + ")");
+                
+                // Create score packet - fixed to use Optional.empty() instead of null
                 ClientboundSetScorePacket scorePacket =
-                    new ClientboundSetScorePacket(line, OBJECTIVE_NAME, score--, Optional.empty(), null);
+                    new ClientboundSetScorePacket(line, OBJECTIVE_NAME, score--, Optional.empty(), Optional.empty());
                 serverPlayer.connection.send(scorePacket);
             }
             
@@ -158,6 +175,12 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
             int score = content.size();
             
             for (String line : content) {
+                // Handle empty lines to ensure compatibility with Minecraft's scoreboard requirements
+                // Note: Only apply §r to truly empty strings, not whitespace-only strings which are unique separators
+                if (line.isEmpty()) {
+                    line = "§r";
+                }
+                
                 if (line.length() > MAX_CHARACTERS_PER_LINE) {
                     line = line.substring(0, MAX_CHARACTERS_PER_LINE);
                 }
