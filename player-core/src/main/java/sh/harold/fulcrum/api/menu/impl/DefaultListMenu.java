@@ -36,6 +36,7 @@ public class DefaultListMenu extends AbstractMenu {
     private Component emptyMessage = Component.text("No items to display", NamedTextColor.GRAY);
     private boolean autoRefresh = false;
     private int refreshInterval = 0;
+    private MenuItem fillEmptyItem;
     
     public DefaultListMenu(String id, Component title, int rows, Plugin ownerPlugin, Player viewer) {
         super(id, title, rows * 9, ownerPlugin, viewer);
@@ -161,6 +162,13 @@ public class DefaultListMenu extends AbstractMenu {
         // TODO: Implement scheduled refresh task
     }
     
+    /**
+     * Sets the fill empty item for empty slots.
+     */
+    public void setFillEmptyItem(MenuItem fillEmptyItem) {
+        this.fillEmptyItem = fillEmptyItem;
+    }
+    
     @Override
     protected void renderItems() {
         // Clear inventory first
@@ -215,6 +223,29 @@ public class DefaultListMenu extends AbstractMenu {
         
         // Update page indicator
         updatePageIndicator();
+        
+        // Fill empty slots if specified
+        if (fillEmptyItem != null) {
+            for (int slot = 0; slot < size; slot++) {
+                // Skip slots that already have items
+                if (super.getItem(slot) != null) continue;
+                
+                // Skip border slots
+                if (borderSlots.contains(slot)) continue;
+                
+                // Skip persistent button slots
+                if (persistentButtons.containsKey(slot)) continue;
+                
+                // Skip navigation button slots
+                if (slot == previousButtonSlot || slot == nextButtonSlot) continue;
+                
+                // Skip page indicator slot
+                if (slot == pageIndicatorSlot) continue;
+                
+                // Fill this empty slot
+                super.setItem(fillEmptyItem, slot);
+            }
+        }
     }
     
     private void calculateItemsPerPage() {
@@ -255,58 +286,121 @@ public class DefaultListMenu extends AbstractMenu {
     }
     
     private void updateNavigationButtons() {
-        // Previous button
+        // Previous button - only show if we can go to previous page
         if (previousButton != null && previousButtonSlot >= 0) {
             if (currentPage > 1) {
-                // Create clickable previous button
-                MenuButton prevButton = MenuButton.builder(previousButton.getDisplayItem().getType())
-                    .name(previousButton.getName())
-                    .lore(previousButton.getLore().toArray(new Component[0]))
+                // FIXED: Use ARROW material for navigation instead of dyes
+                MenuButton prevButton = MenuButton.builder(Material.ARROW)
+                    .name("&rPrevious Page") // Add &r prefix to prevent italics
+                    .secondary("Go to the previous page")
                     .onClick(player -> navigateToPage(currentPage - 1))
                     .build();
                 super.setButton(prevButton, previousButtonSlot);
             } else {
-                // Create grayed out previous button
-                MenuItem disabledPrev = MenuDisplayItem.builder(Material.GRAY_DYE)
-                    .name(Component.text("No Previous Page", NamedTextColor.GRAY))
-                    .build();
-                super.setItem(disabledPrev, previousButtonSlot);
+                // FIXED: When navigation is hidden, replace with border material instead of air
+                items.remove(previousButtonSlot);
+                if (inventory.getItem(previousButtonSlot) != null) {
+                    // Replace with border material to prevent holes
+                    fillNavigationSlotWithBorder(previousButtonSlot);
+                }
             }
         }
         
-        // Next button
+        // Next button - only show if we can go to next page
         if (nextButton != null && nextButtonSlot >= 0) {
             if (currentPage < getTotalPages()) {
-                // Create clickable next button
-                MenuButton nextBtn = MenuButton.builder(nextButton.getDisplayItem().getType())
-                    .name(nextButton.getName())
-                    .lore(nextButton.getLore().toArray(new Component[0]))
+                // FIXED: Use ARROW material for navigation instead of dyes
+                MenuButton nextBtn = MenuButton.builder(Material.ARROW)
+                    .name("&rNext Page") // Add &r prefix to prevent italics
+                    .secondary("Go to the next page")
                     .onClick(player -> navigateToPage(currentPage + 1))
                     .build();
                 super.setButton(nextBtn, nextButtonSlot);
             } else {
-                // Create grayed out next button
-                MenuItem disabledNext = MenuDisplayItem.builder(Material.GRAY_DYE)
-                    .name(Component.text("No Next Page", NamedTextColor.GRAY))
-                    .build();
-                super.setItem(disabledNext, nextButtonSlot);
+                // FIXED: When navigation is hidden, replace with border material instead of air
+                items.remove(nextButtonSlot);
+                if (inventory.getItem(nextButtonSlot) != null) {
+                    // Replace with border material to prevent holes
+                    fillNavigationSlotWithBorder(nextButtonSlot);
+                }
+            }
+        }
+        
+        // Add bottom row black glass for list menus with pagination
+        if (getTotalPages() > 1) {
+            addBottomRowBlackGlass();
+        }
+    }
+    
+    /**
+     * Adds black stained glass panes to the entire bottom row for list menus with pagination.
+     * This indicates the bottom row is reserved for navigation controls.
+     */
+    private void addBottomRowBlackGlass() {
+        int rows = size / 9; // Calculate number of rows
+        int bottomRowStart = (rows - 1) * 9; // Start of bottom row
+        MenuItem blackGlass = MenuDisplayItem.builder(Material.BLACK_STAINED_GLASS_PANE)
+            .name(Component.text("Navigation Area", NamedTextColor.DARK_GRAY))
+            .build();
+        
+        // Fill bottom row with black glass, but skip navigation button slots and page indicator
+        for (int slot = bottomRowStart; slot < bottomRowStart + 9; slot++) {
+            // Skip slots that have navigation buttons or page indicator
+            if (slot == previousButtonSlot || slot == nextButtonSlot || slot == pageIndicatorSlot) {
+                continue;
+            }
+            // Skip slots that have persistent buttons
+            if (persistentButtons.containsKey(slot)) {
+                continue;
+            }
+            // Only add black glass if slot doesn't have other important content
+            if (!items.containsKey(slot)) {
+                super.setItem(blackGlass, slot);
             }
         }
     }
     
     private void updatePageIndicator() {
         if (pageIndicatorSlot >= 0) {
-            Component indicatorText = Component.text("Page ", NamedTextColor.YELLOW)
+            Component indicatorText = Component.text("&rPage ", NamedTextColor.YELLOW) // Add &r prefix
                 .append(Component.text(currentPage, NamedTextColor.WHITE))
                 .append(Component.text(" of ", NamedTextColor.YELLOW))
                 .append(Component.text(getTotalPages(), NamedTextColor.WHITE));
             
             MenuItem indicator = MenuDisplayItem.builder(Material.BOOK)
                 .name(indicatorText)
-                .lore(Component.text(contentItems.size() + " total items", NamedTextColor.GRAY))
+                .lore(Component.text("&r" + contentItems.size() + " total items", NamedTextColor.GRAY)) // Add &r prefix
                 .build();
             
             super.setItem(indicator, pageIndicatorSlot);
         }
+    }
+    
+    /**
+     * FIXED: Fills navigation slot with border material when navigation is hidden
+     * to prevent holes in the menu border.
+     */
+    private void fillNavigationSlotWithBorder(int slot) {
+        // Check if we have a border item to use
+        MenuItem borderMaterial = null;
+        
+        // Try to find an existing border item from the border slots
+        for (int borderSlot : borderSlots) {
+            MenuItem existingBorder = super.getItem(borderSlot);
+            if (existingBorder != null) {
+                borderMaterial = existingBorder;
+                break;
+            }
+        }
+        
+        // If no border item found, create default black stained glass pane
+        if (borderMaterial == null) {
+            borderMaterial = MenuDisplayItem.builder(Material.BLACK_STAINED_GLASS_PANE)
+                .name("&r") // Add &r prefix and make it empty
+                .build();
+        }
+        
+        // Place border material in the slot
+        super.setItem(borderMaterial, slot);
     }
 }

@@ -297,10 +297,37 @@ public interface CustomMenuBuilder {
     
     /**
      * Builds the menu asynchronously without opening it.
-     * 
+     *
      * @return a CompletableFuture that completes with the menu
      */
     CompletableFuture<Menu> buildAsync();
+    
+    /**
+     * Controls whether a close button is automatically added to the menu.
+     * By default, a close button is added at slot 49.
+     *
+     * @param enabled true to automatically add a close button, false to disable
+     * @return this builder
+     */
+    CustomMenuBuilder autoCloseButton(boolean enabled);
+    
+    /**
+     * Controls whether a back button is automatically added to the menu.
+     * By default, back buttons are not added automatically.
+     *
+     * @param enabled true to automatically add a back button, false to disable
+     * @return this builder
+     */
+    CustomMenuBuilder autoBackButton(boolean enabled);
+    
+    /**
+     * Controls whether navigation buttons are automatically added to the menu.
+     * By default, navigation buttons are not added automatically.
+     *
+     * @param enabled true to automatically add navigation buttons, false to disable
+     * @return this builder
+     */
+    CustomMenuBuilder autoNavigationButtons(boolean enabled);
     
     /**
      * Functional interface for scroll events.

@@ -110,14 +110,17 @@ public class MenuDisplayItem implements MenuItem {
         /**
          * Sets the display name of the item.
          * Supports MiniMessage formatting and legacy color codes.
-         * 
+         * Automatically adds &r prefix to prevent italicization.
+         *
          * @param name the display name
          * @return this builder
          */
         public Builder name(String name) {
             if (name != null) {
+                // Automatically prepend &r to prevent italicization unless already present
+                String processedName = name.startsWith("&r") ? name : "&r" + name;
                 // Convert legacy color codes to MiniMessage format
-                String converted = convertLegacyColors(name);
+                String converted = convertLegacyColors(processedName);
                 this.name = miniMessage.deserialize(converted);
             }
             return this;

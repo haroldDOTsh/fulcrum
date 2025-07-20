@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.menu;
 
+import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.menu.impl.*;
 import sh.harold.fulcrum.api.menu.test.MenuDemoCommand;
@@ -18,6 +19,11 @@ public class MenuFeature implements PluginFeature {
         DefaultNavigationService navigationService = new DefaultNavigationService();
         container.register(NavigationService.class, navigationService);
         
+        // Register NavigationService with Bukkit's ServicesManager for MenuButton.navigateBack() access
+        plugin.getServer().getServicesManager().register(
+            NavigationService.class, navigationService, plugin, ServicePriority.Normal
+        );
+        
         // Create menu registry
         DefaultMenuRegistry menuRegistry = new DefaultMenuRegistry();
         container.register(MenuRegistry.class, menuRegistry);
@@ -25,6 +31,11 @@ public class MenuFeature implements PluginFeature {
         // Create menu service with dependencies
         menuService = new DefaultMenuService(plugin, navigationService, menuRegistry);
         container.register(MenuService.class, menuService);
+        
+        // Register MenuService with Bukkit's ServicesManager for consistent access pattern
+        plugin.getServer().getServicesManager().register(
+            MenuService.class, menuService, plugin, ServicePriority.Normal
+        );
         
         // Create and register inventory listener
         inventoryListener = new MenuInventoryListener(menuService, plugin);

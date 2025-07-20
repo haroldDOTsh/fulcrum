@@ -174,39 +174,6 @@ public interface ListMenuBuilder {
      */
     ListMenuBuilder contentSlots(int startSlot, int endSlot);
     
-    /**
-     * Automatically adds navigation buttons (previous/next page).
-     * Places them at the bottom corners of the menu.
-     * 
-     * @return this builder
-     */
-    ListMenuBuilder addNavigationButtons();
-    
-    /**
-     * Adds custom navigation buttons at specified slots.
-     * 
-     * @param previousSlot slot for previous page button
-     * @param nextSlot slot for next page button
-     * @return this builder
-     */
-    ListMenuBuilder addNavigationButtons(int previousSlot, int nextSlot);
-    
-    /**
-     * Sets custom navigation buttons.
-     * 
-     * @param previousButton the previous page button
-     * @param nextButton the next page button
-     * @return this builder
-     */
-    ListMenuBuilder navigationButtons(MenuButton previousButton, MenuButton nextButton);
-    
-    /**
-     * Adds a page indicator item showing current/total pages.
-     * 
-     * @param slot the slot for the page indicator
-     * @return this builder
-     */
-    ListMenuBuilder addPageIndicator(int slot);
     
     /**
      * Sets a custom empty message when there are no items.
@@ -235,11 +202,39 @@ public interface ListMenuBuilder {
     /**
      * Sets whether to close the menu when clicking outside.
      * Default is true.
-     * 
+     *
      * @param closeOnOutsideClick true to close on outside click
      * @return this builder
      */
     ListMenuBuilder closeOnOutsideClick(boolean closeOnOutsideClick);
+    
+    /**
+     * Fills all empty slots with the specified material.
+     * Empty slots are those not occupied by border, buttons, or content items.
+     *
+     * @param material the material to use for empty slots
+     * @return this builder
+     */
+    ListMenuBuilder fillEmpty(Material material);
+    
+    /**
+     * Fills all empty slots with the specified item.
+     * Empty slots are those not occupied by border, buttons, or content items.
+     *
+     * @param item the item to use for empty slots
+     * @return this builder
+     */
+    ListMenuBuilder fillEmpty(MenuItem item);
+    
+    /**
+     * Fills empty slots with a custom name and material.
+     * Empty slots are those not occupied by border, buttons, or content items.
+     *
+     * @param material the material to use
+     * @param displayName the display name for empty slot items
+     * @return this builder
+     */
+    ListMenuBuilder fillEmpty(Material material, String displayName);
     
     /**
      * Builds the menu asynchronously and opens it for the player.
@@ -251,10 +246,29 @@ public interface ListMenuBuilder {
     
     /**
      * Builds the menu asynchronously without opening it.
-     * 
+     *
      * @return a CompletableFuture that completes with the menu
      */
     CompletableFuture<Menu> buildAsync();
+    
+    /**
+     * Controls whether a close button is automatically added to the menu.
+     * By default, a close button is added at slot 49.
+     *
+     * @param enabled true to automatically add a close button, false to disable
+     * @return this builder
+     */
+    ListMenuBuilder autoCloseButton(boolean enabled);
+    
+    /**
+     * Controls whether a back button is automatically added to the menu.
+     * By default, back buttons are not added automatically.
+     *
+     * @param enabled true to automatically add a back button, false to disable
+     * @return this builder
+     */
+    ListMenuBuilder autoBackButton(boolean enabled);
+    
     
     /**
      * Functional interface for page change events.

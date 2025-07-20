@@ -233,8 +233,7 @@ public class DefaultMenuRegistry implements MenuRegistry {
                 
                 // Create list menu builder
                 ListMenuBuilder builder = menuService.createListMenu()
-                    .title(title)
-                    .addNavigationButtons();
+                    .title(title);
                 
                 // Add items if player is provided
                 if (player != null) {

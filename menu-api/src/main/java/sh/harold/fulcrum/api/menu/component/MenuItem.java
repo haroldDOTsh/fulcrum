@@ -51,8 +51,28 @@ public interface MenuItem {
     
     /**
      * Checks if this menu item has a specific slot assigned.
-     * 
+     *
      * @return true if a slot is assigned, false otherwise
      */
     boolean hasSlot();
+    
+    /**
+     * Returns true if this item is anchored (won't scroll with virtual grid).
+     * Anchored items remain in fixed positions regardless of viewport scrolling.
+     *
+     * @return true if anchored
+     */
+    default boolean isAnchored() {
+        return false;
+    }
+    
+    /**
+     * Sets the anchored state of this item.
+     * Anchored items remain in fixed positions regardless of viewport scrolling.
+     *
+     * @param anchored true to anchor this item
+     */
+    default void setAnchored(boolean anchored) {
+        // Default implementation does nothing - concrete classes should override
+    }
 }
