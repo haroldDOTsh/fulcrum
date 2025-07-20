@@ -21,6 +21,7 @@ dependencies {
     implementation(project(":data-api"))
     implementation(project(":message-api"))
     implementation(project(":rank-api"))
+    implementation(project(":menu-api"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.7-R0.1-SNAPSHOT")
@@ -86,6 +87,7 @@ tasks.named<ShadowJar>("shadowJar") {
 
     relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
     relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
+    relocate("sh.harold.fulcrum.api.menu", "sh.harold.internal.api.menu")
 }
 
 

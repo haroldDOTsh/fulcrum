@@ -1,6 +1,8 @@
 package sh.harold.fulcrum;
 
 import org.bukkit.plugin.java.JavaPlugin;
+
+import sh.harold.fulcrum.api.menu.MenuFeature;
 import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.message.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
@@ -37,6 +39,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new GamemodeFeature());
         FeatureManager.register(new RankFeature());
         FeatureManager.register(new ScoreboardFeature());
+        FeatureManager.register(new MenuFeature()); 
 
         // Initialize all features with dependency injection
         FeatureManager.initializeAll(this, container);
