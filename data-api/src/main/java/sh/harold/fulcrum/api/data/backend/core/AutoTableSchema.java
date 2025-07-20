@@ -320,18 +320,16 @@ public class AutoTableSchema<T> extends TableSchema<T> {
         try {
             conn = getConnection();
             ps = conn.prepareStatement(sql.toString());
-            System.out.println("[DEBUG] save: SQL=" + sql);
             int idx = 1;
             for (var col : columns.keySet()) {
                 Field field = fieldMap.get(col);
                 field.setAccessible(true);
                 Object value = field.get(data);
-                System.out.println("[DEBUG] save: col=" + col + ", value=" + value);
                 setPreparedStatementValue(ps, idx++, value, field.getType());
             }
             ps.executeUpdate();
         } catch (Exception e) {
-            System.out.println("[DEBUG] save: Exception: " + e);
+
             throw new RuntimeException("Failed to save " + type.getSimpleName() + " for UUID " + uuid + ": " + e, e);
         } finally {
             try {
@@ -371,7 +369,6 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     }
 
     private void setPreparedStatementValue(PreparedStatement ps, int idx, Object value, Class<?> type) throws Exception {
-        System.out.println("[DEBUG] setPreparedStatementValue: idx=" + idx + ", value=" + value + ", type=" + type.getName() + ", isEnum=" + type.isEnum());
 
         if (type == UUID.class) ps.setString(idx, value == null ? null : value.toString());
         else if (type == String.class) ps.setString(idx, (String) value);
