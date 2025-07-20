@@ -124,23 +124,16 @@ public class RankManager implements RankService {
     @Override
     public CompletableFuture<Void> setFunctionalRank(UUID playerId, FunctionalRank rank) {
         return CompletableFuture.runAsync(() -> {
-            LOGGER.info("[DIAGNOSTIC] RankManager.setFunctionalRank() called for player: " + playerId + ", rank: " + rank);
 
             // Check DirtyDataManager initialization status
             boolean dirtyManagerInitialized = DirtyDataManager.isInitialized();
-            LOGGER.info("[DIAGNOSTIC] DirtyDataManager.isInitialized(): " + dirtyManagerInitialized);
 
             PlayerProfile profile = getPlayerProfile(playerId);
             IdentityData identity = profile.get(IdentityData.class);
 
-            LOGGER.info("[DIAGNOSTIC] Retrieved IdentityData for player: " + playerId + ", current functional rank: " + identity.functionalRank);
-
             identity.functionalRank = rank;
-            LOGGER.info("[DIAGNOSTIC] Updated functional rank in IdentityData to: " + rank);
-
-            LOGGER.info("[DIAGNOSTIC] Calling profile.saveAsync() for IdentityData...");
             profile.saveAsync(IdentityData.class, identity);
-            LOGGER.info("[DIAGNOSTIC] profile.saveAsync() call completed for IdentityData");
+
         });
     }
 

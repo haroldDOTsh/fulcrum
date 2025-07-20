@@ -256,7 +256,6 @@ public class AutoTableSchema<T> extends TableSchema<T> {
             conn = getConnection();
             String sql = "SELECT * FROM " + dialect.quoteIdentifier(tableName) + " WHERE " + dialect.quoteIdentifier(primaryKey.name) + " = ? LIMIT 1";
             ps = conn.prepareStatement(sql);
-            System.out.println("[DEBUG] load: SQL=" + sql + ", uuid=" + uuid);
             ps.setObject(1, uuid);
             rs = ps.executeQuery();
             if (!rs.next()) return null;
@@ -266,12 +265,10 @@ public class AutoTableSchema<T> extends TableSchema<T> {
                 Field field = fieldMap.get(col);
                 field.setAccessible(true);
                 Object value = getValueFromResultSet(rs, col, field.getType());
-                System.out.println("[DEBUG] load: col=" + col + ", value=" + value);
                 field.set(instance, value);
             }
             return instance;
         } catch (Exception e) {
-            System.out.println("[DEBUG] load: Exception: " + e);
             throw new RuntimeException("Failed to load " + type.getSimpleName() + " for UUID " + uuid + ": " + e, e);
         } finally {
             try {

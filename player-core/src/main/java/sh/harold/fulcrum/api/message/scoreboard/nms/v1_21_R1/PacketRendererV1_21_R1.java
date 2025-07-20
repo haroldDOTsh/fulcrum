@@ -113,8 +113,6 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
             List<String> content = scoreboard.getContent();
             int score = content.size();
 
-            // DEBUG: PacketRenderer processing
-            System.out.println("DEBUG: PacketRenderer processing " + content.size() + " lines");
 
             for (String line : content) {
                 if (line == null) {
@@ -131,9 +129,6 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
                 if (line.length() > MAX_CHARACTERS_PER_LINE) {
                     line = line.substring(0, MAX_CHARACTERS_PER_LINE);
                 }
-
-                // DEBUG: Line processing
-                System.out.println("DEBUG: Line " + (content.size() - score + 1) + ": '" + line + "' (score: " + score + ")");
 
                 // Create score packet - fixed to use Optional.empty() instead of null
                 ClientboundSetScorePacket scorePacket =

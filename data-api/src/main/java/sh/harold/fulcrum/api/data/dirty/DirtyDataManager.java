@@ -116,20 +116,13 @@ public final class DirtyDataManager {
 
 
     public static void markDirty(UUID playerId, String schemaKey, Object data, DirtyDataEntry.ChangeType changeType) {
-        LOGGER.info("[DIAGNOSTIC] DirtyDataManager.markDirty() called for player: " + playerId +
-                   ", schemaKey: " + schemaKey + ", changeType: " + changeType);
         
         ensureInitialized();
 
         try {
-            LOGGER.info("[DIAGNOSTIC] Cache instance: " + (dirtyDataCache != null ? dirtyDataCache.getClass().getSimpleName() : "null"));
-            LOGGER.info("[DIAGNOSTIC] Calling dirtyDataCache.markDirty()...");
-            
             dirtyDataCache.markDirty(playerId, schemaKey, data, changeType);
             
-            LOGGER.info("[DIAGNOSTIC] dirtyDataCache.markDirty() completed successfully");
-            LOGGER.log(Level.FINE, "Marked data as dirty for player {0}, schema {1}, change type {2}",
-                    new Object[]{playerId, schemaKey, changeType});
+
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "[DIAGNOSTIC] FAILED to mark data as dirty for player " + playerId +
                       ", schema " + schemaKey + ": " + e.getMessage(), e);

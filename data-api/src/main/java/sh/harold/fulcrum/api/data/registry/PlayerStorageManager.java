@@ -114,21 +114,13 @@ public final class PlayerStorageManager {
      * @param immediate Whether to save immediately or defer to dirty tracking
      */
     public static <T> void saveWithDirtyTracking(UUID playerId, PlayerDataSchema<T> schema, T data, boolean immediate) {
-        LOGGER.info("[DIAGNOSTIC] PlayerStorageManager.saveWithDirtyTracking() called for player: " + playerId +
-                   ", schema: " + schema.schemaKey() + ", immediate: " + immediate);
-        
-        LOGGER.info("[DIAGNOSTIC] Configuration state - dirtyTrackingEnabled: " + dirtyTrackingEnabled +
-                   ", eventBasedPersistence: " + eventBasedPersistence);
+
         
         if (!dirtyTrackingEnabled || immediate) {
-            LOGGER.info("[DIAGNOSTIC] Taking immediate save path (dirtyTrackingEnabled: " + dirtyTrackingEnabled +
-                       ", immediate: " + immediate + ")");
             try {
                 // Save directly to backend
                 save(playerId, schema, data);
-                LOGGER.info("[DIAGNOSTIC] Immediate save completed successfully for player: " + playerId);
             } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "[DIAGNOSTIC] Immediate save failed for player " + playerId + ", schema: " + schema.schemaKey(), e);
                 throw new RuntimeException("Failed to save data immediately for player " + playerId, e);
             }
             return;
@@ -136,21 +128,19 @@ public final class PlayerStorageManager {
 
         // Mark as dirty for deferred persistence
         boolean dirtyManagerInitialized = DirtyDataManager.isInitialized();
-        LOGGER.info("[DIAGNOSTIC] DirtyDataManager.isInitialized(): " + dirtyManagerInitialized);
+
         
         if (dirtyManagerInitialized) {
             try {
-                LOGGER.info("[DIAGNOSTIC] Calling DirtyDataManager.markDirty() with schema key: " + schema.schemaKey());
+
                 DirtyDataManager.markDirty(playerId, schema.schemaKey(), data, DirtyDataEntry.ChangeType.UPDATE);
-                LOGGER.info("[DIAGNOSTIC] DirtyDataManager.markDirty() call completed successfully");
 
                 // Trigger event-based persistence if enabled
                 if (eventBasedPersistence) {
-                    LOGGER.info("[DIAGNOSTIC] Triggering event-based persistence for player: " + playerId);
                     triggerEventBasedPersistence(playerId);
                 }
             } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "[DIAGNOSTIC] Failed to mark data as dirty for player " + playerId + ", schema: " + schema.schemaKey(), e);
+
                 // Fallback to immediate save if dirty tracking fails
                 LOGGER.warning("[DIAGNOSTIC] Falling back to immediate save due to dirty tracking failure");
                 try {
