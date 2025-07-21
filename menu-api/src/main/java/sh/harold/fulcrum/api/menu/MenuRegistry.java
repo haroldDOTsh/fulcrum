@@ -140,13 +140,6 @@ public interface MenuRegistry {
     void clearRegistry();
     
     /**
-     * Gets statistics about the registry.
-     * 
-     * @return registry statistics
-     */
-    RegistryStats getStats();
-    
-    /**
      * Interface for menu templates.
      * Templates define how to build menus with dynamic data.
      */
@@ -223,45 +216,4 @@ public interface MenuRegistry {
         SIMPLE
     }
     
-    /**
-     * Statistics about the menu registry.
-     */
-    interface RegistryStats {
-        /**
-         * Gets the total number of registered templates.
-         * 
-         * @return total template count
-         */
-        int getTotalTemplates();
-        
-        /**
-         * Gets the number of plugins with registered templates.
-         * 
-         * @return plugin count
-         */
-        int getPluginCount();
-        
-        /**
-         * Gets template count by type.
-         * 
-         * @param type the menu type
-         * @return count of templates of that type
-         */
-        int getTemplateCountByType(MenuType type);
-        
-        /**
-         * Gets the number of times templates have been instantiated.
-         * 
-         * @return total instantiation count
-         */
-        long getTotalInstantiations();
-        
-        /**
-         * Gets instantiation count for a specific template.
-         * 
-         * @param templateId the template ID
-         * @return instantiation count for that template
-         */
-        long getInstantiationCount(String templateId);
-    }
 }

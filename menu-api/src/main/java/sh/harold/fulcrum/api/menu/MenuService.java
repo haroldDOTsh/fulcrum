@@ -35,7 +35,7 @@ public interface MenuService {
     /**
      * Opens a menu for the specified player.
      * This method handles all necessary setup including registering event handlers.
-     * 
+     *
      * @param menu the menu to open
      * @param player the player to open the menu for
      * @return a CompletableFuture that completes when the menu is opened
@@ -74,33 +74,6 @@ public interface MenuService {
      */
     boolean hasMenuOpen(Player player);
     
-    /**
-     * Navigates back to the previous menu in the navigation history.
-     * If no previous menu exists, the current menu is closed.
-     * 
-     * @param player the player to navigate back for
-     * @return true if navigation was successful, false if no history exists
-     */
-    boolean navigateBack(Player player);
-    
-    /**
-     * Clears the navigation history for a player.
-     * This keeps the current menu open but removes all previous menus from history.
-     * 
-     * @param player the player to clear history for
-     */
-    void clearNavigationHistory(Player player);
-    
-    /**
-     * Opens a child menu, automatically adding a back button and breadcrumb navigation.
-     * The current menu is added to the navigation history.
-     * 
-     * @param childMenu the child menu to open
-     * @param player the player to open the menu for
-     * @param parentTitle optional parent menu title for breadcrumb display
-     * @return a CompletableFuture that completes when the child menu is opened
-     */
-    CompletableFuture<Void> openChildMenu(Menu childMenu, Player player, Component parentTitle);
     
     /**
      * Refreshes the current menu for a player by re-rendering its contents.
@@ -110,14 +83,7 @@ public interface MenuService {
      * @return true if the menu was refreshed, false if no menu was open
      */
     boolean refreshMenu(Player player);
-    
-    /**
-     * Gets the navigation service for advanced menu navigation features.
-     * 
-     * @return the navigation service instance
-     */
-    NavigationService getNavigationService();
-    
+
     /**
      * Gets the menu registry for managing menu templates and definitions.
      * 
@@ -142,8 +108,9 @@ public interface MenuService {
     
     /**
      * Gets the total number of currently open menus across all players.
-     * 
+     *
      * @return the number of open menus
      */
     int getOpenMenuCount();
+
 }

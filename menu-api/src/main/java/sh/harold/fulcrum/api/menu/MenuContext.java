@@ -126,33 +126,6 @@ public interface MenuContext {
     }
     
     /**
-     * Checks if this is a child menu context.
-     * 
-     * @return true if this menu has a parent
-     */
-    default boolean isChildMenu() {
-        return hasProperty("parentMenuId");
-    }
-    
-    /**
-     * Gets the parent menu ID if this is a child menu.
-     * 
-     * @return an Optional containing the parent menu ID
-     */
-    default Optional<String> getParentMenuId() {
-        return getProperty("parentMenuId", String.class);
-    }
-    
-    /**
-     * Sets the parent menu ID for child menus.
-     * 
-     * @param parentId the parent menu ID
-     */
-    default void setParentMenuId(String parentId) {
-        setProperty("parentMenuId", parentId);
-    }
-    
-    /**
      * Gets the timestamp when the menu was opened.
      * 
      * @return the open timestamp in milliseconds
@@ -168,18 +141,4 @@ public interface MenuContext {
         return System.currentTimeMillis() - getOpenTimestamp();
     }
     
-    /**
-     * Creates a snapshot of the current context state.
-     * Useful for saving/restoring menu state.
-     * 
-     * @return a snapshot of the context
-     */
-    MenuContextSnapshot createSnapshot();
-    
-    /**
-     * Restores the context state from a snapshot.
-     * 
-     * @param snapshot the snapshot to restore from
-     */
-    void restoreFromSnapshot(MenuContextSnapshot snapshot);
 }

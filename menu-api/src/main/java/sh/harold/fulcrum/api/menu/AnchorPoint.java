@@ -46,7 +46,7 @@ public class AnchorPoint {
         RIGHT
     }
     
-    // Pre-defined common anchor combinations
+    // Pre-defined common anchor combinations (simplified to only used combinations)
     
     /**
      * Top-left anchor point.
@@ -57,36 +57,6 @@ public class AnchorPoint {
      * Top-center anchor point.
      */
     public static final AnchorPoint TOP_CENTRE = new AnchorPoint(Vertical.TOP, Horizontal.CENTRE);
-    
-    /**
-     * Top-right anchor point.
-     */
-    public static final AnchorPoint TOP_RIGHT = new AnchorPoint(Vertical.TOP, Horizontal.RIGHT);
-    
-    /**
-     * Center-left anchor point.
-     */
-    public static final AnchorPoint CENTRE_LEFT = new AnchorPoint(Vertical.CENTRE, Horizontal.LEFT);
-    
-    /**
-     * Center anchor point (both vertical and horizontal center).
-     */
-    public static final AnchorPoint CENTRE = new AnchorPoint(Vertical.CENTRE, Horizontal.CENTRE);
-    
-    /**
-     * Center-right anchor point.
-     */
-    public static final AnchorPoint CENTRE_RIGHT = new AnchorPoint(Vertical.CENTRE, Horizontal.RIGHT);
-    
-    /**
-     * Bottom-left anchor point.
-     */
-    public static final AnchorPoint BOTTOM_LEFT = new AnchorPoint(Vertical.BOTTOM, Horizontal.LEFT);
-    
-    /**
-     * Bottom-center anchor point.
-     */
-    public static final AnchorPoint BOTTOM_CENTRE = new AnchorPoint(Vertical.BOTTOM, Horizontal.CENTRE);
     
     /**
      * Bottom-right anchor point.
@@ -101,19 +71,9 @@ public class AnchorPoint {
     public static final AnchorPoint TOP = TOP_LEFT;
     
     /**
-     * Alias for BOTTOM_LEFT.
+     * Alias for BOTTOM_RIGHT.
      */
-    public static final AnchorPoint BOTTOM = BOTTOM_LEFT;
-    
-    /**
-     * Alias for CENTRE_LEFT.
-     */
-    public static final AnchorPoint LEFT = CENTRE_LEFT;
-    
-    /**
-     * Alias for CENTRE_RIGHT.
-     */
-    public static final AnchorPoint RIGHT = CENTRE_RIGHT;
+    public static final AnchorPoint BOTTOM = BOTTOM_RIGHT;
     
     private final Vertical vertical;
     private final Horizontal horizontal;
