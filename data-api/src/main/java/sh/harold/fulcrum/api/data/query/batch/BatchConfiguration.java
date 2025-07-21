@@ -112,8 +112,8 @@ public class BatchConfiguration {
     }
     
     /**
-     * Creates a configuration optimized for small datasets (< 10K records).
-     * 
+     * Creates a configuration optimized for small datasets (&lt; 10K records).
+     *
      * @return A configuration tuned for small datasets
      */
     public static BatchConfiguration smallDataset() {
@@ -126,8 +126,8 @@ public class BatchConfiguration {
     }
     
     /**
-     * Creates a configuration optimized for large datasets (> 1M records).
-     * 
+     * Creates a configuration optimized for large datasets (&gt; 1M records).
+     *
      * @return A configuration tuned for large datasets
      */
     public static BatchConfiguration largeDataset() {

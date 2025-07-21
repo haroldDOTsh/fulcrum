@@ -14,7 +14,7 @@ import java.util.function.Predicate;
  * to data from a specific schema. Filters are evaluated during query execution
  * to determine which records should be included in the result set.</p>
  *
- * <h3>SQL Compatibility</h3>
+ * <h2>SQL Compatibility</h2>
  * <p>QueryFilter supports both SQL-compatible and custom predicate-based filtering:</p>
  * <ul>
  *   <li><strong>SQL-Compatible:</strong> Filters created using factory methods (equals, greaterThan, etc.)
@@ -22,7 +22,7 @@ import java.util.function.Predicate;
  *   <li><strong>Custom Predicates:</strong> Filters using lambda functions fall back to in-memory filtering</li>
  * </ul>
  *
- * <h3>Usage Examples</h3>
+ * <h2>Usage Examples</h2>
  * <pre>{@code
  * // SQL-Compatible filters (RECOMMENDED)
  * QueryFilter.equals("functionalRank", "ADMIN", schema)
@@ -40,12 +40,12 @@ import java.util.function.Predicate;
  *     .greaterThan(10)
  * }</pre>
  *
- * <h3>Performance Considerations</h3>
+ * <h2>Performance Considerations</h2>
  * <p>SQL-compatible filters are significantly faster for large datasets as they push
  * filtering to the database level. Custom predicates require loading all data into
  * memory for filtering.</p>
  *
- * <h3>Validation</h3>
+ * <h2>Validation</h2>
  * <p>Use {@link #validateSqlCompatibility(List)} to check filter compatibility before execution.</p>
  *
  * @author Harold

@@ -111,7 +111,7 @@ public class MenuDisplayItem implements MenuItem {
         /**
          * Sets the display name of the item.
          * Supports MiniMessage formatting and legacy color codes.
-         * Uses dual approach: legacy compatibility with &r prefix and Adventure's proper decoration API.
+         * Uses dual approach: legacy compatibility with &amp;r prefix and Adventure's proper decoration API.
          *
          * @param name the display name
          * @return this builder
