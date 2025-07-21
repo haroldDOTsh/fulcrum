@@ -30,6 +30,8 @@ import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -172,8 +174,26 @@ public class ScoreboardFeature implements PluginFeature, Listener {
     private void createTestScoreboard() {
         Map<Integer, ScoreboardModule> modules = new HashMap<>();
 
-        // Header module at highest priority
+
+        // Info Module at highest priority
         modules.put(100, new ScoreboardModule() {
+            @Override
+            public String getModuleId() {
+                return "serverinfo";
+            }
+
+        @Override
+        public ContentProvider getContentProvider() {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            String today = LocalDate.now().format(formatter);
+
+            return new DynamicContentProvider(() -> Arrays.asList(
+                    "&7" + today + " &8m103D"
+            ), 5000);
+        }
+        });
+        // Header module at highest priority
+        modules.put(95, new ScoreboardModule() {
             @Override
             public String getModuleId() {
                 return "header";
@@ -205,7 +225,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         });
 
         // Server info module
-        modules.put(80, new ScoreboardModule() {
+        modules.put(20, new ScoreboardModule() {
             @Override
             public String getModuleId() {
                 return "server_info";

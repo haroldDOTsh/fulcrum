@@ -27,7 +27,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
     private final ColorCodeProcessor colorProcessor;
 
     private int maxLines = 15;
-    private String staticBottomLine = "&7play.example.com";
+    private String staticBottomLine = "&eplay.harold.sh"; // Default static bottom line
     private boolean blockSeparationEnabled = true;
     private String blockSeparationCharacter = "§r"; // Kept for backward compatibility
     private int separatorCounter = 0;
@@ -104,8 +104,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         // Collect content from modules in insertion order
         List<ScoreboardModule> modules = definition.getModules();
 
-        // DEBUG: Starting module processing
-        System.out.println("DEBUG: Starting module processing for " + modules.size() + " modules");
+
 
         // Process modules in insertion order, with flash replacements
         for (int i = 0; i < modules.size(); i++) {
@@ -118,8 +117,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
                     PlayerScoreboardState.FlashState flashState = activeFlashes.get(i);
                     if (flashState != null && !flashState.isExpired()) {
                         effectiveModule = flashState.getModule();
-                        // DEBUG: Flash replacement
-                        System.out.println("DEBUG: Module at index " + i + " replaced by flash: " + effectiveModule.getModuleId());
+
                     }
                 }
 
@@ -133,8 +131,6 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
                 if (moduleEnabled) {
                     List<String> moduleContent = effectiveModule.getContentProvider().getContent(playerId);
                     if (moduleContent != null && !moduleContent.isEmpty()) {
-                        // DEBUG: Module content processing
-                        System.out.println("DEBUG: Module " + effectiveModule.getModuleId() + " at index " + i + " added " + moduleContent.size() + " lines");
                         moduleBlocks.add(new ArrayList<>(moduleContent));
                     }
                 }
@@ -142,8 +138,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         }
 
         List<String> processedContent = processModuleBlocks(playerId, moduleBlocks);
-        // DEBUG: Final processed content
-        System.out.println("DEBUG: Final processed content has " + processedContent.size() + " lines");
+        
         return processedContent;
     }
 
@@ -257,9 +252,6 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
             throw new IllegalArgumentException("Content cannot be null");
         }
 
-        // DEBUG: Block separation processing
-        System.out.println("DEBUG: addBlockSeparations input: " + content.size() + " lines");
-        System.out.println("DEBUG: Block separation enabled: " + blockSeparationEnabled);
 
         if (!blockSeparationEnabled) {
             return new ArrayList<>(content);
@@ -270,8 +262,6 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         // For legacy content that doesn't use module blocks, just return as-is
         List<String> result = new ArrayList<>(content);
 
-        // DEBUG: Block separation output
-        System.out.println("DEBUG: addBlockSeparations output: " + result.size() + " lines");
 
         return result;
     }
