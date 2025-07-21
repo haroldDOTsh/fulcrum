@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -110,18 +111,37 @@ public class MenuDisplayItem implements MenuItem {
         /**
          * Sets the display name of the item.
          * Supports MiniMessage formatting and legacy color codes.
-         * Automatically adds &r prefix to prevent italicization.
+         * Uses dual approach: legacy compatibility with &r prefix and Adventure's proper decoration API.
          *
          * @param name the display name
          * @return this builder
          */
         public Builder name(String name) {
             if (name != null) {
-                // Automatically prepend &r to prevent italicization unless already present
-                String processedName = name.startsWith("&r") ? name : "&r" + name;
-                // Convert legacy color codes to MiniMessage format
-                String converted = convertLegacyColors(processedName);
-                this.name = miniMessage.deserialize(converted);
+                // Process text through both legacy and Adventure approaches
+                
+                // 1. Legacy approach: Add reset code if not present
+                String processedName;
+                if (name.startsWith("&r") || name.startsWith("<reset>")) {
+                    processedName = name;
+                } else {
+                    processedName = "&r" + name;
+                }
+                
+                // 2. Adventure approach: Use proper decoration API
+                Component component;
+                if (processedName.contains("§") || processedName.contains("&")) {
+                    // Legacy format - use LegacyComponentSerializer
+                    component = LegacyComponentSerializer.legacyAmpersand().deserialize(processedName);
+                } else {
+                    // MiniMessage format
+                    component = miniMessage.deserialize(processedName);
+                }
+                
+                // 3. Apply Adventure italic decoration fix
+                component = component.decoration(TextDecoration.ITALIC, false);
+                
+                this.name = component;
             }
             return this;
         }

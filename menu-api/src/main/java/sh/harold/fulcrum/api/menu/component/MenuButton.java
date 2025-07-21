@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.SoundCategory;
@@ -25,15 +26,13 @@ public class MenuButton implements MenuItem {
     
     // FIXED: Add &r prefix to all predefined buttons to prevent italicization
     public static final MenuButton CLOSE = builder(Material.BARRIER)
-        .name("&r<red>Close")
-        .description("Click to close this menu")
+        .name("&cClose")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> player.closeInventory())
         .build();
     
     public static final MenuButton BACK = builder(Material.ARROW)
-        .name("&r<yellow>Back")
-        .description("Return to the previous menu")
+        .name("&7Back")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
             // Navigation service integration will handle this
@@ -42,29 +41,9 @@ public class MenuButton implements MenuItem {
         })
         .build();
     
-    public static final MenuButton NEXT_PAGE = builder(Material.LIME_DYE)
-        .name("&r<green>Next Page")
-        .secondary("Go to the next page")
-        .sound(Sound.ITEM_BOOK_PAGE_TURN)
-        .onClick(player -> {
-            // Pagination will be handled by menu implementations
-            player.sendMessage(Component.text("No next page available", NamedTextColor.YELLOW));
-        })
-        .build();
-    
-    public static final MenuButton PREVIOUS_PAGE = builder(Material.RED_DYE)
-        .name("&r<red>Previous Page")
-        .secondary("Go to the previous page")
-        .sound(Sound.ITEM_BOOK_PAGE_TURN)
-        .onClick(player -> {
-            // Pagination will be handled by menu implementations
-            player.sendMessage(Component.text("No previous page available", NamedTextColor.YELLOW));
-        })
-        .build();
     
     public static final MenuButton REFRESH = builder(Material.SUNFLOWER)
-        .name("&r<aqua>Refresh")
-        .description("Click to refresh this menu")
+        .name("&bRefresh")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
             // Menu refresh will be handled by menu implementations
@@ -73,7 +52,7 @@ public class MenuButton implements MenuItem {
         .build();
     
     public static final MenuButton SEARCH = builder(Material.COMPASS)
-        .name("&r<light_purple>Search")
+        .name("&dSearch")
         .description("Click to search for items")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
@@ -84,7 +63,7 @@ public class MenuButton implements MenuItem {
     
     // FIXED: Add &r prefix to all predefined buttons to prevent italicization
     public static final MenuButton SORT = builder(Material.HOPPER)
-        .name("&r<gold>Sort")
+        .name("&6Sort")
         .description("Click to sort items")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
@@ -94,7 +73,7 @@ public class MenuButton implements MenuItem {
         .build();
     
     public static final MenuButton FILTER = builder(Material.NAME_TAG)
-        .name("&r<blue>Filter")
+        .name("&bFilter")
         .description("Click to filter items")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
@@ -104,8 +83,7 @@ public class MenuButton implements MenuItem {
         .build();
     
     public static final MenuButton UP_NAVIGATION = builder(Material.SPECTRAL_ARROW)
-        .name("&r<green>Up")
-        .description("Navigate up")
+        .name("&7Navigate Up")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
             // Navigation functionality to be implemented by menu system
@@ -114,8 +92,7 @@ public class MenuButton implements MenuItem {
         .build();
     
     public static final MenuButton DOWN_NAVIGATION = builder(Material.TIPPED_ARROW)
-        .name("&r<red>Down")
-        .description("Navigate down")
+        .name("&7Down")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
             // Navigation functionality to be implemented by menu system
@@ -124,8 +101,7 @@ public class MenuButton implements MenuItem {
         .build();
     
     public static final MenuButton FORWARD = builder(Material.ARROW)
-        .name("&r<aqua>Forward")
-        .description("Navigate forward")
+        .name("&6Forward")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
             // Forward navigation to be implemented by menu system
@@ -134,8 +110,7 @@ public class MenuButton implements MenuItem {
         .build();
     
     public static final MenuButton BACK_NAVIGATION = builder(Material.ARROW)
-        .name("&r<gray>Back")
-        .description("Navigate back")
+        .name("&7Back")
         .sound(Sound.UI_BUTTON_CLICK)
         .onClick(player -> {
             // Back navigation to be implemented by menu system
@@ -143,6 +118,7 @@ public class MenuButton implements MenuItem {
         })
         .build();
     
+
     // Static initializer to validate positioning on class load (development only)
     static {
         try {
@@ -230,37 +206,40 @@ public class MenuButton implements MenuItem {
     }
     
     /**
-     * Calculates the back navigation button slot for the given number of menu rows.
-     * Back navigation button is positioned at the first slot of the last row.
+     * Calculates the pagination back button slot for the given number of menu rows.
+     * Pagination back button is positioned at the first slot of the last row.
+     * Used for scrolling backwards through paginated content.
      *
      * @param rows the number of rows in the menu (3-6)
-     * @return the slot number for the back navigation button
+     * @return the slot number for the pagination back button
      */
-    public static int getBackNavigationSlot(int rows) {
+    public static int getPaginateBackSlot(int rows) {
         validateRows(rows);
         return (rows - 1) * 9; // First slot of the last row
     }
     
     /**
-     * Calculates the up navigation button slot for the given number of menu rows.
-     * Up navigation button is always at slot 0 (top-left corner).
+     * Calculates the pagination up button slot for the given number of menu rows.
+     * Pagination up button is always at slot 0 (top-left corner).
+     * Used for scrolling upwards through paginated content.
      *
      * @param rows the number of rows in the menu (3-6)
-     * @return the slot number for the up navigation button
+     * @return the slot number for the pagination up button
      */
-    public static int getUpNavigationSlot(int rows) {
+    public static int getPaginateUpSlot(int rows) {
         validateRows(rows);
         return 0; // Always top-left corner
     }
     
     /**
-     * Calculates the down navigation button slot for the given number of menu rows.
-     * Down navigation button is positioned at the first slot of the last row.
+     * Calculates the pagination down button slot for the given number of menu rows.
+     * Pagination down button is positioned at the first slot of the last row.
+     * Used for scrolling downwards through paginated content.
      *
      * @param rows the number of rows in the menu (3-6)
-     * @return the slot number for the down navigation button
+     * @return the slot number for the pagination down button
      */
-    public static int getDownNavigationSlot(int rows) {
+    public static int getPaginateDownSlot(int rows) {
         validateRows(rows);
         return (rows - 1) * 9; // First slot of the last row
     }
@@ -323,9 +302,9 @@ public class MenuButton implements MenuItem {
             validateSlotCalculation("Sort", rows, getSortSlot(rows), expectedSort);
             validateSlotCalculation("Filter", rows, getFilterSlot(rows), expectedFilter);
             validateSlotCalculation("Forward", rows, getForwardSlot(rows), expectedForward);
-            validateSlotCalculation("BackNavigation", rows, getBackNavigationSlot(rows), expectedBackNav);
-            validateSlotCalculation("UpNavigation", rows, getUpNavigationSlot(rows), expectedUpNav);
-            validateSlotCalculation("DownNavigation", rows, getDownNavigationSlot(rows), expectedDownNav);
+            validateSlotCalculation("PaginateBack", rows, getPaginateBackSlot(rows), expectedBackNav);
+            validateSlotCalculation("PaginateUp", rows, getPaginateUpSlot(rows), expectedUpNav);
+            validateSlotCalculation("PaginateDown", rows, getPaginateDownSlot(rows), expectedDownNav);
             
             // Validate slot bounds (must be within 0 to totalSlots-1)
             validateSlotBounds(rows, actualTotalSlots, "Close", getCloseSlot(rows));
@@ -334,9 +313,9 @@ public class MenuButton implements MenuItem {
             validateSlotBounds(rows, actualTotalSlots, "Sort", getSortSlot(rows));
             validateSlotBounds(rows, actualTotalSlots, "Filter", getFilterSlot(rows));
             validateSlotBounds(rows, actualTotalSlots, "Forward", getForwardSlot(rows));
-            validateSlotBounds(rows, actualTotalSlots, "BackNavigation", getBackNavigationSlot(rows));
-            validateSlotBounds(rows, actualTotalSlots, "UpNavigation", getUpNavigationSlot(rows));
-            validateSlotBounds(rows, actualTotalSlots, "DownNavigation", getDownNavigationSlot(rows));
+            validateSlotBounds(rows, actualTotalSlots, "PaginateBack", getPaginateBackSlot(rows));
+            validateSlotBounds(rows, actualTotalSlots, "PaginateUp", getPaginateUpSlot(rows));
+            validateSlotBounds(rows, actualTotalSlots, "PaginateDown", getPaginateDownSlot(rows));
         }
         
         return true;
@@ -376,12 +355,10 @@ public class MenuButton implements MenuItem {
      */
     public static MenuButton createPositionedClose(int rows) {
         return builder(Material.BARRIER)
-            .name("&r<red>Close")
-            .description("Click to close this menu")
+            .name("&cClose")
             .sound(Sound.UI_BUTTON_CLICK)
             .onClick(player -> player.closeInventory())
             .slot(getCloseSlot(rows))
-            .anchor() // Automatically anchor control buttons
             .build();
     }
     
@@ -397,22 +374,10 @@ public class MenuButton implements MenuItem {
             .description("Return to the previous menu")
             .sound(Sound.UI_BUTTON_CLICK)
             .onClick(player -> {
-                // FIXED: Use NavigationService for proper back navigation
-                try {
-                    // Try to get NavigationService from menu context and navigate back
-                    if (navigateBack(player)) {
-                        return; // Successfully navigated back
-                    }
-                } catch (Exception e) {
-                    // Fallback if navigation service is not available
-                    System.err.println("Failed to navigate back using NavigationService: " + e.getMessage());
-                }
-                
-                // Fallback: close inventory if navigation service fails
+                // Simplified: Just close inventory since navigation system was removed
                 player.closeInventory();
             })
             .slot(getBackSlot(rows))
-            .anchor() // Automatically anchor control buttons
             .build();
     }
     
@@ -481,104 +446,119 @@ public class MenuButton implements MenuItem {
     }
     
     /**
-     * Creates a back navigation button with automatic positioning for the given menu size.
+     * Creates a pagination back button with automatic positioning for the given menu size.
      *
      * @param rows the number of rows in the menu (3-6)
-     * @return a positioned back navigation button
+     * @return a positioned pagination back button
      */
-    public static MenuButton createPositionedBackNavigation(int rows) {
+    public static MenuButton createPositionedPaginateBack(int rows) {
         return builder(Material.ARROW)
             .name("&r<gray>Back")
-            .description("Navigate back")
+            .description("Navigate back through pages")
             .sound(Sound.UI_BUTTON_CLICK)
             .onClick(player -> {
-                // FIXED: Use NavigationService for proper back navigation
-                try {
-                    // Try to get NavigationService from menu context and navigate back
-                    if (navigateBack(player)) {
-                        return; // Successfully navigated back
-                    }
-                } catch (Exception e) {
-                    // Fallback if navigation service is not available
-                    System.err.println("Failed to navigate back using NavigationService: " + e.getMessage());
-                }
-                
-                // Fallback: close inventory if navigation service fails
-                player.closeInventory();
+                // Pagination back functionality to be implemented by menu system
+                player.sendMessage(Component.text("Cannot navigate back", NamedTextColor.YELLOW));
             })
-            .slot(getBackNavigationSlot(rows))
+            .slot(getPaginateBackSlot(rows))
             .build();
     }
     
     /**
-     * Creates an up navigation button with automatic positioning for the given menu size.
+     * Creates a pagination up button with automatic positioning for the given menu size.
      *
      * @param rows the number of rows in the menu (3-6)
-     * @return a positioned up navigation button
+     * @return a positioned pagination up button
      */
-    public static MenuButton createPositionedUpNavigation(int rows) {
+    public static MenuButton createPositionedPaginateUp(int rows) {
         return builder(Material.SPECTRAL_ARROW)
             .name("&r<green>Up")
-            .description("Navigate up")
+            .description("Navigate up through content")
             .sound(Sound.UI_BUTTON_CLICK)
             .onClick(player -> player.sendMessage(Component.text("Cannot navigate up", NamedTextColor.YELLOW)))
-            .slot(getUpNavigationSlot(rows))
-            .anchor() // Automatically anchor control buttons
+            .slot(getPaginateUpSlot(rows))
             .build();
     }
     
     /**
-     * Creates a down navigation button with automatic positioning for the given menu size.
+     * Creates a pagination down button with automatic positioning for the given menu size.
      *
      * @param rows the number of rows in the menu (3-6)
-     * @return a positioned down navigation button
+     * @return a positioned pagination down button
      */
-    public static MenuButton createPositionedDownNavigation(int rows) {
+    public static MenuButton createPositionedPaginateDown(int rows) {
         return builder(Material.TIPPED_ARROW)
             .name("&r<red>Down")
-            .description("Navigate down")
+            .description("Navigate down through content")
             .sound(Sound.UI_BUTTON_CLICK)
             .onClick(player -> player.sendMessage(Component.text("Cannot navigate down", NamedTextColor.YELLOW)))
-            .slot(getDownNavigationSlot(rows))
-            .anchor() // Automatically anchor control buttons
+            .slot(getPaginateDownSlot(rows))
             .build();
     }
     
     /**
-     * Helper method to navigate back using NavigationService.
-     * FIXED: Proper NavigationService integration for back navigation.
+     * Helper method for back navigation (simplified).
+     * Since the complex navigation system was removed, this always returns false
+     * so callers will fall back to closing the inventory.
      *
      * @param player the player to navigate back
-     * @return true if navigation was successful, false otherwise
+     * @return false (always falls back to closing inventory)
      */
     private static boolean navigateBack(Player player) {
-        try {
-            // Try to access NavigationService via Bukkit's ServicesManager
-            org.bukkit.plugin.ServicesManager servicesManager = org.bukkit.Bukkit.getServicesManager();
-            sh.harold.fulcrum.api.menu.NavigationService navigationService =
-                servicesManager.load(sh.harold.fulcrum.api.menu.NavigationService.class);
-            
-            if (navigationService != null && navigationService.canNavigateBack(player)) {
-                // Get the previous menu from navigation history
-                Optional<sh.harold.fulcrum.api.menu.Menu> previousMenu = navigationService.popMenu(player);
-                if (previousMenu.isPresent()) {
-                    // Try to access MenuService to open the previous menu
-                    sh.harold.fulcrum.api.menu.MenuService menuService =
-                        servicesManager.load(sh.harold.fulcrum.api.menu.MenuService.class);
-                    
-                    if (menuService != null) {
-                        // Open the previous menu
-                        menuService.openMenu(previousMenu.get(), player);
-                        return true;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // Service not available or error occurred - will fallback to closing inventory
-            System.err.println("NavigationService not available for back navigation: " + e.getMessage());
-        }
-        
+        // Navigation system was simplified - always return false to trigger fallback
         return false;
+    }
+    
+    /**
+     * Creates a common close button for menus.
+     *
+     * @return a close button with standard styling
+     */
+    public static MenuButton createCloseButton() {
+        return builder(Material.BARRIER)
+            .name("&r<red>Close")
+            .description("Click to close this menu")
+            .sound(Sound.UI_BUTTON_CLICK)
+            .onClick(player -> player.closeInventory())
+            .build();
+    }
+    
+    /**
+     * Creates a common back button for parent menu navigation.
+     *
+     * @param parentMenuId the parent menu ID to navigate to
+     * @param menuService the menu service for navigation
+     * @return a back button with parent menu navigation logic
+     */
+    public static MenuButton createBackButtonForParentMenu(String parentMenuId, Object menuService) {
+        return builder(Material.ARROW)
+            .name("&r<yellow>« Back")
+            .lore("&7Return to " + parentMenuId)
+            .sound(Sound.UI_BUTTON_CLICK)
+            .onClick(player -> {
+                // Use reflection to call menu service methods since we can't import the concrete class here
+                try {
+                    // Try to get menu registry and open template
+                    Object registry = menuService.getClass().getMethod("getMenuRegistry").invoke(menuService);
+                    if ((Boolean) registry.getClass().getMethod("hasTemplate", String.class).invoke(registry, parentMenuId)) {
+                        registry.getClass().getMethod("openTemplate", String.class, Player.class).invoke(registry, parentMenuId, player);
+                        return;
+                    }
+                    
+                    // Try to open menu instance
+                    if ((Boolean) menuService.getClass().getMethod("hasMenuInstance", String.class).invoke(menuService, parentMenuId)) {
+                        menuService.getClass().getMethod("openMenuInstance", String.class, Player.class).invoke(menuService, parentMenuId, player);
+                        return;
+                    }
+                } catch (Exception e) {
+                    System.err.println("[MENU] Failed to navigate to parent menu '" + parentMenuId + "': " + e.getMessage());
+                }
+                
+                // Fallback: Close current menu and notify player
+                player.closeInventory();
+                player.sendMessage(Component.text("Returned to previous menu", NamedTextColor.GRAY));
+            })
+            .build();
     }
     
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
@@ -766,17 +746,37 @@ public class MenuButton implements MenuItem {
         /**
          * Sets the display name of the button.
          * Supports MiniMessage formatting and legacy color codes.
-         * Automatically adds &r prefix to prevent italicization.
+         * Uses dual approach: legacy compatibility with &r prefix and Adventure's proper decoration API.
          *
          * @param name the display name
          * @return this builder
          */
         public Builder name(String name) {
             if (name != null) {
-                // Automatically prepend &r to prevent italicization unless already present
-                String processedName = name.startsWith("&r") ? name : "&r" + name;
-                String converted = convertLegacyColors(processedName);
-                this.name = miniMessage.deserialize(converted);
+                // Process text through both legacy and Adventure approaches
+                
+                // 1. Legacy approach: Add reset code if not present
+                String processedName;
+                if (name.startsWith("&r") || name.startsWith("<reset>")) {
+                    processedName = name;
+                } else {
+                    processedName = "&r" + name;
+                }
+                
+                // 2. Adventure approach: Use proper decoration API
+                Component component;
+                if (processedName.contains("§") || processedName.contains("&")) {
+                    // Legacy format - use LegacyComponentSerializer
+                    component = LegacyComponentSerializer.legacyAmpersand().deserialize(processedName);
+                } else {
+                    // MiniMessage format
+                    component = miniMessage.deserialize(processedName);
+                }
+                
+                // 3. Apply Adventure italic decoration fix
+                component = component.decoration(TextDecoration.ITALIC, false);
+                
+                this.name = component;
             }
             return this;
         }
@@ -899,12 +899,14 @@ public class MenuButton implements MenuItem {
         
         /**
          * Sets the slot position for this button.
-         * 
+         * Buttons with slots are automatically anchored (non-scrolling).
+         *
          * @param slot the slot position (0-53 for double chest)
          * @return this builder
          */
         public Builder slot(int slot) {
             this.slot = slot;
+            this.anchored = true; // Automatically anchor buttons with slots
             return this;
         }
         
