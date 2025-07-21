@@ -1,12 +1,16 @@
 package sh.harold.fulcrum.api.menu.impl;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
-import sh.harold.fulcrum.api.menu.*;
+import sh.harold.fulcrum.api.menu.AnchorPoint;
+import sh.harold.fulcrum.api.menu.CustomMenuBuilder;
+import sh.harold.fulcrum.api.menu.Menu;
 import sh.harold.fulcrum.api.menu.component.MenuButton;
 import sh.harold.fulcrum.api.menu.component.MenuDisplayItem;
 import sh.harold.fulcrum.api.menu.component.MenuItem;
@@ -23,6 +27,7 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
     
     private final DefaultMenuService menuService;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
+    private final LegacyComponentSerializer legacySerializer = LegacyComponentSerializer.legacySection();
     
     private Component title = Component.text("Custom Menu");
     private Integer viewPortRows = null; // Changed to null to track if explicitly set
@@ -48,19 +53,15 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
     private int scrollRightSlot = -1;
     
     // Options
-    private boolean wrapAround = false;
     private ScrollHandler scrollHandler;
     private int autoRefreshInterval = 0;
     private Supplier<MenuItem[]> dynamicContentProvider;
-    private int viewportIndicatorSlot = -1;
     private int initialRowOffset = 0;
     private int initialColumnOffset = 0;
     private boolean closeOnOutsideClick = true;
     
-    // Automatic button configuration
-    private boolean autoCloseButton = true; // Default enabled
-    private boolean autoBackButton = false; // Default disabled
-    private boolean autoNavigationButtons = false; // Default disabled
+    // Parent menu configuration for explicit navigation
+    private String parentMenuId = null;
     
     public DefaultCustomMenuBuilder(DefaultMenuService menuService) {
         this.menuService = Objects.requireNonNull(menuService, "MenuService cannot be null");
@@ -75,7 +76,15 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
     
     @Override
     public CustomMenuBuilder title(String title) {
-        this.title = miniMessage.deserialize(Objects.requireNonNull(title, "Title cannot be null"));
+        Objects.requireNonNull(title, "Title cannot be null");
+        
+        // Use Adventure legacy serializer for legacy color codes (§), MiniMessage for modern format
+        if (title.contains("§") || title.contains("&")) {
+            this.title = legacySerializer.deserialize(title);
+        } else {
+            this.title = miniMessage.deserialize(title);
+        }
+        
         return this;
     }
     
@@ -250,11 +259,6 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
         return this;
     }
     
-    @Override
-    public CustomMenuBuilder wrapAround(boolean wrapAround) {
-        this.wrapAround = wrapAround;
-        return this;
-    }
     
     @Override
     public CustomMenuBuilder onScroll(ScrollHandler handler) {
@@ -277,15 +281,6 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
         return this;
     }
     
-    @Override
-    public CustomMenuBuilder addViewportIndicator(int slot) {
-        int effectiveViewportRows = getEffectiveViewportRows();
-        if (slot < 0 || slot >= effectiveViewportRows * 9) {
-            throw new IllegalArgumentException("Viewport indicator slot out of bounds");
-        }
-        this.viewportIndicatorSlot = slot;
-        return this;
-    }
     
     @Override
     public CustomMenuBuilder initialOffset(int rowOffset, int columnOffset) {
@@ -318,20 +313,8 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
     }
     
     @Override
-    public CustomMenuBuilder autoCloseButton(boolean enabled) {
-        this.autoCloseButton = enabled;
-        return this;
-    }
-    
-    @Override
-    public CustomMenuBuilder autoBackButton(boolean enabled) {
-        this.autoBackButton = enabled;
-        return this;
-    }
-    
-    @Override
-    public CustomMenuBuilder autoNavigationButtons(boolean enabled) {
-        this.autoNavigationButtons = enabled;
+    public CustomMenuBuilder parentMenu(String menuId) {
+        this.parentMenuId = Objects.requireNonNull(menuId, "Parent menu ID cannot be null");
         return this;
     }
     
@@ -340,6 +323,7 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
         Objects.requireNonNull(player, "Player cannot be null");
         
         return buildAsync(player, false).thenCompose(menu -> {
+            // Simple menu opening - no complex NavigationMode logic
             return menuService.openMenu(menu, player).thenApply(v -> menu);
         });
     }
@@ -354,8 +338,8 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
             // Generate unique menu ID
             String menuId = "custom-menu-" + UUID.randomUUID();
             
-            // Generate breadcrumb title if this is a child menu
-            Component finalTitle = generateBreadcrumbTitle(player);
+            // Use original title - breadcrumb generation is handled by openChildMenu()
+            Component finalTitle = title;
             
             // Create the menu instance
             int effectiveViewportRows = getEffectiveViewportRows();
@@ -373,10 +357,10 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
             // Configure menu properties
             menu.getContext().setProperty("closeOnOutsideClick", closeOnOutsideClick);
             
-            // Store automatic button configuration for post-rendering pipeline
-            menu.getContext().setProperty("autoCloseButton", autoCloseButton);
-            menu.getContext().setProperty("autoBackButton", autoBackButton);
-            menu.getContext().setProperty("autoNavigationButtons", autoNavigationButtons);
+            // Parent menu configuration for post-rendering pipeline
+            if (parentMenuId != null) {
+                menu.getContext().setProperty("parentMenuId", parentMenuId);
+            }
             
             // Set anchor point
             menu.setAnchorPoint(anchor);
@@ -432,13 +416,7 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
                 menu.getContext().setProperty("hasExplicitViewport", hasExplicitViewport); // Store for parent detection
             }
             
-            // Configure options
-            menu.setWrapAround(wrapAround);
-            
-            // Set viewport indicator
-            if (viewportIndicatorSlot >= 0) {
-                menu.setViewportIndicatorSlot(viewportIndicatorSlot);
-            }
+            // Configure options (simplified - wrapAround and viewport indicator removed)
             
             // Set scroll handler
             if (scrollHandler != null) {
@@ -458,8 +436,11 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
             // Set initial offset
             menu.setViewportOffset(initialRowOffset, initialColumnOffset);
             
-            // Add automatic buttons FIRST (these are persistent UI elements)
-            addAutomaticButtons(menu);
+            // Add parent menu back button if specified
+            addParentMenuButton(menu);
+            
+            // Fill navigation row slots before rendering
+            fillNavigationRow(menu);
             
             // Note: fillEmpty functionality is now handled by the post-rendering pipeline
             // in DefaultCustomMenu.applyPostRenderingItems() for better conflict resolution
@@ -494,104 +475,65 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
     }
     
     /**
-     * Adds automatic buttons to the menu based on configuration.
-     * Checks if slots are occupied before adding automatic buttons.
-     * Manual additions take precedence over automatic buttons.
+     * Fills empty slots in the navigation row with appropriate material.
+     * For normal menus: use fillMaterial from builder
+     * For oversized menus (vertical OR horizontal): use black stained glass panes
      */
-    private void addAutomaticButtons(DefaultCustomMenu menu) {
+    private void fillNavigationRow(DefaultCustomMenu menu) {
         int effectiveViewportRows = getEffectiveViewportRows();
+        int navigationRow = effectiveViewportRows - 1; // Last row is navigation row
         
-        // Add close button if enabled (default: enabled)
-        if (autoCloseButton) {
-            int closeSlot = MenuButton.getCloseSlot(effectiveViewportRows);
-            if (menu.getItem(closeSlot) == null && !buttons.containsKey(closeSlot)) {
-                MenuButton closeButton = MenuButton.createPositionedClose(effectiveViewportRows);
-                menu.setButton(closeButton, closeSlot);
+        // Determine if menu is oversized (vertically OR horizontally)
+        boolean verticallyOversized = rows > effectiveViewportRows;
+        boolean horizontallyOversized = columns > 9; // Viewport columns is always 9 for Minecraft inventories
+        boolean isOversized = verticallyOversized || horizontallyOversized;
+        
+        // Determine fill material based on menu size
+        Material fillMaterial;
+        if (isOversized) {
+            // For oversized menus (vertical OR horizontal): use black stained glass panes
+            fillMaterial = Material.BLACK_STAINED_GLASS_PANE;
+        } else {
+            // For normal menus: use the builder's fill material if set, otherwise no filling
+            if (fillEmptyItem != null) {
+                fillMaterial = fillEmptyItem.getDisplayItem().getType();
+            } else {
+                return; // No fill material specified, skip navigation row filling
             }
         }
         
-        // FIXED: Back button logic for child menus
-        // Check if player has an open menu (this new menu will be a child)
-        boolean hasParentMenu = false;
-        if (menu.getViewer().isPresent()) {
-            Player viewer = menu.getViewer().get();
-            hasParentMenu = menuService.getOpenMenu(viewer).isPresent();
-        }
-        
-        if (hasParentMenu) {
-            // Child menu - ALWAYS add back button with highest priority
-            int backSlot = MenuButton.getBackSlot(effectiveViewportRows);
-            MenuButton backButton = MenuButton.createPositionedBack(effectiveViewportRows);
-            menu.setButton(backButton, backSlot); // Force override any existing item at this slot
-        } else if (autoBackButton) {
-            // Root menu with back button enabled - add if slot is available
-            int backSlot = MenuButton.getBackSlot(effectiveViewportRows);
-            if (menu.getItem(backSlot) == null && !buttons.containsKey(backSlot)) {
-                MenuButton backButton = MenuButton.createPositionedBack(effectiveViewportRows);
-                menu.setButton(backButton, backSlot);
-            }
-        }
-        
-        // Add navigation buttons if enabled (default: disabled)
-        if (autoNavigationButtons) {
-            // Add up navigation button
-            int upSlot = MenuButton.getUpNavigationSlot(effectiveViewportRows);
-            if (menu.getItem(upSlot) == null && !buttons.containsKey(upSlot)) {
-                MenuButton upButton = MenuButton.createPositionedUpNavigation(effectiveViewportRows);
-                menu.setButton(upButton, upSlot);
-            }
-            
-            // Add down navigation button
-            int downSlot = MenuButton.getDownNavigationSlot(effectiveViewportRows);
-            if (menu.getItem(downSlot) == null && !buttons.containsKey(downSlot)) {
-                MenuButton downButton = MenuButton.createPositionedDownNavigation(effectiveViewportRows);
-                menu.setButton(downButton, downSlot);
-            }
-            
-            // Add search, sort, filter, forward buttons on bottom row
-            addNavigationButton(menu, MenuButton::createPositionedSearch, MenuButton.getSearchSlot(effectiveViewportRows), "search");
-            addNavigationButton(menu, MenuButton::createPositionedSort, MenuButton.getSortSlot(effectiveViewportRows), "sort");
-            addNavigationButton(menu, MenuButton::createPositionedFilter, MenuButton.getFilterSlot(effectiveViewportRows), "filter");
-            addNavigationButton(menu, MenuButton::createPositionedForward, MenuButton.getForwardSlot(effectiveViewportRows), "forward");
-            addNavigationButton(menu, MenuButton::createPositionedBackNavigation, MenuButton.getBackNavigationSlot(effectiveViewportRows), "back navigation");
-        }
-    }
-    
-    /**
-     * Helper method to add a navigation button if the slot is available.
-     */
-    private void addNavigationButton(DefaultCustomMenu menu, java.util.function.Function<Integer, MenuButton> buttonFactory, int slot, String buttonName) {
-        if (menu.getItem(slot) == null && !buttons.containsKey(slot)) {
-            int effectiveViewportRows = getEffectiveViewportRows();
-            MenuButton button = buttonFactory.apply(effectiveViewportRows);
-            menu.setButton(button, slot);
-        }
-    }
-    
-    /**
-     * Generates breadcrumb title for child menus.
-     * Format: "Parent -> Child" for child menus, original title for root menus.
-     *
-     * @param player the player context to check for current menu
-     * @return the generated breadcrumb title
-     */
-    private Component generateBreadcrumbTitle(Player player) {
-        // Check if player has a current menu that would be the parent
-        if (player != null) {
-            // Try to get current open menu through menu service
-            Optional<Menu> currentMenuOpt = menuService.getOpenMenu(player);
-            if (currentMenuOpt.isPresent()) {
-                // This new menu will be a child of the current menu
-                Component parentTitle = currentMenuOpt.get().getTitle();
-                return Component.text()
-                    .append(parentTitle)
-                    .append(Component.text(" -> "))
-                    .append(title)
+        // Fill empty slots in the navigation row
+        for (int slot = navigationRow * 9; slot < (navigationRow + 1) * 9; slot++) {
+            if (menu.getItem(slot) == null && !buttons.containsKey(slot)) {
+                // Don't overwrite navigation buttons or existing items
+                MenuItem fillItem = MenuDisplayItem.builder(fillMaterial)
+                    .name("") // Empty name to prevent text display
                     .build();
+                menu.setItem(fillItem, slot);
             }
         }
-        
-        // No parent menu found, return original title
-        return title;
     }
+    
+    /**
+     * Adds parent menu back button if a parent menu ID is specified.
+     * Simple and explicit - no complex auto-logic.
+     */
+    private void addParentMenuButton(DefaultCustomMenu menu) {
+        if (parentMenuId != null) {
+            int effectiveViewportRows = getEffectiveViewportRows();
+            int backSlot = MenuButton.getBackSlot(effectiveViewportRows);
+            System.out.println("[DEBUG BUTTON POSITIONING] CustomMenu back button calculation:");
+            System.out.println("  - effectiveViewportRows: " + effectiveViewportRows);
+            System.out.println("  - getBackNavigationSlot(" + effectiveViewportRows + ") = " + backSlot);
+            System.out.println("  - getBackSlot(" + effectiveViewportRows + ") = " + MenuButton.getBackSlot(effectiveViewportRows));
+            System.out.println("  - getCloseSlot(" + effectiveViewportRows + ") = " + MenuButton.getCloseSlot(effectiveViewportRows));
+            
+            if (menu.getItem(backSlot) == null && !buttons.containsKey(backSlot)) {
+                MenuButton backButton = MenuButton.createBackButtonForParentMenu(parentMenuId, menuService);
+                menu.setButton(backButton, backSlot);
+                System.out.println("  - Back button added at slot: " + backSlot);
+            }
+        }
+    }
+    
 }

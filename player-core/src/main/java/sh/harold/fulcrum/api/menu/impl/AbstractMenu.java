@@ -30,7 +30,6 @@ public abstract class AbstractMenu implements Menu {
     protected final List<Runnable> updateHandlers = new ArrayList<>();
     
     protected Inventory inventory;
-    protected Menu parent;
     protected Player viewer;
     
     protected AbstractMenu(String id, Component title, int size, Plugin ownerPlugin, Player viewer) {
@@ -110,16 +109,6 @@ public abstract class AbstractMenu implements Menu {
     @Override
     public void close() {
         getViewer().ifPresent(Player::closeInventory);
-    }
-    
-    @Override
-    public Optional<Menu> getParent() {
-        return Optional.ofNullable(parent);
-    }
-    
-    @Override
-    public void setParent(Menu parent) {
-        this.parent = parent;
     }
     
     @Override

@@ -2,7 +2,6 @@ package sh.harold.fulcrum.api.menu.impl;
 
 import org.bukkit.entity.Player;
 import sh.harold.fulcrum.api.menu.MenuContext;
-import sh.harold.fulcrum.api.menu.MenuContextSnapshot;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -89,56 +88,5 @@ public class DefaultMenuContext implements MenuContext {
     @Override
     public long getOpenTimestamp() {
         return openTimestamp;
-    }
-    
-    @Override
-    public MenuContextSnapshot createSnapshot() {
-        return new DefaultMenuContextSnapshot(
-            menuId,
-            System.currentTimeMillis(),
-            new HashMap<>(properties)
-        );
-    }
-    
-    @Override
-    public void restoreFromSnapshot(MenuContextSnapshot snapshot) {
-        Objects.requireNonNull(snapshot, "Snapshot cannot be null");
-        
-        if (!snapshot.getMenuId().equals(menuId)) {
-            throw new IllegalArgumentException("Snapshot menu ID does not match context menu ID");
-        }
-        
-        properties.clear();
-        properties.putAll(snapshot.getProperties());
-    }
-    
-    /**
-     * Default implementation of MenuContextSnapshot.
-     */
-    private static class DefaultMenuContextSnapshot implements MenuContextSnapshot {
-        private final String menuId;
-        private final long snapshotTimestamp;
-        private final Map<String, Object> properties;
-        
-        DefaultMenuContextSnapshot(String menuId, long snapshotTimestamp, Map<String, Object> properties) {
-            this.menuId = menuId;
-            this.snapshotTimestamp = snapshotTimestamp;
-            this.properties = Collections.unmodifiableMap(properties);
-        }
-        
-        @Override
-        public String getMenuId() {
-            return menuId;
-        }
-        
-        @Override
-        public long getSnapshotTimestamp() {
-            return snapshotTimestamp;
-        }
-        
-        @Override
-        public Map<String, Object> getProperties() {
-            return properties;
-        }
     }
 }

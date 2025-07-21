@@ -50,11 +50,9 @@ public class DefaultCustomMenu extends AbstractMenu {
     private int scrollRightSlot = -1;
     
     // Options
-    private boolean wrapAround = false;
     private boolean autoRefresh = false;
     private int refreshInterval = 0;
     private Supplier<MenuItem[]> dynamicContentProvider;
-    private int viewportIndicatorSlot = -1;
     
     // fillEmpty item for post-rendering pipeline
     private final MenuItem fillEmptyItem;
@@ -151,19 +149,6 @@ public class DefaultCustomMenu extends AbstractMenu {
         if (right != null) this.scrollRightButton = right;
     }
     
-    /**
-     * Enables wrap-around scrolling.
-     */
-    public void setWrapAround(boolean wrapAround) {
-        this.wrapAround = wrapAround;
-    }
-    
-    /**
-     * Sets the viewport indicator slot.
-     */
-    public void setViewportIndicatorSlot(int slot) {
-        this.viewportIndicatorSlot = slot;
-    }
     
     /**
      * Sets a dynamic content provider.
@@ -188,24 +173,9 @@ public class DefaultCustomMenu extends AbstractMenu {
         int newRowOffset = rowOffset + rowDelta;
         int newColumnOffset = columnOffset + columnDelta;
         
-        // Handle wrap-around
-        if (wrapAround) {
-            if (newRowOffset < 0) {
-                newRowOffset = Math.max(0, virtualRows - viewportRows);
-            } else if (newRowOffset > virtualRows - viewportRows) {
-                newRowOffset = 0;
-            }
-            
-            if (newColumnOffset < 0) {
-                newColumnOffset = Math.max(0, virtualColumns - viewportColumns);
-            } else if (newColumnOffset > virtualColumns - viewportColumns) {
-                newColumnOffset = 0;
-            }
-        } else {
-            // Clamp to valid range
-            newRowOffset = Math.max(0, Math.min(newRowOffset, Math.max(0, virtualRows - viewportRows)));
-            newColumnOffset = Math.max(0, Math.min(newColumnOffset, Math.max(0, virtualColumns - viewportColumns)));
-        }
+        // Clamp to valid range (simplified - no wrap-around)
+        newRowOffset = Math.max(0, Math.min(newRowOffset, Math.max(0, virtualRows - viewportRows)));
+        newColumnOffset = Math.max(0, Math.min(newColumnOffset, Math.max(0, virtualColumns - viewportColumns)));
         
         // Check if actually changed
         if (newRowOffset == rowOffset && newColumnOffset == columnOffset) {
@@ -321,8 +291,6 @@ public class DefaultCustomMenu extends AbstractMenu {
         // Update scroll buttons
         updateScrollButtons();
         
-        // Update viewport indicator
-        updateViewportIndicator();
         
         // Apply post-rendering items using the new layered pipeline
         applyPostRenderingItems();
@@ -410,7 +378,6 @@ public class DefaultCustomMenu extends AbstractMenu {
         // Get automatic button configuration
         Boolean autoCloseButton = (Boolean) context.getProperty("autoCloseButton", Boolean.class).orElse(true);
         Boolean autoBackButton = (Boolean) context.getProperty("autoBackButton", Boolean.class).orElse(false);
-        Boolean hasParent = getParent().isPresent(); // Back button for child menus
         
         // For viewport menus, always reserve bottom row for navigation controls
         if (hasViewport) {
@@ -419,7 +386,7 @@ public class DefaultCustomMenu extends AbstractMenu {
         
         // For non-viewport menus, only reserve if there are actual navigation elements beyond just close button
         // Close button alone doesn't justify reserving entire bottom row for non-viewport menus
-        return autoBackButton || hasParent || hasNavigationButtons();
+        return autoBackButton || hasNavigationButtons();
     }
     
     /**
@@ -474,11 +441,11 @@ public class DefaultCustomMenu extends AbstractMenu {
         // Navigation buttons if enabled
         Boolean autoNavigation = (Boolean) context.getProperty("autoNavigationButtons", Boolean.class).orElse(false);
         if (autoNavigation) {
-            if (slot == MenuButton.getUpNavigationSlot(viewportRows)) {
-                return MenuButton.createPositionedUpNavigation(viewportRows);
+            if (slot == MenuButton.getPaginateUpSlot(viewportRows)) {
+                return MenuButton.createPositionedPaginateUp(viewportRows);
             }
-            if (slot == MenuButton.getDownNavigationSlot(viewportRows)) {
-                return MenuButton.createPositionedDownNavigation(viewportRows);
+            if (slot == MenuButton.getPaginateDownSlot(viewportRows)) {
+                return MenuButton.createPositionedPaginateDown(viewportRows);
             }
             if (slot == MenuButton.getSearchSlot(viewportRows)) {
                 return MenuButton.createPositionedSearch(viewportRows);
@@ -492,8 +459,8 @@ public class DefaultCustomMenu extends AbstractMenu {
             if (slot == MenuButton.getForwardSlot(viewportRows)) {
                 return MenuButton.createPositionedForward(viewportRows);
             }
-            if (slot == MenuButton.getBackNavigationSlot(viewportRows)) {
-                return MenuButton.createPositionedBackNavigation(viewportRows);
+            if (slot == MenuButton.getPaginateBackSlot(viewportRows)) {
+                return MenuButton.createPositionedPaginateBack(viewportRows);
             }
         }
         
@@ -615,41 +582,19 @@ public class DefaultCustomMenu extends AbstractMenu {
         }
     }
     
-    private void updateViewportIndicator() {
-        if (viewportIndicatorSlot >= 0) {
-            Component position = Component.text("Position: ", NamedTextColor.YELLOW)
-                .append(Component.text((rowOffset + 1) + "-" + (rowOffset + viewportRows), NamedTextColor.WHITE))
-                .append(Component.text(" / ", NamedTextColor.GRAY))
-                .append(Component.text(virtualRows, NamedTextColor.WHITE))
-                .append(Component.text(" rows, ", NamedTextColor.YELLOW))
-                .append(Component.text((columnOffset + 1) + "-" + (columnOffset + viewportColumns), NamedTextColor.WHITE))
-                .append(Component.text(" / ", NamedTextColor.GRAY))
-                .append(Component.text(virtualColumns, NamedTextColor.WHITE))
-                .append(Component.text(" cols", NamedTextColor.YELLOW));
-            
-            MenuItem indicator = MenuDisplayItem.builder(Material.COMPASS)
-                .name(position)
-                .lore(Component.text("Virtual size: " + virtualRows + "x" + virtualColumns, NamedTextColor.GRAY))
-                .lore(Component.text("Viewport: " + viewportRows + "x" + viewportColumns, NamedTextColor.GRAY))
-                .build();
-            
-            super.setItem(indicator, viewportIndicatorSlot);
-        }
-    }
-    
     private boolean canScrollUp() {
-        return wrapAround || rowOffset > 0;
+        return rowOffset > 0;
     }
     
     private boolean canScrollDown() {
-        return wrapAround || rowOffset < virtualRows - viewportRows;
+        return rowOffset < virtualRows - viewportRows;
     }
     
     private boolean canScrollLeft() {
-        return wrapAround || columnOffset > 0;
+        return columnOffset > 0;
     }
     
     private boolean canScrollRight() {
-        return wrapAround || columnOffset < virtualColumns - viewportColumns;
+        return columnOffset < virtualColumns - viewportColumns;
     }
 }

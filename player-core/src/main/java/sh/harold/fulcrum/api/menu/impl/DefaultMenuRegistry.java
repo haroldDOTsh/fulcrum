@@ -10,9 +10,7 @@ import sh.harold.fulcrum.api.menu.component.MenuItem;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * Default implementation of MenuRegistry.
@@ -22,8 +20,6 @@ public class DefaultMenuRegistry implements MenuRegistry {
     
     private final Map<String, MenuTemplate> templates = new ConcurrentHashMap<>();
     private final Map<Plugin, Set<String>> pluginTemplates = new ConcurrentHashMap<>();
-    private final Map<String, AtomicLong> templateUsageCount = new ConcurrentHashMap<>();
-    private final AtomicLong totalInstantiations = new AtomicLong(0);
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
     
     @Override
@@ -38,7 +34,6 @@ public class DefaultMenuRegistry implements MenuRegistry {
         
         templates.put(templateId, template);
         pluginTemplates.computeIfAbsent(plugin, k -> ConcurrentHashMap.newKeySet()).add(templateId);
-        templateUsageCount.put(templateId, new AtomicLong(0));
     }
     
     @Override
@@ -49,7 +44,6 @@ public class DefaultMenuRegistry implements MenuRegistry {
         if (template != null) {
             // Remove from plugin mapping
             pluginTemplates.values().forEach(set -> set.remove(templateId));
-            templateUsageCount.remove(templateId);
             return true;
         }
         return false;
@@ -61,10 +55,7 @@ public class DefaultMenuRegistry implements MenuRegistry {
         
         Set<String> templateIds = pluginTemplates.remove(plugin);
         if (templateIds != null) {
-            templateIds.forEach(id -> {
-                templates.remove(id);
-                templateUsageCount.remove(id);
-            });
+            templateIds.forEach(id -> templates.remove(id));
             return templateIds.size();
         }
         return 0;
@@ -113,10 +104,6 @@ public class DefaultMenuRegistry implements MenuRegistry {
             );
         }
         
-        // Track usage
-        templateUsageCount.get(templateId).incrementAndGet();
-        totalInstantiations.incrementAndGet();
-        
         // Build and open the menu
         return template.build(player, context).thenCompose(menu -> {
             // Get menu service to open the menu
@@ -140,10 +127,6 @@ public class DefaultMenuRegistry implements MenuRegistry {
         if (template == null) {
             throw new IllegalArgumentException("Template with ID '" + templateId + "' not found");
         }
-        
-        // Track usage
-        templateUsageCount.get(templateId).incrementAndGet();
-        totalInstantiations.incrementAndGet();
         
         // Build without a specific player (template should handle null player)
         return template.build(null, context);
@@ -174,13 +157,6 @@ public class DefaultMenuRegistry implements MenuRegistry {
     public void clearRegistry() {
         templates.clear();
         pluginTemplates.clear();
-        templateUsageCount.clear();
-        totalInstantiations.set(0);
-    }
-    
-    @Override
-    public RegistryStats getStats() {
-        return new DefaultRegistryStats();
     }
     
     /**
@@ -257,37 +233,4 @@ public class DefaultMenuRegistry implements MenuRegistry {
         }
     }
     
-    /**
-     * Default implementation of registry statistics.
-     */
-    private class DefaultRegistryStats implements RegistryStats {
-        
-        @Override
-        public int getTotalTemplates() {
-            return templates.size();
-        }
-        
-        @Override
-        public int getPluginCount() {
-            return pluginTemplates.size();
-        }
-        
-        @Override
-        public int getTemplateCountByType(MenuType type) {
-            return (int) templates.values().stream()
-                .filter(template -> template.getType() == type)
-                .count();
-        }
-        
-        @Override
-        public long getTotalInstantiations() {
-            return totalInstantiations.get();
-        }
-        
-        @Override
-        public long getInstantiationCount(String templateId) {
-            AtomicLong count = templateUsageCount.get(templateId);
-            return count != null ? count.get() : 0;
-        }
-    }
 }

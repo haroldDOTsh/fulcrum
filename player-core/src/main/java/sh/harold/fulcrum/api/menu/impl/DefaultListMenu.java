@@ -3,6 +3,7 @@ package sh.harold.fulcrum.api.menu.impl;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import sh.harold.fulcrum.api.menu.ListMenuBuilder;
@@ -286,17 +287,28 @@ public class DefaultListMenu extends AbstractMenu {
     }
     
     private void updateNavigationButtons() {
-        // Previous button - only show if we can go to previous page
-        if (previousButton != null && previousButtonSlot >= 0) {
+        // DEBUG LOG: Critical navigation button diagnosis
+        System.out.println("[NAVIGATION DEBUG] updateNavigationButtons() called:");
+        System.out.println("  - previousButton: " + (previousButton != null ? "NOT NULL" : "NULL"));
+        System.out.println("  - previousButtonSlot: " + previousButtonSlot);
+        System.out.println("  - nextButton: " + (nextButton != null ? "NOT NULL" : "NULL"));
+        System.out.println("  - nextButtonSlot: " + nextButtonSlot);
+        System.out.println("  - currentPage: " + currentPage);
+        System.out.println("  - totalPages: " + getTotalPages());
+        
+        // Previous button - show if slot is reserved (regardless of button object existence)
+        if (previousButtonSlot >= 0) {
+            System.out.println("  - Processing previous button slot: " + previousButtonSlot);
             if (currentPage > 1) {
-                // FIXED: Use ARROW material for navigation instead of dyes
+                System.out.println("  - Creating previous button (currentPage=" + currentPage + " > 1)");
                 MenuButton prevButton = MenuButton.builder(Material.ARROW)
-                    .name("&rPrevious Page") // Add &r prefix to prevent italics
-                    .secondary("Go to the previous page")
+                    .name("&7Previous Page")
+                    .sound(Sound.UI_LOOM_SELECT_PATTERN, 1.0f, 0.8f)
                     .onClick(player -> navigateToPage(currentPage - 1))
                     .build();
                 super.setButton(prevButton, previousButtonSlot);
             } else {
+                System.out.println("  - Hiding previous button (currentPage=" + currentPage + " <= 1)");
                 // FIXED: When navigation is hidden, replace with border material instead of air
                 items.remove(previousButtonSlot);
                 if (inventory.getItem(previousButtonSlot) != null) {
@@ -304,19 +316,24 @@ public class DefaultListMenu extends AbstractMenu {
                     fillNavigationSlotWithBorder(previousButtonSlot);
                 }
             }
+        } else {
+            System.out.println("  - No previous button slot reserved (previousButtonSlot=" + previousButtonSlot + ")");
         }
         
-        // Next button - only show if we can go to next page
-        if (nextButton != null && nextButtonSlot >= 0) {
+        // Next button - show if slot is reserved (regardless of button object existence)
+        if (nextButtonSlot >= 0) {
+            System.out.println("  - Processing next button slot: " + nextButtonSlot);
             if (currentPage < getTotalPages()) {
+                System.out.println("  - Creating next button (currentPage=" + currentPage + " < totalPages=" + getTotalPages() + ")");
                 // FIXED: Use ARROW material for navigation instead of dyes
                 MenuButton nextBtn = MenuButton.builder(Material.ARROW)
-                    .name("&rNext Page") // Add &r prefix to prevent italics
-                    .secondary("Go to the next page")
+                    .name("&7Next Page")
+                    .sound(Sound.UI_LOOM_SELECT_PATTERN, 1.0f, 0.8f)
                     .onClick(player -> navigateToPage(currentPage + 1))
                     .build();
                 super.setButton(nextBtn, nextButtonSlot);
             } else {
+                System.out.println("  - Hiding next button (currentPage=" + currentPage + " >= totalPages=" + getTotalPages() + ")");
                 // FIXED: When navigation is hidden, replace with border material instead of air
                 items.remove(nextButtonSlot);
                 if (inventory.getItem(nextButtonSlot) != null) {
@@ -324,6 +341,8 @@ public class DefaultListMenu extends AbstractMenu {
                     fillNavigationSlotWithBorder(nextButtonSlot);
                 }
             }
+        } else {
+            System.out.println("  - No next button slot reserved (nextButtonSlot=" + nextButtonSlot + ")");
         }
         
         // Add bottom row black glass for list menus with pagination
@@ -369,7 +388,7 @@ public class DefaultListMenu extends AbstractMenu {
             
             MenuItem indicator = MenuDisplayItem.builder(Material.BOOK)
                 .name(indicatorText)
-                .lore(Component.text("&r" + contentItems.size() + " total items", NamedTextColor.GRAY)) // Add &r prefix
+                .lore(Component.text(contentItems.size() + " total items", NamedTextColor.GRAY)) // Add &r prefix
                 .build();
             
             super.setItem(indicator, pageIndicatorSlot);
