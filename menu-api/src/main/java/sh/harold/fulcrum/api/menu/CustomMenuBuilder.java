@@ -212,17 +212,8 @@ public interface CustomMenuBuilder {
     CustomMenuBuilder addScrollButtons(int upSlot, int downSlot, int leftSlot, int rightSlot);
     
     /**
-     * Sets whether the viewport should wrap around edges.
-     * When true, scrolling past edges wraps to the opposite side.
-     * 
-     * @param wrapAround true to enable wrap-around scrolling
-     * @return this builder
-     */
-    CustomMenuBuilder wrapAround(boolean wrapAround);
-    
-    /**
      * Sets a handler for viewport scroll events.
-     * 
+     *
      * @param handler the scroll event handler
      * @return this builder
      */
@@ -230,7 +221,7 @@ public interface CustomMenuBuilder {
     
     /**
      * Enables automatic refresh of menu content.
-     * 
+     *
      * @param intervalSeconds refresh interval in seconds
      * @return this builder
      */
@@ -239,19 +230,11 @@ public interface CustomMenuBuilder {
     /**
      * Sets a dynamic content provider for automatic updates.
      * Called on each refresh cycle.
-     * 
+     *
      * @param provider the content provider
      * @return this builder
      */
     CustomMenuBuilder dynamicContent(Supplier<MenuItem[]> provider);
-    
-    /**
-     * Adds a viewport indicator showing current position.
-     * 
-     * @param slot the viewport slot for the indicator
-     * @return this builder
-     */
-    CustomMenuBuilder addViewportIndicator(int slot);
     
     /**
      * Sets the initial viewport offset.
@@ -303,31 +286,14 @@ public interface CustomMenuBuilder {
     CompletableFuture<Menu> buildAsync();
     
     /**
-     * Controls whether a close button is automatically added to the menu.
-     * By default, a close button is added at slot 49.
+     * Sets the parent menu for this menu, enabling back button navigation.
+     * When a parent menu is specified, a back button will be automatically added
+     * that navigates back to the specified parent menu.
      *
-     * @param enabled true to automatically add a close button, false to disable
+     * @param menuId the ID of the parent menu to navigate back to
      * @return this builder
      */
-    CustomMenuBuilder autoCloseButton(boolean enabled);
-    
-    /**
-     * Controls whether a back button is automatically added to the menu.
-     * By default, back buttons are not added automatically.
-     *
-     * @param enabled true to automatically add a back button, false to disable
-     * @return this builder
-     */
-    CustomMenuBuilder autoBackButton(boolean enabled);
-    
-    /**
-     * Controls whether navigation buttons are automatically added to the menu.
-     * By default, navigation buttons are not added automatically.
-     *
-     * @param enabled true to automatically add navigation buttons, false to disable
-     * @return this builder
-     */
-    CustomMenuBuilder autoNavigationButtons(boolean enabled);
+    CustomMenuBuilder parentMenu(String menuId);
     
     /**
      * Functional interface for scroll events.

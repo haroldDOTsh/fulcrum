@@ -84,29 +84,6 @@ public interface Menu {
     void close();
     
     /**
-     * Gets the parent menu if this is a child menu.
-     * 
-     * @return an Optional containing the parent menu, or empty if this is a root menu
-     */
-    Optional<Menu> getParent();
-    
-    /**
-     * Sets the parent menu for navigation purposes.
-     * 
-     * @param parent the parent menu
-     */
-    void setParent(Menu parent);
-    
-    /**
-     * Checks if this menu has a parent (is a child menu).
-     * 
-     * @return true if this menu has a parent, false otherwise
-     */
-    default boolean hasParent() {
-        return getParent().isPresent();
-    }
-    
-    /**
      * Gets the menu context containing state and metadata.
      * 
      * @return the menu context

@@ -8,6 +8,10 @@ import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 
+/**
+ * Simplified MenuFeature that initializes the menu system without complex navigation services.
+ * This version focuses on basic menu functionality with the new parentMenu() builder approach.
+ */
 public class MenuFeature implements PluginFeature {
     
     private MenuInventoryListener inventoryListener;
@@ -15,24 +19,15 @@ public class MenuFeature implements PluginFeature {
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
-        // Create navigation service first
-        DefaultNavigationService navigationService = new DefaultNavigationService();
-        container.register(NavigationService.class, navigationService);
-        
-        // Register NavigationService with Bukkit's ServicesManager for MenuButton.navigateBack() access
-        plugin.getServer().getServicesManager().register(
-            NavigationService.class, navigationService, plugin, ServicePriority.Normal
-        );
-        
         // Create menu registry
         DefaultMenuRegistry menuRegistry = new DefaultMenuRegistry();
         container.register(MenuRegistry.class, menuRegistry);
         
-        // Create menu service with dependencies
-        menuService = new DefaultMenuService(plugin, navigationService, menuRegistry);
+        // Create simplified menu service
+        menuService = new DefaultMenuService(plugin, menuRegistry);
         container.register(MenuService.class, menuService);
         
-        // Register MenuService with Bukkit's ServicesManager for consistent access pattern
+        // Register MenuService with Bukkit's ServicesManager for access from other components
         plugin.getServer().getServicesManager().register(
             MenuService.class, menuService, plugin, ServicePriority.Normal
         );
@@ -44,6 +39,8 @@ public class MenuFeature implements PluginFeature {
         // Register MenuDemoCommand
         MenuDemoCommand menuDemoCommand = new MenuDemoCommand(menuService);
         CommandRegistrar.register(menuDemoCommand.build());
+
+        System.out.println("[MENU FEATURE] MenuFeature initialized (simplified version)");
     }
 
     @Override
@@ -55,11 +52,10 @@ public class MenuFeature implements PluginFeature {
                 menuService.getPlugin().getLogger().info("Closed " + closed + " open menus during shutdown");
             }
             
-            // Clear navigation history
-            menuService.getNavigationService().clearAllHistory();
-            
-            // Unregister all plugins from menu service
+            // Shutdown the menu service
             menuService.shutdown();
+            
+            System.out.println("[MENU FEATURE] MenuFeature shutdown complete");
         }
     }
     
