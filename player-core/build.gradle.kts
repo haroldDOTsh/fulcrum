@@ -8,8 +8,8 @@ plugins {
     id("io.papermc.paperweight.userdev") version "2.0.0-beta.18"
 }
 
-group = "sh.harold"
-version = "0.0.1"
+group = "sh.harold.fulcrum"
+version = "1.0.0"
 
 repositories {
     mavenCentral()

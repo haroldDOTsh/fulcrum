@@ -25,3 +25,11 @@ dependencies {
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(21))
 }
+
+publishing {
+    publications {
+        named<MavenPublication>("maven") {
+            artifactId = "menu-api"
+        }
+    }
+}

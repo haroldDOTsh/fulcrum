@@ -30,3 +30,11 @@ java {
 tasks.test {
     useJUnitPlatform()
 }
+
+publishing {
+    publications {
+        named<MavenPublication>("maven") {
+            artifactId = "rank-api"
+        }
+    }
+}
