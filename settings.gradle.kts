@@ -10,7 +10,7 @@ pluginManagement {
 include(
     "message-api",
     "data-api",
-    "player-core",
+    "runtime",
     "rank-api",
     "menu-api"
 )

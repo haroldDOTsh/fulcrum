@@ -13,7 +13,7 @@ subprojects {
     apply(plugin = "java-library")
     
     // Only apply maven-publish to API modules, not player-core
-    if (project.name != "player-core") {
+    if (project.name != "runtime") {
         apply(plugin = "maven-publish")
     }
 
@@ -21,7 +21,7 @@ subprojects {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(21))
         }
-        if (project.name != "player-core") {
+        if (project.name != "runtime") {
             withSourcesJar()
             withJavadocJar()
         }
@@ -36,7 +36,7 @@ subprojects {
     }
 
     // Only configure publishing for API modules, not player-core
-    if (project.name != "player-core") {
+    if (project.name != "runtime") {
         configure<PublishingExtension> {
             publications {
                 create<MavenPublication>("maven") {
