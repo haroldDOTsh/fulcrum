@@ -252,22 +252,14 @@ public interface ListMenuBuilder {
     CompletableFuture<Menu> buildAsync();
     
     /**
-     * Controls whether a close button is automatically added to the menu.
-     * By default, a close button is added at slot 49.
+     * Sets the parent menu for this menu, enabling back button navigation.
+     * When a parent menu is specified, a back button will be automatically added
+     * that navigates back to the specified parent menu.
      *
-     * @param enabled true to automatically add a close button, false to disable
+     * @param menuId the ID of the parent menu to navigate back to
      * @return this builder
      */
-    ListMenuBuilder autoCloseButton(boolean enabled);
-    
-    /**
-     * Controls whether a back button is automatically added to the menu.
-     * By default, back buttons are not added automatically.
-     *
-     * @param enabled true to automatically add a back button, false to disable
-     * @return this builder
-     */
-    ListMenuBuilder autoBackButton(boolean enabled);
+    ListMenuBuilder parentMenu(String menuId);
     
     
     /**

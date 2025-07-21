@@ -40,9 +40,8 @@ public class DefaultListMenuBuilder implements ListMenuBuilder {
     private boolean closeOnOutsideClick = true;
     private int autoRefreshInterval = 0;
     
-    // Automatic button configuration
-    private boolean autoCloseButton = true; // Default enabled
-    private boolean autoBackButton = false; // Default disabled
+    // Parent menu configuration for explicit navigation
+    private String parentMenuId = null;
     
     public DefaultListMenuBuilder(DefaultMenuService menuService) {
         this.menuService = Objects.requireNonNull(menuService, "MenuService cannot be null");
@@ -228,23 +227,17 @@ public class DefaultListMenuBuilder implements ListMenuBuilder {
     }
     
     @Override
-    public ListMenuBuilder autoCloseButton(boolean enabled) {
-        this.autoCloseButton = enabled;
+    public ListMenuBuilder parentMenu(String menuId) {
+        this.parentMenuId = Objects.requireNonNull(menuId, "Parent menu ID cannot be null");
         return this;
     }
-    
-    @Override
-    public ListMenuBuilder autoBackButton(boolean enabled) {
-        this.autoBackButton = enabled;
-        return this;
-    }
-    
     
     @Override
     public CompletableFuture<Menu> buildAsync(Player player) {
         Objects.requireNonNull(player, "Player cannot be null");
         
         return buildAsync(player, false).thenCompose(menu -> {
+            // Simple menu opening - no complex NavigationMode logic
             return menuService.openMenu(menu, player).thenApply(v -> menu);
         });
     }
@@ -259,8 +252,8 @@ public class DefaultListMenuBuilder implements ListMenuBuilder {
             // Generate unique menu ID
             String menuId = "list-menu-" + UUID.randomUUID();
             
-            // Generate breadcrumb title if this is a child menu
-            Component finalTitle = generateBreadcrumbTitle(player);
+            // Use original title - breadcrumb generation is handled by openChildMenu()
+            Component finalTitle = title;
             
             // Create the menu instance
             DefaultListMenu menu = new DefaultListMenu(
@@ -306,50 +299,46 @@ public class DefaultListMenuBuilder implements ListMenuBuilder {
             
             // Automatically add navigation buttons if needed
             if (needsNavigation) {
+                // DEBUG LOG: Critical navigation setup diagnosis
+                System.out.println("[NAVIGATION DEBUG] Builder detected needsNavigation=true:");
+                System.out.println("  - totalSlots: " + totalSlots);
+                System.out.println("  - reservedSlots: " + reservedSlots);
+                System.out.println("  - availableContentSlots: " + availableContentSlots);
+                System.out.println("  - items.size(): " + items.size());
+                
                 // Use bottom corners for previous/next navigation (anchored)
                 int lastRow = (rows - 1) * 9;
                 int prevSlot = lastRow; // Bottom-left corner
                 int nextSlot = lastRow + 8; // Bottom-right corner
                 
-                // Only add if slots aren't already occupied by manual buttons
-                // Create navigation buttons and set them up properly
-                MenuButton prevButton = null;
-                MenuButton nextButton = null;
+                System.out.println("  - prevSlot: " + prevSlot + " (occupied: " + buttons.containsKey(prevSlot) + ")");
+                System.out.println("  - nextSlot: " + nextSlot + " (occupied: " + buttons.containsKey(nextSlot) + ")");
+                
+                // Only reserve slots if they aren't already occupied by manual buttons
+                // No need to create dummy buttons - DefaultListMenu.updateNavigationButtons() will handle the actual creation
+                boolean reservedPrevSlot = false;
+                boolean reservedNextSlot = false;
                 
                 if (!buttons.containsKey(prevSlot)) {
-                    // FIXED: Use ARROW material instead of dye
-                    prevButton = MenuButton.builder(Material.ARROW)
-                        .name("<red>Previous Page") // Builder automatically adds &r prefix
-                        .secondary("Go to the previous page")
-                        .sound(Sound.ITEM_BOOK_PAGE_TURN)
-                        .slot(prevSlot)
-                        .anchor() // Anchor navigation buttons (non-scrolling)
-                        .onClick(p -> {
-                            // Navigation will be handled by DefaultListMenu.updateNavigationButtons()
-                            // This is just a placeholder - the actual click handler is set in updateNavigationButtons()
-                        })
-                        .build();
+                    reservedPrevSlot = true;
                 }
                 
                 if (!buttons.containsKey(nextSlot)) {
-                    // FIXED: Use ARROW material instead of dye
-                    nextButton = MenuButton.builder(Material.ARROW)
-                        .name("<green>Next Page") // Builder automatically adds &r prefix
-                        .secondary("Go to the next page")
-                        .sound(Sound.ITEM_BOOK_PAGE_TURN)
-                        .slot(nextSlot)
-                        .anchor() // Anchor navigation buttons (non-scrolling)
-                        .onClick(p -> {
-                            // Navigation will be handled by DefaultListMenu.updateNavigationButtons()
-                            // This is just a placeholder - the actual click handler is set in updateNavigationButtons()
-                        })
-                        .build();
+                    reservedNextSlot = true;
                 }
                 
-                // Set navigation buttons on the menu
-                if (prevButton != null || nextButton != null) {
-                    menu.setNavigationButtons(prevButton, prevSlot, nextButton, nextSlot);
+                System.out.println("  - reservedPrevSlot: " + reservedPrevSlot);
+                System.out.println("  - reservedNextSlot: " + reservedNextSlot);
+                
+                // Reserve navigation button slots on the menu (no actual buttons created here)
+                if (reservedPrevSlot || reservedNextSlot) {
+                    System.out.println("  - Calling setNavigationButtons with slots: prev=" + (reservedPrevSlot ? prevSlot : -1) + ", next=" + (reservedNextSlot ? nextSlot : -1));
+                    menu.setNavigationButtons(null, reservedPrevSlot ? prevSlot : -1, null, reservedNextSlot ? nextSlot : -1);
+                } else {
+                    System.out.println("  - No slots reserved, not calling setNavigationButtons");
                 }
+            } else {
+                System.out.println("[NAVIGATION DEBUG] Builder determined needsNavigation=false");
                 
                 // Add page indicator in top row, slot 4 (5th slot in first row)
                 int pageIndicatorSlot = 4; // Top row, index 4
@@ -357,7 +346,6 @@ public class DefaultListMenuBuilder implements ListMenuBuilder {
                     menu.setPageIndicatorSlot(pageIndicatorSlot);
                 }
             }
-            
             // Set empty message
             if (emptyMessage != null) {
                 menu.setEmptyMessage(emptyMessage);
@@ -384,8 +372,11 @@ public class DefaultListMenuBuilder implements ListMenuBuilder {
             // Navigate to initial page
             menu.navigateToPage(initialPage);
             
-            // Add automatic buttons if enabled
-            addAutomaticButtons(menu);
+            // Add parent menu back button if specified
+            addParentMenuButton(menu);
+            
+            // Fill navigation row slots before rendering
+            fillNavigationRow(menu);
             
             // Now that all configuration is complete, render the items
             // Call renderItems() directly instead of update() since menu isn't open yet
@@ -396,95 +387,85 @@ public class DefaultListMenuBuilder implements ListMenuBuilder {
     }
     
     /**
-     * Adds automatic buttons to the menu based on configuration.
-     * Checks if slots are occupied before adding automatic buttons.
-     * Manual additions take precedence over automatic buttons.
-     * Note: For list menus, we need to avoid conflicts with existing pagination buttons.
-     * FIXED: Parent-child timing resolution - detect parent menus during build process.
+     * Fills empty slots in the navigation row with appropriate material.
+     * For list menus (always ≤6 rows): use fillMaterial from builder
      */
-    private void addAutomaticButtons(DefaultListMenu menu) {
-        // FIXED: Detect if this menu will be a child menu by checking current open menu
-        // This resolves the timing issue where parent-child relationships aren't established yet
-        boolean isChildMenu = detectChildMenu(menu.getViewer().orElse(null));
+    private void fillNavigationRow(DefaultListMenu menu) {
+        int navigationRow = rows - 1; // Last row is navigation row
         
-        // Add close button if enabled (default: enabled)
-        if (autoCloseButton) {
-            int closeSlot = MenuButton.getCloseSlot(rows);
-            if (!buttons.containsKey(closeSlot)) {
-                MenuButton closeButton = MenuButton.createPositionedClose(rows);
-                menu.setPersistentButton(closeButton, closeSlot);
-            } else {
-                // Log warning if slot is occupied
-                System.out.println("Warning: Automatic close button slot " + closeSlot + " is already occupied. Skipping automatic close button.");
-            }
+        // Determine fill material - for list menus ≤6 rows, use builder's fill material if set
+        if (fillEmptyItem == null) {
+            return; // No fill material specified, skip navigation row filling
         }
         
-        // Add back button if enabled (default: disabled) OR if this is a child menu
-        if (autoBackButton || isChildMenu) {
-            int backSlot = MenuButton.getBackSlot(rows);
-            if (!buttons.containsKey(backSlot)) {
-                MenuButton backButton = MenuButton.createPositionedBack(rows);
-                menu.setPersistentButton(backButton, backSlot);
-            } else {
-                // Log warning if slot is occupied
-                System.out.println("Warning: Automatic back button slot " + backSlot + " is already occupied. Skipping automatic back button.");
-            }
-        }
+        Material fillMaterial = fillEmptyItem.getDisplayItem().getType();
         
-        // Note: Removed the old check for menu.getParent().isPresent() as it's timing-dependent
-        // The isChildMenu detection above handles this case properly during build time
-    }
-    
-    /**
-     * Detects if this menu will be a child menu by checking if the player has a current menu open.
-     * FIXED: Early parent menu detection to resolve timing issues.
-     *
-     * @param player the player context to check for current menu
-     * @return true if this menu will be a child menu, false if it's a root menu
-     */
-    private boolean detectChildMenu(Player player) {
-        // Check if player has a current menu that would be the parent
-        if (player != null) {
-            try {
-                // Try to get current open menu through menu service
-                Optional<Menu> currentMenuOpt = menuService.getOpenMenu(player);
-                return currentMenuOpt.isPresent(); // If player has an open menu, this new menu will be a child
-            } catch (Exception e) {
-                // If we can't determine, assume it's not a child menu
-                System.err.println("Could not detect child menu status: " + e.getMessage());
-                return false;
-            }
-        }
-        
-        // No player context, assume it's not a child menu
-        return false;
-    }
-    
-    /**
-     * Generates breadcrumb title for child menus.
-     * Format: "Parent -> Child" for child menus, original title for root menus.
-     *
-     * @param player the player context to check for current menu
-     * @return the generated breadcrumb title
-     */
-    private Component generateBreadcrumbTitle(Player player) {
-        // Check if player has a current menu that would be the parent
-        if (player != null) {
-            // Try to get current open menu through menu service
-            Optional<Menu> currentMenuOpt = menuService.getOpenMenu(player);
-            if (currentMenuOpt.isPresent()) {
-                // This new menu will be a child of the current menu
-                Component parentTitle = currentMenuOpt.get().getTitle();
-                return Component.text()
-                    .append(parentTitle)
-                    .append(Component.text(" -> "))
-                    .append(title)
+        // Fill empty slots in the navigation row
+        for (int slot = navigationRow * 9; slot < (navigationRow + 1) * 9; slot++) {
+            if (menu.getItem(slot) == null && !buttons.containsKey(slot)) {
+                // Don't overwrite navigation buttons or existing items
+                MenuItem fillItem = MenuDisplayItem.builder(fillMaterial)
+                    .name("") // Empty name to prevent text display
                     .build();
+                menu.setItem(fillItem, slot);
+            }
+        }
+    }
+    
+    /**
+     * Adds parent menu back button if a parent menu ID is specified and close button.
+     * Close button is positioned right of back button (if back exists) or at standard close position.
+     */
+    private void addParentMenuButton(DefaultListMenu menu) {
+        // Add back button if parent menu is specified
+        if (parentMenuId != null) {
+            int backSlot = MenuButton.getBackSlot(rows);
+            System.out.println("[DEBUG BUTTON POSITIONING] ListMenu back button calculation:");
+            System.out.println("  - rows: " + rows);
+            System.out.println("  - getBackNavigationSlot(" + rows + ") = " + backSlot);
+            System.out.println("  - getBackSlot(" + rows + ") = " + MenuButton.getBackSlot(rows));
+            System.out.println("  - getCloseSlot(" + rows + ") = " + MenuButton.getCloseSlot(rows));
+            
+            if (!buttons.containsKey(backSlot)) {
+                MenuButton backButton = MenuButton.createBackButtonForParentMenu(parentMenuId, menuService);
+                menu.setPersistentButton(backButton, backSlot);
+                System.out.println("  - Back button added at slot: " + backSlot);
             }
         }
         
-        // No parent menu found, return original title
-        return title;
+        // Always add close button to list menus
+        addCloseButton(menu);
     }
     
+    /**
+     * Adds close button to list menus.
+     * Position close button right of back button (if back button exists) or at standard close position.
+     */
+    private void addCloseButton(DefaultListMenu menu) {
+        int closeSlot;
+        
+        // Determine close button position based on whether back button exists
+        if (parentMenuId != null) {
+            // Back button exists, position close button right of it
+            int backSlot = MenuButton.getBackSlot(rows);
+            closeSlot = backSlot + 1; // Right of back button
+        } else {
+            // No back button, use standard close position
+            closeSlot = MenuButton.getCloseSlot(rows);
+        }
+        
+        System.out.println("[DEBUG BUTTON POSITIONING] ListMenu close button calculation:");
+        System.out.println("  - rows: " + rows);
+        System.out.println("  - parentMenuId exists: " + (parentMenuId != null));
+        System.out.println("  - closeSlot: " + closeSlot);
+        
+        // Add close button if slot is not already occupied
+        if (!buttons.containsKey(closeSlot)) {
+            MenuButton closeButton = MenuButton.createCloseButton();
+            menu.setPersistentButton(closeButton, closeSlot);
+            System.out.println("  - Close button added at slot: " + closeSlot);
+        } else {
+            System.out.println("  - Close button slot " + closeSlot + " is already occupied, skipping");
+        }
+    }
 }

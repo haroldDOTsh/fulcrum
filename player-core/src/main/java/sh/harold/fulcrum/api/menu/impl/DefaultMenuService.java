@@ -11,21 +11,25 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Default implementation of MenuService.
- * Manages menu lifecycle, navigation, and plugin registrations.
+ * Simplified implementation of MenuService focusing on basic menu functionality.
+ * This implementation removes the complex navigation system in favor of the new
+ * parentMenu() builder approach for handling menu relationships.
  */
 public class DefaultMenuService implements MenuService {
     
     private final Plugin plugin;
-    private final NavigationService navigationService;
     private final MenuRegistry menuRegistry;
     private final Map<UUID, Menu> openMenus = new ConcurrentHashMap<>();
     private final Map<Plugin, Set<String>> pluginMenus = new ConcurrentHashMap<>();
     
-    public DefaultMenuService(Plugin plugin, NavigationService navigationService, MenuRegistry menuRegistry) {
+    // NEW: Menu instance registry for ID-based menu storage and retrieval
+    private final Map<String, Menu> menuInstances = new ConcurrentHashMap<>();
+    
+    public DefaultMenuService(Plugin plugin, MenuRegistry menuRegistry) {
         this.plugin = Objects.requireNonNull(plugin, "Plugin cannot be null");
-        this.navigationService = Objects.requireNonNull(navigationService, "NavigationService cannot be null");
         this.menuRegistry = Objects.requireNonNull(menuRegistry, "MenuRegistry cannot be null");
+        
+        System.out.println("[MENU SERVICE] DefaultMenuService initialized (simplified version)");
     }
     
     @Override
@@ -44,22 +48,25 @@ public class DefaultMenuService implements MenuService {
         Objects.requireNonNull(player, "Player cannot be null");
         
         return CompletableFuture.runAsync(() -> {
-            // Close existing menu if any
-            closeMenu(player);
-            
-            // Store the new menu
-            openMenus.put(player.getUniqueId(), menu);
-            
-            // Push to navigation stack
-            navigationService.pushMenu(player, menu);
-            
-            // Track plugin ownership
-            trackMenuForPlugin(menu);
-            
-            // Open the inventory on the main thread
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                player.openInventory(menu.getInventory());
-            });
+            try {
+                System.out.println("[MENU SERVICE] Opening menu: " + menu.getTitle() + " for " + player.getName());
+                
+                // Track the menu
+                openMenus.put(player.getUniqueId(), menu);
+                trackMenuForPlugin(menu);
+                
+                // Open the menu on the main thread
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    player.openInventory(menu.getInventory());
+                    menu.update();
+                });
+                
+                System.out.println("[MENU SERVICE] Successfully opened menu: " + menu.getTitle());
+                
+            } catch (Exception e) {
+                System.err.println("[MENU SERVICE] Error opening menu: " + e.getMessage());
+                e.printStackTrace();
+            }
         });
     }
     
@@ -69,16 +76,8 @@ public class DefaultMenuService implements MenuService {
         
         Menu menu = openMenus.remove(player.getUniqueId());
         if (menu != null) {
-            // Run close handlers
-            if (menu instanceof AbstractMenu) {
-                ((AbstractMenu) menu).triggerCloseHandlers();
-            }
-            
-            // Close inventory on main thread if needed
-            if (player.getOpenInventory().getTopInventory().equals(menu.getInventory())) {
-                Bukkit.getScheduler().runTask(plugin, (Runnable) player::closeInventory);
-            }
-            
+            Bukkit.getScheduler().runTask(plugin, () -> player.closeInventory());
+            System.out.println("[MENU SERVICE] Closed menu for " + player.getName());
             return true;
         }
         return false;
@@ -108,59 +107,14 @@ public class DefaultMenuService implements MenuService {
     }
     
     @Override
-    public boolean navigateBack(Player player) {
-        Objects.requireNonNull(player, "Player cannot be null");
-        
-        Optional<Menu> previousMenu = navigationService.popMenu(player);
-        if (previousMenu.isPresent()) {
-            return openMenu(previousMenu.get(), player)
-                .thenApply(v -> true)
-                .exceptionally(ex -> false)
-                .join();
-        }
-        
-        // No previous menu, just close current
-        return closeMenu(player);
-    }
-    
-    @Override
-    public void clearNavigationHistory(Player player) {
-        Objects.requireNonNull(player, "Player cannot be null");
-        navigationService.clearHistory(player);
-    }
-    
-    @Override
-    public CompletableFuture<Void> openChildMenu(Menu childMenu, Player player, Component parentTitle) {
-        Objects.requireNonNull(childMenu, "Child menu cannot be null");
-        Objects.requireNonNull(player, "Player cannot be null");
-        
-        // Set parent relationship
-        getOpenMenu(player).ifPresent(childMenu::setParent);
-        
-        // Add default back button if configured
-        navigationService.getDefaultBackButton().ifPresent(config -> {
-            if (childMenu instanceof AbstractMenu) {
-                AbstractMenu abstractMenu = (AbstractMenu) childMenu;
-                abstractMenu.setButton(config.getButton(), config.getSlot());
-            }
-        });
-        
-        return openMenu(childMenu, player);
-    }
-    
-    @Override
     public boolean refreshMenu(Player player) {
         Objects.requireNonNull(player, "Player cannot be null");
-        
-        return getOpenMenu(player).map(menu -> {
+        Menu menu = openMenus.get(player.getUniqueId());
+        if (menu != null) {
             menu.update();
             return true;
-        }).orElse(false);
-    }
-    
-    @Override
-    public NavigationService getNavigationService() {
-        return navigationService;
+        }
+        return false;
     }
     
     @Override
@@ -180,18 +134,12 @@ public class DefaultMenuService implements MenuService {
         
         Set<String> menuIds = pluginMenus.remove(plugin);
         if (menuIds != null) {
-            // Close all menus created by this plugin
+            // Close all menus for all players
             int closed = 0;
-            Iterator<Map.Entry<UUID, Menu>> iterator = openMenus.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<UUID, Menu> entry = iterator.next();
-                if (entry.getValue().getOwnerPlugin().equals(plugin)) {
-                    Player player = Bukkit.getPlayer(entry.getKey());
-                    if (player != null) {
-                        closeMenu(player);
-                    } else {
-                        iterator.remove();
-                    }
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                Menu currentMenu = openMenus.get(player.getUniqueId());
+                if (currentMenu != null && currentMenu.getOwnerPlugin().equals(plugin)) {
+                    closeMenu(player);
                     closed++;
                 }
             }
@@ -212,11 +160,61 @@ public class DefaultMenuService implements MenuService {
     
     /**
      * Gets the main plugin instance.
-     * 
+     *
      * @return the plugin
      */
     public Plugin getPlugin() {
         return plugin;
+    }
+    
+    /**
+     * Registers a menu instance with a custom ID for later retrieval.
+     * This allows any menu to be referenced by children via .parentMenu(id).
+     *
+     * @param menuId the custom menu ID
+     * @param menu the menu instance to register
+     */
+    public void registerMenuInstance(String menuId, Menu menu) {
+        Objects.requireNonNull(menuId, "Menu ID cannot be null");
+        Objects.requireNonNull(menu, "Menu cannot be null");
+        
+        menuInstances.put(menuId, menu);
+        System.out.println("[MENU SERVICE] Registered menu instance: " + menuId);
+    }
+    
+    /**
+     * Gets a menu instance by its custom ID.
+     *
+     * @param menuId the menu ID
+     * @return the menu instance, or null if not found
+     */
+    public Menu getMenuInstance(String menuId) {
+        return menuInstances.get(menuId);
+    }
+    
+    /**
+     * Checks if a menu instance is registered with the given ID.
+     *
+     * @param menuId the menu ID
+     * @return true if the menu instance exists
+     */
+    public boolean hasMenuInstance(String menuId) {
+        return menuInstances.containsKey(menuId);
+    }
+    
+    /**
+     * Opens a registered menu instance by ID.
+     *
+     * @param menuId the menu ID
+     * @param player the player to open the menu for
+     * @return CompletableFuture that completes when the menu is opened
+     */
+    public CompletableFuture<Void> openMenuInstance(String menuId, Player player) {
+        Menu menu = getMenuInstance(menuId);
+        if (menu == null) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Menu instance not found: " + menuId));
+        }
+        return openMenu(menu, player);
     }
     
     /**
@@ -228,21 +226,30 @@ public class DefaultMenuService implements MenuService {
         
         // Clear all plugin registrations
         pluginMenus.clear();
+        openMenus.clear();
         
         // Clear registry
         menuRegistry.clearRegistry();
+        
+        System.out.println("[MENU SERVICE] MenuService shutdown complete");
     }
     
     /**
-     * Removes a menu from the open menus map.
+     * Removes a menu from tracking when closed externally.
      * Called by inventory close event handler.
-     * 
+     *
      * @param player the player whose menu closed
      */
     public void handleMenuClosed(Player player) {
         openMenus.remove(player.getUniqueId());
+        System.out.println("[MENU SERVICE] External menu close handled for " + player.getName());
     }
     
+    /**
+     * Tracks a menu for plugin ownership.
+     *
+     * @param menu the menu to track
+     */
     private void trackMenuForPlugin(Menu menu) {
         Plugin owner = menu.getOwnerPlugin();
         if (owner != null) {

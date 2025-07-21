@@ -113,17 +113,12 @@ public class MenuInventoryListener implements Listener {
             try {
                 // Special handling for navigation buttons
                 if (button == MenuButton.BACK) {
-                    menuService.navigateBack(player);
+                    // Simplified: Just close inventory since navigation system was removed
+                    player.closeInventory();
                 } else if (button == MenuButton.CLOSE) {
                     player.closeInventory();
                 } else if (button == MenuButton.REFRESH) {
                     menuService.refreshMenu(player);
-                } else if (button == MenuButton.NEXT_PAGE && menu.isListMenu()) {
-                    int currentPage = menu.getCurrentPage();
-                    menu.navigateToPage(currentPage + 1);
-                } else if (button == MenuButton.PREVIOUS_PAGE && menu.isListMenu()) {
-                    int currentPage = menu.getCurrentPage();
-                    menu.navigateToPage(currentPage - 1);
                 } else {
                     // Regular button click
                     button.handleClick(player, event.getClick());
@@ -189,8 +184,7 @@ public class MenuInventoryListener implements Listener {
         // Close any open menu
         menuService.closeMenu(player);
         
-        // Clean up navigation history
-        menuService.clearNavigationHistory(player);
+        // Navigation history cleanup removed since navigation system was simplified
         
         // Clean up rate limit data
         lastClickTimes.remove(player.getUniqueId());
