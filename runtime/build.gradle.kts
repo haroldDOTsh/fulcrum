@@ -86,11 +86,11 @@ tasks.named<ShadowJar>("shadowJar") {
     relocate("com.mongodb", "sh.harold.libraries.mongodb")                // From mongodb-driver-sync
     relocate("org.bson", "sh.harold.libraries.bson")                      // From bson + bson-record-codec
 
-    relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
-    relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
-    relocate("sh.harold.fulcrum.api.menu", "sh.harold.internal.api.menu")
-    relocate("sh.harold.fulcrum.api.rank", "sh.harold.internal.api.rank")
-    relocate("sh.harold.fulcrum.api.module", "sh.harold.internal.api.module")
+    // relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
+    // relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
+    // relocate("sh.harold.fulcrum.api.menu", "sh.harold.internal.api.menu")
+    // relocate("sh.harold.fulcrum.api.rank", "sh.harold.internal.api.rank")
+    // relocate("sh.harold.fulcrum.api.module", "sh.harold.internal.api.module")
 }
 
 
