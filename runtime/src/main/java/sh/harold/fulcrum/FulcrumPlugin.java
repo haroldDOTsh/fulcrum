@@ -5,6 +5,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.menu.MenuFeature;
 import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.message.scoreboard.ScoreboardFeature;
+import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.identity.IdentityFeature;
@@ -12,6 +13,7 @@ import sh.harold.fulcrum.fundamentals.rank.RankFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
+import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.module.ModuleFeature;
 import sh.harold.fulcrum.module.ModuleManager;
 
@@ -52,8 +54,9 @@ public final class FulcrumPlugin extends JavaPlugin {
             getLogger().info("Fulcrum runtime role: " + role);
             getLogger().info("Modules for this role: " + allowedModules);
 
-            // Create platform with dependency container
-            this.platform = new FulcrumPlatform(container);
+            // Create platform with service locator
+            ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
+            this.platform = new FulcrumPlatform(serviceLocator);
             this.moduleManager = new ModuleManager(getLogger());
 
             // Register ModuleManager in the container

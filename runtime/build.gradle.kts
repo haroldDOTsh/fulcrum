@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "sh.harold.fulcrum"
-version = "1.0.0"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":message-api"))
     implementation(project(":rank-api"))
     implementation(project(":menu-api"))
+    implementation(project(":module-api"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.7-R0.1-SNAPSHOT")
@@ -88,6 +89,8 @@ tasks.named<ShadowJar>("shadowJar") {
     relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
     relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
     relocate("sh.harold.fulcrum.api.menu", "sh.harold.internal.api.menu")
+    relocate("sh.harold.fulcrum.api.rank", "sh.harold.internal.api.rank")
+    relocate("sh.harold.fulcrum.api.module", "sh.harold.internal.api.module")
 }
 
 

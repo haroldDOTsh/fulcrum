@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.module;
+package sh.harold.fulcrum.api.module;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;

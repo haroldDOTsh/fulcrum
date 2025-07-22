@@ -1,4 +1,4 @@
-package sh.harold.fulcrum;
+package sh.harold.fulcrum.api.module;
 
 /**
  * Interface for all external Fulcrum modules.

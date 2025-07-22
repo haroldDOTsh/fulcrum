@@ -1,6 +1,4 @@
-package sh.harold.fulcrum;
-
-import sh.harold.fulcrum.lifecycle.DependencyContainer;
+package sh.harold.fulcrum.api.module;
 
 import java.util.Optional;
 
@@ -10,18 +8,18 @@ import java.util.Optional;
  * and providing a clean, safe interface for external modules.
  */
 public class FulcrumPlatform {
-    private final DependencyContainer container;
+    private final ServiceLocator serviceLocator;
 
     /**
-     * Creates a new FulcrumPlatform with access to the dependency container.
+     * Creates a new FulcrumPlatform with access to the service locator.
      *
-     * @param container The dependency container holding core services
+     * @param serviceLocator The service locator for accessing core services
      */
-    public FulcrumPlatform(DependencyContainer container) {
-        if (container == null) {
-            throw new IllegalArgumentException("DependencyContainer cannot be null");
+    public FulcrumPlatform(ServiceLocator serviceLocator) {
+        if (serviceLocator == null) {
+            throw new IllegalArgumentException("ServiceLocator cannot be null");
         }
-        this.container = container;
+        this.serviceLocator = serviceLocator;
     }
 
     /**
@@ -33,7 +31,7 @@ public class FulcrumPlatform {
      * @return The service instance, or null if not available
      */
     public <T> T getService(Class<T> serviceClass) {
-        return container.getOptional(serviceClass).orElse(null);
+        return serviceLocator.getService(serviceClass);
     }
 
     /**
@@ -45,7 +43,7 @@ public class FulcrumPlatform {
      * @return Optional containing the service, or empty if not available
      */
     public <T> Optional<T> getOptionalService(Class<T> serviceClass) {
-        return container.getOptional(serviceClass);
+        return serviceLocator.findService(serviceClass);
     }
 
     /**
@@ -55,6 +53,6 @@ public class FulcrumPlatform {
      * @return true if the service is available, false otherwise
      */
     public boolean hasService(Class<?> serviceClass) {
-        return container.isAvailable(serviceClass);
+        return serviceLocator.hasService(serviceClass);
     }
 }

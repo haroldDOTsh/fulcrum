@@ -3,8 +3,9 @@ package sh.harold.fulcrum.module;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.FulcrumModule;
-import sh.harold.fulcrum.FulcrumPlatform;
+import sh.harold.fulcrum.api.module.FulcrumModule;
+import sh.harold.fulcrum.api.module.FulcrumPlatform;
+import sh.harold.fulcrum.api.module.ModuleInfo;
 
 import java.util.*;
 import java.util.logging.Logger;
