@@ -67,7 +67,7 @@ public final class PlayerDataRegistry {
      * @param schema The root schema to start the query from
      * @param <T> The type of the schema data
      * @return A new CrossSchemaQueryBuilder instance
-     * @since 2.0
+     * @since 1.0.0
      */
     public static <T> CrossSchemaQueryBuilder queryBuilder(PlayerDataSchema<T> schema) {
         PlayerDataBackend backend = getBackend(schema);
@@ -83,7 +83,7 @@ public final class PlayerDataRegistry {
      * @param schemaClass The root schema class to start the query from
      * @param <T> The type of the schema data
      * @return A new CrossSchemaQueryBuilder instance
-     * @since 2.0
+     * @since 1.0.0
      */
     public static <T> CrossSchemaQueryBuilder queryBuilder(Class<? extends PlayerDataSchema<T>> schemaClass) {
         try {
@@ -100,7 +100,7 @@ public final class PlayerDataRegistry {
      *
      * @return A new CrossSchemaQueryBuilder instance
      * @throws IllegalStateException if no schemas are registered
-     * @since 2.0
+     * @since 1.0.0
      */
     public static CrossSchemaQueryBuilder queryBuilder() {
         if (schemaBackends.isEmpty()) {
@@ -117,7 +117,7 @@ public final class PlayerDataRegistry {
      *
      * @param schema The schema to find compatible schemas for
      * @return Set of schemas that can be joined with the given schema
-     * @since 2.0
+     * @since 1.0.0
      */
     public static Set<PlayerDataSchema<?>> getQueryableSchemas(PlayerDataSchema<?> schema) {
         PlayerDataBackend targetBackend = getBackend(schema);
@@ -142,7 +142,7 @@ public final class PlayerDataRegistry {
      * @param backend The backend for this schema
      * @param metadata The schema metadata
      * @param <T> The schema data type
-     * @since 2.0
+     * @since 1.0.0
      */
     public static <T> void registerQueryableSchema(
             PlayerDataSchema<T> schema,
@@ -160,7 +160,7 @@ public final class PlayerDataRegistry {
      * Auto-discovers and registers all schemas as queryable.
      * This enables query builder support for all registered schemas.
      *
-     * @since 2.0
+     * @since 1.0.0
      */
     public static void enableQuerySupport() {
         PlayerDataQueryRegistry.autoDiscover();
@@ -170,7 +170,7 @@ public final class PlayerDataRegistry {
      * Gets statistics about registered schemas and their query capabilities.
      *
      * @return Map of statistics
-     * @since 2.0
+     * @since 1.0.0
      */
     public static Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();

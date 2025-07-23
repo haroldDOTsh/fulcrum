@@ -87,7 +87,7 @@ public final class PlayerProfileManager {
      *
      * @param query The query to execute
      * @return A CompletableFuture containing matching player profiles
-     * @since 2.0
+     * @since 1.0.0
      */
     public static CompletableFuture<List<PlayerProfile>> findPlayers(CrossSchemaQueryBuilder query) {
         return query.executeAsync()
@@ -104,7 +104,7 @@ public final class PlayerProfileManager {
      *
      * @param playerIds The UUIDs of players to load
      * @return A CompletableFuture containing the loaded profiles
-     * @since 2.0
+     * @since 1.0.0
      */
     public static CompletableFuture<List<PlayerProfile>> loadProfiles(Collection<UUID> playerIds) {
         return CompletableFuture.supplyAsync(() -> {
@@ -121,7 +121,7 @@ public final class PlayerProfileManager {
      * Gets all currently loaded profiles.
      *
      * @return Collection of loaded player profiles
-     * @since 2.0
+     * @since 1.0.0
      */
     public static Collection<PlayerProfile> getLoadedProfiles() {
         return Collections.unmodifiableCollection(profiles.values());
@@ -131,7 +131,7 @@ public final class PlayerProfileManager {
      * Gets all currently loaded player UUIDs.
      *
      * @return Set of loaded player UUIDs
-     * @since 2.0
+     * @since 1.0.0
      */
     public static Set<UUID> getLoadedPlayerIds() {
         return Collections.unmodifiableSet(profiles.keySet());
@@ -140,7 +140,7 @@ public final class PlayerProfileManager {
     /**
      * Unloads all player profiles, saving them first.
      *
-     * @since 2.0
+     * @since 1.0.0
      */
     public static void unloadAll() {
         LOGGER.info("Unloading all " + profiles.size() + " player profiles...");

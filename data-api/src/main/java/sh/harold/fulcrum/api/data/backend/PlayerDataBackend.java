@@ -100,7 +100,7 @@ public interface PlayerDataBackend {
      * @param rootSchema The root schema to start the query from
      * @param <T> The type of the schema data
      * @return A new CrossSchemaQueryBuilder instance
-     * @since 2.0
+     * @since 1.0.0
      */
     default <T> CrossSchemaQueryBuilder createQueryBuilder(PlayerDataSchema<T> rootSchema) {
         QueryBuilderFactory factory = new QueryBuilderFactory(this);
@@ -113,7 +113,7 @@ public interface PlayerDataBackend {
      * @param schemaClass The root schema class to start the query from
      * @param <T> The type of the schema data
      * @return A new CrossSchemaQueryBuilder instance
-     * @since 2.0
+     * @since 1.0.0
      */
     default <T> CrossSchemaQueryBuilder createQueryBuilder(Class<? extends PlayerDataSchema<T>> schemaClass) {
         try {
@@ -129,7 +129,7 @@ public interface PlayerDataBackend {
      * 
      * @param query The query to execute
      * @return A CompletableFuture containing the query results
-     * @since 2.0
+     * @since 1.0.0
      */
     default CompletableFuture<List<CrossSchemaResult>> executeQuery(CrossSchemaQueryBuilder query) {
         return query.executeAsync();
@@ -139,7 +139,7 @@ public interface PlayerDataBackend {
      * Gets a query builder factory configured for this backend.
      * 
      * @return A QueryBuilderFactory instance
-     * @since 2.0
+     * @since 1.0.0
      */
     default QueryBuilderFactory getQueryBuilderFactory() {
         return new QueryBuilderFactory(this);
@@ -150,7 +150,7 @@ public interface PlayerDataBackend {
      * Backends can override this to indicate they have optimized query support.
      * 
      * @return true if the backend has native query support
-     * @since 2.0
+     * @since 1.0.0
      */
     default boolean supportsNativeQueries() {
         return false;
@@ -160,7 +160,7 @@ public interface PlayerDataBackend {
      * Wraps this backend with enhanced query capabilities.
      * 
      * @return A CrossSchemaPlayerDataBackend instance
-     * @since 2.0
+     * @since 1.0.0
      */
     default CrossSchemaPlayerDataBackend withQuerySupport() {
         if (this instanceof CrossSchemaPlayerDataBackend) {
@@ -174,7 +174,7 @@ public interface PlayerDataBackend {
      * Backends can override this to provide information about their capabilities.
      * 
      * @return A map of metadata key-value pairs
-     * @since 2.0
+     * @since 1.0.0
      */
     default Map<String, Object> getBackendMetadata() {
         return Map.of(
