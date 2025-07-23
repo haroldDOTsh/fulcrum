@@ -4,6 +4,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.dirty.DirtyDataCache;
 import sh.harold.fulcrum.api.data.dirty.DirtyDataManager;
 import sh.harold.fulcrum.api.data.registry.PlayerStorageManager;
+import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.runtime.cache.DirtyCacheFactory;
 import sh.harold.fulcrum.runtime.config.DirtyCacheConfig;
@@ -19,6 +20,11 @@ public class PlayerDataFeature implements PluginFeature {
         plugin.getLogger().info("[PlayerDataFeature] Initializing StorageManager... (Priority: " + getPriority() + ")");
         StorageManager.initialize(plugin);
         plugin.getLogger().info("[PlayerDataFeature] StorageManager initialized successfully");
+        
+        // Register the BackendResolver with PlayerDataRegistry
+        StorageBackendResolver backendResolver = new StorageBackendResolver();
+        PlayerDataRegistry.setBackendResolver(backendResolver);
+        plugin.getLogger().info("[PlayerDataFeature] BackendResolver registered with PlayerDataRegistry");
 
         // Initialize dirty data tracking system
         initializeDirtyDataSystem(plugin);

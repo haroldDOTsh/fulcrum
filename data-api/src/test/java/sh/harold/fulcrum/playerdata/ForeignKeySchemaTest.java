@@ -22,11 +22,12 @@ class ForeignKeySchemaTest {
     void setup() {
         PlayerDataRegistry.clear();
         SqlDialectProvider.setDialect(new SqliteDialect());
+        TestBackendResolver.setupTestEnvironment();
     }
 
     // Helper: register a schema in the registry
     private <T> void registerSchema(Class<T> type) {
-        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(type, null), null);
+        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(type, null));
     }
 
     // --- Basic Foreign Key Creation ---
@@ -35,7 +36,7 @@ class ForeignKeySchemaTest {
         registerSchema(Player.class);
         registerSchema(Guild.class);
         AutoTableSchema<GuildMember> schema = new AutoTableSchema<>(GuildMember.class, null);
-        PlayerDataRegistry.registerSchema(schema, null);
+        PlayerDataRegistry.registerSchema(schema);
         SqlDialect dialect = SqlDialectProvider.get();
         String ddl = schema.getCreateTableSql();
         String quotedPlayerId = dialect.quoteIdentifier("player_id");
@@ -118,8 +119,8 @@ class ForeignKeySchemaTest {
 
     @Test
     void circularReferenceSchemasRegisterAndEmitForeignKeys() {
-        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(A.class, null), null);
-        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(B.class, null), null);
+        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(A.class, null));
+        PlayerDataRegistry.registerSchema(new AutoTableSchema<>(B.class, null));
         AutoTableSchema<A> schemaA = new AutoTableSchema<>(A.class, null);
         AutoTableSchema<B> schemaB = new AutoTableSchema<>(B.class, null);
         SqlDialect dialect = SqlDialectProvider.get();
