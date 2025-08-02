@@ -7,15 +7,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.api.message.scoreboard.command.ScoreboardDebugCommand;
 import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultPlayerScoreboardManager;
 import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultRenderingPipeline;
 import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultScoreboardRegistry;
 import sh.harold.fulcrum.api.message.scoreboard.impl.DefaultTitleManager;
-import sh.harold.fulcrum.api.message.scoreboard.module.ContentProvider;
-import sh.harold.fulcrum.api.message.scoreboard.module.DynamicContentProvider;
-import sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule;
-import sh.harold.fulcrum.api.message.scoreboard.module.StaticContentProvider;
 import sh.harold.fulcrum.api.message.scoreboard.nms.NMSAdapter;
 import sh.harold.fulcrum.api.message.scoreboard.player.PlayerScoreboardManager;
 import sh.harold.fulcrum.api.message.scoreboard.registry.ScoreboardDefinition;
@@ -30,17 +25,11 @@ import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 
 import java.time.Duration;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 
 public class ScoreboardFeature implements PluginFeature, Listener {
 
-    private static final String TEST_SCOREBOARD_ID = "test";
     private ScoreboardService scoreboardService;
     private DefaultPlayerScoreboardManager playerManager;
     private DefaultRenderingPipeline renderingPipeline;
@@ -65,7 +54,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         this.playerManager = new DefaultPlayerScoreboardManager();
         this.renderingPipeline = new DefaultRenderingPipeline(titleManager, playerManager);
 
-        // Create main service - simple implementation without YAML configuration
+        // Create main service
         this.scoreboardService = new SimpleScoreboardService(registry, playerManager, renderingPipeline, packetRenderer);
 
         // Register services in dependency container
@@ -76,23 +65,10 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         container.register(TitleManager.class, titleManager);
         container.register(PacketRenderer.class, packetRenderer);
 
-        // Create and register test scoreboard
-        createTestScoreboard();
-
         // Register event listener for player joins
         Bukkit.getPluginManager().registerEvents(this, plugin);
 
-        // Register debug commands
-        ScoreboardDebugCommand debugCommand = new ScoreboardDebugCommand(
-                scoreboardService,
-                registry,
-                playerManager,
-                renderingPipeline,
-                titleManager
-        );
-        CommandRegistrar.register(debugCommand.build());
-
-        plugin.getLogger().info("Scoreboard feature initialized with NMS version: " + nmsAdapter.getVersionInfo());
+        plugin.getLogger().info("[SCOREBOARD] Initialized with NMS version: " + nmsAdapter.getVersionInfo());
     }
 
     @Override
@@ -104,7 +80,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         if (packetRenderer != null) {
             // Clear all active scoreboard displays
             for (int i = 0; i < packetRenderer.getActiveDisplayCount(); i++) {
-                // This would need to be implemented in the actual packet renderer
+                // TODO: This would need to be implemented in the actual packet renderer
                 // packetRenderer.clearAllDisplays();
             }
         }
@@ -166,119 +142,6 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         // }
 
         return "unknown";
-    }
-
-    /**
-     * Creates and registers the test scoreboard with basic modules
-     */
-    private void createTestScoreboard() {
-        Map<Integer, ScoreboardModule> modules = new HashMap<>();
-
-
-        // Info Module at highest priority
-        modules.put(100, new ScoreboardModule() {
-            @Override
-            public String getModuleId() {
-                return "serverinfo";
-            }
-
-        @Override
-        public ContentProvider getContentProvider() {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-            String today = LocalDate.now().format(formatter);
-
-            return new DynamicContentProvider(() -> Arrays.asList(
-                    "&7" + today + " &8m103D"
-            ), 5000);
-        }
-        });
-        // Header module at highest priority
-        modules.put(95, new ScoreboardModule() {
-            @Override
-            public String getModuleId() {
-                return "header";
-            }
-
-            @Override
-            public ContentProvider getContentProvider() {
-                return new StaticContentProvider(Arrays.asList(
-                        "&atesttesttest",
-                        "&7Test Scoreboard",
-                        "&dyummy"
-                ));
-            }
-        });
-
-        // Player count module
-        modules.put(90, new ScoreboardModule() {
-            @Override
-            public String getModuleId() {
-                return "player_count";
-            }
-
-            @Override
-            public ContentProvider getContentProvider() {
-                return new DynamicContentProvider(() -> Arrays.asList(
-                        "&7Players: &a" + Bukkit.getOnlinePlayers().size() + "/" + Bukkit.getMaxPlayers()
-                ), 5000);
-            }
-        });
-
-        // Server info module
-        modules.put(20, new ScoreboardModule() {
-            @Override
-            public String getModuleId() {
-                return "server_info";
-            }
-
-            @Override
-            public ContentProvider getContentProvider() {
-                return new StaticContentProvider(Arrays.asList(
-                        "&7Server: &fTest Server",
-                        "&7Version: &f1.21.7"
-                ));
-            }
-        });
-
-        // Footer module at lowest priority
-        modules.put(10, new ScoreboardModule() {
-            @Override
-            public String getModuleId() {
-                return "footer";
-            }
-
-            @Override
-            public ContentProvider getContentProvider() {
-                return new StaticContentProvider(Arrays.asList(
-                        "&7Discord: &bdiscord.gg/eternum"
-                ));
-            }
-        });
-
-        ScoreboardDefinition testScoreboard = new ScoreboardDefinition(
-                TEST_SCOREBOARD_ID,
-                "&6harold&lDOT&r&6sh",
-                modules
-        );
-
-        scoreboardService.registerScoreboard(TEST_SCOREBOARD_ID, testScoreboard);
-    }
-
-    /**
-     * Handles player join events to automatically show the test scoreboard
-     */
-    @EventHandler
-    public void onPlayerJoin(PlayerJoinEvent event) {
-        // Show test scoreboard to player after a short delay
-        Bukkit.getScheduler().runTaskLater(
-                Bukkit.getPluginManager().getPlugin("Fulcrum"),
-                () -> {
-                    if (scoreboardService.isScoreboardRegistered(TEST_SCOREBOARD_ID)) {
-                        scoreboardService.showScoreboard(event.getPlayer().getUniqueId(), TEST_SCOREBOARD_ID);
-                    }
-                },
-                20L // 1 second delay
-        );
     }
 
     /**

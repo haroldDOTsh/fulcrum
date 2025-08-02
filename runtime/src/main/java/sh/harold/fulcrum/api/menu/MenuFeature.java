@@ -3,15 +3,10 @@ package sh.harold.fulcrum.api.menu;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.menu.impl.*;
-import sh.harold.fulcrum.api.menu.test.MenuDemoCommand;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 
-/**
- * Simplified MenuFeature that initializes the menu system without complex navigation services.
- * This version focuses on basic menu functionality with the new parentMenu() builder approach.
- */
 public class MenuFeature implements PluginFeature {
     
     private MenuInventoryListener inventoryListener;
@@ -36,11 +31,7 @@ public class MenuFeature implements PluginFeature {
         inventoryListener = new MenuInventoryListener(menuService, plugin);
         plugin.getServer().getPluginManager().registerEvents(inventoryListener, plugin);
         
-        // Register MenuDemoCommand
-        MenuDemoCommand menuDemoCommand = new MenuDemoCommand(menuService);
-        CommandRegistrar.register(menuDemoCommand.build());
-
-        System.out.println("[MENU FEATURE] MenuFeature initialized (simplified version)");
+        plugin.getLogger().info("[MENU] Initialized successfully");
     }
 
     @Override
@@ -54,8 +45,8 @@ public class MenuFeature implements PluginFeature {
             
             // Shutdown the menu service
             menuService.shutdown();
-            
-            System.out.println("[MENU FEATURE] MenuFeature shutdown complete");
+
+            System.out.println("[MENU] Shutdown complete");
         }
     }
     
