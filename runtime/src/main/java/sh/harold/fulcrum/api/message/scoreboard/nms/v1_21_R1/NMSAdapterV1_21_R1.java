@@ -27,7 +27,7 @@ public class NMSAdapterV1_21_R1 extends NMSAdapter {
 
     @Override
     public String getVersionInfo() {
-        return "Minecraft 1.21.6/7 (" + VERSION + ")";
+        return "Minecraft 1.21.6/7/8 (" + VERSION + ")";
     }
 
     @Override
