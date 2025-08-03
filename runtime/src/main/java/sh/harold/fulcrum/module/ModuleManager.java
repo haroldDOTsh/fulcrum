@@ -4,89 +4,37 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.module.FulcrumModule;
-import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.module.ModuleInfo;
 
 import java.util.*;
 import java.util.logging.Logger;
 
 /**
- * Manages runtime loading and lifecycle of external Fulcrum modules.
+ * Provides discovery functionality for loaded Fulcrum modules.
+ * Module loading is now handled by each module's bootstrap phase.
+ *
+ * @since 1.2.0
  */
 public class ModuleManager {
     private final Logger logger;
-    private List<ModuleMetadata> loadedModules = new ArrayList<>();
+    private final Plugin plugin;
 
-    public ModuleManager(Logger logger) {
+    public ModuleManager(Logger logger, Plugin plugin) {
         this.logger = logger;
+        this.plugin = plugin;
     }
+
 
     /**
-     * Loads and enables only the modules listed in allowedModules, respecting dependencies.
+     * Discovers and disables all loaded Fulcrum modules.
+     * Since modules now self-manage via bootstrap, this provides graceful shutdown functionality.
      */
-    public void loadModules(List<String> allowedModules, FulcrumPlatform platform) {
-        Map<String, ModuleMetadata> discovered = new HashMap<>();
-        for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
-            if (!(plugin instanceof FulcrumModule module)) continue;
-            ModuleInfo info = plugin.getClass().getAnnotation(ModuleInfo.class);
-            if (info == null) continue;
-            if (!allowedModules.contains(info.name())) {
-                plugin.getLogger().info("[Fulcrum] Skipping module: " + info.name() + " (not in role config)");
-                continue;
-            }
-            discovered.put(info.name(), new ModuleMetadata(
-                    info.name(),
-                    List.of(info.dependsOn()),
-                    info.description(),
-                    (JavaPlugin) plugin,
-                    module
-            ));
-        }
-
-        // Strict validation: ensure every required module is present and valid
-        List<String> missing = new ArrayList<>();
-        for (String required : allowedModules) {
-            if (!discovered.containsKey(required)) {
-                missing.add(required);
-            }
-        }
-        if (!missing.isEmpty()) {
-            org.bukkit.Bukkit.getLogger().severe("[Fulcrum] The following required modules are missing or invalid:");
-            for (String name : missing) {
-                org.bukkit.Bukkit.getLogger().severe(" - " + name);
-            }
-            org.bukkit.Bukkit.getLogger().severe("[Fulcrum] Server is shutting down due to incomplete runtime configuration.");
-            org.bukkit.Bukkit.shutdown();
-            return;
-        }
-
-        List<ModuleMetadata> sorted;
-        try {
-            sorted = DependencyResolver.resolve(
-                    new ArrayList<>(discovered.values()),
-                    ModuleMetadata::name,
-                    ModuleMetadata::dependsOn
-            );
-        } catch (Exception e) {
-            logger.severe(e.getMessage());
-            return;
-        }
-        loadedModules = new ArrayList<>();
-        for (ModuleMetadata meta : sorted) {
-            try {
-                meta.instance().onEnable(platform);
-                logger.info("[Fulcrum] Enabled module: " + meta.name());
-                loadedModules.add(meta);
-            } catch (Exception e) {
-                logger.severe("[Fulcrum] Failed to enable module: " + meta.name());
-                e.printStackTrace();
-            }
-        }
-    }
-
     public void disableAll() {
-        for (int i = loadedModules.size() - 1; i >= 0; i--) {
-            ModuleMetadata meta = loadedModules.get(i);
+        List<ModuleMetadata> modules = getLoadedModules();
+        
+        // Disable in reverse order to respect dependencies
+        for (int i = modules.size() - 1; i >= 0; i--) {
+            ModuleMetadata meta = modules.get(i);
             try {
                 meta.instance().onDisable();
                 logger.info("[Fulcrum] Disabled module: " + meta.name());
@@ -95,10 +43,31 @@ public class ModuleManager {
                 e.printStackTrace();
             }
         }
-        loadedModules.clear();
     }
 
+    /**
+     * Discovers and returns currently loaded Fulcrum modules.
+     * Since modules now self-manage via bootstrap, this provides discovery-only functionality.
+     */
     public List<ModuleMetadata> getLoadedModules() {
-        return Collections.unmodifiableList(loadedModules);
+        List<ModuleMetadata> discoveredModules = new ArrayList<>();
+        
+        for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
+            if (!(plugin instanceof FulcrumModule module)) continue;
+            if (!plugin.isEnabled()) continue; // Only include enabled plugins
+            
+            ModuleInfo info = plugin.getClass().getAnnotation(ModuleInfo.class);
+            if (info == null) continue;
+            
+            discoveredModules.add(new ModuleMetadata(
+                info.name(),
+                List.of(info.dependsOn()),
+                info.description(),
+                (JavaPlugin) plugin,
+                module
+            ));
+        }
+        
+        return discoveredModules;
     }
 }

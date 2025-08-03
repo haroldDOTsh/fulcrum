@@ -7,6 +7,7 @@ import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.message.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
+import sh.harold.fulcrum.environment.SimpleEnvironmentDetector;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.identity.IdentityFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
@@ -41,42 +42,31 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new GamemodeFeature());
         FeatureManager.register(new RankFeature());
         FeatureManager.register(new ScoreboardFeature());
-        FeatureManager.register(new MenuFeature()); 
+        FeatureManager.register(new MenuFeature());
 
         // Initialize all features with dependency injection
         FeatureManager.initializeAll(this, container);
 
-        try {
-            String role = EnvironmentSelector.loadRole(new java.io.File("."));
-            RuntimeEnvironment env = EnvironmentLoader.load(this);
-            java.util.List<String> allowedModules = env.getModulesFor(role);
+        // Detect current environment using the new static method
+        String currentEnvironment = SimpleEnvironmentDetector.detectEnvironment();
+        getLogger().info("Fulcrum detected environment: " + currentEnvironment);
 
-            getLogger().info("Fulcrum runtime role: " + role);
-            getLogger().info("Modules for this role: " + allowedModules);
+        // Create platform with service locator
+        ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
+        this.platform = new FulcrumPlatform(serviceLocator);
+        this.moduleManager = new ModuleManager(getLogger(), this);
 
-            // Create platform with service locator
-            ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
-            this.platform = new FulcrumPlatform(serviceLocator);
-            this.moduleManager = new ModuleManager(getLogger());
+        // Register ModuleManager in the container
+        container.register(ModuleManager.class, moduleManager);
 
-            // Register ModuleManager in the container
-            container.register(ModuleManager.class, moduleManager);
-
-            // Re-initialize ModuleFeature now that ModuleManager is available
-            ModuleFeature moduleFeature = FeatureManager.getFeature(ModuleFeature.class);
-            if (moduleFeature != null && !moduleFeature.areCommandsRegistered()) {
-                moduleFeature.initialize(this, container);
-            }
-
-            // Delay module loading by 1 tick to ensure all plugins are loaded first
-            getServer().getScheduler().runTaskLater(this, () -> {
-                getLogger().info("[Fulcrum] Starting delayed module discovery...");
-                moduleManager.loadModules(allowedModules, platform);
-            }, 1L);
-        } catch (java.io.IOException e) {
-            getLogger().severe("Failed to load environment: " + e.getMessage());
-            getServer().shutdown();
+        // Re-initialize ModuleFeature now that ModuleManager is available
+        ModuleFeature moduleFeature = FeatureManager.getFeature(ModuleFeature.class);
+        if (moduleFeature != null && !moduleFeature.areCommandsRegistered()) {
+            moduleFeature.initialize(this, container);
         }
+
+        // Note: Module loading is now handled by each module's bootstrap phase
+        // External modules self-disable using FulcrumEnvironment.isThisModuleEnabled() during bootstrap
     }
 
     @Override

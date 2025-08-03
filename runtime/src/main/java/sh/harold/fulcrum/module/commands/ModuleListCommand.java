@@ -4,7 +4,7 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import sh.harold.fulcrum.environment.SimpleEnvironmentDetector;
+import sh.harold.fulcrum.api.module.FulcrumEnvironment;
 import sh.harold.fulcrum.module.ModuleManager;
 import sh.harold.fulcrum.module.ModuleMetadata;
 
@@ -26,7 +26,7 @@ public final class ModuleListCommand {
                     CommandSourceStack source = ctx.getSource();
                     var sender = source.getSender();
                     
-                    String environment = moduleManager.getEnvironmentDetector().getCurrentEnvironment();
+                    String environment = FulcrumEnvironment.getCurrent();
                     int moduleCount = moduleManager.getLoadedModules().size();
                     
                     sender.sendMessage(Component.text("=== Fulcrum Runtime Info ===", NamedTextColor.GOLD));
@@ -50,7 +50,7 @@ public final class ModuleListCommand {
 
                             sender.sendMessage(Component.text("Loaded Fulcrum Modules:", NamedTextColor.GOLD));
                             sender.sendMessage(Component.text("Current Environment: ", NamedTextColor.GRAY)
-                                    .append(Component.text(moduleManager.getEnvironmentDetector().getCurrentEnvironment(), NamedTextColor.GREEN)));
+                                    .append(Component.text(FulcrumEnvironment.getCurrent(), NamedTextColor.GREEN)));
 
                             var loadedModules = moduleManager.getLoadedModules();
                             if (loadedModules == null || loadedModules.isEmpty()) {
@@ -89,8 +89,7 @@ public final class ModuleListCommand {
                             CommandSourceStack source = ctx.getSource();
                             var sender = source.getSender();
                             
-                            SimpleEnvironmentDetector detector = moduleManager.getEnvironmentDetector();
-                            String environment = detector.getCurrentEnvironment();
+                            String environment = FulcrumEnvironment.getCurrent();
                             
                             sender.sendMessage(Component.text("=== Environment Info ===", NamedTextColor.GOLD));
                             sender.sendMessage(Component.text("Current Environment: ", NamedTextColor.GRAY)
@@ -107,21 +106,13 @@ public final class ModuleListCommand {
                             CommandSourceStack source = ctx.getSource();
                             var sender = source.getSender();
                             
-                            String oldEnv = moduleManager.getEnvironmentDetector().getCurrentEnvironment();
-                            moduleManager.getEnvironmentDetector().reload();
-                            String newEnv = moduleManager.getEnvironmentDetector().getCurrentEnvironment();
-                            
-                            if (oldEnv.equals(newEnv)) {
-                                sender.sendMessage(Component.text("Environment unchanged: " + newEnv, NamedTextColor.YELLOW));
-                            } else {
-                                sender.sendMessage(Component.text("Environment changed: ", NamedTextColor.GREEN)
-                                        .append(Component.text(oldEnv, NamedTextColor.RED))
-                                        .append(Component.text(" → ", NamedTextColor.GRAY))
-                                        .append(Component.text(newEnv, NamedTextColor.GREEN)));
-                                sender.sendMessage(Component.text("⚠ Server restart required for module changes", NamedTextColor.YELLOW));
-                            }
-                            
+                            String oldEnv = FulcrumEnvironment.getCurrent();
+                            // Note: Environment reload functionality needs to be implemented through FulcrumBootstrapper
+                            // For now, we'll just show a message indicating reload is not available via this command
+                            sender.sendMessage(Component.text("⚠ Environment reload via command is not yet implemented in the new bootstrap system", NamedTextColor.YELLOW));
+                            sender.sendMessage(Component.text("Please restart the server to reload environment configuration", NamedTextColor.GRAY));
                             return 1;
+                            
                         }))
                 .build();
     }
