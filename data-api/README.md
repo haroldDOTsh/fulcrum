@@ -69,8 +69,7 @@ public class PlayerStats {
 // In your plugin's onEnable()
 public void onEnable() {
     PlayerDataRegistry.registerSchema(
-        new AutoTableSchema<>(PlayerStats.class),
-        sqlBackend
+        new AutoTableSchema<>(PlayerStats.class)
     );
     getLogger().info("Data API initialized!");
 }
