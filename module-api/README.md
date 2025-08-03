@@ -34,30 +34,71 @@ dependencies {
 
 ### Creating a Fulcrum Module
 
+Create your module class:
+
 ```java
 import sh.harold.fulcrum.api.module.FulcrumModule;
 import sh.harold.fulcrum.api.module.ModuleInfo;
+import sh.harold.fulcrum.api.module.FulcrumPlatform;
 
 @ModuleInfo(
     name = "MyModule",
-    version = "1.0.0",
-    author = "YourName",
     description = "A sample Fulcrum module"
 )
 public class MyModule implements FulcrumModule {
     
     @Override
-    public void onEnable() {
+    public void onEnable(FulcrumPlatform platform) {
         // Module initialization logic
-        getLogger().info("MyModule has been enabled!");
+        platform.getLogger().info("MyModule has been enabled!");
     }
     
     @Override
     public void onDisable() {
         // Module cleanup logic
-        getLogger().info("MyModule has been disabled!");
+        System.out.println("MyModule has been disabled!");
     }
 }
+```
+
+Create a bootstrapper class for environment checking:
+
+```java
+import io.papermc.paper.plugin.bootstrap.BootstrapContext;
+import io.papermc.paper.plugin.bootstrap.PluginBootstrap;
+import io.papermc.paper.plugin.bootstrap.PluginProviderContext;
+import sh.harold.fulcrum.api.module.FulcrumEnvironment;
+import org.bukkit.plugin.java.JavaPlugin;
+
+public class MyModuleBootstrapper implements PluginBootstrap {
+    
+    @Override
+    public void bootstrap(BootstrapContext context) {
+        // Check if this module should be enabled in the current environment
+        if (!FulcrumEnvironment.isThisModuleEnabled()) {
+            context.getLogger().info("MyModule is disabled in this environment");
+            // Module will not be loaded
+            return;
+        }
+        
+        context.getLogger().info("MyModule bootstrap completed");
+    }
+    
+    @Override
+    public JavaPlugin createPlugin(PluginProviderContext context) {
+        return new MyModulePlugin(); // Your main plugin class
+    }
+}
+```
+
+Configure your `paper-plugin.yml`:
+
+```yaml
+name: MyModule
+version: 1.0.0
+main: com.example.MyModulePlugin
+bootstrapper: com.example.MyModuleBootstrapper
+api-version: '1.21'
 ```
 
 ### Module Dependencies
@@ -67,12 +108,41 @@ Specify dependencies on other modules:
 ```java
 @ModuleInfo(
     name = "AdvancedModule",
-    version = "2.0.0",
-    dependencies = {"CoreModule", "DataModule"},
-    softDependencies = {"OptionalModule"}
+    description = "An advanced module with dependencies",
+    dependsOn = {"CoreModule", "DataModule"}
 )
 public class AdvancedModule implements FulcrumModule {
-    // Implementation
+    
+    @Override
+    public void onEnable(FulcrumPlatform platform) {
+        // Implementation logic
+    }
+    
+    @Override
+    public void onDisable() {
+        // Cleanup logic
+    }
+}
+```
+
+With corresponding bootstrapper:
+
+```java
+public class AdvancedModuleBootstrapper implements PluginBootstrap {
+    
+    @Override
+    public void bootstrap(BootstrapContext context) {
+        if (!FulcrumEnvironment.isThisModuleEnabled()) {
+            context.getLogger().info("AdvancedModule disabled for current environment");
+            return;
+        }
+        // Bootstrap logic
+    }
+    
+    @Override
+    public JavaPlugin createPlugin(PluginProviderContext context) {
+        return new AdvancedModulePlugin();
+    }
 }
 ```
 
@@ -89,9 +159,11 @@ The API is organized into the following packages:
 
 1. **Keep modules lightweight** - Only include necessary dependencies
 2. **Use proper lifecycle management** - Clean up resources in `onDisable()`
-3. **Declare dependencies correctly** - Use `dependencies` for required modules, `softDependencies` for optional ones
-4. **Provide good metadata** - Include clear name, version, and description
-5. **Handle errors gracefully** - Don't crash the server if your module fails
+3. **Declare dependencies correctly** - Use `dependsOn` for required modules
+4. **Provide good metadata** - Include clear name and description in [`@ModuleInfo`](src/main/java/sh/harold/fulcrum/api/module/ModuleInfo.java:13)
+5. **Use environment checking** - Always check [`FulcrumEnvironment.isThisModuleEnabled()`](src/main/java/sh/harold/fulcrum/api/module/FulcrumEnvironment.java:52) in your bootstrapper class
+6. **Handle errors gracefully** - Use `setEnabled(false)` instead of throwing exceptions to disable your module
+7. **Access services safely** - Use [`FulcrumPlatform`](src/main/java/sh/harold/fulcrum/api/module/FulcrumPlatform.java:10) methods to check service availability
 
 ## Module Lifecycle
 
@@ -106,18 +178,62 @@ Fulcrum modules follow this lifecycle:
 
 ## Integration with Fulcrum Services
 
-Your modules can integrate with Fulcrum's built-in services:
+Your modules can integrate with Fulcrum's built-in services through the [`FulcrumPlatform`](src/main/java/sh/harold/fulcrum/api/module/FulcrumPlatform.java:10):
 
 ```java
 public class IntegratedModule implements FulcrumModule {
     
     @Override
-    public void onEnable() {
-        // Access Fulcrum services (examples - actual API may vary)
-        // DataService dataService = Fulcrum.getService(DataService.class);
-        // MessageService messageService = Fulcrum.getService(MessageService.class);
+    public void onEnable(FulcrumPlatform platform) {
+        // Access Fulcrum services safely
+        MessageService messageService = platform.getService(MessageService.class);
+        if (messageService != null) {
+            // Use the message service
+        }
+        
+        // Or use Optional for safer handling
+        platform.getOptionalService(DataService.class)
+            .ifPresent(dataService -> {
+                // Use the data service
+            });
+    }
+    
+    @Override
+    public void onDisable() {
+        // Cleanup logic
     }
 }
+```
+
+## Environment-Aware Module Development
+
+Modules should use [`FulcrumEnvironment.isThisModuleEnabled()`](src/main/java/sh/harold/fulcrum/api/module/FulcrumEnvironment.java:52) in their bootstrapper class to check if they should be active in the current environment. This enables graceful self-disabling based on server configuration:
+
+```java
+public class EnvironmentAwareBootstrapper implements PluginBootstrap {
+    
+    @Override
+    public void bootstrap(BootstrapContext context) {
+        // Check environment during bootstrap phase
+        if (!FulcrumEnvironment.isThisModuleEnabled()) {
+            context.getLogger().info("Module disabled for current environment");
+            return; // Module will not be loaded
+        }
+        
+        context.getLogger().info("Module enabled for current environment");
+    }
+    
+    @Override
+    public JavaPlugin createPlugin(PluginProviderContext context) {
+        return new EnvironmentAwarePlugin();
+    }
+}
+```
+
+Configure in your `paper-plugin.yml`:
+
+```yaml
+bootstrapper: com.example.EnvironmentAwareBootstrapper
 ```
 
 ## Version Compatibility
@@ -127,7 +243,7 @@ This API follows semantic versioning:
 - **Minor versions** add new features while maintaining compatibility
 - **Patch versions** contain bug fixes and improvements
 
-Current version: **1.1.0**
+Current version: **1.2.0**
 
 ## Support
 
