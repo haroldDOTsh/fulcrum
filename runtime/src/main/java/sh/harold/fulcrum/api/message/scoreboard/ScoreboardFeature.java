@@ -132,7 +132,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         // Map Minecraft versions to their corresponding NMS versions
         // Minecraft 1.21.6 and 1.21.7 both use v1_21_R1
-        if (minecraftVersion.startsWith("1.21.6") || minecraftVersion.startsWith("1.21.7")) {
+        if (minecraftVersion.startsWith("1.21.6") || minecraftVersion.startsWith("1.21.7") || minecraftVersion.startsWith("1.21.8")) {
             return "v1_21_R1";
         }
 
