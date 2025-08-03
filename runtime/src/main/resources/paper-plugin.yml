@@ -1,0 +1,21 @@
+name: Fulcrum
+version: '${project.version}'
+main: sh.harold.fulcrum.FulcrumPlugin
+description: Eternum's next-generation plugin backbone
+author: harold-waste
+website: https://github.com/harold-waste/fulcrum
+api-version: '1.21'
+folia-supported: false
+
+# Bootstrap configuration
+bootstrapper: sh.harold.fulcrum.FulcrumBootstrapper
+
+# Dependencies
+dependencies:
+  server: {}
+  bootstrap: []
+# Permissions
+
+# Load order
+load: STARTUP
+prefix: Fulcrum
