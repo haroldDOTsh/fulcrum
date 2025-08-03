@@ -9,7 +9,7 @@ public class GamemodeFeature implements PluginFeature {
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
-        plugin.getLogger().info("Registered Gamemode Commands");
+        plugin.getLogger().info("[FUNDAMENTALS] Registered Gamemode Commands");
         CommandRegistrar.register(new GamemodeCommand().build());
     }
 

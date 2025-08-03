@@ -68,7 +68,11 @@ public final class FulcrumPlugin extends JavaPlugin {
                 moduleFeature.initialize(this, container);
             }
 
-            moduleManager.loadModules(allowedModules, platform);
+            // Delay module loading by 1 tick to ensure all plugins are loaded first
+            getServer().getScheduler().runTaskLater(this, () -> {
+                getLogger().info("[Fulcrum] Starting delayed module discovery...");
+                moduleManager.loadModules(allowedModules, platform);
+            }, 1L);
         } catch (java.io.IOException e) {
             getLogger().severe("Failed to load environment: " + e.getMessage());
             getServer().shutdown();

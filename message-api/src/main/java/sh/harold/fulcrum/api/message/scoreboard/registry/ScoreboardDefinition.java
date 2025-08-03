@@ -197,7 +197,7 @@ public class ScoreboardDefinition {
         if (hasTitle()) {
             return title;
         }
-        return "&7Scoreboard"; // Default title
+        return "&6harold&lDOT&r&6sh"; // Default title
     }
 
     /**
