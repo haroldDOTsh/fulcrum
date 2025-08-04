@@ -3,6 +3,7 @@ package sh.harold.fulcrum.environment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
+import sh.harold.fulcrum.api.module.BootstrapContextHolder;
 
 import java.util.Map;
 import java.util.Set;
@@ -26,12 +27,19 @@ public class EnvironmentSystemTest {
             environmentField.setAccessible(true);
             environmentField.set(null, null);
             
+            java.lang.reflect.Field configField = FulcrumEnvironment.class.getDeclaredField("environmentConfig");
+            configField.setAccessible(true);
+            configField.set(null, null);
+            
             java.lang.reflect.Field registryField = FulcrumEnvironment.class.getDeclaredField("moduleRegistry");
             registryField.setAccessible(true);
             registryField.set(null, null);
         } catch (Exception e) {
             throw new RuntimeException("Failed to reset FulcrumEnvironment state", e);
         }
+        
+        // Clear any bootstrap context
+        BootstrapContextHolder.clearContext();
     }
     
     @Test
@@ -60,7 +68,7 @@ public class EnvironmentSystemTest {
     }
     
     @Test
-    public void testModuleEnvironmentRegistry() {
+    public void testFulcrumEnvironmentWithConfiguration() {
         // Create test configuration
         Map<String, Set<String>> testConfig = Map.of(
             "global", Set.of("fulcrum-core"),
@@ -68,34 +76,72 @@ public class EnvironmentSystemTest {
             "lobby", Set.of("lobby-module")
         );
         
-        EnvironmentConfig config = new EnvironmentConfig(testConfig);
-        ModuleEnvironmentRegistry registry = new ModuleEnvironmentRegistry(config, "dev");
+        // Initialize FulcrumEnvironment with new configuration-based approach
+        FulcrumEnvironment.initialize("dev", testConfig);
         
-        // Test direct module enablement
-        assertTrue(registry.isModuleEnabled("fulcrum-core")); // Global module
-        assertTrue(registry.isModuleEnabled("debug-module")); // Dev environment module
-        assertFalse(registry.isModuleEnabled("lobby-module")); // Lobby environment module
+        // Test basic functionality
+        assertEquals("dev", FulcrumEnvironment.getCurrent());
+        
+        // Test module enablement with context
+        try {
+            BootstrapContextHolder.setContext("fulcrum-core");
+            assertTrue(FulcrumEnvironment.isThisModuleEnabled()); // Global module
+        } finally {
+            BootstrapContextHolder.clearContext();
+        }
+        
+        try {
+            BootstrapContextHolder.setContext("debug-module");
+            assertTrue(FulcrumEnvironment.isThisModuleEnabled()); // Dev environment module
+        } finally {
+            BootstrapContextHolder.clearContext();
+        }
+        
+        try {
+            BootstrapContextHolder.setContext("lobby-module");
+            assertFalse(FulcrumEnvironment.isThisModuleEnabled()); // Lobby environment module, not in dev
+        } finally {
+            BootstrapContextHolder.clearContext();
+        }
     }
     
     @Test
-    public void testFulcrumEnvironmentInitialization() {
-        // Create test configuration
+    public void testFulcrumEnvironmentWithoutContext() {
+        // Initialize with configuration
         Map<String, Set<String>> testConfig = Map.of(
             "global", Set.of("fulcrum-core"),
             "dev", Set.of("debug-module")
         );
         
-        EnvironmentConfig config = new EnvironmentConfig(testConfig);
-        ModuleEnvironmentRegistry registry = new ModuleEnvironmentRegistry(config, "dev");
+        FulcrumEnvironment.initialize("dev", testConfig);
         
-        // Initialize FulcrumEnvironment
-        FulcrumEnvironment.initialize("dev", registry);
+        // When not in bootstrap phase and no legacy registry, it returns true by default
+        // This is the legacy behavior for backward compatibility
+        assertTrue(FulcrumEnvironment.isThisModuleEnabled());
+    }
+    
+    @Test
+    public void testFulcrumEnvironmentWithoutContextInBootstrapPhase() {
+        // Initialize with configuration
+        Map<String, Set<String>> testConfig = Map.of(
+            "global", Set.of("fulcrum-core"),
+            "dev", Set.of("debug-module")
+        );
         
-        // Test basic functionality
-        assertEquals("dev", FulcrumEnvironment.getCurrent());
+        FulcrumEnvironment.initialize("dev", testConfig);
         
-        // Note: We can't easily test isThisModuleEnabled() without a proper plugin context
-        // In real usage, this would be tested with actual plugins
+        // Simulate being in bootstrap phase without setting module ID
+        try {
+            // Set bootstrap phase flag but not module ID
+            BootstrapContextHolder.setContext(null);
+            
+            // This should throw an exception
+            assertThrows(IllegalStateException.class, () -> {
+                FulcrumEnvironment.isThisModuleEnabled();
+            });
+        } finally {
+            BootstrapContextHolder.clearContext();
+        }
     }
     
     @Test
@@ -121,11 +167,70 @@ public class EnvironmentSystemTest {
     
     @Test
     public void testModuleEnablementWithEmptyConfig() {
-        // Test with empty configuration (should default to enabled)
-        EnvironmentConfig config = new EnvironmentConfig(Map.of());
-        ModuleEnvironmentRegistry registry = new ModuleEnvironmentRegistry(config, "dev");
+        // Test with empty configuration
+        FulcrumEnvironment.initialize("dev", Map.of());
         
-        // With empty config, no modules are explicitly enabled
-        assertFalse(registry.isModuleEnabled("any-module"));
+        // With empty config, modules are NOT enabled by default
+        // because they're not in any environment list
+        try {
+            BootstrapContextHolder.setContext("any-module");
+            assertFalse(FulcrumEnvironment.isThisModuleEnabled());
+        } finally {
+            BootstrapContextHolder.clearContext();
+        }
+    }
+    
+    @Test
+    public void testModuleEnablementWithNullConfig() {
+        // Test with null configuration (legacy mode)
+        FulcrumEnvironment.initialize("dev", (Map<String, Set<String>>)null);
+        
+        // With null config, all modules are enabled by default
+        try {
+            BootstrapContextHolder.setContext("any-module");
+            assertTrue(FulcrumEnvironment.isThisModuleEnabled());
+        } finally {
+            BootstrapContextHolder.clearContext();
+        }
+    }
+    
+    @Test
+    public void testBootstrapContextThreadSafety() throws InterruptedException {
+        // Initialize environment
+        FulcrumEnvironment.initialize("dev", Map.of(
+            "dev", Set.of("module1", "module2")
+        ));
+        
+        // Test that context is thread-local
+        Thread thread1 = new Thread(() -> {
+            try {
+                BootstrapContextHolder.setContext("module1");
+                assertEquals("module1", BootstrapContextHolder.getCurrentModuleId());
+                assertTrue(BootstrapContextHolder.isInBootstrapPhase());
+                assertTrue(FulcrumEnvironment.isThisModuleEnabled());
+            } finally {
+                BootstrapContextHolder.clearContext();
+            }
+        });
+        
+        Thread thread2 = new Thread(() -> {
+            try {
+                BootstrapContextHolder.setContext("module3");
+                assertEquals("module3", BootstrapContextHolder.getCurrentModuleId());
+                assertTrue(BootstrapContextHolder.isInBootstrapPhase());
+                assertFalse(FulcrumEnvironment.isThisModuleEnabled()); // module3 not in dev
+            } finally {
+                BootstrapContextHolder.clearContext();
+            }
+        });
+        
+        thread1.start();
+        thread2.start();
+        thread1.join();
+        thread2.join();
+        
+        // Main thread should have no context
+        assertNull(BootstrapContextHolder.getCurrentModuleId());
+        assertFalse(BootstrapContextHolder.isInBootstrapPhase());
     }
 }
