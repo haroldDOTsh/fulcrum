@@ -3,6 +3,8 @@ package sh.harold.fulcrum.environment;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
+import sh.harold.fulcrum.api.module.BootstrapContextHolder;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -10,7 +12,7 @@ import java.util.logging.Logger;
 /**
  * Registry for managing module enablement decisions based on environment configuration.
  * Provides caching and plugin name resolution for performance.
- * 
+ *
  * @since 1.2.0
  */
 public class ModuleEnvironmentRegistry {
@@ -28,12 +30,28 @@ public class ModuleEnvironmentRegistry {
     
     /**
      * Determines if a module is enabled based on the calling plugin context.
-     * Uses stack trace analysis to identify the calling plugin.
-     * 
+     * During bootstrap phase, uses BootstrapContextHolder for safe detection.
+     * After bootstrap, uses stack trace analysis to identify the calling plugin.
+     *
      * @return true if the calling module is enabled in the current environment
      * @throws IllegalStateException if the calling plugin cannot be determined
      */
     public boolean isThisModuleEnabled() {
+        // Check if we're in bootstrap phase first
+        if (BootstrapContextHolder.isInBootstrapPhase()) {
+            String moduleId = BootstrapContextHolder.getCurrentModuleId();
+            if (moduleId != null) {
+                LOGGER.fine("Bootstrap phase detection for module: " + moduleId);
+                return isModuleEnabled(moduleId);
+            }
+        }
+        
+        // Fallback to runtime detection (requires Bukkit APIs)
+        if (!isBukkitAvailable()) {
+            LOGGER.warning("Bukkit APIs not available and no bootstrap context found. Defaulting to enabled.");
+            return true;
+        }
+        
         String pluginName = detectCallingPlugin();
         
         if (pluginName == null) {
@@ -97,11 +115,16 @@ public class ModuleEnvironmentRegistry {
     
     /**
      * Finds the plugin that owns a specific class.
-     * 
+     *
      * @param clazz the class to search for
      * @return the plugin that owns the class, or null if not found
      */
     private Plugin findPluginForClass(Class<?> clazz) {
+        // Check if Bukkit is available before trying to use it
+        if (!isBukkitAvailable()) {
+            return null;
+        }
+        
         ClassLoader classLoader = clazz.getClassLoader();
         
         for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
@@ -111,6 +134,21 @@ public class ModuleEnvironmentRegistry {
         }
         
         return null;
+    }
+    
+    /**
+     * Checks if Bukkit APIs are available (i.e., not in bootstrap phase).
+     *
+     * @return true if Bukkit APIs can be used
+     */
+    private boolean isBukkitAvailable() {
+        try {
+            // Check if the plugin manager is available
+            return Bukkit.getPluginManager() != null;
+        } catch (Exception | Error e) {
+            // Any exception means Bukkit is not ready
+            return false;
+        }
     }
     
     /**

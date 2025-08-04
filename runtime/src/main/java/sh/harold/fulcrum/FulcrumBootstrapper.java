@@ -14,6 +14,10 @@ import sh.harold.fulcrum.environment.ModuleEnvironmentRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Bootstrap class for Fulcrum that initializes the environment
@@ -37,12 +41,12 @@ public class FulcrumBootstrapper implements PluginBootstrap {
         // Load environment configuration
         EnvironmentConfig config = loadEnvironmentConfiguration(logger);
         
-        // Create module registry
-        ModuleEnvironmentRegistry moduleRegistry = new ModuleEnvironmentRegistry(config, environment);
+        // Convert EnvironmentConfig to Map<String, Set<String>> for the new API
+        Map<String, Set<String>> configMap = convertConfigToMap(config);
         
         try {
-            // Initialize FulcrumEnvironment with the new infrastructure
-            FulcrumEnvironment.initialize(environment, moduleRegistry);
+            // Initialize FulcrumEnvironment with the bootstrap-safe configuration
+            FulcrumEnvironment.initialize(environment, configMap);
             logger.info("Fulcrum environment initialized: " + environment);
             
             // Log configuration summary
@@ -115,6 +119,14 @@ public class FulcrumBootstrapper implements PluginBootstrap {
         } catch (IOException e) {
             logger.warn("Failed to generate default environment configuration: " + e.getMessage());
         }
+    }
+    
+    /**
+     * Converts EnvironmentConfig to Map<String, Set<String>> for the new bootstrap-safe API
+     */
+    private Map<String, Set<String>> convertConfigToMap(EnvironmentConfig config) {
+        // Simply return the underlying map as it's already in the correct format
+        return new HashMap<>(config.getAllMappings());
     }
     
     /**

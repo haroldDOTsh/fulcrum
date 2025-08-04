@@ -1,5 +1,8 @@
 package sh.harold.fulcrum.api.module;
 
+import java.util.Map;
+import java.util.Set;
+
 /**
  * Static utility for environment detection and module enablement checks.
  * This class is initialized by Fulcrum's bootstrapper and provides
@@ -9,8 +12,11 @@ package sh.harold.fulcrum.api.module;
  */
 public final class FulcrumEnvironment {
     private static String currentEnvironment = null;
+    private static Map<String, Set<String>> environmentConfig = null;
     private static boolean initialized = false;
-    private static Object moduleRegistry = null; // Will be set to ModuleEnvironmentRegistry
+    
+    // Legacy support
+    private static Object moduleRegistry = null;
     
     private FulcrumEnvironment() {
         throw new UnsupportedOperationException("Utility class");
@@ -18,10 +24,30 @@ public final class FulcrumEnvironment {
     
     /**
      * Initializes the environment with configuration support. Called only by FulcrumBootstrapper.
+     * This is the new preferred initialization method for bootstrap-safe module detection.
+     *
+     * @param environment The detected environment name
+     * @param config The environment configuration mapping environment names to module sets
+     * @throws IllegalStateException if already initialized
+     * @since 1.3.0
+     */
+    public static void initialize(String environment, Map<String, Set<String>> config) {
+        if (initialized) {
+            throw new IllegalStateException("FulcrumEnvironment already initialized");
+        }
+        currentEnvironment = environment;
+        environmentConfig = config;
+        initialized = true;
+    }
+    
+    /**
+     * Legacy initialization with registry support for backward compatibility.
      * @param environment The detected environment name
      * @param registry The module environment registry for enablement checks
      * @throws IllegalStateException if already initialized
+     * @deprecated Use initialize(String, Map) instead
      */
+    @Deprecated
     public static void initialize(String environment, Object registry) {
         if (initialized) {
             throw new IllegalStateException("FulcrumEnvironment already initialized");
@@ -35,16 +61,17 @@ public final class FulcrumEnvironment {
      * Legacy initialization method for backwards compatibility.
      * @param environment The detected environment name
      * @throws IllegalStateException if already initialized
-     * @deprecated Use initialize(String, Object) instead
+     * @deprecated Use initialize(String, Map) instead
      */
     @Deprecated
     public static void initialize(String environment) {
-        initialize(environment, null);
+        initialize(environment, (Object)null);
     }
     
     /**
      * Check if the calling module is enabled in the current environment.
-     * Uses stack trace detection to automatically identify the calling plugin.
+     * During bootstrap phase, uses BootstrapContextHolder to identify the module.
+     * Outside bootstrap phase, falls back to legacy stack trace detection.
      *
      * @return true if the module is enabled
      * @throws IllegalStateException if not initialized or if context detection fails
@@ -54,8 +81,25 @@ public final class FulcrumEnvironment {
             throw new IllegalStateException("FulcrumEnvironment not initialized. Ensure Fulcrum is loaded before this module.");
         }
         
+        // Try bootstrap-safe detection first
+        if (BootstrapContextHolder.isInBootstrapPhase()) {
+            String moduleId = BootstrapContextHolder.getCurrentModuleId();
+            if (moduleId == null) {
+                throw new IllegalStateException(
+                    "Module ID not found in context. Ensure your bootstrap class is annotated with @ModuleID " +
+                    "and BootstrapContextHolder.setContext() is called"
+                );
+            }
+            
+            // Use the new configuration-based check if available
+            if (environmentConfig != null) {
+                return isModuleEnabledInEnvironment(moduleId);
+            }
+        }
+        
+        // Fallback to legacy registry-based detection
         if (moduleRegistry == null) {
-            // Fallback to legacy behavior - assume enabled
+            // If no registry and no config, default to enabled
             return true;
         }
         
@@ -66,6 +110,31 @@ public final class FulcrumEnvironment {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to determine module enablement: " + e.getMessage(), e);
         }
+    }
+    
+    /**
+     * Checks if a specific module is enabled in the current environment.
+     * This method uses the configuration-based approach and doesn't require Bukkit APIs.
+     *
+     * @param moduleId the module identifier to check
+     * @return true if the module is enabled
+     * @since 1.3.0
+     */
+    private static boolean isModuleEnabledInEnvironment(String moduleId) {
+        if (environmentConfig == null) {
+            // No configuration means all modules are enabled
+            return true;
+        }
+        
+        // Check global modules first
+        Set<String> globalModules = environmentConfig.get("global");
+        if (globalModules != null && globalModules.contains(moduleId)) {
+            return true;
+        }
+        
+        // Check environment-specific modules
+        Set<String> envModules = environmentConfig.get(currentEnvironment);
+        return envModules != null && envModules.contains(moduleId);
     }
     
     /**
