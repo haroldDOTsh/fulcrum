@@ -5,15 +5,6 @@ package sh.harold.fulcrum.api.module;
  */
 public interface FulcrumModule {
     /**
-     * Called when the module is being bootstrapped.
-     * This is where the module should register services and perform initialization.
-     *
-     * @param moduleInfo Information about this module
-     * @param serviceLocator Service locator for dependency injection
-     */
-    void bootstrap(ModuleInfo moduleInfo, ServiceLocator serviceLocator);
-    
-    /**
      * Called when the module is enabled.
      */
     void onEnable();
