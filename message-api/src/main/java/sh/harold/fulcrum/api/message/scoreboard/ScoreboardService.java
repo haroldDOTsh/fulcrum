@@ -9,7 +9,7 @@ import java.util.UUID;
 /**
  * Core service interface for the Scoreboard API.
  * This interface defines the contract for all scoreboard operations and is implemented
- * by the actual scoreboard service in the player-core module.
+ * by the scoreboard feature in the runtime module.
  *
  * <p>The service handles:
  * <ul>
