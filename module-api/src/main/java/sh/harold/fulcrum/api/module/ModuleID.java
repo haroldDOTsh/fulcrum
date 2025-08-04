@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
  * Identifies a module's unique ID for environment configuration.
  * Must be placed on PluginBootstrap implementations.
  * 
- * @since 1.3.0
+ * @since 1.3.1
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)

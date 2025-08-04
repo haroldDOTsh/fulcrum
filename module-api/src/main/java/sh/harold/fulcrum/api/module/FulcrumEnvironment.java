@@ -118,7 +118,7 @@ public final class FulcrumEnvironment {
      *
      * @param moduleId the module identifier to check
      * @return true if the module is enabled
-     * @since 1.3.0
+     * @since 1.3.1
      */
     private static boolean isModuleEnabledInEnvironment(String moduleId) {
         if (environmentConfig == null) {
