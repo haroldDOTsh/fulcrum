@@ -86,8 +86,8 @@ public final class FulcrumEnvironment {
             String moduleId = BootstrapContextHolder.getCurrentModuleId();
             if (moduleId == null) {
                 throw new IllegalStateException(
-                    "Module ID not found in context. Ensure your bootstrap class is annotated with @ModuleID " +
-                    "and BootstrapContextHolder.setContext() is called"
+                    "Module ID not found in context. Ensure BootstrapContextHolder.setContext() is called " +
+                    "with your module ID before checking enablement"
                 );
             }
             

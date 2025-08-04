@@ -9,7 +9,6 @@ import org.jetbrains.annotations.NotNull;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
 import sh.harold.fulcrum.environment.EnvironmentConfig;
 import sh.harold.fulcrum.environment.EnvironmentConfigParser;
-import sh.harold.fulcrum.environment.ModuleEnvironmentRegistry;
 
 import java.io.IOException;
 import java.nio.file.Files;

@@ -9,7 +9,6 @@ import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.environment.EnvironmentConfig;
 import sh.harold.fulcrum.environment.EnvironmentConfigParser;
-import sh.harold.fulcrum.environment.SimpleEnvironmentDetector;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.identity.IdentityFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
@@ -54,9 +53,8 @@ public final class FulcrumPlugin extends JavaPlugin {
         // Initialize all features with dependency injection
         FeatureManager.initializeAll(this, container);
 
-        // Detect current environment using the new static method
-        String currentEnvironment = SimpleEnvironmentDetector.detectEnvironment();
-        getLogger().info("Fulcrum detected environment: " + currentEnvironment);
+        // Environment detection is now handled through manual context management
+        getLogger().info("Fulcrum starting with context-based module detection");
 
         // Create platform with service locator
         ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
@@ -73,10 +71,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         }
 
         // Note: Module loading is now handled by each module's bootstrap phase
-        // External modules self-disable using FulcrumEnvironment.isThisModuleEnabled() during bootstrap
-        
-        // Verify that requested modules from environment.yml have actually loaded
-        verifyModuleLoadStatus(currentEnvironment);
+        // External modules use BootstrapContextHolder for identification
     }
 
     @Override
@@ -87,45 +82,4 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.shutdownAll();
     }
     
-    /**
-     * Verifies that modules requested in environment.yml have actually loaded successfully.
-     * Reports missing modules with appropriate logging.
-     */
-    private void verifyModuleLoadStatus(String currentEnvironment) {
-        try {
-            // Load environment configuration
-            EnvironmentConfigParser parser = new EnvironmentConfigParser();
-            EnvironmentConfig config = parser.loadDefaultConfiguration();
-            
-            // Get requested modules for current environment
-            Set<String> requestedModules = new HashSet<>();
-            requestedModules.addAll(config.getGlobalModules());
-            requestedModules.addAll(config.getModulesForEnvironment(currentEnvironment));
-            
-            // Get actually loaded modules
-            List<ModuleMetadata> loadedModules = moduleManager.getLoadedModules();
-            Set<String> loadedModuleNames = new HashSet<>();
-            for (ModuleMetadata module : loadedModules) {
-                loadedModuleNames.add(module.name());
-            }
-            
-            // Find missing modules
-            Set<String> missingModules = new HashSet<>(requestedModules);
-            missingModules.removeAll(loadedModuleNames);
-            
-            // Report verification results
-            if (missingModules.isEmpty()) {
-                getLogger().info("Module verification completed: All " + requestedModules.size() + " requested modules loaded successfully");
-            } else {
-                getLogger().severe("Module verification failed: " + missingModules.size() + " requested modules failed to load:");
-                for (String missingModule : missingModules) {
-                    getLogger().severe("  - Missing module: " + missingModule);
-                }
-                getLogger().info("Successfully loaded modules (" + loadedModuleNames.size() + "): " + loadedModuleNames);
-            }
-            
-        } catch (Exception e) {
-            getLogger().warning("Failed to verify module load status: " + e.getMessage());
-        }
-    }
 }

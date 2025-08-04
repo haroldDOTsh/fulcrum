@@ -18,8 +18,8 @@ public final class BootstrapContextHolder {
     /**
      * Sets the bootstrap context for the current thread.
      * This should be called at the beginning of a module's bootstrap method.
-     * 
-     * @param moduleId the module ID from the @ModuleID annotation
+     *
+     * @param moduleId the module ID to set in the context
      */
     public static void setContext(String moduleId) {
         currentModuleId.set(moduleId);
