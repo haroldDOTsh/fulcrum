@@ -6,6 +6,7 @@ import sh.harold.fulcrum.api.menu.MenuFeature;
 import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.message.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
+import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
 import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.environment.EnvironmentConfig;
 import sh.harold.fulcrum.environment.EnvironmentConfigParser;
@@ -19,6 +20,7 @@ import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.module.ModuleFeature;
 import sh.harold.fulcrum.module.ModuleManager;
 import sh.harold.fulcrum.module.ModuleMetadata;
+import sh.harold.fulcrum.module.ModuleVerificationManager;
 
 import java.util.Set;
 import java.util.HashSet;
@@ -28,6 +30,7 @@ public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
     private FulcrumPlatform platform;
     private DependencyContainer container;
+    private ModuleVerificationManager verificationManager;
 
     public ModuleManager getModuleManager() {
         return moduleManager;
@@ -55,11 +58,18 @@ public final class FulcrumPlugin extends JavaPlugin {
 
         // Environment detection is now handled through manual context management
         getLogger().info("Fulcrum starting with context-based module detection");
+        
+        // Load environment configuration for module verification
+        EnvironmentConfigParser configParser = new EnvironmentConfigParser();
+        EnvironmentConfig environmentConfig = configParser.loadDefaultConfiguration();
 
         // Create platform with service locator
         ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
         this.platform = new FulcrumPlatform(serviceLocator);
         this.moduleManager = new ModuleManager(getLogger(), this);
+        
+        // Initialize FulcrumPlatformHolder to make platform accessible to external modules
+        FulcrumPlatformHolder.initialize(platform);
 
         // Register ModuleManager in the container
         container.register(ModuleManager.class, moduleManager);
@@ -72,6 +82,12 @@ public final class FulcrumPlugin extends JavaPlugin {
 
         // Note: Module loading is now handled by each module's bootstrap phase
         // External modules use BootstrapContextHolder for identification
+        
+        // Setup deferred module verification
+        this.verificationManager = new ModuleVerificationManager(getLogger(), environmentConfig, this);
+        verificationManager.register();
+        
+        getLogger().info("Module verification scheduled for after server load");
     }
 
     @Override
