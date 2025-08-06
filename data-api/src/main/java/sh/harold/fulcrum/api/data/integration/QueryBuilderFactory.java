@@ -5,13 +5,17 @@ import sh.harold.fulcrum.api.data.backend.json.JsonFileBackend;
 import sh.harold.fulcrum.api.data.backend.mongo.MongoDataBackend;
 import sh.harold.fulcrum.api.data.backend.sql.SqlDataBackend;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
-import sh.harold.fulcrum.api.data.query.CrossSchemaQueryBuilder;
+import sh.harold.fulcrum.api.data.query.*;
+import sh.harold.fulcrum.api.data.query.backend.*;
 import sh.harold.fulcrum.api.data.query.batch.BatchConfiguration;
 import sh.harold.fulcrum.api.data.registry.PlayerDataRegistry;
 
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
 import java.util.logging.Logger;
+import java.util.logging.Level;
 
 /**
  * Factory class for creating CrossSchemaQueryBuilder instances.
@@ -22,8 +26,17 @@ public class QueryBuilderFactory {
     private static final Logger LOGGER = Logger.getLogger(QueryBuilderFactory.class.getName());
     private static final Map<Class<? extends PlayerDataBackend>, BatchConfiguration> BACKEND_CONFIGS = new ConcurrentHashMap<>();
     
+    /**
+     * Backend types for executor creation.
+     */
+    private enum BackendType {
+        SQL, MONGODB, JSON, MIXED
+    }
+    
     private final PlayerDataBackend primaryBackend;
     private BatchConfiguration defaultConfiguration;
+    private final Map<BackendType, SchemaJoinExecutor> executorCache = new ConcurrentHashMap<>();
+    private final ExecutorService executorService;
     
     /**
      * Creates a new QueryBuilderFactory with the specified primary backend.
@@ -31,7 +44,18 @@ public class QueryBuilderFactory {
      * @param primaryBackend The primary backend to use for query operations
      */
     public QueryBuilderFactory(PlayerDataBackend primaryBackend) {
+        this(primaryBackend, ForkJoinPool.commonPool());
+    }
+    
+    /**
+     * Creates a new QueryBuilderFactory with custom executor service.
+     *
+     * @param primaryBackend The primary backend to use for query operations
+     * @param executorService The executor service for async operations
+     */
+    public QueryBuilderFactory(PlayerDataBackend primaryBackend, ExecutorService executorService) {
         this.primaryBackend = primaryBackend;
+        this.executorService = executorService;
         this.defaultConfiguration = createDefaultConfiguration();
         initializeBackendConfigurations();
     }
@@ -210,6 +234,93 @@ public class QueryBuilderFactory {
             customConfigs.forEach(QueryBuilderFactory::registerBackendConfiguration);
             
             return factory;
+        }
+    }
+    
+    /**
+     * Creates an appropriate executor for the given query.
+     * Merges functionality from BackendSpecificExecutorFactory.
+     * 
+     * @param queryBuilder The query builder
+     * @return A schema join executor optimized for the query's backends
+     */
+    public SchemaJoinExecutor createExecutor(CrossSchemaQueryBuilder queryBuilder) {
+        BackendType backendType = analyzeBackends(queryBuilder);
+        
+        LOGGER.log(Level.FINE, "Creating executor for backend type: {0}", backendType);
+        
+        return executorCache.computeIfAbsent(backendType, this::createExecutorForType);
+    }
+    
+    
+    /**
+     * Analyzes the backends used in a query to determine the best executor type.
+     */
+    private BackendType analyzeBackends(CrossSchemaQueryBuilder queryBuilder) {
+        Set<PlayerDataSchema<?>> schemas = new HashSet<>();
+        schemas.add(queryBuilder.getRootSchema());
+        
+        for (JoinOperation join : queryBuilder.getJoins()) {
+            schemas.add(join.getTargetSchema());
+        }
+        
+        if (schemas.isEmpty()) {
+            return BackendType.MIXED;
+        }
+        
+        // Collect backend types
+        Set<Class<? extends PlayerDataBackend>> backendTypes = new HashSet<>();
+        
+        for (PlayerDataSchema<?> schema : schemas) {
+            PlayerDataBackend backend = PlayerDataRegistry.getBackend(schema);
+            if (backend == null) {
+                LOGGER.log(Level.WARNING, "No backend registered for schema: {0}", schema.schemaKey());
+                return BackendType.MIXED;
+            }
+            backendTypes.add(backend.getClass());
+        }
+        
+        // If multiple backend types, use mixed
+        if (backendTypes.size() > 1) {
+            LOGGER.log(Level.FINE, "Multiple backend types detected, using MIXED executor");
+            return BackendType.MIXED;
+        }
+        
+        // Single backend type - check for specific optimizations
+        Class<? extends PlayerDataBackend> backendClass = backendTypes.iterator().next();
+        
+        if (SqlDataBackend.class.isAssignableFrom(backendClass)) {
+            return BackendType.SQL;
+        } else if (MongoDataBackend.class.isAssignableFrom(backendClass)) {
+            return BackendType.MONGODB;
+        } else if (JsonFileBackend.class.isAssignableFrom(backendClass)) {
+            return BackendType.JSON;
+        }
+        
+        return BackendType.MIXED;
+    }
+    
+    /**
+     * Creates an executor for the specified backend type.
+     */
+    private SchemaJoinExecutor createExecutorForType(BackendType backendType) {
+        switch (backendType) {
+            case SQL:
+                LOGGER.log(Level.INFO, "Creating SQL-specific join executor");
+                return new SqlSchemaJoinExecutor(executorService);
+                
+            case MONGODB:
+                LOGGER.log(Level.INFO, "Creating MongoDB-specific join executor");
+                return new MongoSchemaJoinExecutor(executorService);
+                
+            case JSON:
+                LOGGER.log(Level.INFO, "Creating JSON-specific join executor");
+                return new JsonSchemaJoinExecutor(executorService);
+                
+            case MIXED:
+            default:
+                LOGGER.log(Level.INFO, "Creating generic join executor for mixed backends");
+                return new SchemaJoinExecutor(executorService);
         }
     }
 }

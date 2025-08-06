@@ -3,7 +3,7 @@ package sh.harold.fulcrum.api.data.query.batch;
 import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
 import sh.harold.fulcrum.api.data.query.*;
-import sh.harold.fulcrum.api.data.query.backend.*;
+import sh.harold.fulcrum.api.data.integration.QueryBuilderFactory;
 import sh.harold.fulcrum.api.data.query.streaming.StreamingExecutor;
 
 import java.util.*;
@@ -45,8 +45,6 @@ public class BatchExecutor implements BatchOperations {
     private final ExecutorService executorService;
     private final ScheduledExecutorService schedulerService;
     private final Map<Class<?>, SchemaJoinExecutor> executorCache;
-    private final List<BatchProgressListener> progressListeners;
-    private final BatchStatisticsCollector statisticsCollector;
     private volatile boolean useTransaction;
     private volatile TransactionIsolation isolationLevel;
     
@@ -71,8 +69,6 @@ public class BatchExecutor implements BatchOperations {
         this.executorService = createExecutorService(config);
         this.schedulerService = Executors.newScheduledThreadPool(2);
         this.executorCache = new ConcurrentHashMap<>();
-        this.progressListeners = new CopyOnWriteArrayList<>();
-        this.statisticsCollector = new BatchStatisticsCollector();
         this.isolationLevel = TransactionIsolation.READ_COMMITTED;
     }
     
@@ -390,12 +386,13 @@ public class BatchExecutor implements BatchOperations {
     
     @Override
     public BatchStatistics getStatistics() {
-        return statisticsCollector;
+        // Statistics collection removed for simplification
+        return null;
     }
     
     @Override
     public BatchOperations onProgress(BatchProgressListener listener) {
-        progressListeners.add(Objects.requireNonNull(listener));
+        // Progress listener functionality removed for simplification
         return this;
     }
     
@@ -429,10 +426,15 @@ public class BatchExecutor implements BatchOperations {
         LOGGER.log(Level.FINE, "Getting executor for query builder with root schema: {0}",
                    queryBuilder.getRootSchema().schemaKey());
         
-        // Use BackendSpecificExecutorFactory with the query builder directly
-        // The factory will internally handle getting the backend from PlayerDataRegistry
-        BackendSpecificExecutorFactory factory = BackendSpecificExecutorFactory.getInstance();
-        return factory.createExecutor(queryBuilder);
+        // Use QueryBuilderFactory to create executor
+        // Get factory from the root schema's backend
+        PlayerDataBackend backend = sh.harold.fulcrum.api.data.registry.PlayerDataRegistry.getBackend(queryBuilder.getRootSchema());
+        if (backend != null) {
+            QueryBuilderFactory factory = new QueryBuilderFactory(backend);
+            return factory.createExecutor(queryBuilder);
+        }
+        // Fallback to generic executor
+        return new SchemaJoinExecutor(executorService);
     }
     
     private List<CrossSchemaResult> loadBatch(Set<UUID> uuids, int batchNumber, int totalBatches) {
@@ -448,14 +450,11 @@ public class BatchExecutor implements BatchOperations {
             List<CrossSchemaResult> results = executor.execute(batchQuery)
                 .get(config.getTimeoutMs(), TimeUnit.MILLISECONDS);
             
-            // Notify progress listeners
-            notifyBatchCompleted(batchNumber, totalBatches, results.size());
             
             return results;
             
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Error loading batch " + batchNumber, e);
-            notifyBatchFailed(batchNumber, e);
             throw new CompletionException("Failed to load batch " + batchNumber, e);
         }
     }
@@ -502,7 +501,6 @@ public class BatchExecutor implements BatchOperations {
                         LOGGER.log(Level.SEVERE, "Error processing item in batch " + batchNumber, e);
                     }
                 }
-                notifyBatchCompleted(batchNumber, batches.size(), batch.size());
             }, executorService);
             
             futures.add(future);
@@ -567,71 +565,6 @@ public class BatchExecutor implements BatchOperations {
         result.recordSuccess(record.getPlayerUuid(), queryBuilder.getRootSchema());
     }
     
-    private void notifyBatchCompleted(int batchNumber, int totalBatches, int recordsProcessed) {
-        for (BatchProgressListener listener : progressListeners) {
-            try {
-                listener.onBatchCompleted(batchNumber, totalBatches, recordsProcessed);
-            } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Error notifying progress listener", e);
-            }
-        }
-    }
-    
-    private void notifyBatchFailed(int batchNumber, Throwable error) {
-        for (BatchProgressListener listener : progressListeners) {
-            try {
-                listener.onBatchFailed(batchNumber, error);
-            } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Error notifying progress listener", e);
-            }
-        }
-    }
-    
-    /**
-     * Collects statistics for batch operations.
-     */
-    private static class BatchStatisticsCollector implements BatchStatistics {
-        private final long startTime = System.currentTimeMillis();
-        private final AtomicInteger totalRecords = new AtomicInteger();
-        private final AtomicInteger processedRecords = new AtomicInteger();
-        private final AtomicInteger failedRecords = new AtomicInteger();
-        private final Map<String, AtomicInteger> operationCounts = new ConcurrentHashMap<>();
-        
-        @Override
-        public long getTotalRecords() {
-            return totalRecords.get();
-        }
-        
-        @Override
-        public long getProcessedRecords() {
-            return processedRecords.get();
-        }
-        
-        @Override
-        public long getFailedRecords() {
-            return failedRecords.get();
-        }
-        
-        @Override
-        public long getElapsedTimeMs() {
-            return System.currentTimeMillis() - startTime;
-        }
-        
-        @Override
-        public double getRecordsPerSecond() {
-            long elapsed = getElapsedTimeMs();
-            return elapsed > 0 ? (processedRecords.get() * 1000.0) / elapsed : 0;
-        }
-        
-        @Override
-        public Map<String, Long> getOperationCounts() {
-            return operationCounts.entrySet().stream()
-                .collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    e -> (long) e.getValue().get()
-                ));
-        }
-    }
     
     /**
      * Shuts down the executor service gracefully.

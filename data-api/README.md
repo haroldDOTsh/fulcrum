@@ -156,6 +156,39 @@ public class PlayerStats {
     public int kills = 0;
 }
 ```
+### Arbitrary Data Storage
+
+Store any data structure without predefined schemas using three approaches:
+
+#### 1. Dotted Path (SettingsWrapper)
+```java
+SettingsWrapper wrapper = new SettingsWrapper(dataMap);
+wrapper.set("player.stats.strength", 100);
+wrapper.set("fairysouls.unlocked.hub.1", true);
+wrapper.set("hud.scale", 2.5);
+
+// Retrieve with type safety
+int strength = wrapper.get("player.stats.strength", Integer.class);
+boolean hasFairy = wrapper.get("fairysouls.unlocked.hub.1", Boolean.class);
+```
+
+#### 2. Generic JSON Schema
+```java
+GenericJsonSchema schema = new GenericJsonSchema("custom_data");
+PluginJsonData data = PluginJsonData.fromJsonString("{\"level\":10,\"items\":[\"sword\"]}");
+
+// Save to MongoDB/JSON backend
+PlayerDataBackend backend = StorageManager.getDocumentBackend();
+backend.save(playerId, schema, data);
+```
+
+#### 3. Direct JSON Manipulation
+```java
+PluginJsonData data = PluginJsonData.fromJsonString("{\"a\":1}");
+data.json().addProperty("b", 2); // Modify directly
+data.json().getAsJsonObject("nested").addProperty("x", true);
+String json = data.toJsonString(); // Export back
+```
 
 ### Dirty Data Tracking
 
@@ -168,6 +201,37 @@ This dual approach ensures both immediate data safety and efficient resource uti
 
 ---
 
+### SettingsWrapper
+
+**get(path)**: Get value at dotted path.
+
+**get(path, type)**: Get typed value at path.
+
+**set(path, value)**: Set value at path, creating nested maps as needed.
+
+**contains(path)**: Check if path exists.
+
+**remove(path)**: Remove value at path.
+
+**toMap()**: Get underlying map.
+
+### GenericJsonSchema
+
+Pre-built schema for arbitrary JSON storage.
+
+```java
+new GenericJsonSchema(schemaKey) // Create with custom key
+```
+
+### PluginJsonData
+
+Wrapper for arbitrary JSON data.
+
+**fromJsonString(json)**: Parse from JSON string.
+
+**toJsonString()**: Export to JSON string.
+
+**json()**: Get underlying JsonObject for manipulation.
 ## API Reference
 
 ### PlayerProfile
@@ -403,6 +467,25 @@ config.timeBasedPersistence = false;
 
 ### When to Use Each Strategy
 
+
+### MongoDB Support
+
+MongoDB backend provides document storage with aggregation pipelines and bulk operations.
+
+#### Configuration
+```yaml
+backends:
+  document: mongo
+mongo:
+  uri: "mongodb://localhost:27017"
+  database: "players"
+```
+
+#### Features
+- **Batch Operations**: `saveBatch()` for bulk writes
+- **Aggregation Pipelines**: Cross-schema queries with `MongoSchemaJoinExecutor`
+- **UUID-based Documents**: Automatic `_id` field mapping
+- **Dirty Tracking**: Integrates with `DirtyDataManager`
 - **Both enabled (recommended)**: Maximum data safety with efficient batching
 - **Event-based only**: Critical applications requiring immediate persistence
 - **Time-based only**: High-performance applications with acceptable data loss risk
@@ -450,6 +533,18 @@ public class GuildMember {
 
 ### Batch Processing
 
+```java
+// MongoDB batch operations
+Map<UUID, Map<PlayerDataSchema<?>, Object>> batchData = new HashMap<>();
+for (UUID playerId : playerIds) {
+    Map<PlayerDataSchema<?>, Object> schemas = new HashMap<>();
+    schemas.put(statsSchema, playerStats);
+    schemas.put(settingsSchema, playerSettings);
+    batchData.put(playerId, schemas);
+}
+backend.saveBatch(batchData); // Single bulk operation
+
+// With dirty tracking
 Efficiently process multiple players and save in bulk.
 
 ```java

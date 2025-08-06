@@ -48,11 +48,9 @@ public class CrossSchemaQueryBuilder {
     private String cursor;
     private Integer pageSize;
     private Integer bufferSize;
-    private BackpressureHandler.Strategy backpressureStrategy;
     private StreamingExecutor streamingExecutor;
     private BatchConfiguration batchConfig;
     private BatchExecutor batchExecutor;
-    private sh.harold.fulcrum.api.data.backend.PlayerDataBackend backend;
     
     /**
      * Creates a new query builder with the specified root schema.
@@ -385,16 +383,6 @@ public class CrossSchemaQueryBuilder {
         return this;
     }
     
-    /**
-     * Sets the backpressure strategy for streaming.
-     *
-     * @param strategy The backpressure strategy
-     * @return This builder for method chaining
-     */
-    public CrossSchemaQueryBuilder withBackpressure(BackpressureHandler.Strategy strategy) {
-        this.backpressureStrategy = Objects.requireNonNull(strategy, "Strategy cannot be null");
-        return this;
-    }
     
     /**
      * Gets the cursor for this query.
@@ -423,14 +411,6 @@ public class CrossSchemaQueryBuilder {
         return Optional.ofNullable(bufferSize);
     }
     
-    /**
-     * Gets the backpressure strategy for this query.
-     *
-     * @return An optional containing the strategy, or empty if not set
-     */
-    public Optional<BackpressureHandler.Strategy> getBackpressureStrategy() {
-        return Optional.ofNullable(backpressureStrategy);
-    }
     
     void addJoin(JoinOperation join) {
         joins.add(join);
@@ -572,134 +552,6 @@ public class CrossSchemaQueryBuilder {
             .withTimeout(batchConfig != null ? batchConfig.getTimeoutMs() : 30000);
     }
     
-    // ========================
-    // Test-Compatible API Methods
-    // ========================
-    
-    /**
-     * Sets the backend for this query (test compatibility).
-     *
-     * @param backend The backend to use for query execution
-     * @return This builder for method chaining
-     */
-    public CrossSchemaQueryBuilder withBackend(sh.harold.fulcrum.api.data.backend.PlayerDataBackend backend) {
-        this.backend = backend;
-        return this;
-    }
-    
-    /**
-     * Loads data for the specified UUIDs in batch (test compatibility).
-     *
-     * @param uuids The UUIDs to load data for
-     * @return A CompletableFuture containing the batch result
-     */
-    public CompletableFuture<BatchResult<Object>> batchLoad(Set<java.util.UUID> uuids) {
-        if (batchExecutor == null) {
-            BatchConfiguration config = batchConfig != null ? batchConfig : BatchConfiguration.defaultConfig();
-            batchExecutor = new BatchExecutor(this, config);
-        }
-        
-        return batchExecutor.batchLoad(uuids)
-            .thenApply(results -> {
-                BatchResult<Object> typedResult = new BatchResult<>(BatchResult.BatchOperationType.LOAD);
-                // Convert generic results to typed results
-                for (CrossSchemaResult result : results) {
-                    typedResult.recordSuccess(result.getPlayerUuid(), this.rootSchema);
-                }
-                typedResult.complete();
-                return typedResult;
-            });
-    }
-    
-    /**
-     * Updates data for the specified UUIDs in batch (test compatibility).
-     *
-     * @param data The data to update
-     * @return A CompletableFuture containing the batch result
-     */
-    public CompletableFuture<BatchResult<Object>> batchUpdate(java.util.List<Object> data) {
-        BatchResult<Object> result = new BatchResult<>(BatchResult.BatchOperationType.UPDATE);
-        
-        // Simulate batch update operation
-        return CompletableFuture.supplyAsync(() -> {
-            for (Object item : data) {
-                try {
-                    // Extract UUID from data item if possible
-                    java.util.UUID uuid = extractUuidFromData(item);
-                    result.recordSuccess(uuid, this.rootSchema);
-                } catch (Exception e) {
-                    // Handle error - for now, just mark as successful for test compatibility
-                    result.recordSuccess(java.util.UUID.randomUUID(), this.rootSchema);
-                }
-            }
-            result.complete();
-            return result;
-        });
-    }
-    
-    /**
-     * Execute method for backward compatibility.
-     *
-     * @return A CompletableFuture containing the results
-     */
-    public CompletableFuture<java.util.List<CrossSchemaResult>> execute() {
-        return executeAsync();
-    }
-    
-    /**
-     * Sorting by field with enum parameter for backward compatibility.
-     *
-     * @param field The field to sort by
-     * @param direction The sort direction
-     * @return This builder for method chaining
-     */
-    public CrossSchemaQueryBuilder sortBy(String field, SortOrder direction) {
-        if (direction != null) {
-            return orderBy(field, direction.getDirection());
-        }
-        return this;
-    }
-    
-    /**
-     * Filter method for backward compatibility.
-     *
-     * @param filter The filter to apply
-     * @return This builder for method chaining
-     */
-    public CrossSchemaQueryBuilder filter(QueryFilter filter) {
-        if (filter != null) {
-            filters.add(filter);
-        }
-        return this;
-    }
-    
-    /**
-     * Stream lazy method for backward compatibility.
-     *
-     * @return This builder for method chaining
-     */
-    public CrossSchemaQueryBuilder streamLazy() {
-        // This would typically configure lazy streaming
-        return this;
-    }
-    
-    private java.util.UUID extractUuidFromData(Object data) {
-        if (data == null) return java.util.UUID.randomUUID();
-        
-        try {
-            // Try to extract UUID using reflection for common patterns
-            java.lang.reflect.Method getUuidMethod = data.getClass().getMethod("getPlayerUuid");
-            return (java.util.UUID) getUuidMethod.invoke(data);
-        } catch (Exception e1) {
-            try {
-                java.lang.reflect.Method uuidMethod = data.getClass().getMethod("uuid");
-                return (java.util.UUID) uuidMethod.invoke(data);
-            } catch (Exception e2) {
-                // Return random UUID as fallback
-                return java.util.UUID.randomUUID();
-            }
-        }
-    }
     
     /**
      * Gets or creates the streaming executor.
@@ -716,14 +568,10 @@ public class CrossSchemaQueryBuilder {
      */
     private StreamingExecutor.StreamingConfig createStreamingConfig() {
         int bufferSizeValue = bufferSize != null ? bufferSize : 1000;
-        BackpressureHandler.Strategy strategy = backpressureStrategy != null
-            ? backpressureStrategy
-            : BackpressureHandler.Strategy.ADAPTIVE;
         
         return new StreamingExecutor.StreamingConfig(
             bufferSizeValue,
             0, // no timeout by default
-            strategy,
             true, // parallel processing
             Runtime.getRuntime().availableProcessors()
         );

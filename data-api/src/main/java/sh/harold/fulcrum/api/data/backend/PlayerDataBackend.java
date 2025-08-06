@@ -5,7 +5,6 @@ import sh.harold.fulcrum.api.data.query.CrossSchemaQueryBuilder;
 import sh.harold.fulcrum.api.data.query.CrossSchemaResult;
 import sh.harold.fulcrum.api.data.query.QueryFilter;
 import sh.harold.fulcrum.api.data.integration.QueryBuilderFactory;
-import sh.harold.fulcrum.api.data.integration.CrossSchemaPlayerDataBackend;
 
 import java.util.Collection;
 import java.util.List;
@@ -156,18 +155,6 @@ public interface PlayerDataBackend {
         return false;
     }
     
-    /**
-     * Wraps this backend with enhanced query capabilities.
-     * 
-     * @return A CrossSchemaPlayerDataBackend instance
-     * @since 1.0.0
-     */
-    default CrossSchemaPlayerDataBackend withQuerySupport() {
-        if (this instanceof CrossSchemaPlayerDataBackend) {
-            return (CrossSchemaPlayerDataBackend) this;
-        }
-        return new CrossSchemaPlayerDataBackend(this);
-    }
     
     /**
      * Gets backend-specific metadata for optimization hints.

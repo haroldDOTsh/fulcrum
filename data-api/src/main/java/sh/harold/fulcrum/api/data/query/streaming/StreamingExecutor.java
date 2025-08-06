@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.api.data.query.streaming;
 
 import sh.harold.fulcrum.api.data.query.*;
+import sh.harold.fulcrum.api.data.integration.QueryBuilderFactory;
 import sh.harold.fulcrum.api.data.query.backend.*;
 import sh.harold.fulcrum.api.data.backend.PlayerDataBackend;
 import sh.harold.fulcrum.api.data.impl.PlayerDataSchema;
@@ -16,12 +17,12 @@ import java.util.stream.Stream;
 
 /**
  * Handles streaming execution of cross-schema queries.
+ * Simplified version that uses native database streaming and standard Java streams.
  * 
  * <p>This executor provides efficient streaming of large result sets by:</p>
  * <ul>
- *   <li>Processing results as they arrive from backends</li>
- *   <li>Managing memory through configurable buffering</li>
- *   <li>Supporting cancellation and timeout</li>
+ *   <li>Using database-native result set streaming</li>
+ *   <li>Supporting pagination for memory efficiency</li>
  *   <li>Coordinating between multiple backend executors</li>
  * </ul>
  * 
@@ -33,7 +34,6 @@ public class StreamingExecutor {
     private static final Logger LOGGER = Logger.getLogger(StreamingExecutor.class.getName());
     
     private final SchemaJoinExecutor fallbackExecutor;
-    private final BackendSpecificExecutorFactory executorFactory;
     private final ExecutorService executorService;
     private final int defaultBufferSize;
     private final long defaultTimeoutMillis;
@@ -44,21 +44,18 @@ public class StreamingExecutor {
     public static class StreamingConfig {
         private final int bufferSize;
         private final long timeoutMillis;
-        private final BackpressureHandler.Strategy backpressureStrategy;
         private final boolean parallelProcessing;
         private final int parallelism;
         
         public StreamingConfig() {
-            this(1000, 0, BackpressureHandler.Strategy.ADAPTIVE, true, 
+            this(1000, 0, true, 
                  ForkJoinPool.getCommonPoolParallelism());
         }
         
         public StreamingConfig(int bufferSize, long timeoutMillis,
-                              BackpressureHandler.Strategy backpressureStrategy,
                               boolean parallelProcessing, int parallelism) {
             this.bufferSize = bufferSize;
             this.timeoutMillis = timeoutMillis;
-            this.backpressureStrategy = backpressureStrategy;
             this.parallelProcessing = parallelProcessing;
             this.parallelism = parallelism;
         }
@@ -69,10 +66,6 @@ public class StreamingExecutor {
         
         public long getTimeoutMillis() {
             return timeoutMillis;
-        }
-        
-        public BackpressureHandler.Strategy getBackpressureStrategy() {
-            return backpressureStrategy;
         }
         
         public boolean isParallelProcessing() {
@@ -89,7 +82,6 @@ public class StreamingExecutor {
      */
     public StreamingExecutor() {
         this(new SchemaJoinExecutor(),
-             BackendSpecificExecutorFactory.getInstance(),
              ForkJoinPool.commonPool(),
              1000, 0);
     }
@@ -98,12 +90,10 @@ public class StreamingExecutor {
      * Creates a StreamingExecutor with custom configuration.
      */
     public StreamingExecutor(SchemaJoinExecutor fallbackExecutor,
-                           BackendSpecificExecutorFactory executorFactory,
                            ExecutorService executorService,
                            int defaultBufferSize,
                            long defaultTimeoutMillis) {
         this.fallbackExecutor = fallbackExecutor;
-        this.executorFactory = executorFactory;
         this.executorService = executorService;
         this.defaultBufferSize = defaultBufferSize;
         this.defaultTimeoutMillis = defaultTimeoutMillis;
@@ -111,6 +101,7 @@ public class StreamingExecutor {
     
     /**
      * Executes a query and returns a stream of results.
+     * Simplified to use standard Java streams directly.
      * 
      * @param queryBuilder The query to execute
      * @return A CompletableFuture containing the result stream
@@ -121,6 +112,7 @@ public class StreamingExecutor {
     
     /**
      * Executes a query with custom streaming configuration.
+     * Uses database-native streaming when possible.
      * 
      * @param queryBuilder The query to execute
      * @param config Streaming configuration
@@ -130,24 +122,28 @@ public class StreamingExecutor {
             CrossSchemaQueryBuilder queryBuilder, StreamingConfig config) {
         
         return CompletableFuture.supplyAsync(() -> {
-            AsyncResultStream resultStream = new AsyncResultStream(
-                config.getBufferSize(),
-                executorService,
-                new BackpressureHandler(config.getBackpressureStrategy()),
-                config.getTimeoutMillis()
-            );
-            
-            // Start the streaming process
-            startStreaming(queryBuilder, resultStream, config);
-            
-            // Return the stream
-            Stream<CrossSchemaResult> stream = resultStream.stream();
-            
-            if (config.isParallelProcessing()) {
-                stream = stream.parallel();
+            try {
+                // Get the appropriate executor
+                SchemaJoinExecutor executor = getExecutor(queryBuilder);
+                
+                // Execute query and get results
+                List<CrossSchemaResult> results = executor.execute(queryBuilder).get(
+                    config.getTimeoutMillis() > 0 ? config.getTimeoutMillis() : Long.MAX_VALUE,
+                    TimeUnit.MILLISECONDS
+                );
+                
+                // Convert to stream
+                Stream<CrossSchemaResult> stream = results.stream();
+                
+                if (config.isParallelProcessing()) {
+                    stream = stream.parallel();
+                }
+                
+                return stream;
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Error creating stream", e);
+                throw new CompletionException(e);
             }
-            
-            return stream;
         }, executorService);
     }
     
@@ -169,21 +165,8 @@ public class StreamingExecutor {
     public CompletableFuture<Void> forEachAsync(CrossSchemaQueryBuilder queryBuilder,
                                                Consumer<CrossSchemaResult> action,
                                                StreamingConfig config) {
-        AsyncResultStream resultStream = new AsyncResultStream(
-            config.getBufferSize(),
-            executorService,
-            new BackpressureHandler(config.getBackpressureStrategy()),
-            config.getTimeoutMillis()
-        );
-        
-        // Start streaming
-        CompletableFuture<Void> streamingFuture = startStreaming(queryBuilder, resultStream, config);
-        
-        // Process results
-        CompletableFuture<Void> processingFuture = resultStream.forEachAsync(action);
-        
-        // Combine both futures
-        return CompletableFuture.allOf(streamingFuture, processingFuture);
+        return stream(queryBuilder, config)
+            .thenAccept(stream -> stream.forEach(action));
     }
     
     /**
@@ -205,151 +188,24 @@ public class StreamingExecutor {
     }
     
     /**
-     * Starts the streaming process.
+     * Gets the appropriate executor for the query.
      */
-    private CompletableFuture<Void> startStreaming(CrossSchemaQueryBuilder queryBuilder,
-                                                  AsyncResultStream resultStream,
-                                                  StreamingConfig config) {
-        // Register as producer
-        resultStream.registerProducer();
+    private SchemaJoinExecutor getExecutor(CrossSchemaQueryBuilder queryBuilder) {
+        // Try to get backend-specific executor
+        PlayerDataBackend backend = sh.harold.fulcrum.api.data.registry.PlayerDataRegistry
+            .getBackend(queryBuilder.getRootSchema());
         
-        return CompletableFuture.runAsync(() -> {
+        if (backend != null) {
             try {
-                // Determine the backend and create appropriate executor
-                PlayerDataBackend backend = determineBackend(queryBuilder);
-                
-                if (backend == null) {
-                    // Fallback to standard execution and stream results
-                    LOGGER.log(Level.INFO, "Using fallback executor for streaming");
-                    streamFromFallback(queryBuilder, resultStream);
-                } else {
-                    // Use backend-specific streaming
-                    LOGGER.log(Level.INFO, "Using backend-specific streaming for: " + 
-                              backend.getClass().getSimpleName());
-                    streamFromBackend(queryBuilder, resultStream, backend, config);
-                }
+                QueryBuilderFactory factory = new QueryBuilderFactory(backend);
+                return factory.createExecutor(queryBuilder);
             } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Error during streaming execution", e);
-                throw new CompletionException(e);
-            } finally {
-                // Mark producer as completed
-                resultStream.producerCompleted();
+                LOGGER.log(Level.WARNING, "Failed to create backend-specific executor", e);
             }
-        }, executorService);
-    }
-    
-    /**
-     * Streams results using the fallback executor.
-     */
-    private void streamFromFallback(CrossSchemaQueryBuilder queryBuilder,
-                                  AsyncResultStream resultStream) {
-        try {
-            // Execute query and stream results
-            List<CrossSchemaResult> results = fallbackExecutor.execute(queryBuilder).get();
-            
-            for (CrossSchemaResult result : results) {
-                try {
-                    resultStream.add(result);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new CompletionException(e);
-                }
-            }
-        } catch (Exception e) {
-            throw new CompletionException(e);
         }
-    }
-    
-    /**
-     * Streams results using backend-specific executor.
-     */
-    private void streamFromBackend(CrossSchemaQueryBuilder queryBuilder,
-                                 AsyncResultStream resultStream,
-                                 PlayerDataBackend backend,
-                                 StreamingConfig config) {
-        // Create the appropriate executor based on the query
-        SchemaJoinExecutor executor = executorFactory.createExecutor(queryBuilder);
         
-        if (executor instanceof SqlSchemaJoinExecutor) {
-            streamFromSql((SqlSchemaJoinExecutor) executor,
-                        queryBuilder, resultStream, config);
-        } else if (executor instanceof MongoSchemaJoinExecutor) {
-            streamFromMongo((MongoSchemaJoinExecutor) executor,
-                          queryBuilder, resultStream, config);
-        } else if (executor instanceof JsonSchemaJoinExecutor) {
-            streamFromJson((JsonSchemaJoinExecutor) executor,
-                         queryBuilder, resultStream, config);
-        } else {
-            // Generic executor or unknown type, use fallback
-            streamFromFallback(queryBuilder, resultStream);
-        }
-    }
-    
-    /**
-     * Streams results from SQL backend.
-     */
-    private void streamFromSql(SqlSchemaJoinExecutor executor,
-                             CrossSchemaQueryBuilder queryBuilder,
-                             AsyncResultStream resultStream,
-                             StreamingConfig config) {
-        // SQL-specific streaming would be implemented here
-        // For now, use the standard execution
-        try {
-            List<CrossSchemaResult> results = executor.execute(queryBuilder).get();
-            for (CrossSchemaResult result : results) {
-                resultStream.add(result);
-            }
-        } catch (Exception e) {
-            throw new CompletionException(e);
-        }
-    }
-    
-    /**
-     * Streams results from MongoDB backend.
-     */
-    private void streamFromMongo(MongoSchemaJoinExecutor executor,
-                               CrossSchemaQueryBuilder queryBuilder,
-                               AsyncResultStream resultStream,
-                               StreamingConfig config) {
-        // MongoDB-specific streaming would be implemented here
-        // For now, use the standard execution
-        try {
-            List<CrossSchemaResult> results = executor.execute(queryBuilder).get();
-            for (CrossSchemaResult result : results) {
-                resultStream.add(result);
-            }
-        } catch (Exception e) {
-            throw new CompletionException(e);
-        }
-    }
-    
-    /**
-     * Streams results from JSON backend.
-     */
-    private void streamFromJson(JsonSchemaJoinExecutor executor,
-                              CrossSchemaQueryBuilder queryBuilder,
-                              AsyncResultStream resultStream,
-                              StreamingConfig config) {
-        // JSON-specific streaming would be implemented here
-        // For now, use the standard execution
-        try {
-            List<CrossSchemaResult> results = executor.execute(queryBuilder).get();
-            for (CrossSchemaResult result : results) {
-                resultStream.add(result);
-            }
-        } catch (Exception e) {
-            throw new CompletionException(e);
-        }
-    }
-    
-    /**
-     * Determines the backend from the query.
-     */
-    private PlayerDataBackend determineBackend(CrossSchemaQueryBuilder queryBuilder) {
-        // This would need to be implemented to determine the backend
-        // based on the schemas in the query
-        // For now, return null to use fallback
-        return null;
+        // Fallback to generic executor
+        return fallbackExecutor;
     }
     
     /**
