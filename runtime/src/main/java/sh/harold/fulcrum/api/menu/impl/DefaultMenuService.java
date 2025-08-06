@@ -174,6 +174,7 @@ public class DefaultMenuService implements MenuService {
      * @param menuId the custom menu ID
      * @param menu the menu instance to register
      */
+    @Override
     public void registerMenuInstance(String menuId, Menu menu) {
         Objects.requireNonNull(menuId, "Menu ID cannot be null");
         Objects.requireNonNull(menu, "Menu cannot be null");
@@ -186,10 +187,11 @@ public class DefaultMenuService implements MenuService {
      * Gets a menu instance by its custom ID.
      *
      * @param menuId the menu ID
-     * @return the menu instance, or null if not found
+     * @return an Optional containing the menu if found, empty otherwise
      */
-    public Menu getMenuInstance(String menuId) {
-        return menuInstances.get(menuId);
+    @Override
+    public Optional<Menu> getMenuInstance(String menuId) {
+        return Optional.ofNullable(menuInstances.get(menuId));
     }
     
     /**
@@ -198,6 +200,7 @@ public class DefaultMenuService implements MenuService {
      * @param menuId the menu ID
      * @return true if the menu instance exists
      */
+    @Override
     public boolean hasMenuInstance(String menuId) {
         return menuInstances.containsKey(menuId);
     }
@@ -209,12 +212,13 @@ public class DefaultMenuService implements MenuService {
      * @param player the player to open the menu for
      * @return CompletableFuture that completes when the menu is opened
      */
+    @Override
     public CompletableFuture<Void> openMenuInstance(String menuId, Player player) {
-        Menu menu = getMenuInstance(menuId);
-        if (menu == null) {
+        Optional<Menu> menu = getMenuInstance(menuId);
+        if (menu.isEmpty()) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("Menu instance not found: " + menuId));
         }
-        return openMenu(menu, player);
+        return openMenu(menu.get(), player);
     }
     
     /**
