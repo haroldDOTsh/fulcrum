@@ -112,5 +112,40 @@ public interface MenuService {
      * @return the number of open menus
      */
     int getOpenMenuCount();
+    
+    /**
+     * Registers a menu instance with a unique identifier.
+     * This allows the menu to be retrieved and opened later using the menuId.
+     *
+     * @param menuId The unique identifier for the menu
+     * @param menu The menu instance to register
+     */
+    void registerMenuInstance(String menuId, Menu menu);
+    
+    /**
+     * Gets a previously registered menu instance by its identifier.
+     *
+     * @param menuId The unique identifier of the menu
+     * @return An Optional containing the menu if found, empty otherwise
+     */
+    Optional<Menu> getMenuInstance(String menuId);
+    
+    /**
+     * Checks if a menu instance exists with the given identifier.
+     *
+     * @param menuId The unique identifier to check
+     * @return true if a menu is registered with this id, false otherwise
+     */
+    boolean hasMenuInstance(String menuId);
+    
+    /**
+     * Opens a previously registered menu instance for a player.
+     *
+     * @param menuId The unique identifier of the menu to open
+     * @param player The player to open the menu for
+     * @return A CompletableFuture that completes when the menu is opened,
+     *         or completes exceptionally if the menu is not found
+     */
+    CompletableFuture<Void> openMenuInstance(String menuId, Player player);
 
 }
