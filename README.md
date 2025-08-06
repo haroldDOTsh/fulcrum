@@ -24,7 +24,7 @@ implementation 'com.github.haroldDOTsh.fulcrum:rank-api:VERSION'
 
 - **data-api** - Player data persistence with multiple backend support
 - **message-api** - Message building and scoreboard management
-- **menu-api** - Inventory-based menu system
+- **menu-api** - Inventory-based menu system with instance management and parent-child navigation
 - **rank-api** - Player rank management with expiration support
 - **runtime** - Implementation module for Minecraft servers
 
