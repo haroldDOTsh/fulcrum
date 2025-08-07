@@ -181,32 +181,6 @@ public class DefaultPlayerScoreboardManager implements PlayerScoreboardManager {
         state.markForRefresh();
     }
 
-    /**
-     * Starts a flash operation with a scheduled task for automatic expiration.
-     *
-     * @param playerId      the UUID of the player
-     * @param moduleIndex   the index of the module position to replace (0-based)
-     * @param module        the module to flash
-     * @param duration      the duration of the flash
-     * @param scheduledTask the scheduled task for automatic expiration
-     * @throws IllegalArgumentException if any parameter is null or duration is negative
-     */
-    public void startFlashWithTask(UUID playerId, int moduleIndex, ScoreboardModule module, Duration duration, ScheduledFuture<?> scheduledTask) {
-        if (playerId == null) {
-            throw new IllegalArgumentException("Player ID cannot be null");
-        }
-        if (module == null) {
-            throw new IllegalArgumentException("Module cannot be null");
-        }
-        if (duration == null || duration.isNegative()) {
-            throw new IllegalArgumentException("Duration cannot be null or negative");
-        }
-
-        PlayerScoreboardState state = playerStates.computeIfAbsent(playerId, PlayerScoreboardState::new);
-        state.startFlashWithTask(moduleIndex, module, duration, scheduledTask);
-        state.markForRefresh();
-    }
-
     @Override
     public void stopFlash(UUID playerId, int moduleIndex) {
         if (playerId == null) {

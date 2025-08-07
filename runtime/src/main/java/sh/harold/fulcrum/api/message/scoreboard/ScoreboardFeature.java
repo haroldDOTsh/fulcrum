@@ -175,6 +175,14 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         }
 
         @Override
+        public String getPlayerTitle(UUID playerId) {
+            if (playerId == null) {
+                throw new IllegalArgumentException("Player ID cannot be null");
+            }
+            return playerManager.getPlayerTitle(playerId);
+        }
+
+        @Override
         public void registerScoreboard(String scoreboardId, ScoreboardDefinition definition) {
             if (scoreboardId == null || scoreboardId.isEmpty()) {
                 throw new IllegalArgumentException("Scoreboard ID cannot be null or empty");
@@ -259,13 +267,8 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             // Set the scheduled future on the task for proper cancellation handling
             flashTask.setScheduledFuture(scheduledTask);
 
-            // Start the flash with the scheduled task for automatic expiration
-            if (playerManager instanceof DefaultPlayerScoreboardManager) {
-                ((DefaultPlayerScoreboardManager) playerManager).startFlashWithTask(playerId, moduleIndex, module, duration, scheduledTask);
-            } else {
-                // Fallback to regular flash if not DefaultPlayerScoreboardManager
-                playerManager.startFlash(playerId, moduleIndex, module, duration);
-            }
+            // Start the flash operation
+            playerManager.startFlash(playerId, moduleIndex, module, duration);
 
             refreshPlayerScoreboard(playerId);
         }
