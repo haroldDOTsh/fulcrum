@@ -14,7 +14,7 @@ public final class ColorUtils {
     
     /**
      * Converts a string representation of a color to a ChatColor.
-     * Supports both color names (e.g., "RED", "BLUE") and color codes (e.g., "&c", "&9").
+     * Supports both color names (e.g., "RED", "BLUE") and color codes (e.g., "&amp;c", "&amp;9").
      * 
      * @param color The color string to convert
      * @return The corresponding ChatColor, or null if the color is invalid
@@ -45,7 +45,7 @@ public final class ColorUtils {
     }
     
     /**
-     * Converts legacy color codes (&) to MiniMessage format.
+     * Converts legacy color codes (&amp;) to MiniMessage format.
      * This is used to convert legacy Bukkit color codes to the modern MiniMessage format.
      *
      * @param text The text with legacy color codes
@@ -85,7 +85,7 @@ public final class ColorUtils {
     
     /**
      * Applies color codes to a string.
-     * Replaces & with the section symbol for color codes.
+     * Replaces &amp; with the section symbol for color codes.
      *
      * @param text The text to colorize
      * @return The colorized text

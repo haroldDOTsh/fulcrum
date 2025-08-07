@@ -91,7 +91,6 @@ public class ScoreboardBuilder {
      * Note: This method only builds the definition. Registration must be done
      * separately through the ScoreboardService.
      *
-     * @return a new ScoreboardDefinition instance
      * @deprecated Use build() method and register through ScoreboardService directly
      */
     @Deprecated

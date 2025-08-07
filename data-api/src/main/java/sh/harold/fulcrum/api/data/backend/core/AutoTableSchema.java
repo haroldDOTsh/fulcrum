@@ -208,6 +208,9 @@ public class AutoTableSchema<T> extends TableSchema<T> {
     /**
      * Ensures the schema_versions table exists, then creates the main table, then enforces schema versioning rules.
      * Throws if migration or downgrade is detected.
+     *
+     * @param conn the database connection to use
+     * @throws Exception if an error occurs during table creation or version management
      */
     public void ensureTableAndVersion(java.sql.Connection conn) throws Exception {
         // 1. Create schema_versions table if needed (must be first)
