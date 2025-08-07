@@ -1,18 +1,6 @@
-# Fulcrum Menu System Documentation
+# Fulcrum Menu System
 
-A simple, powerful menu system with clean builder patterns and explicit parent-child relationships.
-
-## Table of Contents
-1. [Examples: Simple to Complex](#examples-simple-to-complex)
-2. [Menu Instance Management](#menu-instance-management)
-3. [Anchor System](#anchor-system)
-4. [MenuService](#menuservice)
-5. [CustomMenuBuilder](#custommenubuilder)
-6. [ListMenuBuilder](#listmenubuilder)
-7. [MenuButton](#menubutton)
-8. [MenuDisplayItem](#menudisplayitem)
-
----
+Menu system with builder patterns and parent-child relationships.
 
 ## Examples: Simple to Complex
 
@@ -203,8 +191,6 @@ private void createLargeMenu(Player player) {
 > - **Magic items** use coordinates `(row, col)` and scroll with the content
 > - No need for explicit `.anchor()` calls!
 
----
-
 ## Menu Instance Management
 
 The menu API provides a powerful instance management system that allows you to register menus with unique IDs for later retrieval and create parent-child menu relationships.
@@ -362,20 +348,6 @@ public class MenuSystem {
     }
 }
 ```
-
-### Best Practices for Menu Instances
-
-1. **Use Descriptive IDs**: Choose clear, hierarchical IDs like `"shop-weapons"` or `"settings-gameplay"`
-
-2. **Register Parents First**: Always register parent menus before creating children that reference them
-
-3. **Check Existence**: Use `hasMenuInstance()` before opening to handle missing menus gracefully
-
-4. **Handle Errors**: Use `CompletableFuture.exceptionally()` when opening menu instances
-
-5. **Organize Hierarchies**: Keep menu hierarchies shallow (2-3 levels maximum) for better UX
-
----
 
 ## Anchor System
 
@@ -713,8 +685,6 @@ Unregisters a plugin and closes all its menus.
 Gets the total number of currently open menus.
 - Returns: `int`
 
----
-
 ## CustomMenuBuilder
 
 Creates menus with precise positioning and custom layouts.
@@ -808,8 +778,6 @@ Builds and opens the menu for the player.
 Builds the menu without opening it.
 - Returns: `CompletableFuture<Menu>`
 
----
-
 ## ListMenuBuilder
 
 Creates paginated menus that automatically handle large lists of items.
@@ -883,8 +851,6 @@ Defines which slots are used for paginated content.
 ```java
 .contentSlots(9, 44) // Slots 9-44 for content
 ```
-
----
 
 ## MenuButton
 
@@ -977,8 +943,6 @@ Adds a cooldown between clicks.
 .cooldown(Duration.ofSeconds(3)) // 3-second cooldown
 ```
 
----
-
 ## MenuDisplayItem
 
 Non-interactive items for decoration or information display.
@@ -1033,52 +997,3 @@ Pre-assigns a slot position. **Display items with `.slot()` are automatically an
 ```
 
 > **Automatic Anchoring**: Any display item using `.slot()` is automatically anchored and will stay fixed in that viewport position while other content scrolls around it.
-
----
-
-## Best Practices
-
-### Text Formatting
-**Preferred**: Use `.secondary()` and `.description()` for better formatting
-```java
-.name("&aConfirm Purchase")
-.secondary("&7Click to buy this item")
-.description("&7This will cost 100 coins")
-```
-
-**Avoid**: Using `.lore()` for everything
-```java
-.lore("&7Click to buy this item", "&7This will cost 100 coins")
-```
-
-### Button Creation
-**For simple buttons**: Create inline
-```java
-.addButton(
-    MenuButton.builder(Material.EMERALD)
-        .name("Quick Action")
-        .onClick(p -> doSomething())
-        .build(),
-    1, 1)
-```
-
-**For complex buttons**: Create as variables
-```java
-MenuButton complexButton = MenuButton.builder(Material.DIAMOND)
-    .name("Complex Action")
-    .secondary("Multiple features")
-    .description("This button does many things")
-    .onClick(ClickType.LEFT, p -> doAction1())
-    .onClick(ClickType.RIGHT, p -> doAction2())
-    .cooldown(Duration.ofSeconds(5))
-    .sound(Sound.UI_BUTTON_CLICK)
-    .build();
-
-.addButton(complexButton, 2, 2)
-```
-
-### Menu Organization
-- Use descriptive menu IDs: `"main-menu"`, `"player-settings"`, `"shop-armor"`
-- Register parent menus before creating children
-- Keep menu hierarchies shallow (2-3 levels max)
-- Use consistent styling across related menus

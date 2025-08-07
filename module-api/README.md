@@ -1,24 +1,6 @@
 # Fulcrum Module API
 
-The public API for creating external Fulcrum modules. This module provides the core interfaces and contracts that external module developers need to integrate with the Fulcrum platform.
-
-## Purpose
-
-This API module is designed to provide a clean, stable interface for external module developers who want to create plugins that integrate with Fulcrum's module system. It contains only the essential interfaces and annotations needed for module development, with no runtime dependencies.
-
-## Target Audience
-
-- **External module developers** who want to create Fulcrum-compatible modules
-- **Plugin developers** who need to integrate with Fulcrum's module system
-- **Third-party developers** building extensions for Fulcrum-powered servers
-
-## Key Features
-
-- **Lightweight**: No runtime dependencies - perfect for external use
-- **Stable API**: Provides consistent interfaces across Fulcrum versions
-- **Module Integration**: Core contracts for module lifecycle management
-- **Dependency Management**: Support for module dependencies and load ordering
-- **Metadata Support**: Rich module information and configuration options
+API for creating external Fulcrum modules.
 
 ## Usage
 
@@ -155,15 +137,6 @@ The API is organized into the following packages:
 - **Dependency Resolution**: Support for module dependencies and load ordering
 - **Service Integration**: Interfaces for integrating with Fulcrum services
 
-## Best Practices
-
-1. **Keep modules lightweight** - Only include necessary dependencies
-2. **Use proper lifecycle management** - Clean up resources in `onDisable()`
-3. **Declare dependencies correctly** - Use `dependsOn` for required modules
-4. **Provide good metadata** - Include clear name and description in [`@ModuleInfo`](src/main/java/sh/harold/fulcrum/api/module/ModuleInfo.java:13)
-5. **Use environment checking** - Always check [`FulcrumEnvironment.isThisModuleEnabled()`](src/main/java/sh/harold/fulcrum/api/module/FulcrumEnvironment.java:52) in your bootstrapper class
-6. **Handle errors gracefully** - Use `setEnabled(false)` instead of throwing exceptions to disable your module
-7. **Access services safely** - Use [`FulcrumPlatform`](src/main/java/sh/harold/fulcrum/api/module/FulcrumPlatform.java:10) methods to check service availability
 
 ## Module Lifecycle
 
@@ -235,23 +208,3 @@ Configure in your `paper-plugin.yml`:
 ```yaml
 bootstrapper: com.example.EnvironmentAwareBootstrapper
 ```
-
-## Version Compatibility
-
-This API follows semantic versioning:
-- **Major versions** may contain breaking changes
-- **Minor versions** add new features while maintaining compatibility
-- **Patch versions** contain bug fixes and improvements
-
-Current version: **1.2.0**
-
-## Support
-
-For questions about module development:
-1. Check the official Fulcrum documentation
-2. Review example modules in the Fulcrum repository
-3. Open an issue on the Fulcrum GitHub repository
-
-## License
-
-This API is part of the Fulcrum project and follows the same licensing terms.

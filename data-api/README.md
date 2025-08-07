@@ -1,41 +1,6 @@
 # Fulcrum Data API
 
-A modular, high-performance data management API for player-centric applications. The Fulcrum Data API provides a unified interface for structured and flexible data storage, efficient change tracking, batch processing, and seamless integration with multiple backends.
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Core Concepts](#core-concepts)
-- [API Reference](#api-reference)
-- [Usage Examples](#usage-examples)
-- [Advanced Features](#advanced-features)
-- [Integration Guide](#integration-guide)
-- [Optimizations](#optimizations)
-
----
-
-## Overview
-
-The Fulcrum Data API is designed to simplify player data management. It supports multiple storage backends (SQL, MongoDB, JSON), automatic change tracking, batch operations, and asynchronous processing. This makes it suitable for both small plugins and large-scale platforms.
-
----
-
-## Architecture
-
-The API is structured around modular components:
-
-- **Query Builder:** [`CrossSchemaQueryBuilder`](data-api/src/main/java/sh/harold/fulcrum/api/data/query/CrossSchemaQueryBuilder.java:1)
-- **Backends:** [`SqlDataBackend`](data-api/src/main/java/sh/harold/fulcrum/api/data/backend/sql/SqlDataBackend.java:1), [`MongoDataBackend`](data-api/src/main/java/sh/harold/fulcrum/api/data/backend/mongo/MongoDataBackend.java:1), [`JsonFileBackend`](data-api/src/main/java/sh/harold/fulcrum/api/data/backend/json/JsonFileBackend.java:1)
-- **Registry:** [`PlayerDataRegistry`](data-api/src/main/java/sh/harold/fulcrum/api/data/registry/PlayerDataRegistry.java:1)
-- **Streaming:** [`AsyncResultStream`](data-api/src/main/java/sh/harold/fulcrum/api/data/query/streaming/AsyncResultStream.java:1)
-- **Batch Processing:** [`BatchExecutor`](data-api/src/main/java/sh/harold/fulcrum/api/data/query/batch/BatchExecutor.java:1)
-- **Integration:** [`PlayerDataBackend`](data-api/src/main/java/sh/harold/fulcrum/api/data/backend/PlayerDataBackend.java:1), [`PlayerProfileManager`](data-api/src/main/java/sh/harold/fulcrum/api/data/registry/PlayerProfileManager.java:1)
-
----
+Data management API for player-centric applications with support for SQL, MongoDB, and JSON backends.
 
 ## Quick Start
 
@@ -121,8 +86,6 @@ CrossSchemaQueryBuilder
     });
 ```
 
----
-
 ## Core Concepts
 
 ### PlayerProfile
@@ -198,8 +161,6 @@ The system provides dual persistence strategies for optimal data safety and perf
 - **Time-Based Persistence**: Batched persistence every 5 minutes for efficient cleanup and backup
 
 This dual approach ensures both immediate data safety and efficient resource utilization.
-
----
 
 ### SettingsWrapper
 
@@ -380,8 +341,6 @@ Wrapper for arbitrary JSON data.
 
 **streamLazy**: Streams results lazily.
 
----
-
 ## Usage Examples
 
 ### Basic Query
@@ -427,11 +386,7 @@ backend.createQueryBuilder(RankSchema.class)
     .executeAsync();
 ```
 
----
-
 ## Persistence Strategies
-
-The Fulcrum Data API uses a sophisticated dual persistence strategy to balance data safety and performance:
 
 ### Event-Based Persistence (Default: Enabled)
 
@@ -465,14 +420,8 @@ config.eventBasedPersistence = true;
 config.timeBasedPersistence = false;
 ```
 
-### When to Use Each Strategy
-
-
 ### MongoDB Support
 
-MongoDB backend provides document storage with aggregation pipelines and bulk operations.
-
-#### Configuration
 ```yaml
 backends:
   document: mongo
@@ -480,17 +429,6 @@ mongo:
   uri: "mongodb://localhost:27017"
   database: "players"
 ```
-
-#### Features
-- **Batch Operations**: `saveBatch()` for bulk writes
-- **Aggregation Pipelines**: Cross-schema queries with `MongoSchemaJoinExecutor`
-- **UUID-based Documents**: Automatic `_id` field mapping
-- **Dirty Tracking**: Integrates with `DirtyDataManager`
-- **Both enabled (recommended)**: Maximum data safety with efficient batching
-- **Event-based only**: Critical applications requiring immediate persistence
-- **Time-based only**: High-performance applications with acceptable data loss risk
-
----
 
 ## Advanced Features
 
@@ -545,9 +483,6 @@ for (UUID playerId : playerIds) {
 backend.saveBatch(batchData); // Single bulk operation
 
 // With dirty tracking
-Efficiently process multiple players and save in bulk.
-
-```java
 public void processBatch(Collection<UUID> playerIds) {
     CompletableFuture.allOf(
         playerIds.stream()
@@ -560,8 +495,6 @@ public void processBatch(Collection<UUID> playerIds) {
     });
 }
 ```
-
----
 
 ## Integration Guide
 
@@ -591,22 +524,13 @@ PlayerProfileManager.find()
     .findAsync();
 ```
 
----
-
 ## Optimizations
 
-- Use `.bufferSize()` to control memory usage during streaming.
-- Adaptive backpressure prevents overload.
-- Tune batch size for updates and deletes to balance throughput and memory.
-- Use `MemoryPool` for buffer reuse.
-- Monitor JVM heap usage and tune garbage collection as needed.
-- Use indexed fields for joins and filters (SQL, MongoDB).
-- Always use async patterns; never block server threads.
-- Monitor query latency and throughput, and log slow queries for tuning.
-
----
-
-## Additional Resources
-
-- See the source code for more advanced usage and backend-specific features.
-- For questions or contributions, open an issue or pull request.
+- Use `.bufferSize()` to control memory usage during streaming
+- Adaptive backpressure prevents overload
+- Tune batch size for updates and deletes to balance throughput and memory
+- Use `MemoryPool` for buffer reuse
+- Monitor JVM heap usage and tune garbage collection as needed
+- Use indexed fields for joins and filters (SQL, MongoDB)
+- Always use async patterns; never block server threads
+- Monitor query latency and throughput, and log slow queries for tuning

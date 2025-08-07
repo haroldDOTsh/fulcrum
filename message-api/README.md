@@ -1,4 +1,4 @@
-# Message-API (Hypixel Styled Chat Feedback & Dynamic Scoreboards)
+# Message-API
 
 ## 1. Setup
 
@@ -28,15 +28,9 @@ Add `Fulcrum` to your `plugin.yml`'s `depend` list:
 depend: [ Fulcrum ]
 ```
 
----
-
 ## 2. Initialization
 
-**You do NOT need to register or initialize the MessageService yourself.**
-The runtime plugin (`player-core`) handles all setup automatically. You can use the `Message` facade anywhere in your
-plugin code without extra configuration.
-
----
+The runtime plugin handles all setup automatically. You can use the `Message` facade anywhere in your plugin code without extra configuration.
 
 ## 3. Sending Messages
 
@@ -77,9 +71,7 @@ Message.success("event.start", "Summer Festival").broadcast();
 Message.info("server.maintenance", "1 hour").broadcast();
 ```
 
----
-
-## 4. Scoreboard System (NEW)
+## 4. Scoreboard System
 
 ### 4.1. Creating Scoreboards
 
@@ -160,8 +152,6 @@ state.setModuleOverride("stats", ModuleOverride.disabled("stats"));
 service.updatePlayerScoreboard(playerId);
 ```
 
----
-
 ## 5. Localization
 
 - Message keys map to YAML files:  
@@ -177,13 +167,8 @@ deposit:
   insufficient_funds: "You cannot withdraw {0}, you only have {1}." # Defined as deposit.insufficient_funds
 ```
 
----
-
 ## 6. API Changes & Migration (v2.0)
 
-
-
-#### New Way
 ```java
 // Direct service usage
 ScoreboardDefinition definition = new ScoreboardBuilder("lobby")
@@ -196,8 +181,6 @@ service.registerScoreboard(definition);
 // Simplified module override
 ModuleOverride override = ModuleOverride.disabled("stats");
 ```
-
----
 
 ## 7. Complete Examples
 
@@ -294,8 +277,6 @@ public class LobbyScoreboard {
 }
 ```
 
----
-
 ## 8. API Reference
 
 ### 8.1. Message API
@@ -334,17 +315,3 @@ public class LobbyScoreboard {
 - `setModuleOverride(String, ModuleOverride)` - Toggle modules
 - `markForRefresh()` - Request update
 
----
-
-## 9. Performance & Best Practices
-
-### Best Practices
-1. **Use appropriate refresh intervals** - Don't update too frequently (5-10 seconds minimum)
-2. **Leverage content providers** - Use static for fixed content, dynamic for changing data
-3. **Module reusability** - Create shared modules across scoreboards
-4. **Thread safety** - All APIs are thread-safe, can be called from any thread
-5. **Locale handling** - Always use translation keys rather than hardcoded strings
-
----
-
-## That's it!
