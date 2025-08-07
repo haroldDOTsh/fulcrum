@@ -5,18 +5,11 @@ import sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Represents a complete scoreboard definition with modules and configuration.
  * This class holds all the information needed to render a scoreboard, including
- * the ordered list of modules, title, and metadata.
- *
- * <p>ScoreboardDefinition is immutable and thread-safe, making it suitable for
- * concurrent access by multiple players.
- *
- * <p>The modules are stored in a List to maintain insertion ordering, where
- * modules appear in the order they were added to the scoreboard.
+ * the ordered list of modules and title.
  */
 public class ScoreboardDefinition {
 
@@ -48,31 +41,6 @@ public class ScoreboardDefinition {
     }
 
     /**
-     * Creates a new ScoreboardDefinition with the given parameters (legacy constructor for priority-based systems).
-     *
-     * @param scoreboardId the unique identifier for the scoreboard
-     * @param title        the title of the scoreboard (supports color codes)
-     * @param moduleMap    the map of modules ordered by priority (converted to insertion order)
-     * @throws IllegalArgumentException if scoreboardId is null/empty or modules is null
-     * @deprecated Use the List-based constructor instead
-     */
-    @Deprecated
-    public ScoreboardDefinition(String scoreboardId, String title, Map<Integer, ScoreboardModule> moduleMap) {
-        if (scoreboardId == null || scoreboardId.trim().isEmpty()) {
-            throw new IllegalArgumentException("Scoreboard ID cannot be null or empty");
-        }
-        if (moduleMap == null) {
-            throw new IllegalArgumentException("Modules cannot be null");
-        }
-
-        this.scoreboardId = scoreboardId;
-        this.title = title;
-        // Convert TreeMap to List maintaining insertion order (sorted by key)
-        this.modules = new ArrayList<>(moduleMap.values());
-        this.createdTime = System.currentTimeMillis();
-    }
-
-    /**
      * Gets the unique identifier for this scoreboard.
      *
      * @return the scoreboard ID
@@ -91,23 +59,12 @@ public class ScoreboardDefinition {
     }
 
     /**
-     * Gets an unmodifiable view of the modules in insertion order.
+     * Gets the modules in insertion order.
      *
-     * @return an unmodifiable list of modules
+     * @return a list of modules
      */
     public List<ScoreboardModule> getModules() {
-        return Collections.unmodifiableList(modules);
-    }
-
-    /**
-     * Gets the modules in insertion order (same as getModules()).
-     *
-     * @return an unmodifiable list of modules in insertion order
-     * @deprecated Use getModules() instead - insertion order is the natural order
-     */
-    @Deprecated
-    public List<ScoreboardModule> getModulesDescending() {
-        return Collections.unmodifiableList(modules);
+        return new ArrayList<>(modules);
     }
 
     /**
@@ -200,71 +157,6 @@ public class ScoreboardDefinition {
         return "&6harold&lDOT&r&6sh"; // Default title
     }
 
-    /**
-     * Creates a new ScoreboardDefinition with the same configuration but a different title.
-     *
-     * @param newTitle the new title
-     * @return a new ScoreboardDefinition with the updated title
-     */
-    public ScoreboardDefinition withTitle(String newTitle) {
-        return new ScoreboardDefinition(scoreboardId, newTitle, modules);
-    }
-
-    /**
-     * Creates a new ScoreboardDefinition with an additional module at the specified index.
-     *
-     * @param index  the index where to insert the new module (0-based)
-     * @param module the module to add
-     * @return a new ScoreboardDefinition with the added module
-     * @throws IllegalArgumentException if module is null or index is out of bounds
-     */
-    public ScoreboardDefinition withModule(int index, ScoreboardModule module) {
-        if (module == null) {
-            throw new IllegalArgumentException("Module cannot be null");
-        }
-        if (index < 0 || index > modules.size()) {
-            throw new IllegalArgumentException("Index " + index + " is out of bounds for module list of size " + modules.size());
-        }
-
-        List<ScoreboardModule> newModules = new ArrayList<>(modules);
-        newModules.add(index, module);
-        return new ScoreboardDefinition(scoreboardId, title, newModules);
-    }
-
-    /**
-     * Creates a new ScoreboardDefinition with an additional module at the end.
-     *
-     * @param module the module to add
-     * @return a new ScoreboardDefinition with the added module
-     * @throws IllegalArgumentException if module is null
-     */
-    public ScoreboardDefinition withModule(ScoreboardModule module) {
-        if (module == null) {
-            throw new IllegalArgumentException("Module cannot be null");
-        }
-
-        List<ScoreboardModule> newModules = new ArrayList<>(modules);
-        newModules.add(module);
-        return new ScoreboardDefinition(scoreboardId, title, newModules);
-    }
-
-    /**
-     * Creates a new ScoreboardDefinition without the module at the specified index.
-     *
-     * @param index the index of the module to remove (0-based)
-     * @return a new ScoreboardDefinition without the specified module
-     * @throws IllegalArgumentException if index is out of bounds
-     */
-    public ScoreboardDefinition withoutModule(int index) {
-        if (index < 0 || index >= modules.size()) {
-            throw new IllegalArgumentException("Index " + index + " is out of bounds for module list of size " + modules.size());
-        }
-
-        List<ScoreboardModule> newModules = new ArrayList<>(modules);
-        newModules.remove(index);
-        return new ScoreboardDefinition(scoreboardId, title, newModules);
-    }
-
     @Override
     public String toString() {
         return "ScoreboardDefinition{" +
@@ -273,23 +165,5 @@ public class ScoreboardDefinition {
                 ", moduleCount=" + modules.size() +
                 ", createdTime=" + createdTime +
                 '}';
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null || getClass() != obj.getClass()) return false;
-        ScoreboardDefinition that = (ScoreboardDefinition) obj;
-        return scoreboardId.equals(that.scoreboardId) &&
-                (title != null ? title.equals(that.title) : that.title == null) &&
-                modules.equals(that.modules);
-    }
-
-    @Override
-    public int hashCode() {
-        int result = scoreboardId.hashCode();
-        result = 31 * result + (title != null ? title.hashCode() : 0);
-        result = 31 * result + modules.hashCode();
-        return result;
     }
 }

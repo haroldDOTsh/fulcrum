@@ -87,16 +87,21 @@ public class ScoreboardBuilder {
     }
 
     /**
-     * Registers the scoreboard with the ScoreboardService.
-     * This method creates a ScoreboardDefinition from the current configuration
-     * and registers it with the service.
+     * Builds a ScoreboardDefinition from the current configuration.
+     * Note: This method only builds the definition. Registration must be done
+     * separately through the ScoreboardService.
      *
-     * @throws IllegalStateException    if the ScoreboardService is not initialized
-     * @throws IllegalArgumentException if the scoreboard configuration is invalid
+     * @return a new ScoreboardDefinition instance
+     * @deprecated Use build() method and register through ScoreboardService directly
      */
+    @Deprecated
     public void register() {
-        ScoreboardDefinition definition = new ScoreboardDefinition(scoreboardId, title, modules);
-        Scoreboard.getService().registerScoreboard(scoreboardId, definition);
+        // This method is deprecated - users should get ScoreboardService from their plugin
+        // and call registerScoreboard directly
+        throw new UnsupportedOperationException(
+            "Direct registration is no longer supported. " +
+            "Please use build() to create the definition and register it through ScoreboardService"
+        );
     }
 
     /**

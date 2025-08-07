@@ -93,6 +93,15 @@ public interface ScoreboardService {
     void setPlayerTitle(UUID playerId, String title);
 
     /**
+     * Gets a custom title for a specific player's scoreboard.
+     *
+     * @param playerId the UUID of the player
+     * @return the custom title, or null if no custom title is set
+     * @throws IllegalArgumentException if playerId is null
+     */
+    String getPlayerTitle(UUID playerId);
+
+    /**
      * Removes a custom title for a specific player, reverting to the default title.
      *
      * @param playerId the UUID of the player

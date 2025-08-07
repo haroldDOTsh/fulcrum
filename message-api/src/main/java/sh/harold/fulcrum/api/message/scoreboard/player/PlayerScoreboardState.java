@@ -6,7 +6,6 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
 
 /**
  * Represents the scoreboard state for an individual player.
@@ -20,7 +19,6 @@ public class PlayerScoreboardState {
     private final UUID playerId;
     private final Map<String, ModuleOverride> moduleOverrides = new ConcurrentHashMap<>();
     private final Map<Integer, FlashState> activeFlashes = new ConcurrentHashMap<>();
-    private final Map<Integer, ScheduledFuture<?>> activeFlashTasks = new ConcurrentHashMap<>();
     private final long createdTime;
     private volatile String currentScoreboardId;
     private volatile String customTitle;
@@ -179,6 +177,7 @@ public class PlayerScoreboardState {
 
     /**
      * Starts a flash operation at the given module index.
+     * This temporarily replaces the module at the specified position.
      *
      * @param moduleIndex the index of the module position to replace (0-based)
      * @param module      the module to flash
@@ -193,43 +192,10 @@ public class PlayerScoreboardState {
             throw new IllegalArgumentException("Duration cannot be null or negative");
         }
 
-        // Cancel any existing flash task at this module index
-        stopFlash(moduleIndex);
-
         FlashState flashState = new FlashState(module, System.currentTimeMillis() + duration.toMillis());
         activeFlashes.put(moduleIndex, flashState);
         this.lastUpdated = System.currentTimeMillis();
-    }
-
-    /**
-     * Starts a flash operation with a scheduled task for automatic expiration.
-     *
-     * @param moduleIndex   the index of the module position to replace (0-based)
-     * @param module        the module to flash
-     * @param duration      the duration of the flash
-     * @param scheduledTask the scheduled task for automatic expiration
-     * @throws IllegalArgumentException if module is null or duration is negative
-     */
-    public void startFlashWithTask(int moduleIndex, ScoreboardModule module, Duration duration, ScheduledFuture<?> scheduledTask) {
-        if (module == null) {
-            throw new IllegalArgumentException("Module cannot be null");
-        }
-        if (duration == null || duration.isNegative()) {
-            throw new IllegalArgumentException("Duration cannot be null or negative");
-        }
-
-        // Cancel any existing flash task at this module index
-        stopFlash(moduleIndex);
-
-        FlashState flashState = new FlashState(module, System.currentTimeMillis() + duration.toMillis());
-        activeFlashes.put(moduleIndex, flashState);
-
-        // Store the scheduled task for proper cleanup
-        if (scheduledTask != null) {
-            activeFlashTasks.put(moduleIndex, scheduledTask);
-        }
-
-        this.lastUpdated = System.currentTimeMillis();
+        this.needsRefresh = true;
     }
 
     /**
@@ -238,15 +204,10 @@ public class PlayerScoreboardState {
      * @param moduleIndex the index of the module position to stop flashing
      */
     public void stopFlash(int moduleIndex) {
-        activeFlashes.remove(moduleIndex);
-
-        // Cancel any scheduled task for this flash
-        ScheduledFuture<?> task = activeFlashTasks.remove(moduleIndex);
-        if (task != null && !task.isDone()) {
-            task.cancel(false);
+        if (activeFlashes.remove(moduleIndex) != null) {
+            this.lastUpdated = System.currentTimeMillis();
+            this.needsRefresh = true;
         }
-
-        this.lastUpdated = System.currentTimeMillis();
     }
 
     /**
@@ -278,8 +239,11 @@ public class PlayerScoreboardState {
      * Stops all active flashes.
      */
     public void stopAllFlashes() {
-        activeFlashes.clear();
-        this.lastUpdated = System.currentTimeMillis();
+        if (!activeFlashes.isEmpty()) {
+            activeFlashes.clear();
+            this.lastUpdated = System.currentTimeMillis();
+            this.needsRefresh = true;
+        }
     }
 
     /**
@@ -342,7 +306,6 @@ public class PlayerScoreboardState {
         this.currentScoreboardId = null;
         this.customTitle = null;
         this.moduleOverrides.clear();
-        this.activeFlashes.clear();
         this.needsRefresh = false;
         this.lastUpdated = System.currentTimeMillis();
     }
@@ -361,6 +324,7 @@ public class PlayerScoreboardState {
 
     /**
      * Represents the state of a flash operation.
+     * A flash temporarily replaces a module at a specific position.
      */
     public static class FlashState {
         private final ScoreboardModule module;
