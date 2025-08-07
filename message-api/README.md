@@ -1,4 +1,4 @@
-# Message-API (Hypixel Styled Chat Feedback)
+# Message-API (Hypixel Styled Chat Feedback & Dynamic Scoreboards)
 
 ## 1. Setup
 
@@ -74,38 +74,99 @@ Message.raw("custom.dragon_event").send(audience);
 // Broadcast to all players
 Message.success("event.start", "Summer Festival").broadcast();
 // Broadcast to a custom audience (e.g., staff)
-Message.info("server.maintenance", "1 hour").system().broadcast(audience);
+Message.info("server.maintenance", "1 hour").broadcast();
 ```
-
-## 4. Chaining Tags
-
-Add context tags for prefixes:
-
-```java
-Message.info("server.restart_warning", 5).system().staff().send(playerId);
-Message.success("database.purge.complete", "2,450").daemon().send(playerId);
-```
-
-**Available tags:** `.system()`, `.staff()`, `.daemon()`, `.debug()`
 
 ---
 
-## 5. Retrieving Components
+## 4. Scoreboard System (NEW)
 
-For GUIs, scoreboards, etc.:
+### 4.1. Creating Scoreboards
 
 ```java
-import net.kyori.adventure.text.Component;
-Component motd = Message.raw("server.motd", player.getName()).get(playerId);
-player.sendPlayerListHeader(motd);
+import sh.harold.fulcrum.api.message.scoreboard.*;
+import sh.harold.fulcrum.api.message.scoreboard.module.*;
+
+// Define a scoreboard with modules
+ScoreboardDefinition scoreboard = new ScoreboardBuilder("lobby")
+    .title("&6&lLobby Server")
+    .module(createHeaderModule())
+    .module(createStatsModule())
+    .module(createFooterModule())
+    .build();
+
+// Register with the service
+ScoreboardService service = ServiceLocator.get(ScoreboardService.class);
+service.registerScoreboard(scoreboard);
+service.setPlayerScoreboard(playerId, "lobby");
 ```
 
-## 6. Localization
+### 4.2. Content Providers
+
+```java
+// Static content - fixed text
+ContentProvider staticProvider = new StaticContentProvider(Arrays.asList(
+    "&7Server: &aLobby",
+    "&7Version: &a1.20.1"
+));
+
+// Dynamic content - updates over time
+ContentProvider dynamicProvider = new DynamicContentProvider(
+    () -> Arrays.asList(
+        "&7Players: &a" + getOnlineCount(),
+        "&7Time: &a" + getCurrentTime()
+    ),
+    5000 // refresh every 5 seconds
+);
+
+// Player-specific dynamic content
+ContentProvider playerProvider = new DynamicContentProvider(
+    playerId -> Arrays.asList(
+        "&7Rank: &6" + getRank(playerId),
+        "&7Coins: &e" + getCoins(playerId)
+    )
+);
+```
+
+### 4.3. Module Creation
+
+```java
+public ScoreboardModule createStatsModule() {
+    return new ScoreboardModule(
+        "stats",
+        new DynamicContentProvider(playerId -> {
+            PlayerStats stats = getStats(playerId);
+            return Arrays.asList(
+                "&7Kills: &a" + stats.getKills(),
+                "&7Deaths: &c" + stats.getDeaths(),
+                "&7KDR: &e" + stats.getKDR()
+            );
+        }, 10000) // Update every 10 seconds
+    );
+}
+```
+
+### 4.4. Player Customization
+
+```java
+// Custom title for specific player
+service.setPlayerTitle(playerId, "&c&lVIP LOBBY");
+
+// Toggle module for player
+PlayerScoreboardState state = service.getPlayerState(playerId);
+state.setModuleOverride("stats", ModuleOverride.disabled("stats"));
+
+// Force refresh
+service.updatePlayerScoreboard(playerId);
+```
+
+---
+
+## 5. Localization
 
 - Message keys map to YAML files:  
   `banking.deposit.success` -> `lang/en_US/banking.yml`
 - Arguments use `{0}`, `{1}`.
--
 - If a key is missing, it is auto-added with a placeholder. (Including args)
 
 **Example `lang/en_US/banking.yml`:**
@@ -116,7 +177,31 @@ deposit:
   insufficient_funds: "You cannot withdraw {0}, you only have {1}." # Defined as deposit.insufficient_funds
 ```
 
-## 7. Integration Example
+---
+
+## 6. API Changes & Migration (v2.0)
+
+
+
+#### New Way
+```java
+// Direct service usage
+ScoreboardDefinition definition = new ScoreboardBuilder("lobby")
+    .title("Lobby")
+    .build();
+service.registerScoreboard(definition);
+
+// Flash states removed - use dynamic content providers instead
+
+// Simplified module override
+ModuleOverride override = ModuleOverride.disabled("stats");
+```
+
+---
+
+## 7. Complete Examples
+
+### 7.1. Message Integration Example
 
 ```java
 import sh.harold.fulcrum.api.message.Message;
@@ -135,89 +220,131 @@ public void displayPlayerBalance(UUID playerId) {
 }
 ```
 
-## 8. API Reference & Usage Guide
+### 7.2. Complete Scoreboard Example
 
-### Message Entry Points
+```java
+public class LobbyScoreboard {
+    private final ScoreboardService service;
+    
+    public LobbyScoreboard(ScoreboardService service) {
+        this.service = service;
+    }
+    
+    public void setupScoreboard() {
+        // Build scoreboard definition
+        ScoreboardDefinition lobby = new ScoreboardBuilder("lobby")
+            .title("&6&lLOBBY")
+            .module(createHeaderModule())
+            .module(createPlayerStatsModule())
+            .module(createServerInfoModule())
+            .module(createFooterModule())
+            .build();
+        
+        // Register
+        service.registerScoreboard(lobby);
+    }
+    
+    private ScoreboardModule createHeaderModule() {
+        return new ScoreboardModule(
+            "header",
+            new StaticContentProvider(Arrays.asList(
+                "&7&m                    ",
+                ""
+            ))
+        );
+    }
+    
+    private ScoreboardModule createPlayerStatsModule() {
+        return new ScoreboardModule(
+            "stats",
+            new DynamicContentProvider(playerId -> {
+                PlayerStats stats = getStats(playerId);
+                return Arrays.asList(
+                    "&e&lYour Stats:",
+                    "&7Kills: &a" + stats.getKills(),
+                    "&7Deaths: &c" + stats.getDeaths(),
+                    "&7KDR: &e" + String.format("%.2f", stats.getKDR()),
+                    ""
+                );
+            }, 10000) // Update every 10 seconds
+        );
+    }
+    
+    private ScoreboardModule createServerInfoModule() {
+        return new ScoreboardModule(
+            "server",
+            new DynamicContentProvider(() -> Arrays.asList(
+                "&b&lServer Info:",
+                "&7Online: &a" + Bukkit.getOnlinePlayers().size() + "/100",
+                "&7TPS: &a" + getTPS(),
+                ""
+            ), 5000) // Update every 5 seconds
+        );
+    }
+    
+    private ScoreboardModule createFooterModule() {
+        return new ScoreboardModule(
+            "footer",
+            new StaticContentProvider(Arrays.asList(
+                "&eplay.harold.sh",
+                "&7&m                    "
+            ))
+        );
+    }
+}
+```
 
-- `Message.success(String key)` (Green text, Yellow arg highlighting)
-- `Message.info(String key)` (Gray text, Rqua highlighting)
-- `Message.error(String key)` (Red text, Red highlighting)
-- `Message.debug(String key)` (Dark Gray text, Dark Gray highlighting)
-- `Message.raw(String key)` (Colour defined in lang file)
+---
 
-### Generic Responses
+## 8. API Reference
 
+### 8.1. Message API
+
+#### Entry Points
+- `Message.success(String key, Object... args)` - Green text, Yellow highlighting
+- `Message.info(String key, Object... args)` - Gray text, Aqua highlighting
+- `Message.error(String key, Object... args)` - Red text
+- `Message.debug(String key, Object... args)` - Dark Gray text
+- `Message.raw(String key, Object... args)` - Custom colors from lang file
+
+#### Generic Responses
 - `GenericResponse.ERROR` → "generic.error"
 - `GenericResponse.ERROR_GENERAL` → "generic.error.general"
 - `GenericResponse.ERROR_NO_PERMISSION` → "generic.error.nopermission"
 - `GenericResponse.ERROR_COOLDOWN` → "generic.error.cooldown"
 
-Use with:
+### 8.2. Scoreboard API
 
-```java
-Message.error(playerId, GenericResponse.ERROR_NO_PERMISSION);
-Message.error(audience, GenericResponse.ERROR_COOLDOWN);
-```
+#### ScoreboardService
+- `registerScoreboard(ScoreboardDefinition)` - Register a new scoreboard
+- `unregisterScoreboard(String id)` - Remove a scoreboard
+- `setPlayerScoreboard(UUID, String)` - Assign scoreboard to player
+- `removePlayerScoreboard(UUID)` - Remove player's scoreboard
+- `updatePlayerScoreboard(UUID)` - Force refresh
+- `setPlayerTitle(UUID, String)` - Custom title for player
+- `getPlayerTitle(UUID)` - Get custom title
 
-### Sending & Broadcasting
+#### ContentProvider Types
+- `StaticContentProvider` - Fixed content
+- `DynamicContentProvider` - Time-based updates
+- Player-specific support via `Function<UUID, List<String>>`
 
-All message types support:
+#### PlayerScoreboardState
+- `getCurrentScoreboardId()` - Active scoreboard
+- `setModuleOverride(String, ModuleOverride)` - Toggle modules
+- `markForRefresh()` - Request update
 
-- `.send(UUID playerId)`
-- `.send(Audience audience)`
-- `.broadcast()` (to all players)
-- `.broadcast(Audience audience)` (to a custom audience)
+---
 
-### Arguments
+## 9. Performance & Best Practices
 
-Arguments are passed directly to the Message facade methods as varargs parameters:
+### Best Practices
+1. **Use appropriate refresh intervals** - Don't update too frequently (5-10 seconds minimum)
+2. **Leverage content providers** - Use static for fixed content, dynamic for changing data
+3. **Module reusability** - Create shared modules across scoreboards
+4. **Thread safety** - All APIs are thread-safe, can be called from any thread
+5. **Locale handling** - Always use translation keys rather than hardcoded strings
 
-```java
-// Single argument
-Message.info("skills.levelup", player.level).send(audience);
-
-// Multiple arguments
-Message.success("banking.deposit.success", 10000, "Gold").send(playerId);
-Message.info("server.maintenance", "1 hour", "scheduled").send(audience);
-```
-
-Arguments are substituted into the localized message using `{0}`, `{1}`, etc. in the YAML files.
-
-### Tags (Context Prefixes)
-
-Chainable for context and formatting:
-
-- `.system()` — System message prefix
-- `.staff()` — Staff-only prefix
-- `.daemon()` — Daemon/background prefix
-- `.debug()` — Debug prefix
-
-Tags can be chained in any order, e.g.:
-
-```java
-Message.info("server.restart").system().staff().send(audience);
-```
-
-### Retrieving Components
-
-- `.get(UUID playerId)` — Returns `Component` for a player
-- `.get(Audience audience)` — Returns `Component` for an audience
-
-### MessageStyle Enum
-
-- `MessageStyle.SUCCESS`
-- `MessageStyle.INFO`
-- `MessageStyle.ERROR`
-- `MessageStyle.DEBUG`
-
-### Localization
-
-- Message keys map to YAML files: `lang/<locale>/<namespace>.yml`
-- Arguments: `{0}`, `{1}` in YAML, or `%s`/`%d` for Java formatting
-- Missing keys are auto-added with a placeholder
-
-### Audience Support
-
-All `send`, `broadcast`, and `get` methods accept both `UUID` and `Audience`.
+---
 
 ## That's it!
