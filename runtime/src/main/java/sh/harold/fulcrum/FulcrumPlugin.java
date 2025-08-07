@@ -28,7 +28,6 @@ import java.util.List;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
-    private FulcrumPlatform platform;
     private DependencyContainer container;
     private ModuleVerificationManager verificationManager;
 
@@ -63,9 +62,9 @@ public final class FulcrumPlugin extends JavaPlugin {
         EnvironmentConfigParser configParser = new EnvironmentConfigParser();
         EnvironmentConfig environmentConfig = configParser.loadDefaultConfiguration();
 
-        // Create platform with service locator
+        // Create service locator and platform
         ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
-        this.platform = new FulcrumPlatform(serviceLocator);
+        FulcrumPlatform platform = new FulcrumPlatform(serviceLocator);
         this.moduleManager = new ModuleManager(getLogger(), this);
         
         // Initialize FulcrumPlatformHolder to make platform accessible to external modules

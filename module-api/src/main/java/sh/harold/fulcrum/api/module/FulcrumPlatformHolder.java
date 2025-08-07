@@ -5,7 +5,7 @@ package sh.harold.fulcrum.api.module;
  * This follows the same pattern as FulcrumEnvironment for consistency.
  */
 public final class FulcrumPlatformHolder {
-    private static FulcrumPlatform instance;
+    private static FulcrumPlatform platform;
     
     private FulcrumPlatformHolder() {
         // Private constructor to prevent instantiation
@@ -19,13 +19,13 @@ public final class FulcrumPlatformHolder {
      * @throws IllegalStateException if already initialized
      */
     public static void initialize(FulcrumPlatform platform) {
-        if (instance != null) {
+        if (FulcrumPlatformHolder.platform != null) {
             throw new IllegalStateException("FulcrumPlatform has already been initialized");
         }
         if (platform == null) {
             throw new IllegalArgumentException("FulcrumPlatform cannot be null");
         }
-        instance = platform;
+        FulcrumPlatformHolder.platform = platform;
     }
     
     /**
@@ -35,11 +35,11 @@ public final class FulcrumPlatformHolder {
      * @throws IllegalStateException if not yet initialized
      */
     public static FulcrumPlatform getPlatform() {
-        if (instance == null) {
+        if (platform == null) {
             throw new IllegalStateException("FulcrumPlatform has not been initialized. " +
                 "This usually means you're trying to access it before the Fulcrum plugin has loaded.");
         }
-        return instance;
+        return platform;
     }
     
     /**
@@ -48,13 +48,13 @@ public final class FulcrumPlatformHolder {
      * @return true if initialized, false otherwise
      */
     public static boolean isInitialized() {
-        return instance != null;
+        return platform != null;
     }
     
     /**
      * Clear the stored instance. This should only be used for testing purposes.
      */
     static void reset() {
-        instance = null;
+        platform = null;
     }
 }

@@ -25,17 +25,7 @@ public class ServiceLocatorImpl implements ServiceLocator {
     }
 
     @Override
-    public <T> T getService(Class<T> serviceClass) {
-        return container.getOptional(serviceClass).orElse(null);
-    }
-
-    @Override
     public <T> Optional<T> findService(Class<T> serviceClass) {
         return container.getOptional(serviceClass);
-    }
-
-    @Override
-    public boolean hasService(Class<?> serviceClass) {
-        return container.isAvailable(serviceClass);
     }
 }
