@@ -2,8 +2,6 @@ plugins {
     id("java-library")
 }
 
-version = "1.1.0"
-
 dependencies {
     // No external dependencies - this is a pure API module
     // External module developers should not need additional dependencies
