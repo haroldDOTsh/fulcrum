@@ -1,5 +1,5 @@
 name: Fulcrum
-version: '${project.version}'
+version: 1.4.0
 main: sh.harold.fulcrum.FulcrumPlugin
 description: Eternum's next-generation plugin backbone
 author: harold-waste
