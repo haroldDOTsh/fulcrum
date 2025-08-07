@@ -221,6 +221,16 @@ public class DefaultMenuService implements MenuService {
         return openMenu(menu.get(), player);
     }
     
+    @Override
+    public boolean hasMenuTemplate(String templateId) {
+        return menuRegistry.hasTemplate(templateId);
+    }
+    
+    @Override
+    public CompletableFuture<Menu> openMenuTemplate(String templateId, Player player) {
+        return menuRegistry.openTemplate(templateId, player);
+    }
+    
     /**
      * Shuts down the menu service.
      */

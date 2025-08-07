@@ -148,4 +148,23 @@ public interface MenuService {
      */
     CompletableFuture<Void> openMenuInstance(String menuId, Player player);
 
+    /**
+     * Checks if a menu template is registered in the menu registry.
+     * This is a convenience method that delegates to the menu registry.
+     *
+     * @param templateId The template ID to check
+     * @return true if the template exists in the registry
+     */
+    boolean hasMenuTemplate(String templateId);
+    
+    /**
+     * Opens a menu from a template in the menu registry.
+     * This is a convenience method that delegates to the menu registry.
+     *
+     * @param templateId The template ID
+     * @param player The player to open the menu for
+     * @return CompletableFuture that completes when the menu is opened
+     */
+    CompletableFuture<Menu> openMenuTemplate(String templateId, Player player);
+
 }

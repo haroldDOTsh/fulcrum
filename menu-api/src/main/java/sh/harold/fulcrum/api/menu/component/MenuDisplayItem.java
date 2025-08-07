@@ -8,6 +8,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import sh.harold.fulcrum.api.menu.util.ColorUtils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -165,7 +166,7 @@ public class MenuDisplayItem implements MenuItem {
          */
         public Builder secondary(String text) {
             if (text != null && !text.isEmpty()) {
-                Component secondary = miniMessage.deserialize(convertLegacyColors(text))
+                Component secondary = miniMessage.deserialize(ColorUtils.convertLegacyToMiniMessage(text))
                     .color(NamedTextColor.DARK_GRAY)
                     .decoration(TextDecoration.ITALIC, false);
                 lore.add(0, secondary); // Add at beginning
@@ -190,7 +191,7 @@ public class MenuDisplayItem implements MenuItem {
                 // Word wrap at approximately 30 characters
                 List<String> wrapped = wordWrap(description, 30);
                 for (String line : wrapped) {
-                    Component descLine = miniMessage.deserialize(convertLegacyColors(line))
+                    Component descLine = miniMessage.deserialize(ColorUtils.convertLegacyToMiniMessage(line))
                         .color(NamedTextColor.GRAY)
                         .decoration(TextDecoration.ITALIC, false);
                     lore.add(descLine);
@@ -207,7 +208,7 @@ public class MenuDisplayItem implements MenuItem {
          */
         public Builder lore(String line) {
             if (line != null) {
-                Component loreLine = miniMessage.deserialize(convertLegacyColors(line))
+                Component loreLine = miniMessage.deserialize(ColorUtils.convertLegacyToMiniMessage(line))
                     .decoration(TextDecoration.ITALIC, false);
                 lore.add(loreLine);
             }
@@ -280,41 +281,6 @@ public class MenuDisplayItem implements MenuItem {
          */
         public MenuDisplayItem build() {
             return new MenuDisplayItem(this);
-        }
-        
-        /**
-         * Converts legacy color codes (&) to MiniMessage format.
-         */
-        private String convertLegacyColors(String text) {
-            if (text == null) return null;
-            
-            // Replace color codes
-            text = text.replace("&0", "<black>");
-            text = text.replace("&1", "<dark_blue>");
-            text = text.replace("&2", "<dark_green>");
-            text = text.replace("&3", "<dark_aqua>");
-            text = text.replace("&4", "<dark_red>");
-            text = text.replace("&5", "<dark_purple>");
-            text = text.replace("&6", "<gold>");
-            text = text.replace("&7", "<gray>");
-            text = text.replace("&8", "<dark_gray>");
-            text = text.replace("&9", "<blue>");
-            text = text.replace("&a", "<green>");
-            text = text.replace("&b", "<aqua>");
-            text = text.replace("&c", "<red>");
-            text = text.replace("&d", "<light_purple>");
-            text = text.replace("&e", "<yellow>");
-            text = text.replace("&f", "<white>");
-            
-            // Replace formatting codes
-            text = text.replace("&k", "<obfuscated>");
-            text = text.replace("&l", "<bold>");
-            text = text.replace("&m", "<strikethrough>");
-            text = text.replace("&n", "<underlined>");
-            text = text.replace("&o", "<italic>");
-            text = text.replace("&r", "<reset>");
-            
-            return text;
         }
         
         /**

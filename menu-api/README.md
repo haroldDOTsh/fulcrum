@@ -4,12 +4,13 @@ A simple, powerful menu system with clean builder patterns and explicit parent-c
 
 ## Table of Contents
 1. [Examples: Simple to Complex](#examples-simple-to-complex)
-2. [Anchor System](#anchor-system)
-3. [MenuService](#menuservice)
-4. [CustomMenuBuilder](#custommenubuilder)
-5. [ListMenuBuilder](#listmenubuilder)
-6. [MenuButton](#menubutton)
-7. [MenuDisplayItem](#menudisplayitem)
+2. [Menu Instance Management](#menu-instance-management)
+3. [Anchor System](#anchor-system)
+4. [MenuService](#menuservice)
+5. [CustomMenuBuilder](#custommenubuilder)
+6. [ListMenuBuilder](#listmenubuilder)
+7. [MenuButton](#menubutton)
+8. [MenuDisplayItem](#menudisplayitem)
 
 ---
 
@@ -38,23 +39,25 @@ Shows how `.parentMenu()` automatically creates a back button.
 
 ```java
 private void createMainMenu(Player player) {
-    menuService.createMenuBuilder()
+    // First create and register the main menu
+    Menu mainMenu = menuService.createMenuBuilder()
         .title("Main Menu")
         .rows(3)
         .addButton(
             MenuButton.builder(Material.CHEST)
                 .name("Open Shop")
-                .onClick(this::createShopMenu) // calls method below
-                .build(), 
+                .onClick(p -> menuService.openMenuInstance("shop", p))
+                .build(),
             1, 1)
-        .buildAsync(player)
-        .thenAccept(menu -> {
-            // Register so shop can reference it as parent
-            ((DefaultMenuService) menuService).registerMenuInstance("main", menu);
-        });
+        .build();
+    
+    // Register the menu instance for later retrieval
+    menuService.registerMenuInstance("main", mainMenu);
+    menuService.openMenu(mainMenu, player);
 }
 
 private void createShopMenu(Player player) {
+    // Create shop menu with parent reference
     menuService.createMenuBuilder()
         .title("Shop")
         .rows(3)
@@ -65,7 +68,11 @@ private void createShopMenu(Player player) {
                 .onClick(p -> p.sendMessage("Item purchased!"))
                 .build(),
             1, 1)
-        .buildAsync(player);
+        .buildAsync(player)
+        .thenAccept(menu -> {
+            // Optionally register this menu too
+            menuService.registerMenuInstance("shop", menu);
+        });
 }
 ```
 
@@ -195,6 +202,178 @@ private void createLargeMenu(Player player) {
 > - **Search** and **Close** buttons use `.slot()` and stay fixed in the viewport
 > - **Magic items** use coordinates `(row, col)` and scroll with the content
 > - No need for explicit `.anchor()` calls!
+
+---
+
+## Menu Instance Management
+
+The menu API provides a powerful instance management system that allows you to register menus with unique IDs for later retrieval and create parent-child menu relationships.
+
+### Registering Menu Instances
+
+You can register any menu with a unique ID for later retrieval:
+
+```java
+// Create a menu
+Menu mainMenu = menuService.createMenuBuilder()
+    .title("Main Menu")
+    .rows(6)
+    .build();
+
+// Register it with an ID
+menuService.registerMenuInstance("main-menu", mainMenu);
+
+// Later, retrieve and open it
+if (menuService.hasMenuInstance("main-menu")) {
+    menuService.openMenuInstance("main-menu", player);
+}
+
+// Or retrieve it for modification
+Optional<Menu> menu = menuService.getMenuInstance("main-menu");
+menu.ifPresent(m -> {
+    // Modify or use the menu
+    menuService.openMenu(m, player);
+});
+```
+
+### Parent-Child Menu Navigation
+
+The `.parentMenu()` builder method creates automatic back navigation:
+
+```java
+// Register parent menu first
+Menu mainMenu = menuService.createMenuBuilder()
+    .title("Main Menu")
+    .rows(3)
+    .addButton(shopButton, 1, 1)
+    .build();
+    
+menuService.registerMenuInstance("main", mainMenu);
+
+// Create child menu with automatic back button
+Menu shopMenu = menuService.createMenuBuilder()
+    .title("Shop")
+    .rows(6)
+    .parentMenu("main")  // Automatically adds back button!
+    .addButton(buyButton, 2, 2)
+    .build();
+    
+menuService.registerMenuInstance("shop", shopMenu);
+```
+
+The parent menu reference:
+- Automatically adds a back button to the child menu
+- The back button is positioned appropriately based on menu size
+- Clicking the back button opens the parent menu instance
+- Works with both custom menus and list menus
+
+### Menu Instance API Methods
+
+The `MenuService` interface provides these methods for menu instance management:
+
+```java
+// Register a menu instance
+void registerMenuInstance(String menuId, Menu menu);
+
+// Check if an instance exists
+boolean hasMenuInstance(String menuId);
+
+// Retrieve a menu instance
+Optional<Menu> getMenuInstance(String menuId);
+
+// Open a menu instance directly
+CompletableFuture<Void> openMenuInstance(String menuId, Player player);
+```
+
+### Complete Navigation Example
+
+```java
+public class MenuSystem {
+    private final MenuService menuService;
+    
+    public void setupMenus() {
+        // Create main menu
+        Menu mainMenu = menuService.createMenuBuilder()
+            .title("&6Main Menu")
+            .rows(3)
+            .addButton(
+                MenuButton.builder(Material.CHEST)
+                    .name("&aShop")
+                    .onClick(p -> menuService.openMenuInstance("shop", p))
+                    .build(),
+                1, 2)
+            .addButton(
+                MenuButton.builder(Material.ANVIL)
+                    .name("&bSettings")
+                    .onClick(p -> menuService.openMenuInstance("settings", p))
+                    .build(),
+                1, 4)
+            .addButton(
+                MenuButton.builder(Material.EMERALD)
+                    .name("&dStats")
+                    .onClick(p -> menuService.openMenuInstance("stats", p))
+                    .build(),
+                1, 6)
+            .build();
+            
+        menuService.registerMenuInstance("main", mainMenu);
+        
+        // Create shop menu with back navigation
+        Menu shopMenu = menuService.createListMenu()
+            .title("&aShop")
+            .parentMenu("main")  // Back button to main menu
+            .addItems(getShopItems())
+            .build();
+            
+        menuService.registerMenuInstance("shop", shopMenu);
+        
+        // Create settings menu with back navigation
+        Menu settingsMenu = menuService.createMenuBuilder()
+            .title("&bSettings")
+            .rows(4)
+            .parentMenu("main")  // Back button to main menu
+            .addButton(toggleButton1, 1, 2)
+            .addButton(toggleButton2, 1, 4)
+            .addButton(toggleButton3, 1, 6)
+            .build();
+            
+        menuService.registerMenuInstance("settings", settingsMenu);
+        
+        // Create stats menu with back navigation
+        Menu statsMenu = menuService.createMenuBuilder()
+            .title("&dPlayer Stats")
+            .rows(5)
+            .parentMenu("main")  // Back button to main menu
+            .fillEmpty(Material.BLACK_STAINED_GLASS_PANE)
+            .addItem(statDisplay1, 1, 4)
+            .addItem(statDisplay2, 2, 2)
+            .addItem(statDisplay3, 2, 6)
+            .build();
+            
+        menuService.registerMenuInstance("stats", statsMenu);
+    }
+    
+    public void openMainMenu(Player player) {
+        menuService.openMenuInstance("main", player)
+            .exceptionally(throwable -> {
+                player.sendMessage("&cFailed to open menu!");
+                return null;
+            });
+    }
+}
+```
+
+### Best Practices for Menu Instances
+
+1. **Use Descriptive IDs**: Choose clear, hierarchical IDs like `"shop-weapons"` or `"settings-gameplay"`
+
+2. **Register Parents First**: Always register parent menus before creating children that reference them
+
+3. **Check Existence**: Use `hasMenuInstance()` before opening to handle missing menus gracefully
+
+4. **Handle Errors**: Use `CompletableFuture.exceptionally()` when opening menu instances
+
+5. **Organize Hierarchies**: Keep menu hierarchies shallow (2-3 levels maximum) for better UX
 
 ---
 
@@ -453,9 +632,9 @@ menuService.createMenuBuilder()
 
 ## MenuService
 
-The main entry point for creating menus.
+The main entry point for creating and managing menus.
 
-### Methods
+### Menu Creation Methods
 
 **`createMenuBuilder()`**
 Creates a new CustomMenuBuilder for positioned menus.
@@ -464,8 +643,10 @@ Creates a new CustomMenuBuilder for positioned menus.
 
 **`createListMenu()`**
 Creates a new ListMenuBuilder for paginated lists.
-- Returns: `ListMenuBuilder` 
+- Returns: `ListMenuBuilder`
 - Use when: You have a list of items that should be automatically paginated
+
+### Menu Control Methods
 
 **`openMenu(Menu menu, Player player)`**
 Opens a menu for a specific player.
@@ -476,13 +657,61 @@ Opens a menu for a specific player.
 Closes the currently open menu for a player.
 - Returns: `boolean` (true if menu was closed)
 
+**`closeAllMenus()`**
+Closes all open menus for all players.
+- Returns: `int` (number of menus closed)
+
 **`hasMenuOpen(Player player)`**
 Checks if a player has any menu open.
 - Returns: `boolean`
 
+**`getOpenMenu(Player player)`**
+Gets the currently open menu for a player.
+- Returns: `Optional<Menu>`
+
 **`refreshMenu(Player player)`**
 Updates the contents of a player's current menu.
 - Returns: `boolean` (true if menu was refreshed)
+
+### Menu Instance Management Methods
+
+**`registerMenuInstance(String menuId, Menu menu)`**
+Registers a menu instance with a unique ID for later retrieval.
+- Parameters: `menuId` - unique identifier, `menu` - the menu to register
+- Use when: You want to reference this menu later or use it as a parent
+
+**`hasMenuInstance(String menuId)`**
+Checks if a menu instance is registered with the given ID.
+- Returns: `boolean`
+- Use when: You need to verify a menu exists before opening
+
+**`getMenuInstance(String menuId)`**
+Retrieves a registered menu instance by ID.
+- Returns: `Optional<Menu>`
+- Use when: You need to access or modify a registered menu
+
+**`openMenuInstance(String menuId, Player player)`**
+Opens a registered menu instance for a player.
+- Returns: `CompletableFuture<Void>` (fails if menu not found)
+- Use when: You want to open a previously registered menu
+
+### Registry & Plugin Management
+
+**`getMenuRegistry()`**
+Gets the menu registry for template management.
+- Returns: `MenuRegistry`
+
+**`registerPlugin(Plugin plugin)`**
+Registers a plugin using the menu service.
+- Use when: Your plugin creates menus
+
+**`unregisterPlugin(Plugin plugin)`**
+Unregisters a plugin and closes all its menus.
+- Use when: Your plugin is disabling
+
+**`getOpenMenuCount()`**
+Gets the total number of currently open menus.
+- Returns: `int`
 
 ---
 

@@ -27,13 +27,73 @@ public interface MenuContext {
     
     /**
      * Gets a property value from the context.
-     * 
+     *
      * @param key the property key
      * @param type the expected type of the value
      * @param <T> the type parameter
      * @return an Optional containing the value if present and of the correct type
      */
     <T> Optional<T> getProperty(String key, Class<T> type);
+    
+    /**
+     * Gets a string value from the context.
+     *
+     * @param key The key to get
+     * @param defaultValue The default value if not present or not a string
+     * @return The string value or the default value
+     */
+    default String getString(String key, String defaultValue) {
+        Optional<String> value = getProperty(key, String.class);
+        return value.orElse(defaultValue);
+    }
+    
+    /**
+     * Gets an integer value from the context.
+     *
+     * @param key The key to get
+     * @param defaultValue The default value if not present or not an integer
+     * @return The integer value or the default value
+     */
+    default int getInt(String key, int defaultValue) {
+        Optional<Integer> value = getProperty(key, Integer.class);
+        return value.orElse(defaultValue);
+    }
+    
+    /**
+     * Gets a boolean value from the context.
+     *
+     * @param key The key to get
+     * @param defaultValue The default value if not present or not a boolean
+     * @return The boolean value or the default value
+     */
+    default boolean getBoolean(String key, boolean defaultValue) {
+        Optional<Boolean> value = getProperty(key, Boolean.class);
+        return value.orElse(defaultValue);
+    }
+    
+    /**
+     * Gets a long value from the context.
+     *
+     * @param key The key to get
+     * @param defaultValue The default value if not present or not a long
+     * @return The long value or the default value
+     */
+    default long getLong(String key, long defaultValue) {
+        Optional<Long> value = getProperty(key, Long.class);
+        return value.orElse(defaultValue);
+    }
+    
+    /**
+     * Gets a double value from the context.
+     *
+     * @param key The key to get
+     * @param defaultValue The default value if not present or not a double
+     * @return The double value or the default value
+     */
+    default double getDouble(String key, double defaultValue) {
+        Optional<Double> value = getProperty(key, Double.class);
+        return value.orElse(defaultValue);
+    }
     
     /**
      * Sets a property value in the context.
