@@ -90,131 +90,94 @@ public class JedisRedisOperations implements RedisDirtyDataCache.RedisOperations
      * @return true if connection is working
      */
     private boolean testConnection() {
-        try (Jedis jedis = jedisPool.getResource()) {
-            String response = jedis.ping();
-            return "PONG".equalsIgnoreCase(response);
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Redis connection test failed", e);
-            return false;
-        }
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // Connection testing will be handled through the message-bus health checks
+        return false;
     }
 
     /**
      * Executes a Redis operation with automatic retry and error handling.
      *
+     * @deprecated This method is temporarily disabled pending message-bus integration
      * @param operation The operation to execute
      * @param <T>       Return type
      * @return Operation result, or null if failed
      */
+    @Deprecated
     private <T> T executeWithRetry(RedisOperation<T> operation) {
-        int attempts = 0;
-        Exception lastException = null;
-
-        while (attempts < config.getMaxRetries()) {
-            try (Jedis jedis = jedisPool.getResource()) {
-                T result = operation.execute(jedis);
-
-                // Mark as available on successful operation
-                if (!available) {
-                    available = true;
-                    LOGGER.info("Redis connection restored");
-                }
-
-                return result;
-            } catch (JedisException e) {
-                lastException = e;
-                attempts++;
-
-                if (attempts < config.getMaxRetries()) {
-                    try {
-                        Thread.sleep(config.getRetryDelay().toMillis());
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Mark as unavailable after repeated failures
-        if (available) {
-            available = false;
-            LOGGER.log(Level.WARNING, "Redis marked as unavailable after " + attempts + " failed attempts", lastException);
-        }
-
-        return null;
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // Operations will be executed through the message-bus layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public void set(String key, String value, long ttlSeconds) {
-        executeWithRetry(jedis -> {
-            if (ttlSeconds > 0) {
-                jedis.setex(key, ttlSeconds, value);
-            } else {
-                jedis.set(key, value);
-            }
-            return null;
-        });
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public String get(String key) {
-        return executeWithRetry(jedis -> jedis.get(key));
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public boolean delete(String key) {
-        Long result = executeWithRetry(jedis -> jedis.del(key));
-        return result != null && result > 0;
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public void sAdd(String setKey, String member) {
-        executeWithRetry(jedis -> {
-            jedis.sadd(setKey, member);
-            return null;
-        });
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public void sRem(String setKey, String member) {
-        executeWithRetry(jedis -> {
-            jedis.srem(setKey, member);
-            return null;
-        });
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public Set<String> sMembers(String setKey) {
-        Set<String> result = executeWithRetry(jedis -> jedis.smembers(setKey));
-        return result != null ? result : Collections.emptySet();
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public boolean sIsMember(String setKey, String member) {
-        Boolean result = executeWithRetry(jedis -> jedis.sismember(setKey, member));
-        return result != null && result;
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public Set<String> keys(String pattern) {
-        Set<String> result = executeWithRetry(jedis -> jedis.keys(pattern));
-        return result != null ? result : Collections.emptySet();
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public long delete(String... keys) {
-        if (keys.length == 0) {
-            return 0;
-        }
-
-        Long result = executeWithRetry(jedis -> jedis.del(keys));
-        return result != null ? result : 0;
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // The message-bus will handle Redis operations through a distributed messaging layer
+        throw new UnsupportedOperationException("Redis operations are temporarily disabled pending message-bus integration");
     }
 
     @Override
     public boolean isAvailable() {
-        return available;
+        // TODO: This will return the status from the message-bus connection
+        // For now, always return false to indicate Redis is not available
+        return false;
     }
 
     /**
@@ -222,14 +185,9 @@ public class JedisRedisOperations implements RedisDirtyDataCache.RedisOperations
      * This method should be called periodically to maintain accurate availability status.
      */
     public void performHealthCheck() {
-        boolean wasAvailable = available;
-        available = testConnection();
-
-        if (!wasAvailable && available) {
-            LOGGER.info("Redis health check: Connection restored");
-        } else if (wasAvailable && !available) {
-            LOGGER.warning("Redis health check: Connection lost");
-        }
+        // TODO: This will be reimplemented once the message-bus system is integrated
+        // Health checks will be performed through the message-bus monitoring layer
+        LOGGER.info("Redis health check disabled - pending message-bus integration");
     }
 
     /**
