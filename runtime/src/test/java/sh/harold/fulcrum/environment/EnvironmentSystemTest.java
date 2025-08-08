@@ -30,10 +30,6 @@ public class EnvironmentSystemTest {
             java.lang.reflect.Field configField = FulcrumEnvironment.class.getDeclaredField("environmentConfig");
             configField.setAccessible(true);
             configField.set(null, null);
-            
-            java.lang.reflect.Field registryField = FulcrumEnvironment.class.getDeclaredField("moduleRegistry");
-            registryField.setAccessible(true);
-            registryField.set(null, null);
         } catch (Exception e) {
             throw new RuntimeException("Failed to reset FulcrumEnvironment state", e);
         }
@@ -156,13 +152,17 @@ public class EnvironmentSystemTest {
     
     @Test
     public void testLegacyCompatibility() {
-        // Test that legacy initialization still works
-        FulcrumEnvironment.initialize("test-env");
+        // Test that initialization with null config still works (legacy behavior)
+        FulcrumEnvironment.initialize("test-env", null);
         assertEquals("test-env", FulcrumEnvironment.getCurrent());
         
-        // Legacy isEnabledFor method should still work
-        assertTrue(FulcrumEnvironment.isEnabledFor("test-env", "other-env"));
-        assertFalse(FulcrumEnvironment.isEnabledFor("different-env"));
+        // With null config, all modules are enabled by default
+        try {
+            BootstrapContextHolder.setContext("any-module");
+            assertTrue(FulcrumEnvironment.isThisModuleEnabled());
+        } finally {
+            BootstrapContextHolder.clearContext();
+        }
     }
     
     @Test
