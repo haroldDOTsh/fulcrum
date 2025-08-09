@@ -24,6 +24,7 @@ dependencies {
     implementation(project(":menu-api"))
     implementation(project(":module-api"))
     implementation(project(":message-bus-api"))
+    implementation(project(":server-lifecycle-api"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.8-R0.1-SNAPSHOT")

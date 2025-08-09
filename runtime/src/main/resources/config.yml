@@ -14,12 +14,6 @@ redis:
 
 # Message Bus Configuration
 message-bus:
-  # Unique identifier for this server instance
-  server-id: "server-1"
-  
-  # Proxy identifier (e.g., "proxy-1", "bungee-1", "velocity-1")
-  proxy-id: "proxy-default"
-  
   # Player tracking configuration
   player-tracking:
     enabled: true
