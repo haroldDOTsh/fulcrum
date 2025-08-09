@@ -4,6 +4,7 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.api.StatefulRedisConnection;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.PlayerLocator;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -32,6 +33,11 @@ public class MessageBusFeature implements PluginFeature {
         this.plugin = plugin;
         this.container = container;
         
+        // Get server identifier from ServerLifecycleFeature if available
+        ServerIdentifier serverIdentifier = container.get(ServerIdentifier.class);
+        String serverId = serverIdentifier != null ? serverIdentifier.getServerId() :
+                          "server-" + System.currentTimeMillis();
+        
         // Load configuration
         plugin.saveDefaultConfig();
         config = new MessageBusConfig(plugin.getConfig().getConfigurationSection("message-bus"));
@@ -41,11 +47,11 @@ public class MessageBusFeature implements PluginFeature {
         boolean forceSimpleMode = plugin.getConfig().getBoolean("message-bus.force-simple-mode", false);
         
         if (!forceSimpleMode && redisEnabled) {
-            if (initializeRedisMessageBus()) {
+            if (initializeRedisMessageBus(serverId)) {
                 LOGGER.info("Redis message bus initialized successfully");
             } else {
                 LOGGER.warning("Failed to initialize Redis message bus, falling back to simple mode");
-                initializeSimpleMessageBus();
+                initializeSimpleMessageBus(serverId);
             }
         } else {
             if (forceSimpleMode) {
@@ -53,7 +59,7 @@ public class MessageBusFeature implements PluginFeature {
             } else {
                 LOGGER.info("Redis not enabled, using simple message bus");
             }
-            initializeSimpleMessageBus();
+            initializeSimpleMessageBus(serverId);
         }
         
         // Register services
@@ -61,10 +67,10 @@ public class MessageBusFeature implements PluginFeature {
         container.register(MessageBusConfig.class, config);
         container.register(PlayerLocator.class, playerLocator);
         
-        LOGGER.info("Message bus feature initialized with server ID: " + config.getServerId());
+        LOGGER.info("Message bus feature initialized with server ID: " + serverId);
     }
     
-    private boolean initializeRedisMessageBus() {
+    private boolean initializeRedisMessageBus(String serverId) {
         try {
             // Load Redis configuration
             ConfigurationSection redisSection = plugin.getConfig().getConfigurationSection("redis");
@@ -83,8 +89,8 @@ public class MessageBusFeature implements PluginFeature {
                 .minIdleConnections(redisSection.getInt("pool.min-idle", 5))
                 .build();
             
-            // Create Redis message bus
-            RedisMessageBus redisMessageBus = new RedisMessageBus(config.getServerId(), redisConfig);
+            // Create Redis message bus with server ID from ServerIdentifier
+            RedisMessageBus redisMessageBus = new RedisMessageBus(serverId, redisConfig);
             
             // Test connection
             if (!redisMessageBus.isConnected()) {
@@ -102,9 +108,7 @@ public class MessageBusFeature implements PluginFeature {
             
             this.playerLocator = new RedisPlayerLocator(
                 messageBus,
-                redisConnection,
-                config.getServerId(),
-                config.getProxyId()
+                redisConnection
             );
             
             return true;
@@ -114,8 +118,8 @@ public class MessageBusFeature implements PluginFeature {
         }
     }
     
-    private void initializeSimpleMessageBus() {
-        SimpleMessageBus simpleMessageBus = new SimpleMessageBus(config.getServerId());
+    private void initializeSimpleMessageBus(String serverId) {
+        SimpleMessageBus simpleMessageBus = new SimpleMessageBus(serverId);
         this.messageBus = simpleMessageBus;
         this.playerLocator = new PlayerLocator(messageBus);
     }
@@ -142,7 +146,14 @@ public class MessageBusFeature implements PluginFeature {
     
     @Override
     public int getPriority() {
-        // Initialize after core features but before application features
+        // Initialize after ServerLifecycleFeature (priority 5) but before application features
         return 60;
+    }
+    
+    @Override
+    public Class<?>[] getDependencies() {
+        // Optionally depend on ServerLifecycleFeature for server ID
+        // It's optional because MessageBusFeature can work without it
+        return new Class<?>[] {};
     }
 }

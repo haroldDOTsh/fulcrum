@@ -6,8 +6,6 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.PlayerLocator;
 
-import java.time.Duration;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -21,81 +19,70 @@ import java.util.logging.Logger;
 public class RedisPlayerLocator extends PlayerLocator {
     private static final Logger LOGGER = Logger.getLogger(RedisPlayerLocator.class.getName());
     
-    private static final String PLAYER_KEY_PREFIX = "player:";
+    private static final String PLAYER_KEY_PREFIX = "player:online:";
     private static final int DEFAULT_TTL_SECONDS = 30;
-    private static final String LOCATION_SEPARATOR = ":";
     
     private final MessageBus messageBus;
     private final StatefulRedisConnection<String, String> connection;
-    private final String serverId;
-    private final String proxyId;
     
     /**
      * Creates a new Redis player locator.
-     * 
+     *
      * @param messageBus the message bus for broadcast queries
      * @param connection the Redis connection
-     * @param serverId the current server ID
-     * @param proxyId the proxy ID (can be null for non-proxy servers)
      */
-    public RedisPlayerLocator(MessageBus messageBus, StatefulRedisConnection<String, String> connection,
-                              String serverId, String proxyId) {
+    public RedisPlayerLocator(MessageBus messageBus, StatefulRedisConnection<String, String> connection) {
         super(messageBus);
         this.messageBus = messageBus;
         this.connection = connection;
-        this.serverId = serverId;
-        this.proxyId = proxyId;
         
-        // Subscribe to player location requests
-        messageBus.subscribe("player.locate.request", this::handleLocationRequest);
-        messageBus.subscribe("player.locate.response", this::handleLocationResponse);
+        // Subscribe to player presence requests
+        messageBus.subscribe("player.presence.request", this::handlePresenceRequest);
+        messageBus.subscribe("player.presence.response", this::handlePresenceResponse);
     }
     
     /**
-     * Updates the player's location in Redis.
-     * 
+     * Marks a player as online in Redis.
+     *
      * @param playerId the player's UUID
-     * @param serverId the server the player is on
-     * @param proxyId the proxy the player is connected through (optional)
      */
-    public void updatePlayerLocation(UUID playerId, String serverId, String proxyId) {
+    public void setPlayerOnline(UUID playerId) {
         try {
             RedisCommands<String, String> commands = connection.sync();
             String key = PLAYER_KEY_PREFIX + playerId.toString();
-            String value = proxyId != null ? proxyId + LOCATION_SEPARATOR + serverId : serverId;
             
             // Set with TTL
-            commands.setex(key, DEFAULT_TTL_SECONDS, value);
+            commands.setex(key, DEFAULT_TTL_SECONDS, "1");
             
-            LOGGER.fine("Updated location for player " + playerId + ": " + value);
+            LOGGER.fine("Marked player " + playerId + " as online");
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to update player location", e);
+            LOGGER.log(Level.WARNING, "Failed to mark player as online", e);
         }
     }
     
     /**
-     * Removes a player's location from Redis.
-     * 
+     * Marks a player as offline in Redis.
+     *
      * @param playerId the player's UUID
      */
-    public void removePlayerLocation(UUID playerId) {
+    public void setPlayerOffline(UUID playerId) {
         try {
             RedisCommands<String, String> commands = connection.sync();
             String key = PLAYER_KEY_PREFIX + playerId.toString();
             commands.del(key);
             
-            LOGGER.fine("Removed location for player " + playerId);
+            LOGGER.fine("Marked player " + playerId + " as offline");
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to remove player location", e);
+            LOGGER.log(Level.WARNING, "Failed to mark player as offline", e);
         }
     }
     
     /**
-     * Refreshes the TTL for a player's location.
-     * 
+     * Refreshes the TTL for a player's online status.
+     *
      * @param playerId the player's UUID
      */
-    public void refreshPlayerLocation(UUID playerId) {
+    public void refreshPlayerStatus(UUID playerId) {
         try {
             RedisCommands<String, String> commands = connection.sync();
             String key = PLAYER_KEY_PREFIX + playerId.toString();
@@ -103,17 +90,17 @@ public class RedisPlayerLocator extends PlayerLocator {
             
             LOGGER.fine("Refreshed TTL for player " + playerId);
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to refresh player location", e);
+            LOGGER.log(Level.WARNING, "Failed to refresh player status", e);
         }
     }
     
     @Override
-    public CompletableFuture<Optional<PlayerLocation>> locatePlayer(UUID playerId) {
+    public CompletableFuture<Boolean> isPlayerOnline(UUID playerId) {
         if (playerId == null) {
-            return CompletableFuture.completedFuture(Optional.empty());
+            return CompletableFuture.completedFuture(false);
         }
         
-        CompletableFuture<Optional<PlayerLocation>> future = new CompletableFuture<>();
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
         
         try {
             // First, try fast Redis lookup
@@ -121,104 +108,82 @@ public class RedisPlayerLocator extends PlayerLocator {
             String key = PLAYER_KEY_PREFIX + playerId.toString();
             String value = commands.get(key);
             
-            if (value != null && !value.isEmpty()) {
-                // Parse the location value
-                PlayerLocation location = parseLocation(value);
-                future.complete(Optional.of(location));
-                LOGGER.fine("Found player " + playerId + " via Redis: " + value);
+            if (value != null) {
+                future.complete(true);
+                LOGGER.fine("Found player " + playerId + " online via Redis");
                 return future;
             }
             
             // If not found in Redis, fall back to broadcast request
             LOGGER.fine("Player " + playerId + " not in Redis, broadcasting request");
             
-            // Broadcast a location request to all servers
-            messageBus.broadcast("player.locate.request", playerId.toString());
+            // Broadcast a presence request to all servers
+            messageBus.broadcast("player.presence.request", playerId.toString());
             
             // Set up a timeout for the broadcast response
             future.orTimeout(5, TimeUnit.SECONDS)
                 .exceptionally(ex -> {
                     if (ex instanceof java.util.concurrent.TimeoutException) {
-                        LOGGER.fine("Player location request timed out for: " + playerId);
+                        LOGGER.fine("Player presence request timed out for: " + playerId);
                     }
-                    return Optional.empty();
+                    return false;
                 });
             
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to locate player", e);
-            future.complete(Optional.empty());
+            LOGGER.log(Level.WARNING, "Failed to check player online status", e);
+            future.complete(false);
         }
         
         return future;
     }
     
     /**
-     * Handles incoming player location requests from other servers.
-     * 
+     * Handles incoming player presence requests from other servers.
+     *
      * @param envelope the message envelope
      */
-    private void handleLocationRequest(MessageEnvelope envelope) {
+    private void handlePresenceRequest(MessageEnvelope envelope) {
         try {
             String playerIdStr = envelope.getPayload().asText();
             UUID playerId = UUID.fromString(playerIdStr);
             
-            // Check if this player is on our server
-            // This would need to be implemented based on your server's player tracking
-            // For now, we'll just check Redis
-            
+            // Check if this player is online on our server
             RedisCommands<String, String> commands = connection.sync();
             String key = PLAYER_KEY_PREFIX + playerId.toString();
             String value = commands.get(key);
             
-            if (value != null && value.contains(serverId)) {
-                // We have this player, send response
-                messageBus.send(envelope.getSenderId(), "player.locate.response",
-                    new LocationResponse(playerId, serverId, proxyId));
-                LOGGER.fine("Responded to location request for player: " + playerId);
+            if (value != null) {
+                // Player is online, send response
+                messageBus.send(envelope.getSenderId(), "player.presence.response",
+                    new PresenceResponse(playerId, true));
+                LOGGER.fine("Responded to presence request for player: " + playerId);
             }
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to handle location request", e);
+            LOGGER.log(Level.WARNING, "Failed to handle presence request", e);
         }
     }
     
     /**
-     * Handles incoming player location responses from other servers.
-     * 
+     * Handles incoming player presence responses from other servers.
+     *
      * @param envelope the message envelope
      */
-    private void handleLocationResponse(MessageEnvelope envelope) {
+    private void handlePresenceResponse(MessageEnvelope envelope) {
         // This would need to be implemented to handle responses
-        // and complete pending futures from locatePlayer requests
-        LOGGER.fine("Received location response from: " + envelope.getSenderId());
+        // and complete pending futures from isPlayerOnline requests
+        LOGGER.fine("Received presence response from: " + envelope.getSenderId());
     }
     
     /**
-     * Parses a location string from Redis.
-     * 
-     * @param value the location value (format: "proxyId:serverId" or "serverId")
-     * @return the parsed PlayerLocation
+     * Response object for player presence queries.
      */
-    private PlayerLocation parseLocation(String value) {
-        if (value.contains(LOCATION_SEPARATOR)) {
-            String[] parts = value.split(LOCATION_SEPARATOR, 2);
-            return new PlayerLocation(parts[0], parts[1]);
-        } else {
-            return new PlayerLocation(null, value);
-        }
-    }
-    
-    /**
-     * Response object for player location queries.
-     */
-    private static class LocationResponse {
+    private static class PresenceResponse {
         public final UUID playerId;
-        public final String serverId;
-        public final String proxyId;
+        public final boolean online;
         
-        public LocationResponse(UUID playerId, String serverId, String proxyId) {
+        public PresenceResponse(UUID playerId, boolean online) {
             this.playerId = playerId;
-            this.serverId = serverId;
-            this.proxyId = proxyId;
+            this.online = online;
         }
     }
 }

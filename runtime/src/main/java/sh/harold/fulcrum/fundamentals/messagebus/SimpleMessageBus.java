@@ -23,6 +23,7 @@ public class SimpleMessageBus implements MessageBus {
     
     public SimpleMessageBus(String serverId) {
         this.serverId = serverId;
+        LOGGER.info("SimpleMessageBus initialized with server ID: " + serverId);
     }
     
     @Override

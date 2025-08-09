@@ -73,7 +73,7 @@ public class RedisMessageBus implements MessageBus {
             // Subscribe to channels
             subscribeToChannels();
             
-            LOGGER.info("Redis message bus initialized for server: " + serverId);
+            LOGGER.info("Redis message bus initialized with server ID from ServerIdentifier: " + serverId);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to initialize Redis message bus", e);
             throw new RuntimeException("Failed to initialize Redis message bus", e);
