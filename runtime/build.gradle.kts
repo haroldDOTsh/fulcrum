@@ -23,6 +23,7 @@ dependencies {
     implementation(project(":rank-api"))
     implementation(project(":menu-api"))
     implementation(project(":module-api"))
+    implementation(project(":message-bus-api"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.8-R0.1-SNAPSHOT")
@@ -35,6 +36,7 @@ dependencies {
     // Redis dependencies
     implementation("redis.clients:jedis:5.1.0")
     implementation("org.apache.commons:commons-pool2:2.12.0")
+    implementation("io.lettuce:lettuce-core:6.3.2.RELEASE")
 
     // (Optional test setup)
     testImplementation(platform("org.junit:junit-bom:5.10.2"))

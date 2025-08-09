@@ -1,0 +1,27 @@
+# Fulcrum Runtime Configuration
+
+# Redis Configuration (optional - used by advanced features)
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  database: 0
+  timeout: 2000
+  pool:
+    max-total: 8
+    max-idle: 8
+    min-idle: 0
+
+# Message Bus Configuration
+message-bus:
+  # Unique identifier for this server instance
+  server-id: "server-1"
+  
+  # Proxy identifier (e.g., "proxy-1", "bungee-1", "velocity-1")
+  proxy-id: "proxy-default"
+  
+  # Player tracking configuration
+  player-tracking:
+    enabled: true
+    # Refresh interval in seconds
+    refresh-interval: 20

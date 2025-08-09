@@ -13,5 +13,7 @@ include(
     "menu-api",
     "message-api",
     "rank-api",
-    "runtime"
+    "message-bus-api",
+    "runtime",
+    "runtime-velocity"
 )
