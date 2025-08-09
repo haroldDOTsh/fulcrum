@@ -14,6 +14,7 @@ include(
     "message-api",
     "rank-api",
     "message-bus-api",
+    "server-lifecycle-api",
     "runtime",
     "runtime-velocity"
 )
