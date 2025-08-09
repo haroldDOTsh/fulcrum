@@ -25,6 +25,7 @@ public class RedisPlayerLocator extends PlayerLocator {
     private static final int DEFAULT_TTL_SECONDS = 30;
     private static final String LOCATION_SEPARATOR = ":";
     
+    private final MessageBus messageBus;
     private final StatefulRedisConnection<String, String> connection;
     private final String serverId;
     private final String proxyId;
@@ -37,9 +38,10 @@ public class RedisPlayerLocator extends PlayerLocator {
      * @param serverId the current server ID
      * @param proxyId the proxy ID (can be null for non-proxy servers)
      */
-    public RedisPlayerLocator(MessageBus messageBus, StatefulRedisConnection<String, String> connection, 
+    public RedisPlayerLocator(MessageBus messageBus, StatefulRedisConnection<String, String> connection,
                               String serverId, String proxyId) {
         super(messageBus);
+        this.messageBus = messageBus;
         this.connection = connection;
         this.serverId = serverId;
         this.proxyId = proxyId;
@@ -170,7 +172,7 @@ public class RedisPlayerLocator extends PlayerLocator {
             
             if (value != null && value.contains(serverId)) {
                 // We have this player, send response
-                messageBus.send(envelope.getSenderId(), "player.locate.response", 
+                messageBus.send(envelope.getSenderId(), "player.locate.response",
                     new LocationResponse(playerId, serverId, proxyId));
                 LOGGER.fine("Responded to location request for player: " + playerId);
             }

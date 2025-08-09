@@ -42,43 +42,89 @@ public class RedisDirtyDataCache implements DirtyDataCache {
     public void markDirty(UUID playerId, String schemaKey, Object data, DirtyDataEntry.ChangeType changeType) {
         validateParameters(playerId, schemaKey, changeType);
 
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache synchronization
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            String key = createRedisKey(playerId, schemaKey);
+            DirtyDataEntry entry = new DirtyDataEntry(playerId, schemaKey, data, changeType, Instant.now());
+            String serialized = serializeEntry(entry);
+            
+            redisOperations.set(key, serialized, entryTtlSeconds);
+            redisOperations.sAdd(DIRTY_PLAYERS_SET, playerId.toString());
+            
+            LOGGER.fine("Marked dirty: " + key);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to mark dirty data", e);
+            throw new RuntimeException("Failed to mark dirty data", e);
+        }
     }
 
     @Override
     public boolean isDirty(UUID playerId, String schemaKey) {
         validateParameters(playerId, schemaKey);
 
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache queries
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            String key = createRedisKey(playerId, schemaKey);
+            String value = redisOperations.get(key);
+            return value != null;
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to check dirty status", e);
+            return false;
+        }
     }
 
     @Override
     public boolean isDirty(UUID playerId) {
         validatePlayerId(playerId);
 
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache queries
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            return redisOperations.sIsMember(DIRTY_PLAYERS_SET, playerId.toString());
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to check dirty status for player", e);
+            return false;
+        }
     }
 
     @Override
     public Collection<DirtyDataEntry> getDirtyEntries(UUID playerId) {
         validatePlayerId(playerId);
 
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache retrieval
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            String pattern = DIRTY_DATA_PREFIX + playerId + ":*";
+            Set<String> keys = redisOperations.keys(pattern);
+            
+            List<DirtyDataEntry> entries = new ArrayList<>();
+            for (String key : keys) {
+                String value = redisOperations.get(key);
+                if (value != null) {
+                    DirtyDataEntry entry = deserializeEntry(value);
+                    if (entry != null) {
+                        entries.add(entry);
+                    }
+                }
+            }
+            
+            return entries;
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to get dirty entries", e);
+            return Collections.emptyList();
+        }
     }
 
     @Override
     public Collection<DirtyDataEntry> getAllDirtyEntries() {
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache retrieval
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            Set<String> playerIds = redisOperations.sMembers(DIRTY_PLAYERS_SET);
+            List<DirtyDataEntry> allEntries = new ArrayList<>();
+            
+            for (String playerIdStr : playerIds) {
+                UUID playerId = UUID.fromString(playerIdStr);
+                allEntries.addAll(getDirtyEntries(playerId));
+            }
+            
+            return allEntries;
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to get all dirty entries", e);
+            return Collections.emptyList();
+        }
     }
 
     @Override
@@ -87,50 +133,107 @@ public class RedisDirtyDataCache implements DirtyDataCache {
             throw new IllegalArgumentException("threshold cannot be null");
         }
 
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache filtering
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            Collection<DirtyDataEntry> allEntries = getAllDirtyEntries();
+            return allEntries.stream()
+                .filter(entry -> entry.getTimestamp().isBefore(threshold))
+                .collect(Collectors.toList());
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to get old dirty entries", e);
+            return Collections.emptyList();
+        }
     }
 
     @Override
     public void clearDirty(UUID playerId, String schemaKey) {
         validateParameters(playerId, schemaKey);
 
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache cleanup
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            String key = createRedisKey(playerId, schemaKey);
+            redisOperations.delete(key);
+            
+            // Check if player has any other dirty entries
+            String pattern = DIRTY_DATA_PREFIX + playerId + ":*";
+            Set<String> keys = redisOperations.keys(pattern);
+            if (keys.isEmpty()) {
+                redisOperations.sRem(DIRTY_PLAYERS_SET, playerId.toString());
+            }
+            
+            LOGGER.fine("Cleared dirty: " + key);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to clear dirty data", e);
+        }
     }
 
     @Override
     public void clearDirty(UUID playerId) {
         validatePlayerId(playerId);
 
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache cleanup
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            String pattern = DIRTY_DATA_PREFIX + playerId + ":*";
+            Set<String> keys = redisOperations.keys(pattern);
+            
+            if (!keys.isEmpty()) {
+                redisOperations.delete(keys.toArray(new String[0]));
+            }
+            
+            redisOperations.sRem(DIRTY_PLAYERS_SET, playerId.toString());
+            
+            LOGGER.fine("Cleared all dirty entries for player: " + playerId);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to clear dirty data for player", e);
+        }
     }
 
     @Override
     public void clearAllDirty() {
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache cleanup
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            Set<String> playerIds = redisOperations.sMembers(DIRTY_PLAYERS_SET);
+            
+            for (String playerIdStr : playerIds) {
+                UUID playerId = UUID.fromString(playerIdStr);
+                clearDirty(playerId);
+            }
+            
+            // Clear the set itself
+            redisOperations.delete(DIRTY_PLAYERS_SET);
+            
+            LOGGER.info("Cleared all dirty entries");
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to clear all dirty data", e);
+        }
     }
 
     @Override
     public int getDirtyCount(UUID playerId) {
         validatePlayerId(playerId);
 
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache counting
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            String pattern = DIRTY_DATA_PREFIX + playerId + ":*";
+            Set<String> keys = redisOperations.keys(pattern);
+            return keys.size();
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to get dirty count", e);
+            return 0;
+        }
     }
 
     @Override
     public int getTotalDirtyCount() {
-        // TODO: This will be reimplemented once the message-bus system is integrated
-        // The message-bus will handle distributed cache counting
-        throw new UnsupportedOperationException("Redis dirty data cache is temporarily disabled pending message-bus integration");
+        try {
+            Set<String> playerIds = redisOperations.sMembers(DIRTY_PLAYERS_SET);
+            int total = 0;
+            
+            for (String playerIdStr : playerIds) {
+                UUID playerId = UUID.fromString(playerIdStr);
+                total += getDirtyCount(playerId);
+            }
+            
+            return total;
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to get total dirty count", e);
+            return 0;
+        }
     }
 
     @Override
