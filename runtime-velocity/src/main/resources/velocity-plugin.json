@@ -1,0 +1,9 @@
+{
+  "id": "fulcrum",
+  "name": "Fulcrum Velocity",
+  "version": "1.5.0",
+  "description": "Fulcrum framework for Velocity proxy",
+  "authors": ["Harold"],
+  "dependencies": [],
+  "main": "sh.harold.fulcrum.velocity.FulcrumVelocityPlugin"
+}

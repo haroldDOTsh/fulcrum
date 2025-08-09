@@ -82,6 +82,8 @@ GEMINI.md
 server/
 test-server/
 run/
+runtime-velocity/run/
+runtime/run/
 
 # Minecraft version-specific
 *.jar.cache
