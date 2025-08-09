@@ -1,7 +1,11 @@
 package sh.harold.fulcrum.velocity.lifecycle;
 
+import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
+import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
+import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 
 import java.util.*;
@@ -23,6 +27,13 @@ public class VelocityFeatureManager {
     
     public void loadFundamentalFeatures() {
         // Load fundamental features in order
+        // Server lifecycle should be loaded first as it provides core services
+        // Get required dependencies from service locator
+        ProxyServer proxyServer = serviceLocator.getRequiredService(ProxyServer.class);
+        FulcrumVelocityPlugin plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
+        ConfigLoader configLoader = serviceLocator.getRequiredService(ConfigLoader.class);
+        
+        registerFeature(new VelocityServerLifecycleFeature(proxyServer, plugin, configLoader));
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
     }

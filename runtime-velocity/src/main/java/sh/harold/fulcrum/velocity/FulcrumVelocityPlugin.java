@@ -52,6 +52,7 @@ public class FulcrumVelocityPlugin {
             serviceLocator.register(Logger.class, logger);
             serviceLocator.register(ConfigLoader.class, configLoader);
             serviceLocator.register(Path.class, dataDirectory);
+            serviceLocator.register(FulcrumVelocityPlugin.class, this);
             
             // Initialize feature manager
             this.featureManager = new VelocityFeatureManager(serviceLocator, logger);
@@ -94,5 +95,9 @@ public class FulcrumVelocityPlugin {
     
     public ServiceLocator getServiceLocator() {
         return serviceLocator;
+    }
+    
+    public ConfigLoader getConfigLoader() {
+        return configLoader;
     }
 }

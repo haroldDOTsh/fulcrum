@@ -14,6 +14,7 @@ repositories {
 
 dependencies {
     api(project(":message-bus-api"))
+    api(project(":server-lifecycle-api"))
     
     // Velocity API
     compileOnly("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
@@ -106,7 +107,10 @@ tasks {
         group = "run"
         description = "Builds the plugin and starts Velocity"
         dependsOn("build", "runVelocity")
-        tasks.findByName("runVelocity")?.mustRunAfter("build")
+    }
+    
+    named("runVelocity") {
+        mustRunAfter("build")
     }
     
     // Task to prepare a test environment

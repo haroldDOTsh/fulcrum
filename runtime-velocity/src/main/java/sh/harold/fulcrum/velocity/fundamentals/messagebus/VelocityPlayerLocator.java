@@ -20,16 +20,9 @@ public class VelocityPlayerLocator extends PlayerLocator {
     }
     
     @Override
-    public CompletableFuture<Optional<PlayerLocation>> locatePlayer(UUID playerId) {
+    public CompletableFuture<Boolean> isPlayerOnline(UUID playerId) {
         return CompletableFuture.supplyAsync(() -> {
-            Optional<Player> player = server.getPlayer(playerId);
-            return player.flatMap(p -> p.getCurrentServer())
-                        .map(serverConnection -> 
-                            new PlayerLocation(
-                                server.getBoundAddress().toString(),
-                                serverConnection.getServerInfo().getName()
-                            )
-                        );
+            return server.getPlayer(playerId).isPresent();
         });
     }
     

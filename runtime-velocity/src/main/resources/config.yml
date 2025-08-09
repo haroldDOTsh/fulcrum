@@ -1,0 +1,60 @@
+# Fulcrum Velocity Configuration
+
+# Server Lifecycle Configuration
+server-lifecycle:
+  # Enable server lifecycle management
+  enabled: true
+
+# Redis Configuration
+redis:
+  # Enable Redis for distributed features
+  enabled: false
+  # Redis server host
+  host: localhost
+  # Redis server port
+  port: 6379
+  # Redis password (leave empty if no auth)
+  password: ""
+  # Redis database number
+  database: 0
+  # Connection timeout in milliseconds
+  timeout: 5000
+  # Connection pool size
+  pool-size: 10
+
+# Message Bus Configuration
+message-bus:
+  # Enable message bus for cross-server communication
+  enabled: true
+  # Redis configuration for message bus (if different from main Redis)
+  redis:
+    host: localhost
+    port: 6379
+    password: ""
+    database: 0
+  # Channel prefix for message bus
+  channel-prefix: fulcrum
+
+# Identity Configuration
+identity:
+  # Enable identity management
+  enabled: true
+
+# Logging Configuration
+logging:
+  # Log level (DEBUG, INFO, WARN, ERROR)
+  level: INFO
+  # Enable debug logging for specific features
+  debug:
+    server-lifecycle: false
+    message-bus: false
+    identity: false
+
+# Performance Configuration
+performance:
+  # Heartbeat interval in seconds
+  heartbeat-interval: 30
+  # Server timeout in seconds (for crash detection)
+  server-timeout: 60
+  # Maximum retry attempts for Redis operations
+  max-retries: 3

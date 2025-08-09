@@ -62,8 +62,8 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             .poolSize(10)
             .build();
         
-        // Initialize message bus
-        String serverId = server.getBoundAddress().toString();
+        // Use proxy's bound address as the server ID for consistency
+        String serverId = "proxy-" + server.getBoundAddress().getPort();
         this.messageBus = new VelocityRedisMessageBus(serverId, redisConfig);
         
         // Initialize player locator with the message bus
@@ -73,8 +73,8 @@ public class VelocityMessageBusFeature implements VelocityFeature {
         serviceLocator.register(MessageBus.class, messageBus);
         serviceLocator.register(VelocityPlayerLocator.class, playerLocator);
         
-        logger.info("MessageBus feature initialized with Redis at {}:{}", 
-                   config.getRedisHost(), config.getRedisPort());
+        logger.info("MessageBus feature initialized with server ID: {} and Redis at {}:{}",
+                   serverId, config.getRedisHost(), config.getRedisPort());
     }
     
     @Override
