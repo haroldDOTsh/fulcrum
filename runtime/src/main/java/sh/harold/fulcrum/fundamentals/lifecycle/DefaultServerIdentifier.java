@@ -1,34 +1,31 @@
 package sh.harold.fulcrum.fundamentals.lifecycle;
 
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
-import sh.harold.fulcrum.api.lifecycle.ServerStatus;
-import sh.harold.fulcrum.api.lifecycle.ServerType;
 
 import java.util.UUID;
 
 /**
  * Default implementation of ServerIdentifier for the local server.
+ * Supports updating the server ID after successful registration.
  */
 public class DefaultServerIdentifier implements ServerIdentifier {
     
-    private final String serverId;
+    private volatile String serverId;  // Made volatile and non-final for updates
     private final String family;
-    private final ServerType type;
-    private volatile ServerStatus status;
+    private final String type;
     private final UUID instanceUuid;
     private final String address;
     private final int port;
     private final int softCap;
     private final int hardCap;
     
-    public DefaultServerIdentifier(String serverId, String family, ServerType type,
-                                   ServerStatus status, UUID instanceUuid,
+    public DefaultServerIdentifier(String serverId, String family, String type,
+                                   UUID instanceUuid,
                                    String address, int port,
                                    int softCap, int hardCap) {
         this.serverId = serverId;
         this.family = family;
         this.type = type;
-        this.status = status;
         this.instanceUuid = instanceUuid;
         this.address = address;
         this.port = port;
@@ -41,26 +38,22 @@ public class DefaultServerIdentifier implements ServerIdentifier {
         return serverId;
     }
     
+    /**
+     * Updates the server ID after successful registration
+     * @param newServerId The permanent server ID assigned by the registry
+     */
+    public void updateServerId(String newServerId) {
+        this.serverId = newServerId;
+    }
+    
     @Override
     public String getFamily() {
         return family;
     }
     
     @Override
-    public ServerType getType() {
+    public String getType() {
         return type;
-    }
-    
-    @Override
-    public ServerStatus getStatus() {
-        return status;
-    }
-    
-    /**
-     * Updates the status of this server identifier.
-     */
-    public void updateStatus(ServerStatus newStatus) {
-        this.status = newStatus;
     }
     
     @Override

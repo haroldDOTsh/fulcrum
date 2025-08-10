@@ -85,6 +85,19 @@ public class DependencyContainer {
     }
 
     /**
+     * Unregister a service.
+     *
+     * @param serviceClass The service class to unregister
+     * @param <T>          The service type
+     * @return true if the service was unregistered, false if it wasn't registered
+     */
+    public <T> boolean unregister(Class<T> serviceClass) {
+        boolean removed = services.remove(serviceClass) != null;
+        removed |= providers.remove(serviceClass) != null;
+        return removed;
+    }
+
+    /**
      * Check if a service is available.
      *
      * @param serviceClass The service class
