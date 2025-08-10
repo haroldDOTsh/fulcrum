@@ -18,14 +18,9 @@ public interface ServerIdentifier {
     String getFamily();
     
     /**
-     * Gets the server type.
+     * Gets the server type (e.g., "MINI", "MEGA", "LOBBY").
      */
-    ServerType getType();
-    
-    /**
-     * Gets the current server status.
-     */
-    ServerStatus getStatus();
+    String getType();
     
     /**
      * Gets the server's instance UUID (unique per restart).
