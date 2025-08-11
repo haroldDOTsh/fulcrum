@@ -7,21 +7,15 @@ public class RedisConfig {
     private int port = 6379;
     private String password = "";
     private int database = 0;
-    private int timeout = 5000;
-    private int poolSize = 10;
+    private int timeout = 2000;
+    
+    // Pool configuration
+    private int maxTotal = 8;
+    private int maxIdle = 8;
+    private int minIdle = 0;
     
     public RedisConfig() {
         // Default constructor with default values
-    }
-    
-    public RedisConfig(String host, int port, String password, int database, int timeout, int poolSize) {
-        this.host = host;
-        this.port = port;
-        this.password = password;
-        this.database = database;
-        this.timeout = timeout;
-        this.poolSize = poolSize;
-        this.enabled = true; // If constructed with parameters, assume it's enabled
     }
     
     public boolean isEnabled() {
@@ -72,62 +66,27 @@ public class RedisConfig {
         this.timeout = timeout;
     }
     
-    public int getPoolSize() {
-        return poolSize;
+    public int getMaxTotal() {
+        return maxTotal;
     }
     
-    public void setPoolSize(int poolSize) {
-        this.poolSize = poolSize;
+    public void setMaxTotal(int maxTotal) {
+        this.maxTotal = maxTotal;
     }
     
-    public static class Builder {
-        private boolean enabled = false;
-        private String host = "localhost";
-        private int port = 6379;
-        private String password = "";
-        private int database = 0;
-        private int timeout = 5000;
-        private int poolSize = 10;
-        
-        public Builder enabled(boolean enabled) {
-            this.enabled = enabled;
-            return this;
-        }
-        
-        public Builder host(String host) {
-            this.host = host;
-            return this;
-        }
-        
-        public Builder port(int port) {
-            this.port = port;
-            return this;
-        }
-        
-        public Builder password(String password) {
-            this.password = password;
-            return this;
-        }
-        
-        public Builder database(int database) {
-            this.database = database;
-            return this;
-        }
-        
-        public Builder timeout(int timeout) {
-            this.timeout = timeout;
-            return this;
-        }
-        
-        public Builder poolSize(int poolSize) {
-            this.poolSize = poolSize;
-            return this;
-        }
-        
-        public RedisConfig build() {
-            RedisConfig config = new RedisConfig(host, port, password, database, timeout, poolSize);
-            config.setEnabled(enabled);
-            return config;
-        }
+    public int getMaxIdle() {
+        return maxIdle;
+    }
+    
+    public void setMaxIdle(int maxIdle) {
+        this.maxIdle = maxIdle;
+    }
+    
+    public int getMinIdle() {
+        return minIdle;
+    }
+    
+    public void setMinIdle(int minIdle) {
+        this.minIdle = minIdle;
     }
 }

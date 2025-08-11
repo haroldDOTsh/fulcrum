@@ -1,51 +1,30 @@
 package sh.harold.fulcrum.velocity.fundamentals.messagebus;
 
-import java.util.Map;
-
 public class MessageBusConfig {
     
-    private final boolean enabled;
-    private final String redisHost;
-    private final int redisPort;
-    private final String redisPassword;
-    private final int redisDatabase;
-    private final String channelPrefix;
+    private String mode = "redis"; // Options: redis, simple
     
-    @SuppressWarnings("unchecked")
-    public MessageBusConfig(Map<String, Object> config) {
-        Map<String, Object> messageBus = (Map<String, Object>) config.getOrDefault("message-bus", Map.of());
-        
-        this.enabled = (boolean) messageBus.getOrDefault("enabled", true);
-        
-        Map<String, Object> redis = (Map<String, Object>) messageBus.getOrDefault("redis", Map.of());
-        this.redisHost = (String) redis.getOrDefault("host", "localhost");
-        this.redisPort = (int) redis.getOrDefault("port", 6379);
-        this.redisPassword = (String) redis.getOrDefault("password", "");
-        this.redisDatabase = (int) redis.getOrDefault("database", 0);
-        this.channelPrefix = (String) messageBus.getOrDefault("channel-prefix", "fulcrum");
+    public MessageBusConfig() {
+        // Default constructor
     }
     
-    public boolean isEnabled() {
-        return enabled;
+    public MessageBusConfig(String mode) {
+        this.mode = mode;
     }
     
-    public String getRedisHost() {
-        return redisHost;
+    public String getMode() {
+        return mode;
     }
     
-    public int getRedisPort() {
-        return redisPort;
+    public void setMode(String mode) {
+        this.mode = mode;
     }
     
-    public String getRedisPassword() {
-        return redisPassword;
+    public boolean isRedisMode() {
+        return "redis".equalsIgnoreCase(mode);
     }
     
-    public int getRedisDatabase() {
-        return redisDatabase;
-    }
-    
-    public String getChannelPrefix() {
-        return channelPrefix;
+    public boolean isSimpleMode() {
+        return "simple".equalsIgnoreCase(mode);
     }
 }

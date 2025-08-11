@@ -1,168 +1,147 @@
 package sh.harold.fulcrum.velocity.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
+import org.yaml.snakeyaml.Yaml;
+import sh.harold.fulcrum.velocity.fundamentals.messagebus.MessageBusConfig;
 
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.Map;
 
 public class ConfigLoader {
-    
-    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(ConfigLoader.class);
     private final Path dataDirectory;
-    private final ObjectMapper yamlMapper;
-    private Map<String, Object> config;
-    private ServerLifecycleConfig serverLifecycleConfig;
-    private RedisConfig redisConfig;
+    private final Logger logger;
+    private final Map<String, Object> configuration;
+    private final Map<Class<?>, Object> configCache;
     
-    public ConfigLoader(Path dataDirectory) {
+    public ConfigLoader(Path dataDirectory, Logger logger) {
         this.dataDirectory = dataDirectory;
-        this.yamlMapper = new ObjectMapper(new YAMLFactory());
-        this.config = new HashMap<>();
+        this.logger = logger;
+        this.configuration = new HashMap<>();
+        this.configCache = new HashMap<>();
+        loadConfiguration();
     }
     
-    public void loadConfiguration() throws IOException {
-        // Ensure data directory exists
-        if (!Files.exists(dataDirectory)) {
-            Files.createDirectories(dataDirectory);
-        }
-        
+    private void loadConfiguration() {
         Path configFile = dataDirectory.resolve("config.yml");
         
-        // Copy default config if it doesn't exist
+        // Create default config if it doesn't exist
         if (!Files.exists(configFile)) {
-            try (InputStream defaultConfig = getClass().getResourceAsStream("/config.yml")) {
-                if (defaultConfig != null) {
-                    Files.copy(defaultConfig, configFile, StandardCopyOption.REPLACE_EXISTING);
-                    logger.info("Created default configuration file");
-                }
-            }
+            createDefaultConfig(configFile);
         }
         
         // Load configuration
-        if (Files.exists(configFile)) {
-            config = yamlMapper.readValue(configFile.toFile(), Map.class);
-            logger.info("Loaded configuration from {}", configFile);
+        try (InputStream input = Files.newInputStream(configFile)) {
+            Yaml yaml = new Yaml();
+            Map<String, Object> loaded = yaml.load(input);
+            if (loaded != null) {
+                configuration.putAll(loaded);
+            }
+            logger.info("Configuration loaded from {}", configFile);
+        } catch (IOException e) {
+            logger.error("Failed to load configuration", e);
+        }
+        
+        // Parse specific configurations
+        parseConfigurations();
+    }
+    
+    private void createDefaultConfig(Path configFile) {
+        try {
+            Files.createDirectories(configFile.getParent());
+            try (InputStream defaultConfig = getClass().getResourceAsStream("/config.yml")) {
+                if (defaultConfig != null) {
+                    Files.copy(defaultConfig, configFile);
+                    logger.info("Created default configuration at {}", configFile);
+                }
+            }
+        } catch (IOException e) {
+            logger.error("Failed to create default configuration", e);
+        }
+    }
+    
+    @SuppressWarnings("unchecked")
+    private void parseConfigurations() {
+        // Parse Message Bus configuration
+        Map<String, Object> messageBusSection = (Map<String, Object>) configuration.get("message-bus");
+        if (messageBusSection != null) {
+            MessageBusConfig messageBusConfig = new MessageBusConfig();
+            messageBusConfig.setMode((String) messageBusSection.getOrDefault("mode", "redis"));
+            configCache.put(MessageBusConfig.class, messageBusConfig);
         } else {
-            logger.warn("No configuration file found, using defaults");
-            loadDefaults();
+            // Default to Redis for proxies if not specified
+            MessageBusConfig messageBusConfig = new MessageBusConfig();
+            messageBusConfig.setMode("redis");
+            configCache.put(MessageBusConfig.class, messageBusConfig);
         }
         
-        // Parse specific configs
-        parseServerLifecycleConfig();
-        parseRedisConfig();
-    }
-    
-    private void loadDefaults() {
-        config.put("server-lifecycle", Map.of(
-            "enabled", true
-        ));
-        
-        config.put("redis", Map.of(
-            "enabled", false,
-            "host", "localhost",
-            "port", 6379,
-            "password", "",
-            "database", 0
-        ));
-        
-        config.put("message-bus", Map.of(
-            "enabled", true,
-            "redis", Map.of(
-                "host", "localhost",
-                "port", 6379,
-                "password", "",
-                "database", 0
-            ),
-            "channel-prefix", "fulcrum"
-        ));
-    }
-    
-    @SuppressWarnings("unchecked")
-    private void parseServerLifecycleConfig() {
-        serverLifecycleConfig = new ServerLifecycleConfig();
-        
-        Map<String, Object> lifecycleSection = (Map<String, Object>) config.get("server-lifecycle");
-        if (lifecycleSection != null) {
-            Boolean enabled = (Boolean) lifecycleSection.get("enabled");
-            if (enabled != null) {
-                serverLifecycleConfig.setEnabled(enabled);
-            }
-        }
-    }
-    
-    @SuppressWarnings("unchecked")
-    private void parseRedisConfig() {
-        redisConfig = new RedisConfig();
-        
-        Map<String, Object> redisSection = (Map<String, Object>) config.get("redis");
+        // Parse Redis configuration
+        Map<String, Object> redisSection = (Map<String, Object>) configuration.get("redis");
         if (redisSection != null) {
-            Boolean enabled = (Boolean) redisSection.get("enabled");
-            if (enabled != null) {
-                redisConfig.setEnabled(enabled);
+            RedisConfig redisConfig = new RedisConfig();
+            redisConfig.setEnabled((Boolean) redisSection.getOrDefault("enabled", false));
+            redisConfig.setHost((String) redisSection.getOrDefault("host", "localhost"));
+            redisConfig.setPort((Integer) redisSection.getOrDefault("port", 6379));
+            redisConfig.setPassword((String) redisSection.getOrDefault("password", ""));
+            redisConfig.setDatabase((Integer) redisSection.getOrDefault("database", 0));
+            redisConfig.setTimeout((Integer) redisSection.getOrDefault("timeout", 2000));
+            
+            Map<String, Object> poolSection = (Map<String, Object>) redisSection.get("pool");
+            if (poolSection != null) {
+                redisConfig.setMaxTotal((Integer) poolSection.getOrDefault("maxTotal", 8));
+                redisConfig.setMaxIdle((Integer) poolSection.getOrDefault("maxIdle", 8));
+                redisConfig.setMinIdle((Integer) poolSection.getOrDefault("minIdle", 0));
             }
             
-            String host = (String) redisSection.get("host");
-            if (host != null) {
-                redisConfig.setHost(host);
-            }
-            
-            Integer port = (Integer) redisSection.get("port");
-            if (port != null) {
-                redisConfig.setPort(port);
-            }
-            
-            String password = (String) redisSection.get("password");
-            if (password != null && !password.isEmpty()) {
-                redisConfig.setPassword(password);
-            }
-            
-            Integer database = (Integer) redisSection.get("database");
-            if (database != null) {
-                redisConfig.setDatabase(database);
-            }
+            configCache.put(RedisConfig.class, redisConfig);
         }
-    }
-    
-    public Map<String, Object> getConfig() {
-        return config;
-    }
-    
-    public ServerLifecycleConfig getServerLifecycleConfig() {
-        if (serverLifecycleConfig == null) {
-            serverLifecycleConfig = new ServerLifecycleConfig();
+        
+        // Parse Server Lifecycle configuration
+        Map<String, Object> lifecycleSection = (Map<String, Object>) configuration.get("server-lifecycle");
+        if (lifecycleSection != null) {
+            ServerLifecycleConfig lifecycleConfig = new ServerLifecycleConfig();
+            
+            Map<String, Object> registrationSection = (Map<String, Object>) lifecycleSection.get("registration");
+            if (registrationSection != null) {
+                lifecycleConfig.setRegistrationEnabled((Boolean) registrationSection.getOrDefault("enabled", true));
+                lifecycleConfig.setHeartbeatInterval((Integer) registrationSection.getOrDefault("interval", 30));
+                lifecycleConfig.setTimeoutSeconds((Integer) registrationSection.getOrDefault("timeout", 90));
+            }
+            
+            Map<String, Object> capacitySection = (Map<String, Object>) lifecycleSection.get("capacity");
+            if (capacitySection != null) {
+                lifecycleConfig.setCapacityMode((String) capacitySection.getOrDefault("mode", "dynamic"));
+                lifecycleConfig.setStaticCapacity((Integer) capacitySection.getOrDefault("static-value", 100));
+            }
+            
+            Map<String, Object> typeSection = (Map<String, Object>) lifecycleSection.get("type-detection");
+            if (typeSection != null) {
+                lifecycleConfig.setTypeDetectionMode((String) typeSection.getOrDefault("mode", "auto"));
+                lifecycleConfig.setManualType((String) typeSection.getOrDefault("manual-type", "proxy"));
+            }
+            
+            configCache.put(ServerLifecycleConfig.class, lifecycleConfig);
         }
-        return serverLifecycleConfig;
-    }
-    
-    public RedisConfig getRedisConfig() {
-        if (redisConfig == null) {
-            redisConfig = new RedisConfig();
-        }
-        return redisConfig;
     }
     
     @SuppressWarnings("unchecked")
-    public <T> T get(String path, T defaultValue) {
-        String[] parts = path.split("\\.");
-        Map<String, Object> current = config;
-        
-        for (int i = 0; i < parts.length - 1; i++) {
-            Object next = current.get(parts[i]);
-            if (next instanceof Map) {
-                current = (Map<String, Object>) next;
-            } else {
-                return defaultValue;
-            }
-        }
-        
-        Object value = current.get(parts[parts.length - 1]);
+    public <T> T getConfig(Class<T> configClass) {
+        return (T) configCache.get(configClass);
+    }
+    
+    public Map<String, Object> getConfiguration() {
+        return new HashMap<>(configuration);
+    }
+    
+    public Object get(String key) {
+        return configuration.get(key);
+    }
+    
+    @SuppressWarnings("unchecked")
+    public <T> T get(String key, T defaultValue) {
+        Object value = configuration.get(key);
         return value != null ? (T) value : defaultValue;
     }
 }

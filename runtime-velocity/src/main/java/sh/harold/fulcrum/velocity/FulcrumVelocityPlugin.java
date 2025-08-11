@@ -44,8 +44,7 @@ public class FulcrumVelocityPlugin {
         
         try {
             // Initialize configuration
-            this.configLoader = new ConfigLoader(dataDirectory);
-            configLoader.loadConfiguration();
+            this.configLoader = new ConfigLoader(dataDirectory, logger);
             
             // Initialize service locator
             this.serviceLocator = new ServiceLocator();

@@ -1,159 +1,160 @@
 package sh.harold.fulcrum.fundamentals.messagebus;
 
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.api.StatefulRedisConnection;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.PlayerLocator;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.runtime.redis.JedisRedisOperations;
 import sh.harold.fulcrum.runtime.redis.RedisConfig;
 
-import java.util.logging.Level;
+import java.io.File;
+import java.time.Duration;
 import java.util.logging.Logger;
 
 /**
  * Feature that provides message bus functionality for inter-server communication.
+ * Also manages Redis connections and RedisServerRegistry when Redis is enabled.
+ * This feature depends on ServerLifecycleFeature for ServerIdentifier.
  */
 public class MessageBusFeature implements PluginFeature {
     private static final Logger LOGGER = Logger.getLogger(MessageBusFeature.class.getName());
     
-    private JavaPlugin plugin;
-    private DependencyContainer container;
     private MessageBus messageBus;
-    private MessageBusConfig config;
     private PlayerLocator playerLocator;
-    private RedisClient redisClient;
-    private StatefulRedisConnection<String, String> redisConnection;
+    private JedisRedisOperations redisOperations;
+    
+    @Override
+    public int getPriority() {
+        // Priority 10 - Infrastructure layer, loads before services
+        return 10;
+    }
     
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
-        this.plugin = plugin;
-        this.container = container;
+        // Use temporary UUID for initial node identification
+        // This will be updated later by ServerLifecycleFeature after registration
+        String tempNodeId = "temp-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         
-        // Get server identifier from ServerLifecycleFeature if available
-        ServerIdentifier serverIdentifier = container.get(ServerIdentifier.class);
-        String serverId = serverIdentifier != null ? serverIdentifier.getServerId() :
-                          "server-" + System.currentTimeMillis();
+        // Load database configuration
+        File databaseConfigFile = new File(plugin.getDataFolder(), "database-config.yml");
+        if (!databaseConfigFile.exists()) {
+            plugin.saveResource("database-config.yml", false);
+            databaseConfigFile = new File(plugin.getDataFolder(), "database-config.yml");
+        }
+        FileConfiguration databaseConfig = YamlConfiguration.loadConfiguration(databaseConfigFile);
         
-        // Load configuration
-        plugin.saveDefaultConfig();
-        config = new MessageBusConfig(plugin.getConfig().getConfigurationSection("message-bus"));
+        // Check if Redis is enabled
+        ConfigurationSection redisSection = databaseConfig.getConfigurationSection("redis");
+        boolean redisEnabled = redisSection != null && redisSection.getBoolean("enabled", false);
         
-        // Try to initialize Redis message bus
-        boolean redisEnabled = plugin.getConfig().getBoolean("redis.enabled", false);
-        boolean forceSimpleMode = plugin.getConfig().getBoolean("message-bus.force-simple-mode", false);
-        
-        if (!forceSimpleMode && redisEnabled) {
-            if (initializeRedisMessageBus(serverId)) {
-                LOGGER.info("Redis message bus initialized successfully");
-            } else {
-                LOGGER.warning("Failed to initialize Redis message bus, falling back to simple mode");
-                initializeSimpleMessageBus(serverId);
+        if (redisEnabled) {
+            try {
+                LOGGER.info("Initializing Redis connection for MessageBus...");
+                
+                // Create Redis configuration
+                RedisConfig.Builder configBuilder = RedisConfig.builder()
+                    .host(redisSection.getString("host", "localhost"))
+                    .port(redisSection.getInt("port", 6379))
+                    .password(redisSection.getString("password", ""))
+                    .database(redisSection.getInt("database", 0))
+                    .connectionTimeout(Duration.ofMillis(redisSection.getInt("connection-timeout", 2000)))
+                    .maxConnections(redisSection.getInt("pool.max-total", 128))
+                    .maxIdleConnections(redisSection.getInt("pool.max-idle", 64))
+                    .minIdleConnections(redisSection.getInt("pool.min-idle", 16));
+                
+                RedisConfig redisConfig = configBuilder.build();
+                
+                // Initialize Redis operations
+                this.redisOperations = new JedisRedisOperations(redisConfig);
+                
+                if (redisOperations.isAvailable()) {
+                    // Register Redis operations for other features to use
+                    container.register(JedisRedisOperations.class, redisOperations);
+                    
+                    // Initialize Redis message bus first
+                    LOGGER.info("Using Redis message bus for cross-server communication");
+                    this.messageBus = new RedisMessageBus(tempNodeId, redisConfig);
+                    
+                    // For now, use SimplePlayerLocator as RedisPlayerLocator expects different Redis client
+                    // TODO: Implement proper Redis-based player locator with JedisRedisOperations
+                    this.playerLocator = new SimplePlayerLocator(messageBus);
+                    
+                    LOGGER.info("Redis connection established successfully for MessageBus");
+                } else {
+                    LOGGER.warning("Redis connection failed - falling back to simple message bus");
+                    this.messageBus = new SimpleMessageBusWithLogging(tempNodeId);
+                    this.playerLocator = new SimplePlayerLocator();
+                }
+            } catch (Exception e) {
+                LOGGER.warning("Failed to initialize Redis message bus: " + e.getMessage());
+                LOGGER.warning("Falling back to simple message bus (single-server mode)");
+                this.messageBus = new SimpleMessageBusWithLogging(tempNodeId);
+                this.playerLocator = new SimplePlayerLocator();
             }
         } else {
-            if (forceSimpleMode) {
-                LOGGER.info("Simple message bus mode forced by configuration");
-            } else {
-                LOGGER.info("Redis not enabled, using simple message bus");
-            }
-            initializeSimpleMessageBus(serverId);
+            LOGGER.info("Redis is disabled, using simple message bus (single-server mode)");
+            this.messageBus = new SimpleMessageBusWithLogging(tempNodeId);
+            this.playerLocator = new SimplePlayerLocator();
         }
         
         // Register services
         container.register(MessageBus.class, messageBus);
-        container.register(MessageBusConfig.class, config);
         container.register(PlayerLocator.class, playerLocator);
         
-        LOGGER.info("Message bus feature initialized with server ID: " + serverId);
-    }
-    
-    private boolean initializeRedisMessageBus(String serverId) {
-        try {
-            // Load Redis configuration
-            ConfigurationSection redisSection = plugin.getConfig().getConfigurationSection("redis");
-            if (redisSection == null) {
-                LOGGER.warning("Redis configuration section not found");
-                return false;
-            }
-            
-            RedisConfig redisConfig = RedisConfig.builder()
-                .host(redisSection.getString("host", "localhost"))
-                .port(redisSection.getInt("port", 6379))
-                .database(redisSection.getInt("database", 0))
-                .password(redisSection.getString("password"))
-                .maxConnections(redisSection.getInt("pool.max-connections", 20))
-                .maxIdleConnections(redisSection.getInt("pool.max-idle", 10))
-                .minIdleConnections(redisSection.getInt("pool.min-idle", 5))
-                .build();
-            
-            // Create Redis message bus with server ID from ServerIdentifier
-            RedisMessageBus redisMessageBus = new RedisMessageBus(serverId, redisConfig);
-            
-            // Test connection
-            if (!redisMessageBus.isConnected()) {
-                redisMessageBus.shutdown();
-                return false;
-            }
-            
-            this.messageBus = redisMessageBus;
-            
-            // Create Redis-backed player locator
-            // We need to share the connection from RedisMessageBus
-            // For now, create a separate connection (could be optimized later)
-            this.redisClient = RedisClient.create("redis://" + redisConfig.getHost() + ":" + redisConfig.getPort());
-            this.redisConnection = redisClient.connect();
-            
-            this.playerLocator = new RedisPlayerLocator(
-                messageBus,
-                redisConnection
-            );
-            
-            return true;
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to initialize Redis message bus", e);
-            return false;
-        }
-    }
-    
-    private void initializeSimpleMessageBus(String serverId) {
-        SimpleMessageBus simpleMessageBus = new SimpleMessageBus(serverId);
-        this.messageBus = simpleMessageBus;
-        this.playerLocator = new PlayerLocator(messageBus);
+        // Register debug command
+        // TODO: Implement MessageBusDebugCommand for debugging message bus functionality
+        // MessageBusDebugCommand.register(plugin, container);
+        
+        LOGGER.info("Message bus initialized with temporary ID: " + tempNodeId);
     }
     
     @Override
     public void shutdown() {
-        // Shutdown message bus
-        if (messageBus instanceof RedisMessageBus) {
-            ((RedisMessageBus) messageBus).shutdown();
-        } else if (messageBus instanceof SimpleMessageBus) {
-            ((SimpleMessageBus) messageBus).shutdown();
+        if (messageBus != null) {
+            if (messageBus instanceof RedisMessageBus) {
+                ((RedisMessageBus) messageBus).shutdown();
+            } else if (messageBus instanceof SimpleMessageBus) {
+                ((SimpleMessageBus) messageBus).shutdown();
+            }
         }
         
-        // Close Redis connections if they exist
-        if (redisConnection != null && redisConnection.isOpen()) {
-            redisConnection.close();
+        if (redisOperations != null) {
+            try {
+                redisOperations.close();
+                LOGGER.info("Redis connection closed");
+            } catch (Exception e) {
+                LOGGER.warning("Error closing Redis connection: " + e.getMessage());
+            }
         }
-        if (redisClient != null) {
-            redisClient.shutdown();
-        }
-        
-        LOGGER.info("Message bus feature shut down");
+    }
+}
+
+/**
+ * Extended SimpleMessageBus that logs when cross-server messaging is attempted
+ * but Redis is not available.
+ */
+class SimpleMessageBusWithLogging extends SimpleMessageBus {
+    private static final Logger LOGGER = Logger.getLogger(SimpleMessageBusWithLogging.class.getName());
+    
+    public SimpleMessageBusWithLogging(String serverId) {
+        super(serverId);
     }
     
     @Override
-    public int getPriority() {
-        // Initialize after ServerLifecycleFeature (priority 5) but before application features
-        return 60;
+    public void broadcast(String type, Object payload) {
+        LOGGER.warning("CROSS-SERVER MESSAGE ATTEMPTED: Broadcast of type '" + type + 
+                      "' cannot be sent - Redis is not enabled. Enable Redis in database-config.yml for cross-server messaging.");
+        super.broadcast(type, payload);
     }
     
     @Override
-    public Class<?>[] getDependencies() {
-        // Optionally depend on ServerLifecycleFeature for server ID
-        // It's optional because MessageBusFeature can work without it
-        return new Class<?>[] {};
+    public void send(String targetServerId, String type, Object payload) {
+        LOGGER.warning("CROSS-SERVER MESSAGE ATTEMPTED: Message of type '" + type + 
+                      "' to server '" + targetServerId + "' cannot be sent - Redis is not enabled. Enable Redis in database-config.yml for cross-server messaging.");
+        super.send(targetServerId, type, payload);
     }
 }

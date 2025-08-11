@@ -1,55 +1,56 @@
 package sh.harold.fulcrum.api.module;
 
 /**
- * Thread-local storage for bootstrap context during module initialization.
- * This allows modules to query their enablement status during the bootstrap phase
- * without requiring parameters or complex context detection.
- * 
- * @since 1.3.0
+ * Holds bootstrap context information for module enablement checks.
+ * This allows modules to identify themselves during the bootstrap phase
+ * so FulcrumEnvironment can determine if they should be enabled.
  */
-public final class BootstrapContextHolder {
-    private static final ThreadLocal<String> currentModuleId = new ThreadLocal<>();
-    private static final ThreadLocal<Boolean> inBootstrapPhase = ThreadLocal.withInitial(() -> false);
+public class BootstrapContextHolder {
+    private static final ThreadLocal<BootstrapContext> context = new ThreadLocal<>();
     
-    private BootstrapContextHolder() {
-        throw new UnsupportedOperationException("Utility class");
+    /**
+     * Context information for the bootstrap phase
+     */
+    private static class BootstrapContext {
+        private final String moduleId;
+        private final boolean inBootstrapPhase;
+        
+        BootstrapContext(String moduleId) {
+            this.moduleId = moduleId;
+            this.inBootstrapPhase = true;
+        }
     }
     
     /**
-     * Sets the bootstrap context for the current thread.
-     * This should be called at the beginning of a module's bootstrap method.
-     *
-     * @param moduleId the module ID to set in the context
+     * Set the context for the current module
+     * @param moduleId The ID of the module being loaded
      */
     public static void setContext(String moduleId) {
-        currentModuleId.set(moduleId);
-        inBootstrapPhase.set(true);
+        context.set(new BootstrapContext(moduleId));
     }
     
     /**
-     * Gets the current module ID from the thread-local context.
-     * 
-     * @return the current module ID, or null if not in bootstrap context
-     */
-    public static String getCurrentModuleId() {
-        return currentModuleId.get();
-    }
-    
-    /**
-     * Checks if the current thread is in the bootstrap phase.
-     * 
-     * @return true if currently in bootstrap phase
-     */
-    public static boolean isInBootstrapPhase() {
-        return inBootstrapPhase.get();
-    }
-    
-    /**
-     * Clears the bootstrap context for the current thread.
-     * This should be called at the end of a module's bootstrap method (in a finally block).
+     * Clear the context after module loading
      */
     public static void clearContext() {
-        currentModuleId.remove();
-        inBootstrapPhase.remove();
+        context.remove();
+    }
+    
+    /**
+     * Get the current module ID from context
+     * @return The module ID or null if not in bootstrap phase
+     */
+    public static String getCurrentModuleId() {
+        BootstrapContext ctx = context.get();
+        return ctx != null ? ctx.moduleId : null;
+    }
+    
+    /**
+     * Check if we're in the bootstrap phase
+     * @return true if in bootstrap phase
+     */
+    public static boolean isInBootstrapPhase() {
+        BootstrapContext ctx = context.get();
+        return ctx != null && ctx.inBootstrapPhase;
     }
 }
