@@ -17,6 +17,7 @@ public class ServerRegistrationResponse implements Serializable {
     private String serverType;        // Forwarded for proxy registration
     private String address;           // Forwarded for proxy registration
     private int port;                // Forwarded for proxy registration
+    private String proxyId;           // ID of the proxy that approved the registration
     
     public ServerRegistrationResponse() {
         // Default constructor for serialization
@@ -26,6 +27,12 @@ public class ServerRegistrationResponse implements Serializable {
         this.tempId = tempId;
         this.assignedServerId = assignedServerId;
         this.success = success;
+    }
+    
+    public ServerRegistrationResponse(String proxyId, boolean success, String message) {
+        this.proxyId = proxyId;
+        this.success = success;
+        this.message = message;
     }
     
     // Getters and setters
@@ -85,11 +92,19 @@ public class ServerRegistrationResponse implements Serializable {
         this.port = port;
     }
     
+    public String getProxyId() {
+        return proxyId;
+    }
+    
+    public void setProxyId(String proxyId) {
+        this.proxyId = proxyId;
+    }
+    
     @Override
     public String toString() {
         if (success) {
-            return String.format("ServerRegistrationResponse[SUCCESS: %s -> %s]",
-                    tempId, assignedServerId);
+            return String.format("ServerRegistrationResponse[SUCCESS: %s -> %s, proxy=%s]",
+                    tempId, assignedServerId, proxyId);
         } else {
             return String.format("ServerRegistrationResponse[FAILED: %s - %s]",
                     tempId, message);
