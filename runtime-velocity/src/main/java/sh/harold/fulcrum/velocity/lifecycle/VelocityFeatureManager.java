@@ -4,10 +4,14 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
+import sh.harold.fulcrum.velocity.config.ServerLifecycleConfig;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
+import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 
 public class VelocityFeatureManager {
@@ -32,8 +36,22 @@ public class VelocityFeatureManager {
         FulcrumVelocityPlugin plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
         ConfigLoader configLoader = serviceLocator.getRequiredService(ConfigLoader.class);
         
+        // Get server lifecycle config
+        ServerLifecycleConfig lifecycleConfig = configLoader.getConfig(ServerLifecycleConfig.class);
+        if (lifecycleConfig == null) {
+            lifecycleConfig = new ServerLifecycleConfig(); // Use defaults
+        }
+        
+        // Create scheduled executor for heartbeats
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2, r -> {
+            Thread t = new Thread(r, "Fulcrum-Lifecycle");
+            t.setDaemon(true);
+            return t;
+        });
+        
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
+        registerFeature(new VelocityServerLifecycleFeature(proxyServer, logger, lifecycleConfig, scheduler));
     }
     
     public void registerFeature(VelocityFeature feature) {
@@ -94,9 +112,9 @@ public class VelocityFeatureManager {
         Set<String> visited = new HashSet<>();
         Set<String> visiting = new HashSet<>();
         
-        // First sort by priority
+        // First sort by priority (lower priority value = higher priority, loads first)
         List<VelocityFeature> prioritySorted = features.values().stream()
-            .sorted((a, b) -> Integer.compare(b.getPriority(), a.getPriority()))
+            .sorted((a, b) -> Integer.compare(a.getPriority(), b.getPriority()))
             .collect(Collectors.toList());
         
         // Then topological sort for dependencies
