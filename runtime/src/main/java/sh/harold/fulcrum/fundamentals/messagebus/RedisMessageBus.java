@@ -296,11 +296,20 @@ public class RedisMessageBus implements MessageBus {
     
     /**
      * Checks if the Redis connection is available.
-     * 
+     *
      * @return true if connected, false otherwise
      */
     public boolean isConnected() {
-        return connection != null && connection.isOpen() && 
+        return connection != null && connection.isOpen() &&
                pubSubConnection != null && pubSubConnection.isOpen();
+    }
+    
+    /**
+     * Get the underlying Redis connection for advanced operations.
+     * This should only be used by infrastructure components like ProxyRegistry.
+     * @return The Redis connection
+     */
+    public StatefulRedisConnection<String, String> getRedisConnection() {
+        return connection;
     }
 }

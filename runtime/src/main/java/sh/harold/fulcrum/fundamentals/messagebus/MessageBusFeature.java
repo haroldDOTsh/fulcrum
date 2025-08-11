@@ -87,18 +87,18 @@ public class MessageBusFeature implements PluginFeature {
                 } else {
                     LOGGER.warning("Redis connection failed - falling back to simple message bus");
                     this.messageBus = new SimpleMessageBusWithLogging(tempNodeId);
-                    this.playerLocator = new SimplePlayerLocator();
+                    this.playerLocator = new SimplePlayerLocator(messageBus);
                 }
             } catch (Exception e) {
                 LOGGER.warning("Failed to initialize Redis message bus: " + e.getMessage());
                 LOGGER.warning("Falling back to simple message bus (single-server mode)");
                 this.messageBus = new SimpleMessageBusWithLogging(tempNodeId);
-                this.playerLocator = new SimplePlayerLocator();
+                this.playerLocator = new SimplePlayerLocator(messageBus);
             }
         } else {
             LOGGER.info("Redis is disabled, using simple message bus (single-server mode)");
             this.messageBus = new SimpleMessageBusWithLogging(tempNodeId);
-            this.playerLocator = new SimplePlayerLocator();
+            this.playerLocator = new SimplePlayerLocator(messageBus);
         }
         
         // Register services
