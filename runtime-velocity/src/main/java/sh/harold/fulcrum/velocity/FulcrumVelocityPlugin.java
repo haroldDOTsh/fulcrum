@@ -7,6 +7,7 @@ import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
+import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
@@ -66,6 +67,17 @@ public class FulcrumVelocityPlugin {
             logger.info("Fulcrum Velocity initialized successfully");
         } catch (Exception e) {
             logger.error("Failed to initialize Fulcrum Velocity", e);
+            logger.error("Critical failure: A fundamental feature failed to initialize. Shutting down proxy...");
+            
+            // Schedule proxy shutdown after a short delay to allow error messages to be logged
+            server.getScheduler()
+                .buildTask(this, () -> {
+                    logger.error("Shutting down Velocity due to initialization failure");
+                    server.shutdown(Component.text("Critical initialization failure: " + e.getMessage()));
+                })
+                .delay(java.time.Duration.ofSeconds(2))
+                .schedule();
+            
             throw new RuntimeException("Failed to initialize Fulcrum Velocity", e);
         }
     }

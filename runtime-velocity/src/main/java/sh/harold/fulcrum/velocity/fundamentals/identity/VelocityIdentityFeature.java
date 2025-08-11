@@ -44,15 +44,20 @@ public class VelocityIdentityFeature implements VelocityFeature {
         this.logger = logger;
         this.server = serviceLocator.getRequiredService(ProxyServer.class);
         
-        // Register event listeners
-        server.getEventManager().register(this, this);
+        // Get the main plugin instance to register events
+        Object plugin = serviceLocator.getRequiredService(
+            Class.forName("sh.harold.fulcrum.velocity.FulcrumVelocityPlugin")
+        );
+        
+        // Register event listeners using the main plugin instance
+        server.getEventManager().register(plugin, this);
         
         logger.info("Identity feature initialized");
     }
     
     @Override
     public void shutdown() {
-        server.getEventManager().unregisterListeners(this);
+        // Note: Velocity will automatically unregister listeners when the plugin shuts down
         identities.clear();
     }
     

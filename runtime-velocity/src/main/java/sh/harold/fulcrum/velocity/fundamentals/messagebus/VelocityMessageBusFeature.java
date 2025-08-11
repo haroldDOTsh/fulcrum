@@ -3,18 +3,25 @@ package sh.harold.fulcrum.velocity.fundamentals.messagebus;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.RedisConfig;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 
+import java.util.UUID;
+
+/**
+ * Feature that provides message bus functionality for the Velocity proxy.
+ * Supports both simple (local) and Redis-based distributed messaging.
+ */
 public class VelocityMessageBusFeature implements VelocityFeature {
     
+    private ProxyServer proxy;
+    private FulcrumVelocityPlugin plugin;
+    private ConfigLoader configLoader;
     private Logger logger;
-    private ServiceLocator serviceLocator;
-    private MessageBusConfig config;
-    private VelocityRedisMessageBus messageBus;
-    private VelocityPlayerLocator playerLocator;
+    private MessageBus messageBus;
     
     @Override
     public String getName() {
@@ -23,74 +30,67 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     
     @Override
     public int getPriority() {
-        return 100; // High priority as other features depend on it
+        // Infrastructure layer - loads first
+        return 10;
+    }
+    
+    @Override
+    public boolean isEnabled() {
+        return true; // Always enabled
     }
     
     @Override
     public boolean isFundamental() {
-        return true;
+        return true; // Core infrastructure feature
     }
     
     @Override
-    public String[] getDependencies() {
-        return new String[]{"Identity"};
-    }
-    
-    @Override
-    public void initialize(ServiceLocator serviceLocator, Logger logger) throws Exception {
+    public void initialize(ServiceLocator serviceLocator, Logger logger) {
         this.logger = logger;
-        this.serviceLocator = serviceLocator;
         
-        // Load configuration
-        ConfigLoader configLoader = serviceLocator.getRequiredService(ConfigLoader.class);
-        this.config = new MessageBusConfig(configLoader.getConfig());
+        // Get dependencies from service locator
+        this.proxy = serviceLocator.getRequiredService(ProxyServer.class);
+        this.plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
+        this.configLoader = serviceLocator.getRequiredService(ConfigLoader.class);
         
-        if (!config.isEnabled()) {
-            logger.info("MessageBus feature is disabled in configuration");
-            return;
+        if (proxy == null || plugin == null || configLoader == null) {
+            throw new IllegalStateException("Required dependencies not available");
         }
         
-        ProxyServer server = serviceLocator.getRequiredService(ProxyServer.class);
+        logger.info("Initializing MessageBus feature");
         
-        // Create Redis configuration using builder
-        RedisConfig redisConfig = new RedisConfig.Builder()
-            .host(config.getRedisHost())
-            .port(config.getRedisPort())
-            .password(config.getRedisPassword())
-            .database(config.getRedisDatabase())
-            .timeout(5000)
-            .poolSize(10)
-            .build();
+        // Generate server ID for this proxy instance
+        String serverId = "proxy-" + UUID.randomUUID().toString().substring(0, 8);
         
-        // Use proxy's bound address as the server ID for consistency
-        String serverId = "proxy-" + server.getBoundAddress().getPort();
-        this.messageBus = new VelocityRedisMessageBus(serverId, redisConfig);
+        // For simplicity, always use simple message bus in Velocity
+        // Redis communication is handled by backend servers
+        logger.info("Using simple message bus for Velocity proxy");
+        messageBus = new VelocitySimpleMessageBus(serverId, proxy);
         
-        // Initialize player locator with the message bus
-        this.playerLocator = new VelocityPlayerLocator(server, messageBus);
-        
-        // Register services
+        // Register message bus service
         serviceLocator.register(MessageBus.class, messageBus);
-        serviceLocator.register(VelocityPlayerLocator.class, playerLocator);
         
-        logger.info("MessageBus feature initialized with server ID: {} and Redis at {}:{}",
-                   serverId, config.getRedisHost(), config.getRedisPort());
+        // Subscribe to server lifecycle messages
+        messageBus.subscribe("server.registration.response", envelope -> {
+            logger.info("Received registration response");
+        });
+        
+        messageBus.subscribe("server.heartbeat", envelope -> {
+            logger.debug("Received heartbeat message");
+        });
+        
+        logger.info("MessageBus feature initialized with server ID: {}", serverId);
     }
     
     @Override
     public void shutdown() {
         if (messageBus != null) {
-            try {
-                messageBus.shutdown();
-                logger.info("MessageBus disconnected");
-            } catch (Exception e) {
-                logger.error("Error disconnecting MessageBus", e);
+            logger.info("Shutting down message bus");
+            
+            if (messageBus instanceof VelocitySimpleMessageBus) {
+                ((VelocitySimpleMessageBus) messageBus).shutdown();
             }
         }
     }
     
-    @Override
-    public boolean isEnabled() {
-        return config == null || config.isEnabled();
-    }
 }

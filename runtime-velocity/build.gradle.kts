@@ -2,6 +2,7 @@ plugins {
     id("java-library")
     id("maven-publish")
     id("xyz.jpenilla.run-velocity") version "2.3.1"
+    id("com.gradleup.shadow") version "9.0.0-beta17"
 }
 
 group = "sh.harold.fulcrum"
@@ -49,6 +50,34 @@ tasks.test {
 
 tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// Shadow JAR configuration
+tasks.shadowJar {
+    archiveClassifier.set("")
+    
+    // Include dependencies
+    configurations = listOf(project.configurations.runtimeClasspath.get())
+    
+    // Relocate dependencies to avoid conflicts
+    // Do NOT relocate SLF4J as Velocity provides and injects it
+    relocate("com.fasterxml.jackson", "sh.harold.fulcrum.velocity.libs.jackson")
+    relocate("io.lettuce", "sh.harold.fulcrum.velocity.libs.lettuce")
+    relocate("com.google.gson", "sh.harold.fulcrum.velocity.libs.gson")
+    relocate("reactor", "sh.harold.fulcrum.velocity.libs.reactor")
+    relocate("io.netty", "sh.harold.fulcrum.velocity.libs.netty")
+    
+    // Minimize JAR
+    minimize {
+        exclude(dependency("com.fasterxml.jackson.*:.*"))
+        exclude(dependency("io.lettuce:.*"))
+    }
+    
+    mergeServiceFiles()
+}
+
+tasks.build {
+    dependsOn(tasks.shadowJar)
 }
 
 publishing {
@@ -122,15 +151,8 @@ tasks {
             val runDir = projectDir.resolve("run")
             val pluginsDir = runDir.resolve("plugins")
             
-            // Create directories
+            // Create directories (run-velocity plugin handles copying the JAR automatically)
             pluginsDir.mkdirs()
-            
-            // Copy the built jar
-            val builtJar = layout.buildDirectory.file("libs/${project.name}-${project.version}.jar").get().asFile
-            if (builtJar.exists()) {
-                builtJar.copyTo(pluginsDir.resolve(builtJar.name), overwrite = true)
-                logger.lifecycle("Copied plugin jar to: ${pluginsDir.resolve(builtJar.name)}")
-            }
             
             // Create a basic velocity.toml if it doesn't exist
             val velocityConfig = runDir.resolve("velocity.toml")

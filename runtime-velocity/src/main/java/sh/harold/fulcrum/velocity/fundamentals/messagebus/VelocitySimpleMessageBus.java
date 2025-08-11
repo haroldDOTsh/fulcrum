@@ -1,6 +1,5 @@
 package sh.harold.fulcrum.velocity.fundamentals.messagebus;
 
-import com.google.gson.Gson;
 import com.velocitypowered.api.proxy.ProxyServer;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
@@ -8,43 +7,39 @@ import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Logger;
 
 /**
- * Velocity-specific message bus implementation.
- * Simplified implementation that delegates to backend servers.
+ * Simple in-memory message bus for Velocity proxy.
+ * Used when Redis is not configured.
  */
-public class VelocityRedisMessageBus implements MessageBus {
-    private static final Logger logger = Logger.getLogger(VelocityRedisMessageBus.class.getName());
+public class VelocitySimpleMessageBus implements MessageBus {
+    private static final Logger logger = Logger.getLogger(VelocitySimpleMessageBus.class.getName());
     
-    private final ProxyServer proxy;
     private final String serverId;
-    
-    // Store handlers by message type
+    private final ProxyServer proxy;
     private final Map<String, List<MessageHandler>> handlers = new ConcurrentHashMap<>();
     
-    // Constructor
-    public VelocityRedisMessageBus(String serverId, ProxyServer proxy) {
+    public VelocitySimpleMessageBus(String serverId, ProxyServer proxy) {
         this.serverId = serverId;
         this.proxy = proxy;
     }
     
     @Override
     public void broadcast(String type, Object payload) {
-        // Implementation handled by backend servers
-        logger.info("Broadcasting message type: " + type);
+        logger.info("Broadcasting message type: " + type + " (local only)");
     }
     
     @Override
     public void send(String targetServerId, String type, Object payload) {
-        // Implementation handled by backend servers
-        logger.info("Sending message type: " + type + " to server: " + targetServerId);
+        logger.info("Sending message type: " + type + " to server: " + targetServerId + " (local only)");
     }
     
     @Override
     public CompletableFuture<Object> request(String targetServerId, String type, Object payload, Duration timeout) {
-        // Not implemented for Velocity proxy
         return CompletableFuture.completedFuture(null);
     }
     
@@ -63,6 +58,6 @@ public class VelocityRedisMessageBus implements MessageBus {
     
     public void shutdown() {
         handlers.clear();
-        logger.info("Message bus shutdown");
+        logger.info("Simple message bus shutdown");
     }
 }
