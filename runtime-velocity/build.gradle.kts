@@ -21,12 +21,12 @@ dependencies {
     compileOnly("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
     annotationProcessor("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
     
-    // Redis client
+    // Redis client - using Lettuce for consistency with Paper servers
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.16.0")
     
-    // JSON processing
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
-    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.16.1")
+    // YAML configuration
+    implementation("org.yaml:snakeyaml:2.0")
     
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.9")
@@ -61,16 +61,17 @@ tasks.shadowJar {
     
     // Relocate dependencies to avoid conflicts
     // Do NOT relocate SLF4J as Velocity provides and injects it
-    relocate("com.fasterxml.jackson", "sh.harold.fulcrum.velocity.libs.jackson")
     relocate("io.lettuce", "sh.harold.fulcrum.velocity.libs.lettuce")
-    relocate("com.google.gson", "sh.harold.fulcrum.velocity.libs.gson")
-    relocate("reactor", "sh.harold.fulcrum.velocity.libs.reactor")
     relocate("io.netty", "sh.harold.fulcrum.velocity.libs.netty")
+    relocate("reactor", "sh.harold.fulcrum.velocity.libs.reactor")
+    relocate("com.fasterxml.jackson", "sh.harold.fulcrum.velocity.libs.jackson")
+    relocate("org.yaml.snakeyaml", "sh.harold.fulcrum.velocity.libs.snakeyaml")
     
     // Minimize JAR
     minimize {
-        exclude(dependency("com.fasterxml.jackson.*:.*"))
-        exclude(dependency("io.lettuce:.*"))
+        exclude(dependency("io.lettuce:lettuce-core"))
+        exclude(dependency("com.fasterxml.jackson.core:jackson-databind"))
+        exclude(dependency("org.yaml:snakeyaml"))
     }
     
     mergeServiceFiles()
