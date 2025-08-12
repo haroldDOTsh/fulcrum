@@ -1,5 +1,8 @@
 package sh.harold.fulcrum.api.messagebus;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.UUID;
 
@@ -19,7 +22,7 @@ public class MessageEnvelope {
     
     /**
      * Creates a new message envelope.
-     * 
+     *
      * @param type the message type identifier
      * @param senderId the sender server identifier
      * @param targetId the target server identifier (null for broadcasts)
@@ -28,9 +31,14 @@ public class MessageEnvelope {
      * @param version the message format version
      * @param payload the message payload as JSON
      */
-    public MessageEnvelope(String type, String senderId, String targetId, 
-                           UUID correlationId, long timestamp, int version, 
-                           JsonNode payload) {
+    @JsonCreator
+    public MessageEnvelope(@JsonProperty("type") String type,
+                           @JsonProperty("senderId") String senderId,
+                           @JsonProperty("targetId") String targetId,
+                           @JsonProperty("correlationId") UUID correlationId,
+                           @JsonProperty("timestamp") long timestamp,
+                           @JsonProperty("version") int version,
+                           @JsonProperty("payload") JsonNode payload) {
         this.type = type;
         this.senderId = senderId;
         this.targetId = targetId;
@@ -105,9 +113,10 @@ public class MessageEnvelope {
     
     /**
      * Checks if this is a broadcast message.
-     * 
+     *
      * @return true if targetId is null, false otherwise
      */
+    @JsonIgnore
     public boolean isBroadcast() {
         return targetId == null;
     }

@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serializable;
 import java.util.List;
 import java.util.ArrayList;
@@ -21,15 +23,16 @@ public class ProxyDiscoveryResponse implements Serializable {
         private final String address;
         private final int capacity;
         private final int currentLoad;
-        private final ProxyAnnouncementMessage.ProxyType type;
         
-        public ProxyInfo(String proxyId, String address, int capacity, int currentLoad, 
-                        ProxyAnnouncementMessage.ProxyType type) {
+        @JsonCreator
+        public ProxyInfo(@JsonProperty("proxyId") String proxyId,
+                         @JsonProperty("address") String address,
+                         @JsonProperty("capacity") int capacity,
+                         @JsonProperty("currentLoad") int currentLoad) {
             this.proxyId = proxyId;
             this.address = address;
             this.capacity = capacity;
             this.currentLoad = currentLoad;
-            this.type = type;
         }
         
         public String getProxyId() {
@@ -48,17 +51,12 @@ public class ProxyDiscoveryResponse implements Serializable {
             return currentLoad;
         }
         
-        public ProxyAnnouncementMessage.ProxyType getType() {
-            return type;
-        }
-        
         public static ProxyInfo fromAnnouncement(ProxyAnnouncementMessage announcement) {
             return new ProxyInfo(
                 announcement.getProxyId(),
                 announcement.getAddress(),
                 announcement.getCapacity(),
-                announcement.getCurrentLoad(),
-                announcement.getProxyType()
+                announcement.getCurrentLoad()
             );
         }
     }
@@ -69,9 +67,11 @@ public class ProxyDiscoveryResponse implements Serializable {
         this.timestamp = System.currentTimeMillis();
     }
     
-    public ProxyDiscoveryResponse(String responderId, List<ProxyInfo> proxies) {
+    @JsonCreator
+    public ProxyDiscoveryResponse(@JsonProperty("responderId") String responderId,
+                                  @JsonProperty("proxies") List<ProxyInfo> proxies) {
         this.responderId = responderId;
-        this.proxies = new ArrayList<>(proxies);
+        this.proxies = proxies != null ? new ArrayList<>(proxies) : new ArrayList<>();
         this.timestamp = System.currentTimeMillis();
     }
     

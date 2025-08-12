@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serializable;
 
 /**
@@ -13,10 +15,17 @@ public class ProxyDiscoveryRequest implements Serializable {
     private final String serverType;
     private final long timestamp;
     
-    public ProxyDiscoveryRequest(String requesterId, String serverType) {
+    @JsonCreator
+    public ProxyDiscoveryRequest(@JsonProperty("requesterId") String requesterId,
+                                 @JsonProperty("serverType") String serverType,
+                                 @JsonProperty("timestamp") Long timestamp) {
         this.requesterId = requesterId;
         this.serverType = serverType;
-        this.timestamp = System.currentTimeMillis();
+        this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
+    }
+    
+    public ProxyDiscoveryRequest(String requesterId, String serverType) {
+        this(requesterId, serverType, null);
     }
     
     public String getRequesterId() {
