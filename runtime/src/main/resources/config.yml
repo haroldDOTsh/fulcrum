@@ -1,21 +1,11 @@
-# Fulcrum Runtime Configuration
+# Fulcrum Core Configuration
+# This file contains the main configuration for Fulcrum
 
-# Redis Configuration (optional - used by advanced features)
-redis:
-  host: localhost
-  port: 6379
-  password: ""
-  database: 0
-  timeout: 2000
-  pool:
-    max-total: 8
-    max-idle: 8
-    min-idle: 0
+# Development mode enables additional debugging features
+# and relaxed security checks for development environments
+development-mode: true
 
-# Message Bus Configuration
-message-bus:
-  # Player tracking configuration
-  player-tracking:
-    enabled: true
-    # Refresh interval in seconds
-    refresh-interval: 20
+# Module System Configuration
+module:
+  # Directory where modules are stored
+  directory: modules
