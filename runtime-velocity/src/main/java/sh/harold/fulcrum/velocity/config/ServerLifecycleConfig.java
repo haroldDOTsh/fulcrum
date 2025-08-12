@@ -1,35 +1,22 @@
 package sh.harold.fulcrum.velocity.config;
 
+/**
+ * Simplified server lifecycle configuration using hard/soft cap system.
+ * Follows KISS principle - only essential settings.
+ */
 public class ServerLifecycleConfig {
     private boolean enabled = true;
-    
-    // Registration settings
-    private boolean registrationEnabled = true;
     private int heartbeatInterval = 30; // seconds
-    private int timeoutSeconds = 90; // seconds
+    private int registrationTimeout = 60; // seconds
+    private int hardCap = 1000;  // Maximum players allowed (hard limit)
+    private int softCap = 500;   // Preferred player limit (soft limit)
     
-    // Capacity settings
-    private String capacityMode = "dynamic"; // static, dynamic, adaptive
-    private int staticCapacity = 100;
-    
-    // Type detection settings
-    private String typeDetectionMode = "auto"; // auto, manual
-    private String manualType = "proxy";
-
     public boolean isEnabled() {
         return enabled;
     }
-
+    
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
-    }
-    
-    public boolean isRegistrationEnabled() {
-        return registrationEnabled;
-    }
-    
-    public void setRegistrationEnabled(boolean registrationEnabled) {
-        this.registrationEnabled = registrationEnabled;
     }
     
     public int getHeartbeatInterval() {
@@ -40,43 +27,55 @@ public class ServerLifecycleConfig {
         this.heartbeatInterval = heartbeatInterval;
     }
     
+    public int getRegistrationTimeout() {
+        return registrationTimeout;
+    }
+    
+    public void setRegistrationTimeout(int registrationTimeout) {
+        this.registrationTimeout = registrationTimeout;
+    }
+    
+    public int getHardCap() {
+        return hardCap;
+    }
+    
+    public void setHardCap(int hardCap) {
+        this.hardCap = hardCap;
+        // Ensure soft cap is not greater than hard cap
+        if (this.softCap > hardCap) {
+            this.softCap = hardCap;
+        }
+    }
+    
+    public int getSoftCap() {
+        return softCap;
+    }
+    
+    public void setSoftCap(int softCap) {
+        // Ensure soft cap is not greater than hard cap
+        this.softCap = Math.min(softCap, hardCap);
+    }
+    
+    /**
+     * Check if the proxy is at soft capacity (preferred limit)
+     */
+    public boolean isAtSoftCapacity(int currentPlayers) {
+        return currentPlayers >= softCap;
+    }
+    
+    /**
+     * Check if the proxy is at hard capacity (maximum limit)
+     */
+    public boolean isAtHardCapacity(int currentPlayers) {
+        return currentPlayers >= hardCap;
+    }
+    
+    // Backward compatibility method
     public int getTimeoutSeconds() {
-        return timeoutSeconds;
+        return registrationTimeout;
     }
     
     public void setTimeoutSeconds(int timeoutSeconds) {
-        this.timeoutSeconds = timeoutSeconds;
-    }
-    
-    public String getCapacityMode() {
-        return capacityMode;
-    }
-    
-    public void setCapacityMode(String capacityMode) {
-        this.capacityMode = capacityMode;
-    }
-    
-    public int getStaticCapacity() {
-        return staticCapacity;
-    }
-    
-    public void setStaticCapacity(int staticCapacity) {
-        this.staticCapacity = staticCapacity;
-    }
-    
-    public String getTypeDetectionMode() {
-        return typeDetectionMode;
-    }
-    
-    public void setTypeDetectionMode(String typeDetectionMode) {
-        this.typeDetectionMode = typeDetectionMode;
-    }
-    
-    public String getManualType() {
-        return manualType;
-    }
-    
-    public void setManualType(String manualType) {
-        this.manualType = manualType;
+        this.registrationTimeout = timeoutSeconds;
     }
 }
