@@ -34,10 +34,9 @@ dependencies {
     implementation("org.yaml:snakeyaml:2.2")
     implementation("io.github.classgraph:classgraph:4.8.173")
 
-    // Redis dependencies
-    implementation("redis.clients:jedis:5.1.0")
-    implementation("org.apache.commons:commons-pool2:2.12.0")
+    // Redis dependencies (using Lettuce to match proxy implementation)
     implementation("io.lettuce:lettuce-core:6.3.2.RELEASE")
+    implementation("org.apache.commons:commons-pool2:2.12.0") // Still needed for connection pooling
 
     // (Optional test setup)
     testImplementation(platform("org.junit:junit-bom:5.10.2"))

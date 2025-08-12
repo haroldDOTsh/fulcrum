@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.fundamentals.messagebus;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lettuce.core.RedisClient;
@@ -47,6 +48,8 @@ public class RedisMessageBus implements MessageBus {
     public RedisMessageBus(String serverId, RedisConfig config) {
         this.serverId = serverId;
         this.objectMapper = new ObjectMapper();
+        // Configure ObjectMapper to ignore unknown properties during deserialization
+        this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         
         try {
             // Build Redis URI
