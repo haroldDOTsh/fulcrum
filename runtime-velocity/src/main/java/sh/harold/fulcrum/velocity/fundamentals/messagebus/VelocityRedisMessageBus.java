@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.velocity.fundamentals.messagebus;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -60,6 +61,8 @@ public class VelocityRedisMessageBus implements MessageBus {
         this.serverId = serverId;
         this.proxy = proxy;
         this.objectMapper = new ObjectMapper();
+        // Configure ObjectMapper to ignore unknown properties during deserialization
+        this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         
         try {
             // Build Redis URI
@@ -371,7 +374,17 @@ public class VelocityRedisMessageBus implements MessageBus {
     }
     
     private MessageEnvelope deserializeEnvelope(String json) throws Exception {
-        return objectMapper.readValue(json, MessageEnvelope.class);
+        logger.info("[DEBUG] Attempting to deserialize message envelope from JSON: " +
+                   (json.length() > 200 ? json.substring(0, 200) + "..." : json));
+        try {
+            MessageEnvelope envelope = objectMapper.readValue(json, MessageEnvelope.class);
+            logger.info("[DEBUG] Successfully deserialized envelope with type: " + envelope.getType());
+            return envelope;
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "[DEBUG] Failed to deserialize MessageEnvelope. Error: " + e.getMessage() +
+                      "\n[DEBUG] JSON was: " + json, e);
+            throw e;
+        }
     }
     
     /**
