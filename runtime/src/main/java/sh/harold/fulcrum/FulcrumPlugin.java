@@ -39,6 +39,9 @@ public final class FulcrumPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        // Save default config if it doesn't exist
+        saveDefaultConfig();
+        
         // Initialize dependency container
         container = new DependencyContainer();
 
