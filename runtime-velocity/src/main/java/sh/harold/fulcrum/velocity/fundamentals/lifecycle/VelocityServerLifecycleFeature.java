@@ -1,17 +1,23 @@
 package sh.harold.fulcrum.velocity.fundamentals.lifecycle;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.server.ServerInfo;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.lifecycle.ProxyRegistry;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.messages.*;
 import sh.harold.fulcrum.velocity.config.ServerLifecycleConfig;
+import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityRedisMessageBus;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocitySimpleMessageBus;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
+import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
+
+import java.net.InetSocketAddress;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -21,13 +27,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
  * Velocity implementation of server lifecycle management.
  * Acts as the network leader, handling proxy registration and backend server approval.
  */
-public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyRegistry {
+public class VelocityServerLifecycleFeature implements VelocityFeature {
     
     private static final String PROXY_PREFIX = "proxy:";
     private static final String PROXIES_KEY = "fulcrum:proxies";
@@ -46,6 +53,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
     private final Map<String, ServerIdentifier> backendServers = new ConcurrentHashMap<>();
     private final Map<String, Long> serverHeartbeats = new ConcurrentHashMap<>();
     private final Map<String, ProxyAnnouncementMessage> proxyRegistry = new ConcurrentHashMap<>();
+    private ProxyConnectionHandler connectionHandler;
     
     public VelocityServerLifecycleFeature(ProxyServer proxy, Logger logger,
                                          ServerLifecycleConfig config,
@@ -70,12 +78,14 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
     public void initialize(ServiceLocator services, Logger log) {
         this.messageBus = services.getRequiredService(MessageBus.class);
         
-        // The MessageBus feature already generates the proxy ID with correct format
-        // We should ideally get it from there, but for now we'll generate our own matching ID
-        // This matches the format: fulcrum-velocity-{index}
-        this.proxyId = "fulcrum-velocity-0";
+        // Get proxy ID and index from VelocityMessageBusFeature
+        // The MessageBus feature allocates slots using Redis
+        services.getService(VelocityMessageBusFeature.class).ifPresentOrElse(
+            messageBusFeature -> this.proxyId = messageBusFeature.getProxyId(),
+            () -> this.proxyId = "fulcrum-proxy-1" // Fallback if MessageBusFeature is not available
+        );
         
-        // Register proxy 
+        // Register proxy
         registerSelfInRedis();
         
         // Setup message handlers
@@ -85,18 +95,34 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
         startHeartbeat();
         startCleanupTask();
         
+        // Register connection handler for when no backend servers are available
+        connectionHandler = new ProxyConnectionHandler(proxy, proxyId, logger);
+        
+        // Get the plugin instance from service locator to register event
+        services.getService(FulcrumVelocityPlugin.class).ifPresent(plugin -> {
+            proxy.getEventManager().register(plugin, connectionHandler);
+            logger.info("Registered ProxyConnectionHandler for handling player connections without backend servers");
+        });
+        
+        // Send announcement requesting backend servers to register
+        sendRegistrationRequest();
+        
         logger.info("VelocityServerLifecycleFeature initialized - Proxy ID: {}", proxyId);
     }
     
     private void registerSelfInRedis() {
-        // Create our proxy announcement
+        // Create our proxy announcement with simplified capacity values
         String address = proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort();
+        
+        // Extract proxy index from ID
+        int proxyIndex = extractProxyIndex(proxyId);
+        
         currentProxyData = new ProxyAnnouncementMessage(
             proxyId,
-            address,
-            proxy.getConfiguration().getShowMaxPlayers(),
-            proxy.getPlayerCount(),
-            ProxyAnnouncementMessage.ProxyType.MIXED
+            proxyIndex,
+            config.getHardCap(),
+            config.getSoftCap(),
+            proxy.getPlayerCount()
         );
         
         // Self-registration in Redis SET (proxies are leaders, no approval needed)
@@ -112,8 +138,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
             Map<String, String> proxyData = new HashMap<>();
             proxyData.put("address", address);
             proxyData.put("type", "PROXY");
-            proxyData.put("capacity", String.valueOf(proxy.getConfiguration().getShowMaxPlayers()));
-            proxyData.put("currentLoad", String.valueOf(proxy.getPlayerCount()));
+            proxyData.put("hardCap", String.valueOf(config.getHardCap()));
+            proxyData.put("softCap", String.valueOf(config.getSoftCap()));
+            proxyData.put("currentPlayerCount", String.valueOf(proxy.getPlayerCount()));
             commands.hset(proxyKey, proxyData);
             commands.expire(proxyKey, config.getTimeoutSeconds());
             
@@ -130,69 +157,177 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
     private void setupMessageHandlers() {
         // Handle backend server registration requests
         messageBus.subscribe("proxy:register", envelope -> {
+            logger.info("=== RECEIVED REGISTRATION REQUEST ===");
+            logger.info("Channel: proxy:register");
             Object payload = envelope.getPayload();
-            if (payload instanceof ServerRegistrationRequest) {
-                handleServerRegistration((ServerRegistrationRequest) payload);
+            ServerRegistrationRequest req = null;
+            
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    req = mapper.treeToValue((JsonNode) payload, ServerRegistrationRequest.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ServerRegistrationRequest from ObjectNode: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ServerRegistrationRequest) {
+                req = (ServerRegistrationRequest) payload;
+            } else {
+                logger.warn("Invalid payload type on proxy:register channel: {}",
+                           payload != null ? payload.getClass().getName() : "null");
+                return;
             }
+            
+            logger.info("Server ID: {}", req.getTempId());
+            logger.info("Server Type: {}", req.getServerType());
+            logger.info("Capacity: {}", req.getMaxCapacity());
+            handleServerRegistration(req);
         });
         
         // Handle server heartbeats
         messageBus.subscribe("server:heartbeat", envelope -> {
             Object payload = envelope.getPayload();
-            if (payload instanceof ServerHeartbeatMessage) {
-                ServerHeartbeatMessage heartbeat = (ServerHeartbeatMessage) payload;
-                String serverId = heartbeat.getServerId();
-                serverHeartbeats.put(serverId, System.currentTimeMillis());
-                updateServerCapacity(serverId, heartbeat.getPlayerCount());
+            ServerHeartbeatMessage heartbeat = null;
+            
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    heartbeat = mapper.treeToValue((JsonNode) payload, ServerHeartbeatMessage.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ServerHeartbeatMessage from ObjectNode: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ServerHeartbeatMessage) {
+                heartbeat = (ServerHeartbeatMessage) payload;
+            } else {
+                return;
             }
+            
+            String serverId = heartbeat.getServerId();
+            serverHeartbeats.put(serverId, System.currentTimeMillis());
+            updateServerCapacity(serverId, heartbeat.getPlayerCount());
+            logger.debug("Heartbeat from server {}: {} players", serverId, heartbeat.getPlayerCount());
+        });
+        
+        // Also handle the new message format with dot notation for backward compatibility
+        messageBus.subscribe("server.heartbeat", envelope -> {
+            Object payload = envelope.getPayload();
+            ServerHeartbeatMessage heartbeat = null;
+            
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    heartbeat = mapper.treeToValue((JsonNode) payload, ServerHeartbeatMessage.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ServerHeartbeatMessage from ObjectNode: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ServerHeartbeatMessage) {
+                heartbeat = (ServerHeartbeatMessage) payload;
+            } else {
+                return;
+            }
+            
+            String serverId = heartbeat.getServerId();
+            serverHeartbeats.put(serverId, System.currentTimeMillis());
+            updateServerCapacity(serverId, heartbeat.getPlayerCount());
+            logger.debug("Heartbeat (dot format) from server {}: {} players", serverId, heartbeat.getPlayerCount());
         });
         
         // Handle server announcements (post-approval)
         messageBus.subscribe("server:announce", envelope -> {
             Object payload = envelope.getPayload();
-            if (payload instanceof ServerAnnouncementMessage) {
-                ServerAnnouncementMessage announcement = (ServerAnnouncementMessage) payload;
-                // Update backend server info
-                ServerIdentifier serverInfo = new BackendServerIdentifier(
-                    announcement.getServerId(),
-                    announcement.getServerType(),
-                    announcement.getFamily(),
-                    announcement.getAddress(),
-                    announcement.getPort(),
-                    announcement.getCapacity()
-                );
-                backendServers.put(announcement.getServerId(), serverInfo);
-                serverHeartbeats.put(announcement.getServerId(), System.currentTimeMillis());
-                
-                logger.debug("Registered backend server: {} - Type: {}, Capacity: {}",
-                            announcement.getServerId(), announcement.getServerType(), 
-                            announcement.getCapacity());
+            ServerAnnouncementMessage announcement = null;
+            
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    announcement = mapper.treeToValue((JsonNode) payload, ServerAnnouncementMessage.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ServerAnnouncementMessage from ObjectNode: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ServerAnnouncementMessage) {
+                announcement = (ServerAnnouncementMessage) payload;
+            } else {
+                return;
             }
+            
+            // Update backend server info
+            ServerIdentifier serverInfo = new BackendServerIdentifier(
+                announcement.getServerId(),
+                announcement.getServerType(),
+                announcement.getFamily(),
+                announcement.getAddress(),
+                announcement.getPort(),
+                announcement.getCapacity()
+            );
+            backendServers.put(announcement.getServerId(), serverInfo);
+            serverHeartbeats.put(announcement.getServerId(), System.currentTimeMillis());
+            
+            logger.debug("Registered backend server: {} - Type: {}, Capacity: {}",
+                        announcement.getServerId(), announcement.getServerType(),
+                        announcement.getCapacity());
         });
         
         // Handle proxy discovery requests
         messageBus.subscribe("proxy:discovery", envelope -> {
+            logger.info("=== PROXY DISCOVERY REQUEST RECEIVED ===");
             Object payload = envelope.getPayload();
-            if (payload instanceof ProxyDiscoveryRequest) {
-                ProxyDiscoveryRequest request = (ProxyDiscoveryRequest) payload;
-                
-                // Create response with our proxy info
-                ProxyDiscoveryResponse response = new ProxyDiscoveryResponse(proxyId);
-                ProxyDiscoveryResponse.ProxyInfo proxyInfo = new ProxyDiscoveryResponse.ProxyInfo(
-                    proxyId,
-                    proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort(),
-                    proxy.getConfiguration().getShowMaxPlayers(),
-                    proxy.getPlayerCount(),
-                    ProxyAnnouncementMessage.ProxyType.MIXED
-                );
-                response.addProxy(proxyInfo);
-                
-                messageBus.broadcast("proxy:discovery:response", response);
+            ProxyDiscoveryRequest request = null;
+            
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    request = mapper.treeToValue((JsonNode) payload, ProxyDiscoveryRequest.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ProxyDiscoveryRequest from ObjectNode: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ProxyDiscoveryRequest) {
+                request = (ProxyDiscoveryRequest) payload;
+            } else {
+                logger.warn("Invalid payload type on proxy:discovery channel: {}",
+                           payload != null ? payload.getClass().getName() : "null");
+                return;
             }
+            
+            logger.info("From server: {} (type: {})", request.getRequesterId(), request.getServerType());
+            
+            // Create response with our proxy info
+            ProxyDiscoveryResponse response = new ProxyDiscoveryResponse(proxyId);
+            ProxyDiscoveryResponse.ProxyInfo proxyInfo = new ProxyDiscoveryResponse.ProxyInfo(
+                proxyId,
+                proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort(),
+                proxy.getConfiguration().getShowMaxPlayers(),
+                proxy.getPlayerCount()
+            );
+            response.addProxy(proxyInfo);
+            
+            messageBus.broadcast("proxy:discovery:response", response);
+            logger.info("Sent discovery response on channel 'proxy:discovery:response'");
+            logger.info("Proxy info - ID: {}, Address: {}, Capacity: {}/{}",
+                       proxyId,
+                       proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort(),
+                       proxy.getPlayerCount(),
+                       proxy.getConfiguration().getShowMaxPlayers());
         });
     }
     
     private void handleServerRegistration(ServerRegistrationRequest request) {
+        logger.info("=== PROCESSING SERVER REGISTRATION ===");
+        logger.info("Server Details:");
+        logger.info("  - Server ID: {}", request.getTempId());
+        logger.info("  - Type: {}", request.getServerType());
+        logger.info("  - Role: {}", request.getRole());
+        logger.info("  - Capacity: {}", request.getMaxCapacity());
+        logger.info("  - Address: {}:{}", request.getAddress(), request.getPort());
+        
         // Validate server
         boolean approved = validateServer(request);
         String rejectionReason = null;
@@ -204,17 +339,40 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
                 rejectionReason = "Server type is required";
             } else if (request.getMaxCapacity() <= 0) {
                 rejectionReason = "Invalid server capacity";
+            } else if (request.getAddress() == null || request.getAddress().isEmpty()) {
+                rejectionReason = "Server address is required";
+            } else if (request.getPort() <= 0) {
+                rejectionReason = "Invalid server port";
             } else {
                 rejectionReason = "Server validation failed";
             }
         }
         
-        // Create a proper assigned server ID
-        String assignedServerId = request.getServerType().toLowerCase() + "-" + request.getTempId().substring(0, 8);
+        // Get the server identifier
+        String serverIdentifier = request.getTempId();
         
-        // Send response  
+        // Check if server already has a permanent ID (not starting with "temp-")
+        boolean isTemporaryId = serverIdentifier.startsWith("temp-");
+        String assignedServerId;
+        
+        if (isTemporaryId) {
+            // Generate new permanent ID for temporary servers
+            assignedServerId = generateProperServerId(request.getServerType());
+            logger.info("Assigning permanent ID: {} -> {}", serverIdentifier, assignedServerId);
+        } else {
+            // Server already has permanent ID, keep it
+            assignedServerId = serverIdentifier;
+            logger.info("Server already has permanent ID: {}", assignedServerId);
+            
+            // Check if we already know this server
+            if (backendServers.containsKey(assignedServerId)) {
+                logger.info("Server {} re-registering with new proxy", assignedServerId);
+            }
+        }
+        
+        // Send response
         ServerRegistrationResponse response = new ServerRegistrationResponse();
-        response.setTempId(request.getTempId());
+        response.setTempId(serverIdentifier);
         response.setAssignedServerId(assignedServerId);
         response.setSuccess(approved);
         response.setMessage(rejectionReason);
@@ -223,10 +381,17 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
         response.setAddress(request.getAddress());
         response.setPort(request.getPort());
         
-        messageBus.broadcast("server:register:response:" + request.getTempId(), response);
+        // Send response to both channels for compatibility
+        messageBus.broadcast("server:registration:response", response);
+        messageBus.broadcast("server:" + serverIdentifier, response);
+        
+        logger.info("Registration {}: {} -> {}",
+                   approved ? "APPROVED" : "REJECTED",
+                   serverIdentifier,
+                   approved ? assignedServerId : rejectionReason);
         
         if (approved) {
-            // Store initial server info
+            // Store server info
             ServerIdentifier serverInfo = new BackendServerIdentifier(
                 assignedServerId,
                 request.getServerType(),
@@ -238,11 +403,34 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
             backendServers.put(assignedServerId, serverInfo);
             serverHeartbeats.put(assignedServerId, System.currentTimeMillis());
             
+            // Remove old temporary entry if this was a new assignment
+            if (isTemporaryId && !serverIdentifier.equals(assignedServerId)) {
+                backendServers.remove(serverIdentifier);
+                serverHeartbeats.remove(serverIdentifier);
+            }
+            
+            // Add server to Velocity's server list so players can connect
+            addServerToVelocity(assignedServerId, request.getAddress(), request.getPort());
+            
             logger.info("Approved backend server registration: {} - Type: {}",
                        assignedServerId, request.getServerType());
         } else {
             logger.warn("Rejected backend server registration: {} - Reason: {}",
                        request.getTempId(), rejectionReason);
+        }
+    }
+    
+    /**
+     * Add backend server to Velocity's server list
+     */
+    private void addServerToVelocity(String serverId, String address, int port) {
+        try {
+            InetSocketAddress serverAddress = new InetSocketAddress(address, port);
+            ServerInfo serverInfo = new ServerInfo(serverId, serverAddress);
+            proxy.registerServer(serverInfo);
+            logger.info("Added server to Velocity: {} at {}:{}", serverId, address, port);
+        } catch (Exception e) {
+            logger.error("Failed to add server to Velocity: {} at {}:{}", serverId, address, port, e);
         }
     }
     
@@ -257,6 +445,15 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
         }
         
         if (request.getMaxCapacity() <= 0) {
+            return false;
+        }
+        
+        // Validate address and port are provided
+        if (request.getAddress() == null || request.getAddress().isEmpty()) {
+            return false;
+        }
+        
+        if (request.getPort() <= 0 || request.getPort() > 65535) {
             return false;
         }
         
@@ -280,19 +477,26 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
             try {
                 // Update current proxy capacity
                 int currentPlayers = proxy.getPlayerCount();
+                int proxyIndex = extractProxyIndex(proxyId);
                 
-                // Update our proxy data
-                String address = proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort();
+                // Update our proxy data with simplified capacity info
                 currentProxyData = new ProxyAnnouncementMessage(
                     proxyId,
-                    address,
-                    proxy.getConfiguration().getShowMaxPlayers(),
-                    currentPlayers,
-                    ProxyAnnouncementMessage.ProxyType.MIXED
+                    proxyIndex,
+                    config.getHardCap(),
+                    config.getSoftCap(),
+                    currentPlayers
                 );
                 
                 // Send proxy heartbeat
                 messageBus.broadcast("proxy:heartbeat", currentProxyData);
+                
+                // Log capacity warnings
+                if (config.isAtHardCapacity(currentPlayers)) {
+                    logger.warn("Proxy at HARD capacity: {}/{}", currentPlayers, config.getHardCap());
+                } else if (config.isAtSoftCapacity(currentPlayers)) {
+                    logger.info("Proxy at soft capacity: {}/{}", currentPlayers, config.getSoftCap());
+                }
                 
                 // Update Redis with current info
                 if (messageBus instanceof VelocityRedisMessageBus) {
@@ -300,7 +504,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
                     var commands = redisMessageBus.getRedisConnection().sync();
                     
                     String proxyKey = PROXY_INFO_PREFIX + proxyId;
-                    commands.hset(proxyKey, "currentLoad", String.valueOf(currentPlayers));
+                    commands.hset(proxyKey, "currentPlayerCount", String.valueOf(currentPlayers));
                     commands.hset(proxyKey, "lastHeartbeat", String.valueOf(System.currentTimeMillis()));
                     commands.expire(proxyKey, config.getTimeoutSeconds());
                 }
@@ -384,78 +588,24 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
             proxyId,
             address,
             proxy.getConfiguration().getShowMaxPlayers(),
-            -1, // Indicates shutdown
-            ProxyAnnouncementMessage.ProxyType.MIXED
+            -1 // Indicates shutdown
         );
         messageBus.broadcast("proxy:shutdown", shutdown);
         
         logger.info("VelocityServerLifecycleFeature shutdown complete");
     }
     
-    // ProxyRegistry implementation
-    @Override
-    public void registerProxy(String proxyId, ProxyAnnouncementMessage announcement) {
-        proxyRegistry.put(proxyId, announcement);
-        
-        if (messageBus instanceof VelocityRedisMessageBus) {
-            VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-            var commands = redisMessageBus.getRedisConnection().sync();
-            
-            commands.sadd(PROXIES_KEY, proxyId);
-            String proxyKey = PROXY_INFO_PREFIX + proxyId;
-            Map<String, String> proxyData = new HashMap<>();
-            proxyData.put("address", announcement.getAddress());
-            proxyData.put("capacity", String.valueOf(announcement.getCapacity()));
-            proxyData.put("currentLoad", String.valueOf(announcement.getCurrentLoad()));
-            proxyData.put("type", announcement.getProxyType().toString());
-            commands.hset(proxyKey, proxyData);
-            commands.expire(proxyKey, config.getTimeoutSeconds());
-        }
-    }
-    
-    @Override
-    public void unregisterProxy(String proxyId) {
-        proxyRegistry.remove(proxyId);
-        
-        if (messageBus instanceof VelocityRedisMessageBus) {
-            VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-            var commands = redisMessageBus.getRedisConnection().sync();
-            
-            commands.srem(PROXIES_KEY, proxyId);
-            commands.del(PROXY_INFO_PREFIX + proxyId);
-        }
-    }
-    
-    @Override
-    public Set<String> getRegisteredProxies() {
-        if (messageBus instanceof VelocityRedisMessageBus) {
-            VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-            var commands = redisMessageBus.getRedisConnection().sync();
-            
-            return commands.smembers(PROXIES_KEY);
-        }
-        // Fallback to local registry
-        return proxyRegistry.keySet();
-    }
-    
-    @Override
-    public ProxyAnnouncementMessage getProxyData(String proxyId) {
-        return proxyRegistry.get(proxyId);
-    }
-    
-    @Override
-    public void refreshProxyTTL(String proxyId, ProxyAnnouncementMessage announcement) {
-        proxyRegistry.put(proxyId, announcement);
-        
-        if (messageBus instanceof VelocityRedisMessageBus) {
-            VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-            var commands = redisMessageBus.getRedisConnection().sync();
-            
-            String proxyKey = PROXY_INFO_PREFIX + proxyId;
-            commands.hset(proxyKey, "currentLoad", String.valueOf(announcement.getCurrentLoad()));
-            commands.hset(proxyKey, "lastHeartbeat", String.valueOf(System.currentTimeMillis()));
-            commands.expire(proxyKey, config.getTimeoutSeconds());
-        }
+    /**
+     * Send a request for all backend servers to register
+     * This is called when a new proxy starts up
+     */
+    private void sendRegistrationRequest() {
+        logger.info("Sending request for backend servers to register");
+        messageBus.broadcast("proxy:request-registrations",
+            new ProxyAnnouncementMessage(proxyId,
+                proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort(),
+                proxy.getConfiguration().getShowMaxPlayers(),
+                proxy.getPlayerCount()));
     }
     
     /**
@@ -471,6 +621,34 @@ public class VelocityServerLifecycleFeature implements VelocityFeature, ProxyReg
     public boolean isServerActive(String serverId) {
         return backendServers.containsKey(serverId) &&
                serverHeartbeats.containsKey(serverId);
+    }
+    
+    private int extractProxyIndex(String proxyId) {
+        // Extract index from ID format: fulcrum-proxy-N
+        if (proxyId != null && proxyId.startsWith("fulcrum-proxy-")) {
+            try {
+                String indexStr = proxyId.substring("fulcrum-proxy-".length());
+                return Integer.parseInt(indexStr);
+            } catch (NumberFormatException e) {
+                // Fallback for overflow or special cases
+                return 0;
+            }
+        }
+        return 0;
+    }
+    
+    // Server ID generation counters
+    private final Map<String, AtomicInteger> serverTypeCounters = new ConcurrentHashMap<>();
+    
+    /**
+     * Generate a proper server ID in the format: <servertype><number>
+     * e.g., mini1, mini2, mega3, lobby1
+     */
+    private String generateProperServerId(String serverType) {
+        String type = serverType.toLowerCase();
+        AtomicInteger counter = serverTypeCounters.computeIfAbsent(type, k -> new AtomicInteger(0));
+        int number = counter.incrementAndGet();
+        return type + number;
     }
     
     /**

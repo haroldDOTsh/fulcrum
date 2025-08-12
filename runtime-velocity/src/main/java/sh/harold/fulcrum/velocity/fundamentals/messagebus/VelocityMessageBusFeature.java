@@ -8,15 +8,18 @@ import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.RedisConfig;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.params.SetParams;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.UUID;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Feature that provides message bus functionality for the Velocity proxy.
  * Supports both simple (local) and Redis-based distributed messaging.
+ * Implements Redis-based proxy slot allocation for unique proxy identification.
  */
 public class VelocityMessageBusFeature implements VelocityFeature {
     
@@ -25,6 +28,9 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     private ConfigLoader configLoader;
     private Logger logger;
     private MessageBus messageBus;
+    private JedisPool jedisPool;
+    private String proxyId;
+    private int proxyIndex;
     
     @Override
     public String getName() {
@@ -62,9 +68,6 @@ public class VelocityMessageBusFeature implements VelocityFeature {
         
         logger.info("Initializing MessageBus feature");
         
-        // Generate server ID for this proxy instance with fulcrum-velocity format
-        String serverId = generateServerId();
-        
         // Load message bus configuration
         MessageBusConfig config = configLoader.getConfig(MessageBusConfig.class);
         if (config == null) {
@@ -77,14 +80,22 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             RedisConfig redisConfig = configLoader.getConfig(RedisConfig.class);
             if (redisConfig == null) {
                 logger.warn("Redis config not found, falling back to simple message bus");
-                messageBus = new VelocitySimpleMessageBus(serverId, proxy);
+                // Use simple proxy ID for non-Redis mode
+                proxyId = "fulcrum-proxy-1";
+                proxyIndex = 1;
+                messageBus = new VelocitySimpleMessageBus(proxyId, proxy);
             } else {
-                logger.info("Initializing Redis message bus for Velocity proxy with ID: {}", serverId);
-                messageBus = new VelocityRedisMessageBus(serverId, proxy, redisConfig);
+                logger.info("Initializing Redis-based message bus");
+                initializeRedisConnection(redisConfig);
+                allocateProxySlot();
+                messageBus = new VelocityRedisMessageBus(proxyId, proxy, redisConfig);
             }
         } else {
-            logger.info("Using simple message bus for Velocity proxy with ID: {}", serverId);
-            messageBus = new VelocitySimpleMessageBus(serverId, proxy);
+            logger.info("Using simple message bus");
+            // Use simple proxy ID for non-Redis mode
+            proxyId = "fulcrum-proxy-1";
+            proxyIndex = 1;
+            messageBus = new VelocitySimpleMessageBus(proxyId, proxy);
         }
         
         // Register message bus service BEFORE other features try to use it
@@ -99,56 +110,102 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             logger.debug("Received heartbeat message");
         });
         
-        logger.info("MessageBus feature initialized with server ID: {}", serverId);
+        logger.info("MessageBus feature initialized with proxy ID: {} (index: {})", proxyId, proxyIndex);
     }
     
-    private String generateServerId() {
-        Path dataPath = plugin.getDataDirectory();
-        Path idFile = dataPath.resolve("velocity-id.txt");
-        
-        // Check for persisted ID
-        if (Files.exists(idFile)) {
-            try {
-                String persistedId = Files.readString(idFile).trim();
-                if (!persistedId.isEmpty()) {
-                    logger.info("Using persisted proxy ID: {}", persistedId);
-                    return persistedId;
-                }
-            } catch (IOException e) {
-                logger.warn("Failed to read persisted ID: {}", e.getMessage());
-            }
-        }
-        
-        // Generate new ID with fulcrum-velocity format
-        int index = 0;
-        Path indexFile = dataPath.resolve("velocity-index.txt");
-        if (Files.exists(indexFile)) {
-            try {
-                String indexStr = Files.readString(indexFile).trim();
-                index = Integer.parseInt(indexStr);
-            } catch (IOException | NumberFormatException e) {
-                logger.warn("Failed to read velocity index, using 0: {}", e.getMessage());
-            }
-        }
-        
-        String newId = "fulcrum-velocity-" + index;
-        
-        // Persist the ID
+    private void initializeRedisConnection(RedisConfig config) {
         try {
-            Files.createDirectories(dataPath);
-            Files.writeString(idFile, newId);
-            // Increment and save index for next proxy
-            Files.writeString(indexFile, String.valueOf(index + 1));
-            logger.info("Generated and persisted new proxy ID: {}", newId);
-        } catch (IOException e) {
-            logger.warn("Failed to persist proxy ID: {}", e.getMessage());
+            // Create Jedis pool for slot allocation
+            JedisPoolConfig poolConfig = new JedisPoolConfig();
+            poolConfig.setMaxTotal(10);
+            poolConfig.setMaxIdle(5);
+            poolConfig.setMinIdle(1);
+            poolConfig.setTestOnBorrow(true);
+            
+            if (config.getPassword() != null && !config.getPassword().isEmpty()) {
+                jedisPool = new JedisPool(poolConfig, config.getHost(), config.getPort(), 
+                                         2000, config.getPassword());
+            } else {
+                jedisPool = new JedisPool(poolConfig, config.getHost(), config.getPort(), 2000);
+            }
+            
+            // Test connection
+            try (Jedis jedis = jedisPool.getResource()) {
+                jedis.ping();
+                logger.info("Connected to Redis at {}:{}", config.getHost(), config.getPort());
+            }
+        } catch (Exception e) {
+            logger.error("Failed to initialize Redis connection: {}", e.getMessage());
+            throw new RuntimeException("Redis connection failed", e);
         }
-        
-        return newId;
+    }
+    
+    private void allocateProxySlot() {
+        // Allocate a proxy slot using Redis SETNX for atomic operations
+        try (Jedis jedis = jedisPool.getResource()) {
+            // Find the first available slot from 1-100
+            for (int i = 1; i <= 100; i++) {
+                String slotKey = "fulcrum:proxy:slot:" + i;
+                
+                // Try to claim the slot with TTL of 60 seconds
+                SetParams params = new SetParams();
+                params.nx();
+                params.ex(60);
+                String result = jedis.set(slotKey, String.valueOf(System.currentTimeMillis()), params);
+                
+                if ("OK".equals(result)) {
+                    // Successfully claimed the slot
+                    proxyIndex = i;
+                    proxyId = "fulcrum-proxy-" + i;
+                    
+                    // Start heartbeat to maintain the slot
+                    startSlotHeartbeat(slotKey);
+                    
+                    logger.info("Allocated proxy slot: {}", i);
+                    return;
+                }
+            }
+            
+            // No slots available, use overflow slot with timestamp
+            logger.warn("All proxy slots full, using overflow slot");
+            proxyIndex = 999;
+            proxyId = "fulcrum-proxy-overflow-" + System.currentTimeMillis();
+            
+        } catch (Exception e) {
+            logger.error("Failed to allocate proxy slot, using fallback: {}", e.getMessage());
+            proxyId = "fulcrum-proxy-fallback";
+            proxyIndex = 0;
+        }
+    }
+    
+    private void startSlotHeartbeat(String slotKey) {
+        // Start a scheduled task to refresh the TTL every 30 seconds
+        proxy.getScheduler()
+            .buildTask(plugin, () -> {
+                try (Jedis jedis = jedisPool.getResource()) {
+                    jedis.expire(slotKey, 60); // Refresh TTL to 60 seconds
+                    logger.debug("Refreshed TTL for proxy slot {}", proxyIndex);
+                } catch (Exception e) {
+                    logger.warn("Failed to refresh proxy slot TTL: {}", e.getMessage());
+                }
+            })
+            .repeat(Duration.ofSeconds(30))
+            .schedule();
     }
     
     @Override
     public void shutdown() {
+        // Release the proxy slot if using Redis
+        if (jedisPool != null && proxyIndex > 0 && proxyIndex <= 100) {
+            try (Jedis jedis = jedisPool.getResource()) {
+                String slotKey = "fulcrum:proxy:slot:" + proxyIndex;
+                jedis.del(slotKey);
+                logger.info("Released proxy slot: {}", proxyIndex);
+            } catch (Exception e) {
+                logger.warn("Failed to release proxy slot: {}", e.getMessage());
+            }
+        }
+        
         if (messageBus != null) {
             logger.info("Shutting down message bus");
             
@@ -158,6 +215,23 @@ public class VelocityMessageBusFeature implements VelocityFeature {
                 ((VelocityRedisMessageBus) messageBus).shutdown();
             }
         }
+        
+        if (jedisPool != null && !jedisPool.isClosed()) {
+            jedisPool.close();
+        }
     }
     
+    /**
+     * Get the allocated proxy ID
+     */
+    public String getProxyId() {
+        return proxyId;
+    }
+    
+    /**
+     * Get the allocated proxy index
+     */
+    public int getProxyIndex() {
+        return proxyIndex;
+    }
 }
