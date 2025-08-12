@@ -80,22 +80,24 @@ public class ConfigLoader {
         // Parse Redis configuration
         Map<String, Object> redisSection = (Map<String, Object>) configuration.get("redis");
         if (redisSection != null) {
-            RedisConfig redisConfig = new RedisConfig();
-            redisConfig.setEnabled((Boolean) redisSection.getOrDefault("enabled", false));
-            redisConfig.setHost((String) redisSection.getOrDefault("host", "localhost"));
-            redisConfig.setPort((Integer) redisSection.getOrDefault("port", 6379));
-            redisConfig.setPassword((String) redisSection.getOrDefault("password", ""));
-            redisConfig.setDatabase((Integer) redisSection.getOrDefault("database", 0));
-            redisConfig.setTimeout((Integer) redisSection.getOrDefault("timeout", 2000));
+            RedisConfig.Builder builder = RedisConfig.builder()
+                .host((String) redisSection.getOrDefault("host", "localhost"))
+                .port((Integer) redisSection.getOrDefault("port", 6379))
+                .password((String) redisSection.getOrDefault("password", ""))
+                .database((Integer) redisSection.getOrDefault("database", 0));
+            
+            // Timeout is stored as milliseconds in config but RedisConfig expects Duration
+            Integer timeoutMs = (Integer) redisSection.getOrDefault("timeout", 2000);
+            builder.connectionTimeout(java.time.Duration.ofMillis(timeoutMs));
             
             Map<String, Object> poolSection = (Map<String, Object>) redisSection.get("pool");
             if (poolSection != null) {
-                redisConfig.setMaxTotal((Integer) poolSection.getOrDefault("maxTotal", 8));
-                redisConfig.setMaxIdle((Integer) poolSection.getOrDefault("maxIdle", 8));
-                redisConfig.setMinIdle((Integer) poolSection.getOrDefault("minIdle", 0));
+                builder.maxConnections((Integer) poolSection.getOrDefault("maxTotal", 8))
+                       .maxIdleConnections((Integer) poolSection.getOrDefault("maxIdle", 8))
+                       .minIdleConnections((Integer) poolSection.getOrDefault("minIdle", 0));
             }
             
-            configCache.put(RedisConfig.class, redisConfig);
+            configCache.put(RedisConfig.class, builder.build());
         }
         
         // Parse Server Lifecycle configuration
@@ -103,25 +105,22 @@ public class ConfigLoader {
         if (lifecycleSection != null) {
             ServerLifecycleConfig lifecycleConfig = new ServerLifecycleConfig();
             
-            Map<String, Object> registrationSection = (Map<String, Object>) lifecycleSection.get("registration");
-            if (registrationSection != null) {
-                lifecycleConfig.setRegistrationEnabled((Boolean) registrationSection.getOrDefault("enabled", true));
-                lifecycleConfig.setHeartbeatInterval((Integer) registrationSection.getOrDefault("interval", 30));
-                lifecycleConfig.setTimeoutSeconds((Integer) registrationSection.getOrDefault("timeout", 90));
-            }
+            // Set heartbeat interval and timeout
+            lifecycleConfig.setHeartbeatInterval((Integer) lifecycleSection.getOrDefault("heartbeat-interval", 30));
+            lifecycleConfig.setTimeoutSeconds((Integer) lifecycleSection.getOrDefault("timeout", 90));
             
-            Map<String, Object> capacitySection = (Map<String, Object>) lifecycleSection.get("capacity");
-            if (capacitySection != null) {
-                lifecycleConfig.setCapacityMode((String) capacitySection.getOrDefault("mode", "dynamic"));
-                lifecycleConfig.setStaticCapacity((Integer) capacitySection.getOrDefault("static-value", 100));
-            }
+            // Set capacity values (hard and soft caps)
+            lifecycleConfig.setHardCap((Integer) lifecycleSection.getOrDefault("hard-cap", 1000));
+            lifecycleConfig.setSoftCap((Integer) lifecycleSection.getOrDefault("soft-cap", 500));
             
-            Map<String, Object> typeSection = (Map<String, Object>) lifecycleSection.get("type-detection");
-            if (typeSection != null) {
-                lifecycleConfig.setTypeDetectionMode((String) typeSection.getOrDefault("mode", "auto"));
-                lifecycleConfig.setManualType((String) typeSection.getOrDefault("manual-type", "proxy"));
-            }
-            
+            configCache.put(ServerLifecycleConfig.class, lifecycleConfig);
+        } else {
+            // Create default config if not specified
+            ServerLifecycleConfig lifecycleConfig = new ServerLifecycleConfig();
+            lifecycleConfig.setHeartbeatInterval(30);
+            lifecycleConfig.setTimeoutSeconds(90);
+            lifecycleConfig.setHardCap(1000);
+            lifecycleConfig.setSoftCap(500);
             configCache.put(ServerLifecycleConfig.class, lifecycleConfig);
         }
     }
