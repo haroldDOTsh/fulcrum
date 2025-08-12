@@ -5,7 +5,7 @@ import sh.harold.fulcrum.api.data.dirty.DirtyDataCache;
 import sh.harold.fulcrum.api.data.dirty.InMemoryDirtyDataCache;
 import sh.harold.fulcrum.api.data.dirty.RedisDirtyDataCache;
 import sh.harold.fulcrum.runtime.config.DirtyCacheConfig;
-import sh.harold.fulcrum.runtime.redis.JedisRedisOperations;
+import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 import sh.harold.fulcrum.runtime.redis.RedisConfig;
 
 import java.util.logging.Level;
@@ -59,8 +59,8 @@ public class DirtyCacheFactory {
             // Convert configuration to Redis config
             RedisConfig redisConfig = convertToRedisConfig(config.getRedisSettings());
 
-            // Create Redis operations
-            JedisRedisOperations redisOperations = new JedisRedisOperations(redisConfig);
+            // Create Redis operations using Lettuce (matching proxy implementation)
+            LettuceRedisOperations redisOperations = new LettuceRedisOperations(redisConfig);
 
             // Create Redis cache
             long ttlSeconds = config.getEntryTtl().getSeconds();
@@ -150,7 +150,7 @@ public class DirtyCacheFactory {
      * @param config          The cache configuration
      * @param logger          The logger instance
      */
-    private static void startHealthCheckTask(JedisRedisOperations redisOperations,
+    private static void startHealthCheckTask(LettuceRedisOperations redisOperations,
                                              DirtyCacheConfig config, Logger logger) {
         try {
             // Create a simple health check task
