@@ -93,7 +93,7 @@ publishing {
 tasks {
     runVelocity {
         // Use the latest stable Velocity version
-        velocityVersion("3.3.0-SNAPSHOT")
+        velocityVersion("3.4.0-SNAPSHOT")
         
         // Set the run directory
         runDirectory = projectDir.resolve("run")
