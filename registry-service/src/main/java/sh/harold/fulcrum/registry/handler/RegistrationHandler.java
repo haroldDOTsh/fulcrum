@@ -168,6 +168,9 @@ public class RegistrationHandler {
                 // Register the server
                 String permanentId = serverRegistry.registerServer(request);
                 
+                // Initialize heartbeat tracking for the new server
+                heartbeatMonitor.processHeartbeat(permanentId, 0, 20.0);
+                
                 // Send response
                 sendRegistrationResponse(request, permanentId);
                 
@@ -191,11 +194,21 @@ public class RegistrationHandler {
         try {
             Map<String, Object> heartbeat = objectMapper.readValue(json, Map.class);
             String serverId = (String) heartbeat.get("serverId");
-            Integer playerCount = (Integer) heartbeat.getOrDefault("playerCount", 0);
-            Double tps = (Double) heartbeat.getOrDefault("tps", 20.0);
             
-            // Process heartbeat
+            // Extract metrics from heartbeat
+            Number playerCountNum = (Number) heartbeat.getOrDefault("playerCount", 0);
+            int playerCount = playerCountNum.intValue();
+            
+            Number tpsNum = (Number) heartbeat.getOrDefault("tps", 20.0);
+            double tps = tpsNum.doubleValue();
+            
+            // Process heartbeat through monitor
             heartbeatMonitor.processHeartbeat(serverId, playerCount, tps);
+            
+            if (debugMode) {
+                LOGGER.debug("[HEARTBEAT] Received from {} - Players: {}, TPS: {:.1f}",
+                    serverId, playerCount, tps);
+            }
             
         } catch (Exception e) {
             LOGGER.error("Failed to handle server heartbeat", e);
@@ -357,14 +370,16 @@ public class RegistrationHandler {
             // Broadcast server removal to all proxies
             Map<String, Object> removal = new HashMap<>();
             removal.put("serverId", serverId);
+            removal.put("reason", "timeout");
+            removal.put("timestamp", System.currentTimeMillis());
             
             String json = objectMapper.writeValueAsString(removal);
             sync.publish("registry:server:removed", json);
             
-            LOGGER.info("Server timed out and removed: {}", serverId);
+            LOGGER.warn("Server {} timed out and was removed from registry", serverId);
             
         } catch (Exception e) {
-            LOGGER.error("Failed to broadcast server removal", e);
+            LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
         }
     }
     
