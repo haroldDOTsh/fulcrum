@@ -8,10 +8,11 @@ import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.RedisConfig;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
-import redis.clients.jedis.params.SetParams;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.SetArgs;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisCommands;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
@@ -28,7 +29,8 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     private ConfigLoader configLoader;
     private Logger logger;
     private MessageBus messageBus;
-    private JedisPool jedisPool;
+    private RedisClient redisClient;
+    private StatefulRedisConnection<String, String> redisConnection;
     private String proxyId;
     private int proxyIndex;
     
@@ -115,43 +117,52 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     
     private void initializeRedisConnection(RedisConfig config) {
         try {
-            // Create Jedis pool for slot allocation
-            JedisPoolConfig poolConfig = new JedisPoolConfig();
-            poolConfig.setMaxTotal(10);
-            poolConfig.setMaxIdle(5);
-            poolConfig.setMinIdle(1);
-            poolConfig.setTestOnBorrow(true);
+            // Build Redis URI for Lettuce
+            RedisURI.Builder uriBuilder = RedisURI.builder()
+                .withHost(config.getHost())
+                .withPort(config.getPort())
+                .withDatabase(config.getDatabase())
+                .withTimeout(java.time.Duration.ofMillis(2000));
             
             if (config.getPassword() != null && !config.getPassword().isEmpty()) {
-                jedisPool = new JedisPool(poolConfig, config.getHost(), config.getPort(), 
-                                         2000, config.getPassword());
-            } else {
-                jedisPool = new JedisPool(poolConfig, config.getHost(), config.getPort(), 2000);
+                uriBuilder.withPassword(config.getPassword().toCharArray());
             }
             
+            RedisURI redisURI = uriBuilder.build();
+            
+            // Create Redis client and connection
+            redisClient = RedisClient.create(redisURI);
+            redisConnection = redisClient.connect();
+            
             // Test connection
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.ping();
-                logger.info("Connected to Redis at {}:{}", config.getHost(), config.getPort());
-            }
+            RedisCommands<String, String> commands = redisConnection.sync();
+            String pong = commands.ping();
+            logger.info("Connected to Redis at {}:{} - Response: {}", config.getHost(), config.getPort(), pong);
+            
         } catch (Exception e) {
             logger.error("Failed to initialize Redis connection: {}", e.getMessage());
+            if (redisConnection != null && redisConnection.isOpen()) {
+                redisConnection.close();
+            }
+            if (redisClient != null) {
+                redisClient.shutdown();
+            }
             throw new RuntimeException("Redis connection failed", e);
         }
     }
     
     private void allocateProxySlot() {
         // Allocate a proxy slot using Redis SETNX for atomic operations
-        try (Jedis jedis = jedisPool.getResource()) {
+        try {
+            RedisCommands<String, String> commands = redisConnection.sync();
+            
             // Find the first available slot from 1-100
             for (int i = 1; i <= 100; i++) {
                 String slotKey = "fulcrum:proxy:slot:" + i;
                 
-                // Try to claim the slot with TTL of 60 seconds
-                SetParams params = new SetParams();
-                params.nx();
-                params.ex(60);
-                String result = jedis.set(slotKey, String.valueOf(System.currentTimeMillis()), params);
+                // Try to claim the slot with TTL of 60 seconds using SetArgs for NX and EX
+                SetArgs setArgs = SetArgs.Builder.nx().ex(60);
+                String result = commands.set(slotKey, String.valueOf(System.currentTimeMillis()), setArgs);
                 
                 if ("OK".equals(result)) {
                     // Successfully claimed the slot
@@ -182,9 +193,14 @@ public class VelocityMessageBusFeature implements VelocityFeature {
         // Start a scheduled task to refresh the TTL every 30 seconds
         proxy.getScheduler()
             .buildTask(plugin, () -> {
-                try (Jedis jedis = jedisPool.getResource()) {
-                    jedis.expire(slotKey, 60); // Refresh TTL to 60 seconds
-                    logger.debug("Refreshed TTL for proxy slot {}", proxyIndex);
+                try {
+                    RedisCommands<String, String> commands = redisConnection.sync();
+                    Boolean result = commands.expire(slotKey, 60); // Refresh TTL to 60 seconds
+                    if (Boolean.TRUE.equals(result)) {
+                        logger.debug("Refreshed TTL for proxy slot {}", proxyIndex);
+                    } else {
+                        logger.warn("Failed to refresh TTL for proxy slot {} - key may not exist", proxyIndex);
+                    }
                 } catch (Exception e) {
                     logger.warn("Failed to refresh proxy slot TTL: {}", e.getMessage());
                 }
@@ -196,11 +212,14 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     @Override
     public void shutdown() {
         // Release the proxy slot if using Redis
-        if (jedisPool != null && proxyIndex > 0 && proxyIndex <= 100) {
-            try (Jedis jedis = jedisPool.getResource()) {
+        if (redisConnection != null && redisConnection.isOpen() && proxyIndex > 0 && proxyIndex <= 100) {
+            try {
+                RedisCommands<String, String> commands = redisConnection.sync();
                 String slotKey = "fulcrum:proxy:slot:" + proxyIndex;
-                jedis.del(slotKey);
-                logger.info("Released proxy slot: {}", proxyIndex);
+                Long deleted = commands.del(slotKey);
+                if (deleted > 0) {
+                    logger.info("Released proxy slot: {}", proxyIndex);
+                }
             } catch (Exception e) {
                 logger.warn("Failed to release proxy slot: {}", e.getMessage());
             }
@@ -216,8 +235,13 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             }
         }
         
-        if (jedisPool != null && !jedisPool.isClosed()) {
-            jedisPool.close();
+        // Close Redis connection and client
+        if (redisConnection != null && redisConnection.isOpen()) {
+            redisConnection.close();
+        }
+        
+        if (redisClient != null) {
+            redisClient.shutdown();
         }
     }
     

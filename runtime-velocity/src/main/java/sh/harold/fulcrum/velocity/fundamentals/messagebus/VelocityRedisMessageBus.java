@@ -112,6 +112,12 @@ public class VelocityRedisMessageBus implements MessageBus {
                 try {
                     MessageEnvelope envelope = deserializeEnvelope(message);
                     
+                    // If envelope type is null, it's not a valid MessageEnvelope
+                    if (envelope.getType() == null) {
+                        logger.fine("Received message without type field, ignoring: " + channel);
+                        return;
+                    }
+                    
                     // Handle response messages
                     if (channel.startsWith(RESPONSE_CHANNEL_PREFIX)) {
                         handleResponse(envelope);
@@ -374,15 +380,12 @@ public class VelocityRedisMessageBus implements MessageBus {
     }
     
     private MessageEnvelope deserializeEnvelope(String json) throws Exception {
-        logger.info("[DEBUG] Attempting to deserialize message envelope from JSON: " +
-                   (json.length() > 200 ? json.substring(0, 200) + "..." : json));
         try {
             MessageEnvelope envelope = objectMapper.readValue(json, MessageEnvelope.class);
-            logger.info("[DEBUG] Successfully deserialized envelope with type: " + envelope.getType());
+            logger.fine("Successfully deserialized envelope with type: " + envelope.getType());
             return envelope;
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "[DEBUG] Failed to deserialize MessageEnvelope. Error: " + e.getMessage() +
-                      "\n[DEBUG] JSON was: " + json, e);
+            logger.fine("Failed to deserialize MessageEnvelope: " + e.getMessage());
             throw e;
         }
     }
@@ -443,5 +446,14 @@ public class VelocityRedisMessageBus implements MessageBus {
      */
     public StatefulRedisConnection<String, String> getRedisConnection() {
         return connection;
+    }
+    
+    /**
+     * Get the underlying Redis PubSub connection for advanced operations.
+     * This should only be used by infrastructure components that need direct pub/sub access.
+     * @return The Redis PubSub connection
+     */
+    public StatefulRedisPubSubConnection<String, String> getPubSubConnection() {
+        return pubSubConnection;
     }
 }
