@@ -29,9 +29,9 @@ public class InteractiveLauncher {
         command.add("-Xms256m");
         command.add("-Xmx512m");
         
-        // Use -jar to run the shadow JAR directly
+        // Use -jar to run the shadow JAR directly with absolute path
         command.add("-jar");
-        command.add(jarPath.toString());
+        command.add(jarPath.toAbsolutePath().toString());
         
         // Create process with inherited IO
         ProcessBuilder pb = new ProcessBuilder(command);
@@ -71,22 +71,47 @@ public class InteractiveLauncher {
     }
     
     private static Path findJarFile() {
-        // Check for shadow JAR first - no classifier
-        Path shadowJar = Paths.get("build/libs/registry-service-1.0.0-SNAPSHOT.jar");
+        // When running from gradle, we're in the registry-service directory
+        // When running standalone, we might be elsewhere
+        
+        // First check if we're already in registry-service directory
+        Path currentDir = Paths.get("").toAbsolutePath();
+        Path shadowJar = null;
+        
+        if (currentDir.endsWith("registry-service")) {
+            // We're in the registry-service directory
+            shadowJar = Paths.get("build/libs/registry-service-1.0.0-SNAPSHOT.jar");
+        } else {
+            // We might be in the project root, check registry-service subdirectory
+            shadowJar = Paths.get("registry-service/build/libs/registry-service-1.0.0-SNAPSHOT.jar");
+        }
+        
         if (Files.exists(shadowJar)) {
             System.out.println("Found shadowJar: " + shadowJar.toAbsolutePath());
             return shadowJar;
         }
         
-        // Check without version
-        Path noVersionJar = Paths.get("build/libs/registry-service.jar");
-        if (Files.exists(noVersionJar)) {
-            System.out.println("Found JAR: " + noVersionJar.toAbsolutePath());
-            return noVersionJar;
+        // Fallback: look for the JAR in common locations
+        Path[] possiblePaths = {
+            Paths.get("build/libs/registry-service-1.0.0-SNAPSHOT.jar"),
+            Paths.get("registry-service/build/libs/registry-service-1.0.0-SNAPSHOT.jar"),
+            Paths.get("../registry-service/build/libs/registry-service-1.0.0-SNAPSHOT.jar"),
+            Paths.get("build/libs/registry-service.jar"),
+            Paths.get("registry-service/build/libs/registry-service.jar")
+        };
+        
+        for (Path path : possiblePaths) {
+            if (Files.exists(path)) {
+                System.out.println("Found JAR at: " + path.toAbsolutePath());
+                return path;
+            }
         }
         
-        // Try to find any JAR in build/libs
-        Path buildLibs = Paths.get("build/libs");
+        // Last resort: search for any JAR in build/libs
+        Path buildLibs = Files.exists(Paths.get("build/libs"))
+            ? Paths.get("build/libs")
+            : Paths.get("registry-service/build/libs");
+            
         if (Files.exists(buildLibs)) {
             try {
                 return Files.list(buildLibs)
