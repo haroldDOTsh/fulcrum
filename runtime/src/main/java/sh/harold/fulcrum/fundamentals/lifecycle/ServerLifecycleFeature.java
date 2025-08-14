@@ -12,6 +12,9 @@ import sh.harold.fulcrum.api.messagebus.messages.ProxyDiscoveryResponse;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationResponse;
 import sh.harold.fulcrum.api.messagebus.messages.ServerHeartbeatMessage;
+import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationRequest;
+import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationResponse;
+import sh.harold.fulcrum.api.messagebus.messages.ServerAnnouncementMessage;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.RedisMessageBus;
@@ -35,6 +38,9 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.bukkit.entity.Player;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 
 /**
  * Server lifecycle feature that manages server registration and heartbeat.
@@ -56,6 +62,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     private String environment;  // Store the environment string directly
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> registrationTimeoutTask;
+    private final Map<String, ServerInfo> availableServers = new ConcurrentHashMap<>();
     
     // Proxy discovery and tracking
     private final Map<String, ProxyAnnouncementMessage> knownProxies = new ConcurrentHashMap<>();
@@ -82,6 +89,9 @@ public class ServerLifecycleFeature implements PluginFeature {
         if (messageBus == null) {
             throw new IllegalStateException("MessageBus not available - MessageBusFeature must initialize first");
         }
+        
+        // Register BungeeCord channel for player transfers
+        plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
         
         // Determine server type based on RAM (MINI ≤8GB, MEGA >8GB)
         long maxMemoryMB = Runtime.getRuntime().maxMemory() / (1024 * 1024);
@@ -178,7 +188,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     }
     
     /**
-     * Send initial registration request to all proxies
+     * Send initial registration request to the Registry Service
      */
     private void sendInitialRegistration() {
         // Create registration request with all required data
@@ -196,7 +206,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         request.setAddress(serverIdentifier.getAddress());
         request.setPort(serverIdentifier.getPort());
         
-        LOGGER.info("Sending registration request:");
+        LOGGER.info("Sending registration request to Registry Service:");
         LOGGER.info("  Server ID: " + serverIdentifier.getServerId() +
                    (registered.get() ? " (permanent)" : " (temporary)"));
         LOGGER.info("  Type: " + serverType);
@@ -204,9 +214,10 @@ public class ServerLifecycleFeature implements PluginFeature {
         LOGGER.info("  Address: " + request.getAddress() + ":" + request.getPort());
         LOGGER.info("  Capacity: " + maxCapacity);
         
-        // Broadcast registration request - proxies will pick it up
+        // Send registration request to Registry Service
+        // Registry Service listens on proxy:register for compatibility
         messageBus.broadcast("proxy:register", request);
-        LOGGER.info("Sent registration request on channel 'proxy:register'");
+        LOGGER.info("Sent registration request to Registry Service on channel 'proxy:register'");
         
         // Schedule timeout warning if no response received
         scheduleRegistrationTimeout();
@@ -372,6 +383,28 @@ public class ServerLifecycleFeature implements PluginFeature {
                 }
             }
         });
+        
+        // Subscribe to evacuation requests
+        messageBus.subscribe("server.evacuation.request", envelope -> {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                ServerEvacuationRequest request = mapper.treeToValue(envelope.getPayload(), ServerEvacuationRequest.class);
+                handleEvacuationRequest(request);
+            } catch (Exception e) {
+                LOGGER.warning("Failed to deserialize evacuation request: " + e.getMessage());
+            }
+        });
+        
+        // Subscribe to server announcements to track available servers
+        messageBus.subscribe("server.announcement", envelope -> {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                ServerAnnouncementMessage announcement = mapper.treeToValue(envelope.getPayload(), ServerAnnouncementMessage.class);
+                handleServerAnnouncement(announcement);
+            } catch (Exception e) {
+                LOGGER.warning("Failed to deserialize server announcement: " + e.getMessage());
+            }
+        });
     }
     
     
@@ -423,6 +456,135 @@ public class ServerLifecycleFeature implements PluginFeature {
         } else {
             LOGGER.warning("Registration rejected by proxy: " + response.getMessage());
             // Don't retry - wait for proxy announcements
+        }
+    }
+    
+    private void handleEvacuationRequest(ServerEvacuationRequest request) {
+        if (!request.getServerId().equals(serverIdentifier.getServerId())) {
+            return; // Not for this server
+        }
+        
+        LOGGER.warning("Received evacuation request: " + request.getReason());
+        
+        // Perform evacuation asynchronously
+        CompletableFuture.runAsync(() -> {
+            evacuateAllPlayers(request);
+        });
+    }
+    
+    private void evacuateAllPlayers(ServerEvacuationRequest request) {
+        var players = Bukkit.getOnlinePlayers();
+        int evacuatedCount = 0;
+        int failedCount = 0;
+        
+        LOGGER.info("Starting evacuation of " + players.size() + " players...");
+        
+        for (Player player : players) {
+            try {
+                // Find target server
+                String targetServer = findAvailableLobbyServer();
+                if (targetServer == null) {
+                    targetServer = findAnyAvailableServer();
+                }
+                
+                if (targetServer != null) {
+                    player.sendMessage("§c§lServer is shutting down! Moving you to another server...");
+                    
+                    // Transfer player using BungeeCord messaging
+                    transferPlayer(player, targetServer);
+                    
+                    evacuatedCount++;
+                    LOGGER.info("Evacuated player " + player.getName() + " to " + targetServer);
+                } else {
+                    // No available servers, disconnect player with message
+                    player.kickPlayer("§c§lServer is shutting down!\n§7No available servers to transfer you to.\n§7Please reconnect in a moment.");
+                    failedCount++;
+                    LOGGER.warning("Failed to evacuate player " + player.getName() + " - no available servers");
+                }
+            } catch (Exception e) {
+                failedCount++;
+                LOGGER.severe("Error evacuating player " + player.getName() + ": " + e.getMessage());
+                player.kickPlayer("§c§lServer is shutting down!\n§7Failed to transfer you to another server.\n§7Please reconnect in a moment.");
+            }
+        }
+        
+        // Send evacuation response
+        ServerEvacuationResponse response = new ServerEvacuationResponse(
+            serverIdentifier.getServerId(),
+            failedCount == 0,
+            evacuatedCount,
+            failedCount,
+            "Evacuation completed: " + evacuatedCount + " succeeded, " + failedCount + " failed"
+        );
+        
+        messageBus.broadcast("server.evacuation.response", response);
+        LOGGER.info("Evacuation completed: " + evacuatedCount + " players evacuated, " + failedCount + " failed");
+    }
+    
+    private String findAvailableLobbyServer() {
+        // Find available lobby servers from cached server announcements
+        for (Map.Entry<String, ServerInfo> entry : availableServers.entrySet()) {
+            ServerInfo info = entry.getValue();
+            if (info.family != null && info.family.toLowerCase().contains("lobby") && "AVAILABLE".equals(info.status)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+    
+    private String findAnyAvailableServer() {
+        // Find any available server from cached server announcements
+        for (Map.Entry<String, ServerInfo> entry : availableServers.entrySet()) {
+            ServerInfo info = entry.getValue();
+            if ("AVAILABLE".equals(info.status) && !entry.getKey().equals(serverIdentifier.getServerId())) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+    
+    private void transferPlayer(Player player, String targetServer) {
+        // Using BungeeCord messaging channel for compatibility
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            try {
+                ByteArrayOutputStream b = new ByteArrayOutputStream();
+                DataOutputStream out = new DataOutputStream(b);
+                out.writeUTF("Connect");
+                out.writeUTF(targetServer);
+                player.sendPluginMessage(plugin, "BungeeCord", b.toByteArray());
+            } catch (Exception e) {
+                LOGGER.severe("Failed to send player transfer message: " + e.getMessage());
+            }
+        });
+    }
+    
+    private void handleServerAnnouncement(ServerAnnouncementMessage announcement) {
+        // Cache server information for evacuation purposes
+        String serverId = announcement.getServerId();
+        if (!serverId.equals(serverIdentifier.getServerId())) {
+            availableServers.put(serverId, new ServerInfo(
+                announcement.getServerType(),
+                "AVAILABLE",  // Server announcements imply the server is available
+                announcement.getAddress(),
+                announcement.getPort(),
+                announcement.getFamily()
+            ));
+        }
+    }
+    
+    private static class ServerInfo {
+        final String serverType;
+        final String status;
+        final String host;
+        final int port;
+        final String family;
+        
+        ServerInfo(String serverType, String status, String host, int port, String family) {
+            this.serverType = serverType;
+            this.status = status;
+            this.host = host;
+            this.port = port;
+            this.family = family;
         }
     }
 }
