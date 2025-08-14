@@ -62,16 +62,23 @@ public class BackendRegistryCommand implements CommandHandler {
         for (int i = startIndex; i < endIndex; i++) {
             RegisteredServerData server = servers.get(i);
             
-            // Calculate status based on heartbeat (15 seconds timeout)
-            long timeSinceHeartbeat = currentTime - server.getLastHeartbeat();
-            String status;
+            // Use the server's actual status
+            RegisteredServerData.Status serverStatus = server.getStatus();
+            String status = serverStatus.toString();
             String statusColored;
-            if (timeSinceHeartbeat < 15000) {
-                status = "ONLINE";
-                statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_GREEN);
-            } else {
-                status = "OFFLINE";
-                statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_RED);
+            
+            switch (serverStatus) {
+                case AVAILABLE:
+                    statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_GREEN);
+                    break;
+                case UNAVAILABLE:
+                    statusColored = TableFormatter.color(status, TableFormatter.YELLOW);
+                    break;
+                case DEAD:
+                    statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_RED);
+                    break;
+                default:
+                    statusColored = status;
             }
             
             String heartbeatTime = DATE_FORMAT.format(new Date(server.getLastHeartbeat()));
@@ -108,7 +115,12 @@ public class BackendRegistryCommand implements CommandHandler {
             System.out.println("\nUse 'backendregistry <page>' to view other pages");
         }
         
-        System.out.println("Total servers: " + servers.size());
+        // Show server statistics
+        System.out.println("\nServer Statistics:");
+        System.out.println("  Total servers: " + servers.size());
+        System.out.println("  Available: " + serverRegistry.getAvailableServerCount());
+        System.out.println("  Unavailable: " + serverRegistry.getUnavailableServerCount());
+        System.out.println("  Dead: " + (servers.size() - serverRegistry.getAvailableServerCount() - serverRegistry.getUnavailableServerCount()));
         
         return true;
     }
