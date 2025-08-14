@@ -1,0 +1,18 @@
+# Fulcrum Registry Service Configuration
+
+# Redis connection settings
+redis:
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+  password: ${REDIS_PASSWORD:}
+
+# Registry settings
+registry:
+  heartbeat-timeout: 15  # seconds before server timeout
+  check-interval: 5      # seconds between timeout checks
+  recycle-ids: true      # reuse IDs from offline servers
+  debug: false           # control verbose logging output
+
+# Logging settings
+logging:
+  level: ${LOG_LEVEL:INFO}

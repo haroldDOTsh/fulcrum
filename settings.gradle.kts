@@ -16,5 +16,6 @@ include(
     "message-bus-api",
     "server-lifecycle-api",
     "runtime",
-    "runtime-velocity"
+    "runtime-velocity",
+    "registry-service"
 )
