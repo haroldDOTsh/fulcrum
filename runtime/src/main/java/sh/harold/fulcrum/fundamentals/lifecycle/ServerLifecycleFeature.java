@@ -115,7 +115,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         // This ensures consistent behavior across the fleet
         
         // Load environment from ENVIRONMENT file
-        String family = loadEnvironmentFamily();
+        String role = loadEnvironmentRole();
         
         // Create temporary server identifier
         String tempId = "temp-" + UUID.randomUUID().toString().substring(0, 8);
@@ -129,7 +129,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         
         this.serverIdentifier = new DefaultServerIdentifier(
             tempId,
-            family,
+            role,
             serverType,
             instanceUuid,
             address,
@@ -157,11 +157,11 @@ public class ServerLifecycleFeature implements PluginFeature {
     }
     
     /**
-     * Loads the server family from the ENVIRONMENT file in the server root.
-     * The environment string is used directly as the family/role without enum parsing.
-     * @return The server family from the ENVIRONMENT file, or "game" as default
+     * Loads the server role from the ENVIRONMENT file in the server root.
+     * The environment string is used directly as the role without enum parsing.
+     * @return The server role from the ENVIRONMENT file, or "game" as default
      */
-    private String loadEnvironmentFamily() {
+    private String loadEnvironmentRole() {
         try {
             File envFile = new File("ENVIRONMENT");
             if (!envFile.exists()) {
@@ -200,8 +200,8 @@ public class ServerLifecycleFeature implements PluginFeature {
             maxCapacity   // Calculated from RAM
         );
         
-        // Set role from the loaded environment (family field is deprecated)
-        request.setRole(serverIdentifier.getFamily());
+        // Set role from the loaded environment
+        request.setRole(serverIdentifier.getRole());
         
         // Set server address and port - CRITICAL for proxies to connect
         request.setAddress(serverIdentifier.getAddress());
@@ -330,7 +330,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             serverIdentifier.getServerId(),
             serverType,
             environment,  // Use the loaded environment
-            serverIdentifier.getFamily(),
+            serverIdentifier.getRole(),
             maxCapacity,
             serverIdentifier.getAddress(),
             serverIdentifier.getPort()
@@ -373,8 +373,8 @@ public class ServerLifecycleFeature implements PluginFeature {
         heartbeat.setMaxCapacity(maxCapacity);  // This is the hard cap
         heartbeat.setUptime(System.currentTimeMillis() - startTime);
         
-        // Set role from the environment (family field is deprecated)
-        heartbeat.setRole(serverIdentifier.getFamily());
+        // Set role from the environment
+        heartbeat.setRole(serverIdentifier.getRole());
         
         // Add pool information if this is a pool server
         if (environment != null && environment.contains("pool")) {
@@ -413,7 +413,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                 serverType,
                 maxCapacity
             );
-            deregister.setRole(serverIdentifier.getFamily());
+            deregister.setRole(serverIdentifier.getRole());
             
             messageBus.send("proxy:" + proxyId, "server.deregistration", deregister);
         }
@@ -634,7 +634,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         // Find available lobby servers from cached server announcements
         for (Map.Entry<String, ServerInfo> entry : availableServers.entrySet()) {
             ServerInfo info = entry.getValue();
-            if (info.family != null && info.family.toLowerCase().contains("lobby") && "AVAILABLE".equals(info.status)) {
+            if (info.role != null && info.role.toLowerCase().contains("lobby") && "AVAILABLE".equals(info.status)) {
                 return entry.getKey();
             }
         }
@@ -676,7 +676,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                 "AVAILABLE",  // Server announcements imply the server is available
                 announcement.getAddress(),
                 announcement.getPort(),
-                announcement.getFamily()
+                announcement.getRole()
             ));
         }
     }
@@ -686,14 +686,14 @@ public class ServerLifecycleFeature implements PluginFeature {
         final String status;
         final String host;
         final int port;
-        final String family;
+        final String role;
         
-        ServerInfo(String serverType, String status, String host, int port, String family) {
+        ServerInfo(String serverType, String status, String host, int port, String role) {
             this.serverType = serverType;
             this.status = status;
             this.host = host;
             this.port = port;
-            this.family = family;
+            this.role = role;
         }
     }
 }

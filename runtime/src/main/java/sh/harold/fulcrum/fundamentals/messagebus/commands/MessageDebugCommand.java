@@ -87,8 +87,7 @@ public class MessageDebugCommand {
             msg.setPlayerCount(getIntParam(params, "players", 0));
             msg.setMaxCapacity(getIntParam(params, "capacity", 100));
             msg.setUptime(System.currentTimeMillis());
-            msg.setFamily(serverIdentifier.getFamily());
-            msg.setRole("game");
+            msg.setRole(serverIdentifier.getRole());
             return msg;
         });
         
@@ -121,7 +120,7 @@ public class MessageDebugCommand {
             );
             request.setAddress(serverIdentifier.getAddress());
             request.setPort(serverIdentifier.getPort());
-            request.setFamily(serverIdentifier.getFamily());
+            request.setRole(serverIdentifier.getRole());
             return request;
         });
         

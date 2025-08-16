@@ -15,7 +15,6 @@ public class RegistrationRequest {
     private String address;
     private int port;
     private int maxCapacity;
-    private String family;
     private Map<String, Object> metadata;
     
     // Getters and setters
@@ -65,14 +64,6 @@ public class RegistrationRequest {
     
     public void setMaxCapacity(int maxCapacity) {
         this.maxCapacity = maxCapacity;
-    }
-    
-    public String getFamily() {
-        return family;
-    }
-    
-    public void setFamily(String family) {
-        this.family = family;
     }
     
     public Map<String, Object> getMetadata() {

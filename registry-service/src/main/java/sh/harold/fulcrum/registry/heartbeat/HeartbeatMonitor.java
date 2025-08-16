@@ -324,7 +324,7 @@ public class HeartbeatMonitor {
         try {
             Map<String, Object> message = new HashMap<>();
             message.put("serverId", server.getServerId());
-            message.put("serverFamily", server.getRole() != null ? server.getRole() : "default");
+            message.put("role", server.getRole() != null ? server.getRole() : "default");
             message.put("oldStatus", oldStatus.toString());
             message.put("newStatus", newStatus.toString());
             message.put("timestamp", System.currentTimeMillis());

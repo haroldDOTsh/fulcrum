@@ -353,7 +353,7 @@ public class RegistrationHandler {
                 Map<String, Object> announcement = new HashMap<>();
                 announcement.put("serverId", permanentId);
                 announcement.put("serverType", request.getServerType());
-                announcement.put("family", request.getFamily() != null ? request.getFamily() : "default");
+                announcement.put("role", request.getRole() != null ? request.getRole() : "default");
                 announcement.put("address", request.getAddress());
                 announcement.put("port", request.getPort());
                 announcement.put("maxCapacity", request.getMaxCapacity());

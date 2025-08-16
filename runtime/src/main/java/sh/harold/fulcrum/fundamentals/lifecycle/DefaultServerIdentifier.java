@@ -11,7 +11,7 @@ import java.util.UUID;
 public class DefaultServerIdentifier implements ServerIdentifier {
     
     private volatile String serverId;  // Made volatile and non-final for updates
-    private final String family;
+    private final String role;
     private final String type;
     private final UUID instanceUuid;
     private final String address;
@@ -19,12 +19,12 @@ public class DefaultServerIdentifier implements ServerIdentifier {
     private final int softCap;
     private final int hardCap;
     
-    public DefaultServerIdentifier(String serverId, String family, String type,
+    public DefaultServerIdentifier(String serverId, String role, String type,
                                    UUID instanceUuid,
                                    String address, int port,
                                    int softCap, int hardCap) {
         this.serverId = serverId;
-        this.family = family;
+        this.role = role;
         this.type = type;
         this.instanceUuid = instanceUuid;
         this.address = address;
@@ -47,8 +47,8 @@ public class DefaultServerIdentifier implements ServerIdentifier {
     }
     
     @Override
-    public String getFamily() {
-        return family;
+    public String getRole() {
+        return role;
     }
     
     @Override
