@@ -4,19 +4,22 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
-import sh.harold.fulcrum.registry.handler.RegistrationHandler;
-import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
-import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
-import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
+import sh.harold.fulcrum.registry.handler.RegistrationHandler;
+import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
+import sh.harold.fulcrum.registry.messagebus.RegistryMessageBus;
+import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
+import sh.harold.fulcrum.registry.server.ServerRegistry;
 
 import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -46,6 +49,7 @@ public class RegistryService {
     private RedisClient redisClient;
     private StatefulRedisConnection<String, String> connection;
     private StatefulRedisPubSubConnection<String, String> pubSubConnection;
+    private RegistryMessageBus messageBus;
     
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -60,7 +64,7 @@ public class RegistryService {
         this.idAllocator = new IdAllocator();
         this.serverRegistry = new ServerRegistry(idAllocator);
         this.proxyRegistry = new ProxyRegistry(idAllocator);
-        this.heartbeatMonitor = new HeartbeatMonitor(serverRegistry, scheduler);
+        this.heartbeatMonitor = new HeartbeatMonitor(serverRegistry, proxyRegistry, scheduler);
         
         // Initialize registration handler with debug mode
         this.registrationHandler = new RegistrationHandler(
@@ -129,6 +133,9 @@ public class RegistryService {
      * Start the registry service
      */
     public void start() {
+        // Initialize ANSI console support for Windows
+        AnsiConsole.systemInstall();
+        
         displayBanner();
         LOGGER.info("Starting Fulcrum Registry Service...");
         LOGGER.info("Debug mode: {}", debugMode ? "ENABLED" : "DISABLED");
@@ -137,8 +144,17 @@ public class RegistryService {
             // Connect to Redis
             connectToRedis();
             
-            // Set up message handlers
+            // Initialize MessageBus
+            messageBus = new RegistryMessageBus(redisClient, "registry-service");
+            
+            // Set MessageBus in RegistrationHandler
+            registrationHandler.setMessageBus(messageBus);
+            
+            // Set up message handlers (still need direct connections for backward compatibility)
             registrationHandler.initialize(connection, pubSubConnection);
+            
+            // Configure HeartbeatMonitor with MessageBus for status change broadcasting
+            heartbeatMonitor.setMessageBus(messageBus);
             
             // Start heartbeat monitoring
             heartbeatMonitor.start();
@@ -297,6 +313,11 @@ public class RegistryService {
             // Stop heartbeat monitoring
             heartbeatMonitor.stop();
             
+            // Shutdown MessageBus
+            if (messageBus != null) {
+                messageBus.shutdown();
+            }
+            
             // Close Redis connections
             if (pubSubConnection != null) {
                 pubSubConnection.close();
@@ -317,6 +338,9 @@ public class RegistryService {
             // Release shutdown latch
             shutdownLatch.countDown();
             
+            // Uninstall ANSI console
+            AnsiConsole.systemUninstall();
+            
             LOGGER.info("Registry Service shut down successfully");
         } catch (Exception e) {
             LOGGER.error("Error during shutdown", e);
@@ -327,18 +351,19 @@ public class RegistryService {
      * Display the startup banner
      */
     private void displayBanner() {
+        // Always use ASCII characters for maximum compatibility
         System.out.println();
-        System.out.println("  ███████╗██╗   ██╗██╗      ██████╗██████╗ ██╗   ██╗███╗   ███╗");
-        System.out.println("  ██╔════╝██║   ██║██║     ██╔════╝██╔══██╗██║   ██║████╗ ████║");
-        System.out.println("  █████╗  ██║   ██║██║     ██║     ██████╔╝██║   ██║██╔████╔██║");
-        System.out.println("  ██╔══╝  ██║   ██║██║     ██║     ██╔══██╗██║   ██║██║╚██╔╝██║");
-        System.out.println("  ██║     ╚██████╔╝███████╗╚██████╗██║  ██║╚██████╔╝██║ ╚═╝ ██║");
-        System.out.println("  ╚═╝      ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝");
+        System.out.println("  ######  #     # #       ##### #####  #     # #     #");
+        System.out.println("  #       #     # #      #      #    # #     # ##   ##");
+        System.out.println("  #####   #     # #      #      #    # #     # # # # #");
+        System.out.println("  #       #     # #      #      #####  #     # #  #  #");
+        System.out.println("  #       #     # #      #      #   #  #     # #     #");
+        System.out.println("  #        #####  ####### ##### #    #  #####  #     #");
         System.out.println();
         System.out.println("           Central Server Registry Service");
-        System.out.println("              © harold.sh 2025");
+        System.out.println("              (c) harold.sh 2025");
         System.out.println();
-        System.out.println("═══════════════════════════════════════════════════════════════");
+        System.out.println("===============================================================");
         System.out.println();
     }
     
