@@ -29,6 +29,9 @@ public class InteractiveLauncher {
         command.add("-Xms256m");
         command.add("-Xmx512m");
         
+        // Enable ANSI colors on Windows
+        command.add("-Djansi.passthrough=true");
+        
         // Use -jar to run the shadow JAR directly with absolute path
         command.add("-jar");
         command.add(jarPath.toAbsolutePath().toString());
