@@ -79,6 +79,24 @@ tasks.shadowJar {
     }
 }
 
+// Fix the task dependencies for distribution tasks
+tasks.named("distZip") {
+    dependsOn(tasks.shadowJar)
+}
+
+tasks.named("distTar") {
+    dependsOn(tasks.shadowJar)
+}
+
+tasks.named("startScripts") {
+    dependsOn(tasks.shadowJar)
+}
+
+// Fix dependency for shadow plugin tasks
+tasks.named("startShadowScripts") {
+    dependsOn(tasks.jar)
+}
+
 // Custom run task for the Registry Service using InteractiveLauncher for proper console support
 tasks.register<JavaExec>("runRegistry") {
     group = "application"
