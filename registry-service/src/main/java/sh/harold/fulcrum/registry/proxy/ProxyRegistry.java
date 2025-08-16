@@ -105,7 +105,42 @@ public class ProxyRegistry {
         RegisteredProxyData proxy = proxies.get(proxyId);
         if (proxy != null) {
             proxy.setLastHeartbeat(System.currentTimeMillis());
+            proxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
+            LOGGER.debug("Updated heartbeat for proxy: {}", proxyId);
+        } else {
+            LOGGER.warn("Received heartbeat for unregistered proxy: {}", proxyId);
         }
+    }
+    
+    /**
+     * Update proxy status
+     * @param proxyId The proxy ID
+     * @param status The new status
+     */
+    public void updateProxyStatus(String proxyId, RegisteredProxyData.Status status) {
+        RegisteredProxyData proxy = proxies.get(proxyId);
+        if (proxy != null) {
+            RegisteredProxyData.Status oldStatus = proxy.getStatus();
+            if (oldStatus != status) {
+                proxy.setStatus(status);
+                LOGGER.info("Proxy {} status changed from {} to {}", proxyId, oldStatus, status);
+                
+                // Remove proxy if it's dead (ephemeral behavior)
+                if (status == RegisteredProxyData.Status.DEAD) {
+                    deregisterProxy(proxyId);
+                    LOGGER.info("Removed dead proxy {} from registry (ephemeral)", proxyId);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Check if a proxy is registered
+     * @param proxyId The proxy ID
+     * @return true if the proxy is registered
+     */
+    public boolean hasProxy(String proxyId) {
+        return proxies.containsKey(proxyId);
     }
     
     /**
