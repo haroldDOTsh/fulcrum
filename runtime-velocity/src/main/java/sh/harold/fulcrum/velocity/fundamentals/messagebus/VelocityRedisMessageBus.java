@@ -19,6 +19,7 @@ import sh.harold.fulcrum.velocity.config.RedisConfig;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -47,6 +48,9 @@ public class VelocityRedisMessageBus implements MessageBus {
     // Request-response tracking
     private final Map<UUID, CompletableFuture<Object>> pendingRequests = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    
+    // Track additional subscribed channels
+    private final Set<String> additionalChannels = new ConcurrentHashMap<>().newKeySet();
     
     private volatile boolean running = true;
     
@@ -110,6 +114,47 @@ public class VelocityRedisMessageBus implements MessageBus {
                 if (!running) return;
                 
                 try {
+                    // First check if this is an additional subscribed channel
+                    if (additionalChannels.contains(channel)) {
+                        // Try to parse as MessageEnvelope, but if it fails,
+                        // create a synthetic envelope
+                        MessageEnvelope envelope = null;
+                        try {
+                            envelope = deserializeEnvelope(message);
+                        } catch (Exception e) {
+                            // Not a MessageEnvelope, try to parse as Map
+                            try {
+                                Map<String, Object> payload = objectMapper.readValue(message, Map.class);
+                                // Create synthetic envelope
+                                envelope = new MessageEnvelope(
+                                    channel, // Use channel as type
+                                    "unknown",
+                                    serverId,
+                                    null,
+                                    System.currentTimeMillis(),
+                                    1,
+                                    objectMapper.valueToTree(payload)
+                                );
+                            } catch (Exception ex) {
+                                logger.fine("Failed to parse message on channel " + channel + ": " + ex.getMessage());
+                                return;
+                            }
+                        }
+                        
+                        // Deliver to handlers registered for this channel
+                        List<MessageHandler> channelHandlers = handlers.get(channel);
+                        if (channelHandlers != null) {
+                            for (MessageHandler handler : channelHandlers) {
+                                try {
+                                    handler.handle(envelope);
+                                } catch (Exception e) {
+                                    logger.log(Level.WARNING, "Error handling message on channel: " + channel, e);
+                                }
+                            }
+                        }
+                        return;
+                    }
+                    
                     MessageEnvelope envelope = deserializeEnvelope(message);
                     
                     // If envelope type is null, it's not a valid MessageEnvelope
@@ -160,13 +205,30 @@ public class VelocityRedisMessageBus implements MessageBus {
     @Override
     public void broadcast(String type, Object payload) {
         try {
-            MessageEnvelope envelope = createEnvelope(type, null, payload);
-            String serialized = serializeEnvelope(envelope);
-            
-            RedisCommands<String, String> commands = connection.sync();
-            commands.publish(BROADCAST_CHANNEL, serialized);
-            
-            logger.fine("Broadcasted message type: " + type);
+            // Check if this is a raw channel name (contains colon)
+            if (type.contains(":") && !type.startsWith("fulcrum:")) {
+                // Broadcast directly to the raw channel
+                String serialized;
+                if (payload instanceof String) {
+                    serialized = (String) payload;
+                } else {
+                    serialized = objectMapper.writeValueAsString(payload);
+                }
+                
+                RedisCommands<String, String> commands = connection.sync();
+                commands.publish(type, serialized);
+                
+                logger.fine("Broadcasted to raw channel: " + type);
+            } else {
+                // Use the standard MessageEnvelope format
+                MessageEnvelope envelope = createEnvelope(type, null, payload);
+                String serialized = serializeEnvelope(envelope);
+                
+                RedisCommands<String, String> commands = connection.sync();
+                commands.publish(BROADCAST_CHANNEL, serialized);
+                
+                logger.fine("Broadcasted message type: " + type);
+            }
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to broadcast message", e);
         }
@@ -235,6 +297,17 @@ public class VelocityRedisMessageBus implements MessageBus {
     @Override
     public void subscribe(String type, MessageHandler handler) {
         handlers.computeIfAbsent(type, k -> new CopyOnWriteArrayList<>()).add(handler);
+        
+        // Check if this looks like a raw channel name (contains colon)
+        // and subscribe to it directly in Redis
+        if (type.contains(":") && !type.startsWith("fulcrum:")) {
+            if (additionalChannels.add(type)) {
+                RedisPubSubCommands<String, String> pubSubCommands = pubSubConnection.sync();
+                pubSubCommands.subscribe(type);
+                logger.info("Subscribed to additional Redis channel: " + type);
+            }
+        }
+        
         logger.fine("Subscribed handler for type: " + type);
     }
     

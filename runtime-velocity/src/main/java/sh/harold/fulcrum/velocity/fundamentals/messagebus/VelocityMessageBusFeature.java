@@ -31,8 +31,9 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     private MessageBus messageBus;
     private RedisClient redisClient;
     private StatefulRedisConnection<String, String> redisConnection;
-    private String proxyId;
-    private int proxyIndex;
+    private String tempProxyId;  // Temporary ID until Registry assigns permanent one
+    private String permanentProxyId;  // Permanent ID from Registry
+    private int proxyIndex = -1;  // -1 indicates no permanent assignment yet
     
     @Override
     public String getName() {
@@ -77,27 +78,25 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             config.setMode("redis"); // Default to Redis for production
         }
         
+        // Generate temporary ID for initial use
+        tempProxyId = "temp-proxy-" + java.util.UUID.randomUUID().toString();
+        logger.info("Generated temporary proxy ID: {}", tempProxyId);
+        
         // Create appropriate message bus based on configuration
         if (config.isRedisMode()) {
             RedisConfig redisConfig = configLoader.getConfig(RedisConfig.class);
             if (redisConfig == null) {
                 logger.warn("Redis config not found, falling back to simple message bus");
-                // Use simple proxy ID for non-Redis mode
-                proxyId = "fulcrum-proxy-1";
-                proxyIndex = 1;
-                messageBus = new VelocitySimpleMessageBus(proxyId, proxy);
+                messageBus = new VelocitySimpleMessageBus(tempProxyId, proxy);
             } else {
-                logger.info("Initializing Redis-based message bus");
+                logger.info("Initializing Redis-based message bus with temporary ID");
                 initializeRedisConnection(redisConfig);
-                allocateProxySlot();
-                messageBus = new VelocityRedisMessageBus(proxyId, proxy, redisConfig);
+                // Do NOT allocate proxy slot - Registry will assign the ID
+                messageBus = new VelocityRedisMessageBus(tempProxyId, proxy, redisConfig);
             }
         } else {
-            logger.info("Using simple message bus");
-            // Use simple proxy ID for non-Redis mode
-            proxyId = "fulcrum-proxy-1";
-            proxyIndex = 1;
-            messageBus = new VelocitySimpleMessageBus(proxyId, proxy);
+            logger.info("Using simple message bus with temporary ID");
+            messageBus = new VelocitySimpleMessageBus(tempProxyId, proxy);
         }
         
         // Register message bus service BEFORE other features try to use it
@@ -108,11 +107,12 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             logger.info("Received registration response");
         });
         
-        messageBus.subscribe("server.heartbeat", envelope -> {
+        messageBus.subscribe("server:heartbeat", envelope -> {
             logger.debug("Received heartbeat message");
         });
         
-        logger.info("MessageBus feature initialized with proxy ID: {} (index: {})", proxyId, proxyIndex);
+        logger.info("MessageBus feature initialized with temporary ID: {}", tempProxyId);
+        logger.info("Waiting for Registry Service to assign permanent proxy ID...");
     }
     
     private void initializeRedisConnection(RedisConfig config) {
@@ -151,79 +151,39 @@ public class VelocityMessageBusFeature implements VelocityFeature {
         }
     }
     
-    private void allocateProxySlot() {
-        // Allocate a proxy slot using Redis SETNX for atomic operations
-        try {
-            RedisCommands<String, String> commands = redisConnection.sync();
-            
-            // Find the first available slot from 1-100
-            for (int i = 1; i <= 100; i++) {
-                String slotKey = "fulcrum:proxy:slot:" + i;
-                
-                // Try to claim the slot with TTL of 60 seconds using SetArgs for NX and EX
-                SetArgs setArgs = SetArgs.Builder.nx().ex(60);
-                String result = commands.set(slotKey, String.valueOf(System.currentTimeMillis()), setArgs);
-                
-                if ("OK".equals(result)) {
-                    // Successfully claimed the slot
-                    proxyIndex = i;
-                    proxyId = "fulcrum-proxy-" + i;
-                    
-                    // Start heartbeat to maintain the slot
-                    startSlotHeartbeat(slotKey);
-                    
-                    logger.info("Allocated proxy slot: {}", i);
-                    return;
-                }
+    /**
+     * Update the proxy ID when Registry Service assigns a permanent one
+     */
+    public void updateProxyId(String newProxyId) {
+        String oldId = getCurrentProxyId();
+        this.permanentProxyId = newProxyId;
+        
+        // Extract index from permanent ID if it follows the pattern
+        if (newProxyId != null && newProxyId.startsWith("fulcrum-proxy-")) {
+            try {
+                String indexStr = newProxyId.substring("fulcrum-proxy-".length());
+                this.proxyIndex = Integer.parseInt(indexStr);
+            } catch (NumberFormatException e) {
+                this.proxyIndex = 0;
             }
-            
-            // No slots available, use overflow slot with timestamp
-            logger.warn("All proxy slots full, using overflow slot");
-            proxyIndex = 999;
-            proxyId = "fulcrum-proxy-overflow-" + System.currentTimeMillis();
-            
-        } catch (Exception e) {
-            logger.error("Failed to allocate proxy slot, using fallback: {}", e.getMessage());
-            proxyId = "fulcrum-proxy-fallback";
-            proxyIndex = 0;
         }
+        
+        logger.info("Updated proxy ID from {} to {} (index: {})", oldId, newProxyId, proxyIndex);
+        
+        // Note: The message bus instances will continue using the old ID internally,
+        // but VelocityServerLifecycleFeature will use the updated ID for all external communications
     }
     
-    private void startSlotHeartbeat(String slotKey) {
-        // Start a scheduled task to refresh the TTL every 30 seconds
-        proxy.getScheduler()
-            .buildTask(plugin, () -> {
-                try {
-                    RedisCommands<String, String> commands = redisConnection.sync();
-                    Boolean result = commands.expire(slotKey, 60); // Refresh TTL to 60 seconds
-                    if (Boolean.TRUE.equals(result)) {
-                        logger.debug("Refreshed TTL for proxy slot {}", proxyIndex);
-                    } else {
-                        logger.warn("Failed to refresh TTL for proxy slot {} - key may not exist", proxyIndex);
-                    }
-                } catch (Exception e) {
-                    logger.warn("Failed to refresh proxy slot TTL: {}", e.getMessage());
-                }
-            })
-            .repeat(Duration.ofSeconds(30))
-            .schedule();
+    /**
+     * Get the current proxy ID (permanent if assigned, temporary otherwise)
+     */
+    public String getCurrentProxyId() {
+        return permanentProxyId != null ? permanentProxyId : tempProxyId;
     }
     
     @Override
     public void shutdown() {
-        // Release the proxy slot if using Redis
-        if (redisConnection != null && redisConnection.isOpen() && proxyIndex > 0 && proxyIndex <= 100) {
-            try {
-                RedisCommands<String, String> commands = redisConnection.sync();
-                String slotKey = "fulcrum:proxy:slot:" + proxyIndex;
-                Long deleted = commands.del(slotKey);
-                if (deleted > 0) {
-                    logger.info("Released proxy slot: {}", proxyIndex);
-                }
-            } catch (Exception e) {
-                logger.warn("Failed to release proxy slot: {}", e.getMessage());
-            }
-        }
+        // No slot to release since Registry Service manages IDs
         
         if (messageBus != null) {
             logger.info("Shutting down message bus");
@@ -246,16 +206,25 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     }
     
     /**
-     * Get the allocated proxy ID
+     * Get the proxy ID (for backward compatibility)
+     * @deprecated Use getCurrentProxyId() instead
      */
+    @Deprecated
     public String getProxyId() {
-        return proxyId;
+        return getCurrentProxyId();
     }
     
     /**
-     * Get the allocated proxy index
+     * Get the proxy index (-1 if no permanent ID assigned yet)
      */
     public int getProxyIndex() {
         return proxyIndex;
+    }
+    
+    /**
+     * Check if a permanent proxy ID has been assigned
+     */
+    public boolean hasPermanentId() {
+        return permanentProxyId != null;
     }
 }
