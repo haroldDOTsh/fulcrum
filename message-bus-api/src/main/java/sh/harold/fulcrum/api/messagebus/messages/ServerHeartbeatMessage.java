@@ -21,7 +21,6 @@ public class ServerHeartbeatMessage implements Serializable {
     private String role;              // From environment file (e.g., "game", "lobby", "auth")
     private Set<String> availablePools; // For pool-specific servers
     private long timestamp;
-    private long responseTime;        // Response time in milliseconds for optimal selection
     
     public ServerHeartbeatMessage() {
         this.availablePools = new HashSet<>();
@@ -113,14 +112,6 @@ public class ServerHeartbeatMessage implements Serializable {
     
     public void setTimestamp(long timestamp) {
         this.timestamp = timestamp;
-    }
-    
-    public long getResponseTime() {
-        return responseTime;
-    }
-    
-    public void setResponseTime(long responseTime) {
-        this.responseTime = responseTime;
     }
     
     /**

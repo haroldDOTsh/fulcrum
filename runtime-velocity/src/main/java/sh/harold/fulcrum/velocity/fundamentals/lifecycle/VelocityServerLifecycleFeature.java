@@ -391,8 +391,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     heartbeat.getFamily(),
                     heartbeat.getPlayerCount(),
                     heartbeat.getMaxCapacity(),
-                    heartbeat.getTps(),
-                    heartbeat.getResponseTime()
+                    heartbeat.getTps()
                 );
             }
             
@@ -541,8 +540,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                         statusChange.getServerFamily(),
                         statusChange.getPlayerCount(),
                         statusChange.getMaxPlayers(),
-                        statusChange.getTps(),
-                        statusChange.getResponseTime()
+                        statusChange.getTps()
                     );
                 } else if (statusChange.getNewStatus() == ServerStatusChangeMessage.Status.DEAD) {
                     connectionHandler.removeServerMetrics(serverId);

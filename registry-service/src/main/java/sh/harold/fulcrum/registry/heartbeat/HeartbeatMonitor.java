@@ -333,7 +333,6 @@ public class HeartbeatMonitor {
             message.put("playerCount", server.getPlayerCount());
             message.put("maxPlayers", server.getMaxCapacity());
             message.put("tps", server.getTps());
-            message.put("responseTime", 0); // Default response time
             
             // Use MessageBus if available, otherwise fall back to direct Redis
             if (messageBus != null) {

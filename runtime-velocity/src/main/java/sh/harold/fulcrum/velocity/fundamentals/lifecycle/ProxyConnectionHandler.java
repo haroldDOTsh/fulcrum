@@ -44,7 +44,6 @@ public class ProxyConnectionHandler {
         private int playerCount = 0;
         private int maxPlayers = 100;
         private double tps = 20.0;
-        private long responseTime = 0;
         private long lastUpdate = System.currentTimeMillis();
         
         public ServerMetrics(String serverId, String family) {
@@ -214,19 +213,18 @@ public class ProxyConnectionHandler {
     /**
      * Update server metrics from heartbeat or status change
      */
-    public void updateServerMetrics(String serverId, String family, int playerCount, 
-                                   int maxPlayers, double tps, long responseTime) {
-        ServerMetrics metrics = serverMetricsCache.computeIfAbsent(serverId, 
+    public void updateServerMetrics(String serverId, String family, int playerCount,
+                                   int maxPlayers, double tps) {
+        ServerMetrics metrics = serverMetricsCache.computeIfAbsent(serverId,
             k -> new ServerMetrics(serverId, family));
         
         metrics.playerCount = playerCount;
         metrics.maxPlayers = maxPlayers;
         metrics.tps = tps;
-        metrics.responseTime = responseTime;
         metrics.lastUpdate = System.currentTimeMillis();
         
-        logger.debug("Updated metrics for server {}: players={}/{}, tps={}, response={}ms",
-                    serverId, playerCount, maxPlayers, tps, responseTime);
+        logger.debug("Updated metrics for server {}: players={}/{}, tps={}",
+                    serverId, playerCount, maxPlayers, tps);
     }
     
     /**

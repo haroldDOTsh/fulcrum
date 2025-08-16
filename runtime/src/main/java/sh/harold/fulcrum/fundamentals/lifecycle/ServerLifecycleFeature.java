@@ -373,10 +373,6 @@ public class ServerLifecycleFeature implements PluginFeature {
         heartbeat.setMaxCapacity(maxCapacity);  // This is the hard cap
         heartbeat.setUptime(System.currentTimeMillis() - startTime);
         
-        // Estimate response time based on tick timing
-        long responseTime = (long) ((20.0 - avgTps) * 50); // Rough estimate in ms
-        heartbeat.setResponseTime(Math.max(0, responseTime));
-        
         // Set role from the environment (family field is deprecated)
         heartbeat.setRole(serverIdentifier.getFamily());
         
@@ -390,8 +386,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         
         LOGGER.fine("Sent heartbeat - Players: " + heartbeat.getPlayerCount() +
                    "/" + heartbeat.getMaxCapacity() +
-                   ", TPS: " + String.format("%.1f", heartbeat.getTps()) +
-                   ", Response: " + heartbeat.getResponseTime() + "ms");
+                   ", TPS: " + String.format("%.1f", heartbeat.getTps()));
     }
     
     @Override

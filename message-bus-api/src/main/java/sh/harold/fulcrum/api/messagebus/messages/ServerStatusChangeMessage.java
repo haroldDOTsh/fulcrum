@@ -24,7 +24,6 @@ public class ServerStatusChangeMessage implements Serializable {
     private int playerCount;
     private int maxPlayers;
     private double tps;
-    private long responseTime;
     
     public ServerStatusChangeMessage() {
         this.timestamp = System.currentTimeMillis();
@@ -102,14 +101,6 @@ public class ServerStatusChangeMessage implements Serializable {
     
     public void setTps(double tps) {
         this.tps = tps;
-    }
-    
-    public long getResponseTime() {
-        return responseTime;
-    }
-    
-    public void setResponseTime(long responseTime) {
-        this.responseTime = responseTime;
     }
     
     @Override
