@@ -55,8 +55,8 @@ public class ProxyDiscoveryResponse implements Serializable {
             return new ProxyInfo(
                 announcement.getProxyId(),
                 announcement.getAddress(),
-                announcement.getCapacity(),
-                announcement.getCurrentLoad()
+                announcement.getHardCap(),
+                announcement.getCurrentPlayerCount()
             );
         }
     }

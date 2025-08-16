@@ -43,31 +43,6 @@ public class ProxyAnnouncementMessage implements Serializable {
         this(proxyId, proxyIndex, hardCap, softCap, currentPlayerCount, null, System.currentTimeMillis());
     }
     
-    // Backward compatibility constructor
-    public ProxyAnnouncementMessage(String proxyId, String address, int capacity, int currentLoad) {
-        this.proxyId = proxyId;
-        this.proxyIndex = extractIndexFromId(proxyId);
-        this.address = address;
-        this.hardCap = capacity;
-        this.softCap = (int)(capacity * 0.5); // Default soft cap at 50%
-        this.currentPlayerCount = currentLoad;
-        this.timestamp = System.currentTimeMillis();
-    }
-    
-    private static int extractIndexFromId(String proxyId) {
-        // Extract index from ID format: fulcrum-proxy-N
-        if (proxyId != null && proxyId.startsWith("fulcrum-proxy-")) {
-            try {
-                String indexStr = proxyId.substring("fulcrum-proxy-".length());
-                return Integer.parseInt(indexStr);
-            } catch (NumberFormatException e) {
-                // Fallback for overflow or special cases
-                return 0;
-            }
-        }
-        return 0;
-    }
-    
     public String getProxyId() {
         return proxyId;
     }
@@ -94,15 +69,6 @@ public class ProxyAnnouncementMessage implements Serializable {
     
     public long getTimestamp() {
         return timestamp;
-    }
-    
-    // Backward compatibility methods
-    public int getCapacity() {
-        return hardCap;
-    }
-    
-    public int getCurrentLoad() {
-        return currentPlayerCount;
     }
     
     /**
