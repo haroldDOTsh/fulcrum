@@ -105,8 +105,8 @@ public class ConfigLoader {
         if (lifecycleSection != null) {
             ServerLifecycleConfig lifecycleConfig = new ServerLifecycleConfig();
             
-            // Set heartbeat interval and timeout
-            lifecycleConfig.setHeartbeatInterval((Integer) lifecycleSection.getOrDefault("heartbeat-interval", 30));
+            // Don't read heartbeat interval from config - always use hardcoded value of 2 seconds
+            lifecycleConfig.setHeartbeatInterval(2);  // Always 2 seconds, not configurable
             lifecycleConfig.setTimeoutSeconds((Integer) lifecycleSection.getOrDefault("timeout", 90));
             
             // Set capacity values (hard and soft caps)
@@ -117,7 +117,7 @@ public class ConfigLoader {
         } else {
             // Create default config if not specified
             ServerLifecycleConfig lifecycleConfig = new ServerLifecycleConfig();
-            lifecycleConfig.setHeartbeatInterval(30);
+            lifecycleConfig.setHeartbeatInterval(2);  // Always 2 seconds, not configurable
             lifecycleConfig.setTimeoutSeconds(90);
             lifecycleConfig.setHardCap(1000);
             lifecycleConfig.setSoftCap(500);

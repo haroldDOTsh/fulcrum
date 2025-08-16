@@ -6,7 +6,7 @@ package sh.harold.fulcrum.velocity.config;
  */
 public class ServerLifecycleConfig {
     private boolean enabled = true;
-    private int heartbeatInterval = 30; // seconds
+    private int heartbeatInterval = 2; // seconds - must be less than registry timeout (5s)
     private int registrationTimeout = 60; // seconds
     private int hardCap = 1000;  // Maximum players allowed (hard limit)
     private int softCap = 500;   // Preferred player limit (soft limit)
