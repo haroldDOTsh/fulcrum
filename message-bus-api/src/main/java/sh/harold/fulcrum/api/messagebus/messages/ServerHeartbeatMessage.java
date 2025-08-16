@@ -17,7 +17,6 @@ public class ServerHeartbeatMessage implements Serializable {
     private int playerCount;
     private int maxCapacity;
     private long uptime;              // Milliseconds since server start
-    private String family;            // From environment file (e.g., "production", "development")
     private String role;              // From environment file (e.g., "game", "lobby", "auth")
     private Set<String> availablePools; // For pool-specific servers
     private long timestamp;
@@ -80,14 +79,6 @@ public class ServerHeartbeatMessage implements Serializable {
     
     public void setUptime(long uptime) {
         this.uptime = uptime;
-    }
-    
-    public String getFamily() {
-        return family;
-    }
-    
-    public void setFamily(String family) {
-        this.family = family;
     }
     
     public String getRole() {

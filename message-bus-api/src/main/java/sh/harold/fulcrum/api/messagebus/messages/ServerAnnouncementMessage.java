@@ -12,18 +12,18 @@ public class ServerAnnouncementMessage implements Serializable {
     private final String serverId;     // The assigned server ID
     private final String serverType;   // e.g., "mini", "mega", "hub"
     private final String environment;  // Environment identifier
-    private final String family;       // Server family/role
+    private final String role;         // Server role
     private final int capacity;        // Max player capacity
     private final String address;      // Server address for proxy connection
     private final int port;           // Server port
     
-    public ServerAnnouncementMessage(String serverId, String serverType, 
-                                    String environment, String family,
+    public ServerAnnouncementMessage(String serverId, String serverType,
+                                    String environment, String role,
                                     int capacity, String address, int port) {
         this.serverId = serverId;
         this.serverType = serverType;
         this.environment = environment;
-        this.family = family;
+        this.role = role;
         this.capacity = capacity;
         this.address = address;
         this.port = port;
@@ -41,8 +41,8 @@ public class ServerAnnouncementMessage implements Serializable {
         return environment;
     }
     
-    public String getFamily() {
-        return family;
+    public String getRole() {
+        return role;
     }
     
     public int getCapacity() {
@@ -59,7 +59,7 @@ public class ServerAnnouncementMessage implements Serializable {
     
     @Override
     public String toString() {
-        return String.format("ServerAnnouncement[id=%s, type=%s, env=%s, family=%s, address=%s:%d]",
-                serverId, serverType, environment, family, address, port);
+        return String.format("ServerAnnouncement[id=%s, type=%s, env=%s, role=%s, address=%s:%d]",
+                serverId, serverType, environment, role, address, port);
     }
 }

@@ -14,7 +14,6 @@ public class ServerRegistrationRequest implements Serializable {
     private int maxCapacity;      // Maximum player capacity
     private String address;       // Server IP address
     private int port;            // Server port
-    private String family;        // From environment file (e.g., "production", "development")
     private String role;          // From environment file (e.g., "game", "lobby", "auth")
     
     public ServerRegistrationRequest() {
@@ -68,14 +67,6 @@ public class ServerRegistrationRequest implements Serializable {
         this.port = port;
     }
     
-    public String getFamily() {
-        return family;
-    }
-    
-    public void setFamily(String family) {
-        this.family = family;
-    }
-    
     public String getRole() {
         return role;
     }
@@ -86,7 +77,7 @@ public class ServerRegistrationRequest implements Serializable {
     
     @Override
     public String toString() {
-        return String.format("ServerRegistrationRequest[tempId=%s, type=%s, capacity=%d, family=%s, role=%s]",
-                tempId, serverType, maxCapacity, family, role);
+        return String.format("ServerRegistrationRequest[tempId=%s, type=%s, capacity=%d, role=%s]",
+                tempId, serverType, maxCapacity, role);
     }
 }

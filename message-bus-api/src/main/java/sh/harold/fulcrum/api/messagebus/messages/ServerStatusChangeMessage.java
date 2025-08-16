@@ -15,7 +15,7 @@ public class ServerStatusChangeMessage implements Serializable {
     }
     
     private String serverId;
-    private String serverFamily;
+    private String role;
     private Status oldStatus;
     private Status newStatus;
     private long timestamp;
@@ -29,11 +29,11 @@ public class ServerStatusChangeMessage implements Serializable {
         this.timestamp = System.currentTimeMillis();
     }
     
-    public ServerStatusChangeMessage(String serverId, String serverFamily, 
+    public ServerStatusChangeMessage(String serverId, String role,
                                     Status oldStatus, Status newStatus) {
         this();
         this.serverId = serverId;
-        this.serverFamily = serverFamily;
+        this.role = role;
         this.oldStatus = oldStatus;
         this.newStatus = newStatus;
     }
@@ -47,12 +47,12 @@ public class ServerStatusChangeMessage implements Serializable {
         this.serverId = serverId;
     }
     
-    public String getServerFamily() {
-        return serverFamily;
+    public String getRole() {
+        return role;
     }
-    
-    public void setServerFamily(String serverFamily) {
-        this.serverFamily = serverFamily;
+
+    public void setRole(String role) {
+        this.role = role;
     }
     
     public Status getOldStatus() {
@@ -105,7 +105,7 @@ public class ServerStatusChangeMessage implements Serializable {
     
     @Override
     public String toString() {
-        return String.format("ServerStatusChangeMessage{serverId='%s', family='%s', %s->%s, players=%d/%d, tps=%.1f}",
-                serverId, serverFamily, oldStatus, newStatus, playerCount, maxPlayers, tps);
+        return String.format("ServerStatusChangeMessage{serverId='%s', role='%s', %s->%s, players=%d/%d, tps=%.1f}",
+                serverId, role, oldStatus, newStatus, playerCount, maxPlayers, tps);
     }
 }
