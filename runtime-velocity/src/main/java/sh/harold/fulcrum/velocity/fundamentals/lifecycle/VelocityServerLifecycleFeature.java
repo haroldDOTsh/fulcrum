@@ -11,10 +11,9 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.messages.*;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
+import sh.harold.fulcrum.api.messagebus.messages.ServerStatusChangeMessage;
 import sh.harold.fulcrum.velocity.config.ServerLifecycleConfig;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
-import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityRedisMessageBus;
-import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocitySimpleMessageBus;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
@@ -34,6 +33,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.ArrayList;
 import com.velocitypowered.api.proxy.Player;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -54,10 +54,16 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     private final ScheduledExecutorService scheduler;
     
     private MessageBus messageBus;
-    private String proxyId;
+    private String proxyId;  // Will be updated when Registry assigns permanent ID
     private ProxyAnnouncementMessage currentProxyData;
     private ScheduledFuture<?> heartbeatTask;
     private ScheduledFuture<?> cleanupTask;
+    private ScheduledFuture<?> registrationRetryTask;
+    private int registrationAttempts = 0;
+    private static final int MAX_REGISTRATION_ATTEMPTS = 5;
+    private static final int RETRY_INTERVAL_SECONDS = 10;
+    private boolean registeredWithRegistry = false;
+    private ServiceLocator serviceLocator;  // Store for later use in message handlers
     private final Map<String, ServerIdentifier> backendServers = new ConcurrentHashMap<>();
     private final Map<String, Long> serverHeartbeats = new ConcurrentHashMap<>();
     private final Map<String, ProxyAnnouncementMessage> proxyRegistry = new ConcurrentHashMap<>();
@@ -84,27 +90,36 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     
     @Override
     public void initialize(ServiceLocator services, Logger log) {
+        this.serviceLocator = services;  // Store for use in message handlers
         this.messageBus = services.getRequiredService(MessageBus.class);
         
-        // Get proxy ID and index from VelocityMessageBusFeature
-        // The MessageBus feature allocates slots using Redis
+        // Get temporary proxy ID from VelocityMessageBusFeature
         services.getService(VelocityMessageBusFeature.class).ifPresentOrElse(
-            messageBusFeature -> this.proxyId = messageBusFeature.getProxyId(),
-            () -> this.proxyId = "fulcrum-proxy-1" // Fallback if MessageBusFeature is not available
+            messageBusFeature -> {
+                this.proxyId = messageBusFeature.getCurrentProxyId();
+                logger.info("Using temporary proxy ID from MessageBusFeature: {}", proxyId);
+            },
+            () -> {
+                // Generate temporary ID if MessageBusFeature is not available
+                this.proxyId = "temp-proxy-" + UUID.randomUUID().toString();
+                logger.warn("MessageBusFeature not available, generated temporary ID: {}", proxyId);
+            }
         );
         
-        // Register proxy
-        registerSelfInRedis();
+        // DO NOT register in Redis yet - wait for Registry response
+        logger.info("Waiting for Registry Service to assign permanent proxy ID...");
         
-        // Send registration to Registry Service
+        // Send registration to Registry Service and start retry mechanism
         sendProxyRegistrationToRegistry();
         
         // Setup message handlers
         setupMessageHandlers();
         
-        // Start heartbeat and cleanup tasks
-        startHeartbeat();
+        // Start cleanup task immediately (heartbeat will start after registration)
         startCleanupTask();
+        
+        // DO NOT start heartbeat until registered with Registry Service
+        logger.info("Heartbeat will start after successful registration with Registry Service");
         
         // Register connection handler for when no backend servers are available
         connectionHandler = new ProxyConnectionHandler(proxy, proxyId, logger, this);
@@ -123,12 +138,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     
     private void sendProxyRegistrationToRegistry() {
         try {
-            // Generate a unique temp ID for this proxy instance
-            String tempId = "temp-proxy-" + UUID.randomUUID().toString();
-            
             // Send registration request to Registry Service using the expected format
             Map<String, Object> registrationRequest = new HashMap<>();
-            registrationRequest.put("tempId", tempId);
+            registrationRequest.put("tempId", proxyId);  // Use current proxy ID (temporary)
             registrationRequest.put("serverType", "proxy");
             registrationRequest.put("role", "proxy");
             registrationRequest.put("address", proxy.getBoundAddress().getHostString());
@@ -136,41 +148,75 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             registrationRequest.put("maxCapacity", config.getHardCap());
             registrationRequest.put("family", "proxy");
             
-            // Send as JSON string to match Registry Service expectations
-            ObjectMapper mapper = new ObjectMapper();
-            String json = mapper.writeValueAsString(registrationRequest);
+            // Use MessageBus to publish registration request
+            messageBus.broadcast("registry:register", registrationRequest);
+            logger.info("[ATTEMPT {}/{}] Sent proxy registration to Registry Service on channel 'registry:register' with tempId: {}",
+                       registrationAttempts, MAX_REGISTRATION_ATTEMPTS, proxyId);
+            logger.debug("Registration message: {}", registrationRequest);
             
-            // Publish ONLY to proxy:register channel - NOT to proxy:discovery
-            if (messageBus instanceof VelocityRedisMessageBus) {
-                VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-                var commands = redisMessageBus.getRedisConnection().sync();
-                
-                // No direct Redis interaction - keep architecture clean
-                // The response will be handled through the MessageBus
-                
-                // Send registration request
-                commands.publish("proxy:register", json);
-                logger.info("[SENT] Proxy registration to Registry Service on channel 'proxy:register' with tempId: {}", tempId);
-                logger.debug("Registration message: {}", json);
-                
-                // Schedule a retry if no response is received
-                scheduler.schedule(() -> {
-                    // Check if we got a permanent ID assigned
-                    if (proxyId == null || proxyId.startsWith("temp-")) {
-                        logger.warn("[TIMEOUT] No registration response received after 10 seconds, retrying...");
-                        sendProxyRegistrationToRegistry();
-                    } else {
-                        logger.info("[SUCCESS] Proxy registered with permanent ID: {}", proxyId);
-                    }
-                }, 10, TimeUnit.SECONDS);
-            }
+            // Schedule retry if no response is received
+            scheduleRegistrationRetry();
             
         } catch (Exception e) {
             logger.error("Failed to send proxy registration to Registry Service", e);
+            scheduleRegistrationRetry();
         }
     }
     
+    private void scheduleRegistrationRetry() {
+        // Cancel any existing retry task
+        if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
+            registrationRetryTask.cancel(false);
+        }
+        
+        // Increment BEFORE checking (fixes off-by-one error)
+        registrationAttempts++;
+        
+        // Check if we've exceeded max attempts
+        if (registrationAttempts > MAX_REGISTRATION_ATTEMPTS) {
+            logger.error("[CRITICAL] Failed to register with Registry Service after {} attempts", MAX_REGISTRATION_ATTEMPTS);
+            shutdownDueToRegistrationFailure();
+            return;
+        }
+        
+        // Schedule retry
+        registrationRetryTask = scheduler.schedule(() -> {
+            if (!registeredWithRegistry) {
+                logger.warn("[RETRY] No registration response received, attempting retry {}/{}",
+                           registrationAttempts, MAX_REGISTRATION_ATTEMPTS);
+                sendProxyRegistrationToRegistry();
+            }
+        }, RETRY_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+    
+    private void shutdownDueToRegistrationFailure() {
+        logger.error("============================================");
+        logger.error("CRITICAL: PROXY SHUTTING DOWN");
+        logger.error("============================================");
+        logger.error("Failed to register with Registry Service after {} attempts", MAX_REGISTRATION_ATTEMPTS);
+        logger.error("The Registry Service is either:");
+        logger.error("  1. Not running - please start the Registry Service");
+        logger.error("  2. Not accessible - check Redis connection");
+        logger.error("  3. Rejecting this proxy - check Registry logs");
+        logger.error("");
+        logger.error("Proxies MUST be registered with the central Registry Service");
+        logger.error("to receive permanent IDs and function properly.");
+        logger.error("============================================");
+        
+        // Give time for logs to be written
+        scheduler.schedule(() -> {
+            // Shutdown the proxy
+            proxy.shutdown();
+        }, 2, TimeUnit.SECONDS);
+    }
+    
     private void registerSelfInRedis() {
+        // Only register AFTER getting permanent ID from Registry
+        if (!registeredWithRegistry) {
+            logger.warn("Cannot register - not yet registered with Registry Service");
+            return;
+        }
+        
         // Create our proxy announcement with simplified capacity values
         String address = proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort();
         
@@ -185,30 +231,21 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             proxy.getPlayerCount()
         );
         
-        // Self-registration in Redis SET (proxies are leaders, no approval needed)
-        if (messageBus instanceof VelocityRedisMessageBus) {
-            VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-            var commands = redisMessageBus.getRedisConnection().sync();
-            
-            // Add to proxies set
-            commands.sadd(PROXIES_KEY, proxyId);
-            
-            // Store proxy info with TTL
-            String proxyKey = PROXY_INFO_PREFIX + proxyId;
-            Map<String, String> proxyData = new HashMap<>();
-            proxyData.put("address", address);
-            proxyData.put("type", "PROXY");
-            proxyData.put("hardCap", String.valueOf(config.getHardCap()));
-            proxyData.put("softCap", String.valueOf(config.getSoftCap()));
-            proxyData.put("currentPlayerCount", String.valueOf(proxy.getPlayerCount()));
-            commands.hset(proxyKey, proxyData);
-            commands.expire(proxyKey, config.getTimeoutSeconds());
-            
-            logger.info("Registered proxy in Redis: {}", proxyId);
-        }
-        
         // Store in local registry
         proxyRegistry.put(proxyId, currentProxyData);
+        
+        // Send proxy registration info via MessageBus
+        Map<String, Object> proxyRegistration = new HashMap<>();
+        proxyRegistration.put("proxyId", proxyId);
+        proxyRegistration.put("address", address);
+        proxyRegistration.put("type", "PROXY");
+        proxyRegistration.put("hardCap", config.getHardCap());
+        proxyRegistration.put("softCap", config.getSoftCap());
+        proxyRegistration.put("currentPlayerCount", proxy.getPlayerCount());
+        
+        // Publish proxy registration info for other services
+        messageBus.broadcast("fulcrum:proxy:registered", proxyRegistration);
+        logger.info("Published proxy registration with permanent ID: {}", proxyId);
         
         // Send announcement to network
         messageBus.broadcast("proxy:announce", currentProxyData);
@@ -217,6 +254,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     private void setupMessageHandlers() {
         // NOTE: Proxy no longer handles server registration directly
         // The Registry Service handles all registrations and broadcasts updates
+        
+        // Only use MessageBus subscription for proxy registration responses
+        // Remove direct Redis listener to avoid duplicate processing
         
         // Listen for server additions from Registry Service
         messageBus.subscribe("registry:server:added", envelope -> {
@@ -343,33 +383,21 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             String serverId = heartbeat.getServerId();
             serverHeartbeats.put(serverId, System.currentTimeMillis());
             updateServerCapacity(serverId, heartbeat.getPlayerCount());
-            logger.debug("Heartbeat from server {}: {} players", serverId, heartbeat.getPlayerCount());
-        });
-        
-        // Also handle the new message format with dot notation for backward compatibility
-        messageBus.subscribe("server.heartbeat", envelope -> {
-            Object payload = envelope.getPayload();
-            ServerHeartbeatMessage heartbeat = null;
             
-            // Handle ObjectNode from deserialization
-            if (payload instanceof JsonNode) {
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    heartbeat = mapper.treeToValue((JsonNode) payload, ServerHeartbeatMessage.class);
-                } catch (Exception e) {
-                    logger.warn("Failed to deserialize ServerHeartbeatMessage from ObjectNode: {}", e.getMessage());
-                    return;
-                }
-            } else if (payload instanceof ServerHeartbeatMessage) {
-                heartbeat = (ServerHeartbeatMessage) payload;
-            } else {
-                return;
+            // Update metrics in connection handler for optimal selection
+            if (connectionHandler != null) {
+                connectionHandler.updateServerMetrics(
+                    serverId,
+                    heartbeat.getFamily(),
+                    heartbeat.getPlayerCount(),
+                    heartbeat.getMaxCapacity(),
+                    heartbeat.getTps(),
+                    heartbeat.getResponseTime()
+                );
             }
             
-            String serverId = heartbeat.getServerId();
-            serverHeartbeats.put(serverId, System.currentTimeMillis());
-            updateServerCapacity(serverId, heartbeat.getPlayerCount());
-            logger.debug("Heartbeat (dot format) from server {}: {} players", serverId, heartbeat.getPlayerCount());
+            logger.debug("Heartbeat from server {}: {} players, TPS: {}",
+                        serverId, heartbeat.getPlayerCount(), heartbeat.getTps());
         });
         
         // Handle server announcements (post-approval)
@@ -409,7 +437,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                         announcement.getCapacity());
         });
         
-        // Handle proxy registration response from Registry Service
+        // Handle proxy registration response from Registry Service via MessageBus
         messageBus.subscribe("proxy:registration:response", envelope -> {
             logger.info("=== PROXY REGISTRATION RESPONSE RECEIVED ===");
             try {
@@ -424,26 +452,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 }
                 
                 if (response != null) {
-                    String assignedProxyId = (String) response.get("proxyId");
-                    Boolean success = (Boolean) response.get("success");
-                    
-                    if (success != null && success && assignedProxyId != null) {
-                        // Update our proxy ID with the permanent one from Registry
-                        this.proxyId = assignedProxyId;
-                        logger.info("[REGISTERED] Proxy successfully registered with permanent ID: {}", proxyId);
-                        
-                        // Update our proxy announcement data
-                        int proxyIndex = extractProxyIndex(proxyId);
-                        currentProxyData = new ProxyAnnouncementMessage(
-                            proxyId,
-                            proxyIndex,
-                            config.getHardCap(),
-                            config.getSoftCap(),
-                            proxy.getPlayerCount()
-                        );
-                    } else {
-                        logger.error("[FAILED] Proxy registration failed: {}", response.get("message"));
-                    }
+                    handleProxyRegistrationResponse(response);
                 }
             } catch (Exception e) {
                 logger.error("Failed to process proxy registration response", e);
@@ -475,8 +484,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             
             logger.info("Discovery request from server: {} (type: {})", request.getRequesterId(), request.getServerType());
             
-            // Only respond if we have a permanent ID
-            if (proxyId != null && !proxyId.startsWith("temp-")) {
+            // Only respond if we have been registered with Registry Service
+            if (registeredWithRegistry && proxyId != null && !proxyId.startsWith("temp-")) {
                 // Create response with our proxy info
                 ProxyDiscoveryResponse response = new ProxyDiscoveryResponse(proxyId);
                 ProxyDiscoveryResponse.ProxyInfo proxyInfo = new ProxyDiscoveryResponse.ProxyInfo(
@@ -496,6 +505,48 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                            proxy.getConfiguration().getShowMaxPlayers());
             } else {
                 logger.debug("Not responding to discovery request - proxy not yet registered");
+            }
+        });
+        
+        // Handle server status change messages from registry
+        messageBus.subscribe("registry:status:change", envelope -> {
+            Object payload = envelope.getPayload();
+            ServerStatusChangeMessage statusChange = null;
+            
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    statusChange = mapper.treeToValue((JsonNode) payload, ServerStatusChangeMessage.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ServerStatusChangeMessage: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ServerStatusChangeMessage) {
+                statusChange = (ServerStatusChangeMessage) payload;
+            } else {
+                return;
+            }
+            
+            String serverId = statusChange.getServerId();
+            
+            logger.info("Server {} status changed: {} -> {}",
+                       serverId, statusChange.getOldStatus(), statusChange.getNewStatus());
+            
+            // Update metrics in connection handler
+            if (connectionHandler != null) {
+                if (statusChange.getNewStatus() == ServerStatusChangeMessage.Status.AVAILABLE) {
+                    connectionHandler.updateServerMetrics(
+                        serverId,
+                        statusChange.getServerFamily(),
+                        statusChange.getPlayerCount(),
+                        statusChange.getMaxPlayers(),
+                        statusChange.getTps(),
+                        statusChange.getResponseTime()
+                    );
+                } else if (statusChange.getNewStatus() == ServerStatusChangeMessage.Status.DEAD) {
+                    connectionHandler.removeServerMetrics(serverId);
+                }
             }
         });
     }
@@ -619,6 +670,21 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     }
     
     private void startHeartbeat() {
+        // Only start heartbeat if registered with Registry
+        if (!registeredWithRegistry) {
+            logger.warn("Cannot start heartbeat - not yet registered with Registry Service");
+            return;
+        }
+        
+        // Check if heartbeat is already running
+        if (heartbeatTask != null && !heartbeatTask.isDone()) {
+            logger.info("Heartbeat task is already running");
+            return;
+        }
+        
+        logger.info("Starting proxy heartbeat task with permanent ID: {} (interval: {} seconds)",
+                   proxyId, config.getHeartbeatInterval());
+        
         heartbeatTask = scheduler.scheduleAtFixedRate(() -> {
             try {
                 // Update current proxy capacity
@@ -634,8 +700,20 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     currentPlayers
                 );
                 
-                // Send proxy heartbeat
-                messageBus.broadcast("proxy:heartbeat", currentProxyData);
+                // Send heartbeat to Registry Service via MessageBus
+                // Registry Service detects proxy heartbeats by the "fulcrum-proxy-" prefix
+                ServerHeartbeatMessage heartbeat = new ServerHeartbeatMessage(proxyId, "PROXY");
+                heartbeat.setPlayerCount(currentPlayers);
+                heartbeat.setMaxCapacity(config.getHardCap());
+                heartbeat.setTimestamp(System.currentTimeMillis());
+                heartbeat.setTps(20.0); // Proxies don't have TPS but send default
+                heartbeat.setFamily("proxy");
+                heartbeat.setRole("proxy");
+                
+                // Send heartbeat via MessageBus - use colon separator to match registry subscription
+                messageBus.broadcast("server:heartbeat", heartbeat);
+                // logger.info("Sent proxy heartbeat for {} with {} players at {} (interval: {}s)",
+                //     proxyId, currentPlayers, System.currentTimeMillis(), config.getHeartbeatInterval());
                 
                 // Log capacity warnings
                 if (config.isAtHardCapacity(currentPlayers)) {
@@ -644,22 +722,18 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     logger.info("Proxy at soft capacity: {}/{}", currentPlayers, config.getSoftCap());
                 }
                 
-                // Update Redis with current info
-                if (messageBus instanceof VelocityRedisMessageBus) {
-                    VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-                    var commands = redisMessageBus.getRedisConnection().sync();
-                    
-                    String proxyKey = PROXY_INFO_PREFIX + proxyId;
-                    commands.hset(proxyKey, "currentPlayerCount", String.valueOf(currentPlayers));
-                    commands.hset(proxyKey, "lastHeartbeat", String.valueOf(System.currentTimeMillis()));
-                    commands.expire(proxyKey, config.getTimeoutSeconds());
-                }
+                // Send proxy status update via MessageBus
+                Map<String, Object> statusUpdate = new HashMap<>();
+                statusUpdate.put("proxyId", proxyId);
+                statusUpdate.put("currentPlayerCount", currentPlayers);
+                statusUpdate.put("lastHeartbeat", System.currentTimeMillis());
+                messageBus.broadcast("fulcrum:proxy:status", statusUpdate);
                 
                 logger.debug("Sent proxy heartbeat - Current players: {}", currentPlayers);
             } catch (Exception e) {
                 logger.error("Error in heartbeat task", e);
             }
-        }, 0, config.getHeartbeatInterval(), TimeUnit.SECONDS);
+        }, config.getHeartbeatInterval(), config.getHeartbeatInterval(), TimeUnit.SECONDS);
     }
     
     private void startCleanupTask() {
@@ -691,23 +765,19 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     return false;
                 });
                 
-                // Clean up stale proxies from Redis (in multi-proxy setup)
-                if (messageBus instanceof VelocityRedisMessageBus) {
-                    VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-                    var commands = redisMessageBus.getRedisConnection().sync();
-                    
-                    Set<String> proxyIds = commands.smembers(PROXIES_KEY);
-                    for (String otherProxyId : proxyIds) {
-                        if (!otherProxyId.equals(proxyId)) {
-                            String proxyKey = PROXY_INFO_PREFIX + otherProxyId;
-                            if (commands.exists(proxyKey) == 0) {
-                                commands.srem(PROXIES_KEY, otherProxyId);
-                                proxyRegistry.remove(otherProxyId);
-                                logger.info("Removed stale proxy from registry: {}", otherProxyId);
-                            }
-                        }
+                // Clean up stale proxies from local registry
+                // The Registry Service handles the actual cleanup
+                long proxyTimeout = config.getTimeoutSeconds() * 1000L;
+                proxyRegistry.entrySet().removeIf(entry -> {
+                    String otherProxyId = entry.getKey();
+                    if (!otherProxyId.equals(proxyId)) {
+                        // Check if we haven't heard from this proxy recently
+                        // In a real implementation, we'd track last heartbeat times
+                        // For now, rely on Registry Service to notify us of removals
+                        return false;
                     }
-                }
+                    return false;
+                });
             } catch (Exception e) {
                 logger.error("Error in cleanup task", e);
             }
@@ -723,24 +793,52 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         if (cleanupTask != null) {
             cleanupTask.cancel(false);
         }
+        if (registrationRetryTask != null) {
+            registrationRetryTask.cancel(false);
+        }
         
-        // Remove from Redis
-        if (messageBus instanceof VelocityRedisMessageBus) {
-            VelocityRedisMessageBus redisMessageBus = (VelocityRedisMessageBus) messageBus;
-            var commands = redisMessageBus.getRedisConnection().sync();
+        // Send shutdown notification to Registry Service via MessageBus
+        try {
+            // Method 1: Send via proxy:announcement channel
+            Map<String, Object> announcement = new HashMap<>();
+            announcement.put("proxyId", proxyId);
+            announcement.put("status", "SHUTDOWN");
+            announcement.put("timestamp", System.currentTimeMillis());
             
-            commands.srem(PROXIES_KEY, proxyId);
-            commands.del(PROXY_INFO_PREFIX + proxyId);
-            logger.info("Removed proxy from Redis registry");
+            messageBus.broadcast("proxy:announcement", announcement);
+            logger.info("Sent proxy shutdown announcement to Registry Service");
+            
+            // Method 2: Also send via server:heartbeat with SHUTDOWN status
+            ServerHeartbeatMessage shutdownHeartbeat = new ServerHeartbeatMessage(proxyId, "PROXY");
+            shutdownHeartbeat.setPlayerCount(0);
+            shutdownHeartbeat.setTimestamp(System.currentTimeMillis());
+            
+            // Add a shutdown status field by extending the message
+            Map<String, Object> shutdownMessage = new HashMap<>();
+            shutdownMessage.put("serverId", proxyId);
+            shutdownMessage.put("status", "SHUTDOWN");
+            shutdownMessage.put("timestamp", System.currentTimeMillis());
+            
+            messageBus.broadcast("server:heartbeat", shutdownMessage);
+            logger.info("Sent proxy shutdown signal via server:heartbeat channel");
+            
+            // Send removal notification
+            Map<String, Object> removalNotification = new HashMap<>();
+            removalNotification.put("proxyId", proxyId);
+            messageBus.broadcast("fulcrum:proxy:removed", removalNotification);
+            logger.info("Published proxy removal notification");
+        } catch (Exception e) {
+            logger.error("Failed to send shutdown notification to Registry Service", e);
         }
         
         // Notify servers of shutdown
-        String address = proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort();
+        int proxyIndex = extractProxyIndex(proxyId);
         ProxyAnnouncementMessage shutdown = new ProxyAnnouncementMessage(
             proxyId,
-            address,
-            proxy.getConfiguration().getShowMaxPlayers(),
-            -1 // Indicates shutdown
+            proxyIndex,
+            0,  // Hard cap
+            0,  // Soft cap
+            -1  // Indicates shutdown
         );
         messageBus.broadcast("proxy:shutdown", shutdown);
         
@@ -809,11 +907,73 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
      */
     private void sendRegistrationRequest() {
         logger.info("Sending request for backend servers to register");
+        int proxyIndex = extractProxyIndex(proxyId);
         messageBus.broadcast("proxy:request-registrations",
-            new ProxyAnnouncementMessage(proxyId,
-                proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort(),
+            new ProxyAnnouncementMessage(
+                proxyId,
+                proxyIndex,
                 proxy.getConfiguration().getShowMaxPlayers(),
+                proxy.getConfiguration().getShowMaxPlayers() / 2,  // Default soft cap at 50%
                 proxy.getPlayerCount()));
+    }
+    
+    /**
+     * Handle proxy registration response from Registry
+     */
+    private synchronized void handleProxyRegistrationResponse(Map<String, Object> response) {
+        // Check if already registered to prevent duplicate processing
+        if (registeredWithRegistry) {
+            logger.debug("Already registered, ignoring duplicate registration response");
+            return;
+        }
+        
+        String assignedProxyId = (String) response.get("proxyId");
+        Boolean success = (Boolean) response.get("success");
+        
+        if (success != null && success && assignedProxyId != null) {
+            // Cancel any pending retry
+            if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
+                registrationRetryTask.cancel(false);
+            }
+            
+            // Update our proxy ID with the permanent one from Registry
+            String oldId = this.proxyId;
+            this.proxyId = assignedProxyId;
+            registeredWithRegistry = true;
+            
+            logger.info("[REGISTERED] Proxy successfully registered with permanent ID: {} (was: {})", proxyId, oldId);
+            
+            // Update VelocityMessageBusFeature with the permanent ID
+            if (serviceLocator != null) {
+                serviceLocator.getService(VelocityMessageBusFeature.class).ifPresent(messageBusFeature -> {
+                    messageBusFeature.updateProxyId(assignedProxyId);
+                    logger.info("Updated MessageBusFeature with permanent proxy ID");
+                });
+            }
+            
+            // Now register in Redis with permanent ID
+            registerSelfInRedis();
+            
+            // Update our proxy announcement data
+            int proxyIndex = extractProxyIndex(proxyId);
+            currentProxyData = new ProxyAnnouncementMessage(
+                proxyId,
+                proxyIndex,
+                config.getHardCap(),
+                config.getSoftCap(),
+                proxy.getPlayerCount()
+            );
+            
+            // NOW start heartbeat after successful registration
+            startHeartbeat();
+            
+            // Send initial heartbeat and announcement
+            messageBus.broadcast("proxy:announce", currentProxyData);
+            logger.info("Sent initial proxy announcement with permanent ID");
+        } else {
+            logger.error("[FAILED] Proxy registration failed: {}", response.get("message"));
+            // Retry will be handled by the scheduled retry mechanism
+        }
     }
     
     /**
@@ -878,6 +1038,74 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     }
     
     // Removed server ID generation - Registry Service handles ID allocation now
+    
+    /**
+     * Get the optimal server for a specific family/role
+     * @param family The server family (e.g., "lobby", "survival", "minigames")
+     * @return The optimal server identifier, or null if none available
+     */
+    public String getOptimalServerByFamily(String family) {
+        if (connectionHandler == null) {
+            // Fallback to simple selection
+            return backendServers.values().stream()
+                .filter(server -> family.equalsIgnoreCase(server.getFamily()))
+                .filter(server -> isServerActive(server.getServerId()))
+                .map(ServerIdentifier::getServerId)
+                .findFirst()
+                .orElse(null);
+        }
+        
+        RegisteredServer optimal = connectionHandler.findOptimalServer(family);
+        return optimal != null ? optimal.getServerInfo().getName() : null;
+    }
+    
+    /**
+     * Get all available servers for a specific family/role
+     * @param family The server family
+     * @return List of server identifiers
+     */
+    public List<String> getAllServersByFamily(String family) {
+        return backendServers.values().stream()
+            .filter(server -> family.equalsIgnoreCase(server.getFamily()))
+            .filter(server -> isServerActive(server.getServerId()))
+            .map(ServerIdentifier::getServerId)
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * Get server statistics for monitoring
+     * @param serverId The server identifier
+     * @return Map of server statistics
+     */
+    public Map<String, Object> getServerStats(String serverId) {
+        ServerIdentifier server = backendServers.get(serverId);
+        if (server == null) {
+            return null;
+        }
+        
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("serverId", server.getServerId());
+        stats.put("family", server.getFamily());
+        stats.put("type", server.getType());
+        stats.put("address", server.getAddress());
+        stats.put("port", server.getPort());
+        stats.put("softCap", server.getSoftCap());
+        stats.put("hardCap", server.getHardCap());
+        
+        Long lastHeartbeat = serverHeartbeats.get(serverId);
+        if (lastHeartbeat != null) {
+            stats.put("lastHeartbeat", lastHeartbeat);
+            stats.put("online", System.currentTimeMillis() - lastHeartbeat < config.getTimeoutSeconds() * 1000);
+        } else {
+            stats.put("online", false);
+        }
+        
+        if (server instanceof BackendServerIdentifier) {
+            stats.put("currentCapacity", ((BackendServerIdentifier) server).currentCapacity);
+        }
+        
+        return stats;
+    }
     
     /**
      * Implementation of ServerIdentifier for backend servers
