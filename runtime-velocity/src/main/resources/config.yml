@@ -10,7 +10,6 @@ redis:
 # Server lifecycle management
 server-lifecycle:
   enabled: true
-  heartbeat-interval: 30  # seconds
   registration-timeout: 60  # seconds
   
   # Simplified capacity configuration
