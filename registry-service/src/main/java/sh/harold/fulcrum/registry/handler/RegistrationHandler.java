@@ -10,6 +10,7 @@ import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
+import sh.harold.fulcrum.registry.messagebus.RegistryMessageBus;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -40,6 +41,7 @@ public class RegistrationHandler {
     private RedisPubSubCommands<String, String> pubSubSync;
     private final ScheduledExecutorService retryExecutor;
     private final Map<String, PendingRequest> pendingRequests;
+    private RegistryMessageBus messageBus;
     
     private static class PendingRequest {
         final String tempId;
@@ -100,13 +102,20 @@ public class RegistrationHandler {
         subscribeToChannels();
     }
     
+    /**
+     * Set the MessageBus instance
+     */
+    public void setMessageBus(RegistryMessageBus messageBus) {
+        this.messageBus = messageBus;
+    }
+    
     private void subscribeToChannels() {
-        // Server registration and heartbeat channels
+        // Subscribe to unified channels only
         pubSubSync.subscribe(
-            "proxy:register",          // Server registration requests (existing channel)
-            "server.heartbeat",        // Server heartbeats (existing channel)
-            "proxy:discovery",         // Proxy discovery requests
-            "proxy:request-registrations" // Request for all servers to register
+            "registry:register",       // Registration requests from servers/proxies
+            "server:heartbeat",        // Heartbeat messages from backend servers and proxies
+            "proxy:unregister",        // Proxy shutdown notifications
+            "server:evacuation"        // Server evacuation requests
         );
         
         LOGGER.info("Subscribed to registry channels");
@@ -147,7 +156,7 @@ public class RegistrationHandler {
      */
     private void handleServerRegistration(String json) {
         if (debugMode) {
-            LOGGER.debug("[RECEIVED] Registration request on 'proxy:register' channel");
+            LOGGER.debug("[RECEIVED] Registration request on registry channel");
         }
         try {
             RegistrationRequest request = objectMapper.readValue(json, RegistrationRequest.class);
@@ -192,8 +201,48 @@ public class RegistrationHandler {
      */
     private void handleServerHeartbeat(String json) {
         try {
-            Map<String, Object> heartbeat = objectMapper.readValue(json, Map.class);
+            // Debug: Log raw JSON
+            if (debugMode) {
+                LOGGER.debug("[HEARTBEAT] Raw JSON: {}", json);
+            }
+            
+            Map<String, Object> heartbeat = null;
+            
+            // First try to parse as a Map directly
+            try {
+                heartbeat = objectMapper.readValue(json, Map.class);
+                
+                // Check if this is actually a MessageEnvelope wrapper
+                if (heartbeat.containsKey("payload") && heartbeat.containsKey("type")) {
+                    // It's a MessageEnvelope, extract the payload
+                    Object payload = heartbeat.get("payload");
+                    if (payload instanceof Map) {
+                        heartbeat = (Map<String, Object>) payload;
+                        if (debugMode) {
+                            LOGGER.debug("[HEARTBEAT] Extracted heartbeat from MessageEnvelope wrapper");
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.error("Failed to parse heartbeat JSON", e);
+                return;
+            }
+            
             String serverId = (String) heartbeat.get("serverId");
+            
+            // Debug: Log extracted serverId
+            if (debugMode && serverId != null) {
+                LOGGER.debug("[HEARTBEAT] Extracted serverId: {} (isProxy: {})",
+                    serverId, serverId.startsWith("fulcrum-proxy-"));
+            }
+            
+            // Check if this is a proxy shutdown signal
+            String status = (String) heartbeat.get("status");
+            if ("SHUTDOWN".equals(status) && serverId != null &&
+                (serverId.startsWith("proxy-") || serverId.startsWith("fulcrum-proxy-"))) {
+                handleProxyShutdown(serverId);
+                return;
+            }
             
             // Extract metrics from heartbeat
             Number playerCountNum = (Number) heartbeat.getOrDefault("playerCount", 0);
@@ -202,7 +251,7 @@ public class RegistrationHandler {
             Number tpsNum = (Number) heartbeat.getOrDefault("tps", 20.0);
             double tps = tpsNum.doubleValue();
             
-            // Process heartbeat through monitor
+            // Process heartbeat through monitor (handles both servers and proxies)
             heartbeatMonitor.processHeartbeat(serverId, playerCount, tps);
             
             if (debugMode) {
@@ -244,14 +293,10 @@ public class RegistrationHandler {
             envelope.put("version", 1);
             envelope.put("payload", responsePayload);
             
-            String envelopeJson = objectMapper.writeValueAsString(envelope);
-            
-            // Send wrapped response through proper channels
-            sync.publish("proxy:" + tempId, envelopeJson);
-            sync.publish("proxy:register:response", envelopeJson);
-            
+            // Send to proxy:registration:response channel via MessageBus
+            messageBus.send(tempId, "proxy:registration:response", responsePayload);
             if (debugMode) {
-                LOGGER.debug("[SENT] Proxy registration response to channels 'proxy:{}' and 'proxy:register:response'", tempId);
+                LOGGER.debug("[SENT] Proxy registration response via MessageBus to 'proxy:registration:response'");
             }
             
             // Remove from pending
@@ -282,15 +327,15 @@ public class RegistrationHandler {
             response.put("address", request.getAddress());
             response.put("port", request.getPort());
             
-            String responseJson = objectMapper.writeValueAsString(response);
-            
-            // Send response to server on both channels for compatibility
-            sync.publish("server:registration:response", responseJson);
-            sync.publish("server:" + request.getTempId(), responseJson);
+            // Send to server:registration:response channel via MessageBus
+            messageBus.send(request.getTempId(), "server:registration:response", response);
+            // Also send to server-specific channel for compatibility
+            String responseChannel = "server:" + request.getTempId() + ":registration:response";
+            messageBus.send(request.getTempId(), responseChannel, response);
             
             if (debugMode) {
-                LOGGER.debug("[SENT] Registration response for {} -> {} on channels 'server:registration:response' and 'server:{}'",
-                    request.getTempId(), permanentId, request.getTempId());
+                LOGGER.debug("[SENT] Server registration response via MessageBus to 'server:registration:response' and '{}'",
+                    responseChannel);
             }
             
             // Remove from pending on success
@@ -313,11 +358,10 @@ public class RegistrationHandler {
                 announcement.put("port", request.getPort());
                 announcement.put("maxCapacity", request.getMaxCapacity());
                 
-                String announcementJson = objectMapper.writeValueAsString(announcement);
-                sync.publish("registry:server:added", announcementJson);
-                
+                // Broadcast server addition via MessageBus
+                messageBus.broadcast("registry:server:added", announcement);
                 if (debugMode) {
-                    LOGGER.debug("[BROADCAST] Server addition for {} on channel 'registry:server:added'", permanentId);
+                    LOGGER.debug("[BROADCAST] Server addition via MessageBus on channel 'registry:server:added'");
                 }
             }
         } catch (Exception e) {
@@ -325,40 +369,84 @@ public class RegistrationHandler {
         }
     }
     
+    
     /**
-     * Handle proxy discovery requests
-     * NOTE: This should NOT register new proxies - only respond with existing proxy info
-     * Registration happens via 'proxy:register' channel only
+     * Handle proxy unregister notification
      */
-    private void handleProxyDiscovery(String json) {
-        if (debugMode) {
-            LOGGER.debug("[RECEIVED] Proxy discovery request on 'proxy:discovery' channel");
-        }
+    private void handleProxyUnregister(String json) {
         try {
-            // Parse the discovery request
             Map<String, Object> request = objectMapper.readValue(json, Map.class);
-            String requesterId = (String) request.get("requesterId");
+            String proxyId = (String) request.get("proxyId");
             
-            // This channel is for discovering OTHER proxies, not for registration
-            // Send back information about all registered proxies
-            Map<String, Object> response = new HashMap<>();
-            response.put("proxies", proxyRegistry.getAllProxies());
-            response.put("success", true);
-            response.put("timestamp", System.currentTimeMillis());
-            
-            String responseJson = objectMapper.writeValueAsString(response);
-            
-            // Send response to the requester
-            if (requesterId != null) {
-                sync.publish("proxy:discovery:response:" + requesterId, responseJson);
-                if (debugMode) {
-                    LOGGER.debug("[SENT] Discovery response to {} with {} registered proxies",
-                        requesterId, proxyRegistry.getProxyCount());
-                }
+            if (proxyId != null) {
+                handleProxyShutdown(proxyId);
             }
             
         } catch (Exception e) {
-            LOGGER.error("Failed to handle proxy discovery", e);
+            LOGGER.error("Failed to handle proxy unregister", e);
+        }
+    }
+    
+    /**
+     * Handle server evacuation request
+     */
+    private void handleEvacuationRequest(String json) {
+        try {
+            Map<String, Object> request = objectMapper.readValue(json, Map.class);
+            String serverId = (String) request.get("serverId");
+            String reason = (String) request.get("reason");
+            
+            if (serverId != null) {
+                LOGGER.info("Evacuation requested for server {} - Reason: {}", serverId, reason);
+                
+                // Update server status to EVACUATING
+                serverRegistry.updateStatus(serverId, "EVACUATING");
+                
+                // Broadcast status change
+                Map<String, Object> statusChange = new HashMap<>();
+                statusChange.put("serverId", serverId);
+                statusChange.put("status", "EVACUATING");
+                statusChange.put("reason", reason);
+                statusChange.put("timestamp", System.currentTimeMillis());
+                
+                // Broadcast status change via MessageBus
+                messageBus.broadcast("registry:status:change", statusChange);
+                
+                // Send evacuation response
+                Map<String, Object> response = new HashMap<>();
+                response.put("serverId", serverId);
+                response.put("success", true);
+                response.put("timestamp", System.currentTimeMillis());
+                
+                messageBus.broadcast("server:evacuation:response", response);
+            }
+            
+        } catch (Exception e) {
+            LOGGER.error("Failed to handle evacuation request", e);
+        }
+    }
+    
+    /**
+     * Handle proxy shutdown
+     */
+    private void handleProxyShutdown(String proxyId) {
+        LOGGER.info("Proxy {} is shutting down - removing from registry", proxyId);
+        
+        // Remove the proxy from registry (ephemeral behavior)
+        proxyRegistry.deregisterProxy(proxyId);
+        
+        // Broadcast proxy removal
+        try {
+            Map<String, Object> removal = new HashMap<>();
+            removal.put("proxyId", proxyId);
+            removal.put("reason", "shutdown");
+            removal.put("timestamp", System.currentTimeMillis());
+            
+            // Broadcast proxy removal via MessageBus
+            messageBus.broadcast("registry:proxy:removed", removal);
+            
+        } catch (Exception e) {
+            LOGGER.error("Failed to broadcast proxy removal for {}", proxyId, e);
         }
     }
     
@@ -373,8 +461,8 @@ public class RegistrationHandler {
             removal.put("reason", "timeout");
             removal.put("timestamp", System.currentTimeMillis());
             
-            String json = objectMapper.writeValueAsString(removal);
-            sync.publish("registry:server:removed", json);
+            // Broadcast server removal via MessageBus
+            messageBus.broadcast("registry:server:removed", removal);
             
             LOGGER.warn("Server {} timed out and was removed from registry", serverId);
             
@@ -394,21 +482,17 @@ public class RegistrationHandler {
             }
             
             switch (channel) {
-                case "proxy:register":
+                case "registry:register":
                     handleServerRegistration(message);
                     break;
-                case "server.heartbeat":
+                case "server:heartbeat":
                     handleServerHeartbeat(message);
                     break;
-                case "proxy:discovery":
-                    handleProxyDiscovery(message);
+                case "proxy:unregister":
+                    handleProxyUnregister(message);
                     break;
-                case "proxy:request-registrations":
-                    // Proxies are requesting all servers to re-register
-                    // This is handled by the servers themselves
-                    if (debugMode) {
-                        LOGGER.debug("[RECEIVED] Proxy requested re-registration of all servers");
-                    }
+                case "server:evacuation":
+                    handleEvacuationRequest(message);
                     break;
                 default:
                     if (debugMode) {
