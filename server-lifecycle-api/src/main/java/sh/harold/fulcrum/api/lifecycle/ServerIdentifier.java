@@ -13,9 +13,9 @@ public interface ServerIdentifier {
     String getServerId();
     
     /**
-     * Gets the server's family/role (e.g., "minigames", "survival").
+     * Gets the server's role (e.g., "minigames", "survival", "lobby", "game").
      */
-    String getFamily();
+    String getRole();
     
     /**
      * Gets the server type (e.g., "MINI", "MEGA", "LOBBY").

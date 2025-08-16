@@ -40,15 +40,15 @@ public class ProxyConnectionHandler {
      */
     private static class ServerMetrics {
         private final String serverId;
-        private final String family;
+        private final String role;
         private int playerCount = 0;
         private int maxPlayers = 100;
         private double tps = 20.0;
         private long lastUpdate = System.currentTimeMillis();
         
-        public ServerMetrics(String serverId, String family) {
+        public ServerMetrics(String serverId, String role) {
             this.serverId = serverId;
-            this.family = family;
+            this.role = role;
         }
         
         public double getLoadFactor() {
@@ -146,16 +146,16 @@ public class ProxyConnectionHandler {
     }
     
     /**
-     * Find the optimal server based on family/role and load
-     * @param family The server family (e.g., "lobby", "survival", "minigames"), or null for any
+     * Find the optimal server based on role and load
+     * @param role The server role (e.g., "lobby", "survival", "minigames"), or null for any
      * @return The optimal server, if available
      */
-    public RegisteredServer findOptimalServer(String family) {
+    public RegisteredServer findOptimalServer(String role) {
         Set<ServerIdentifier> candidates;
         
-        if (family != null) {
-            // Get servers by family
-            candidates = lifecycleFeature.getServersByFamily(family);
+        if (role != null) {
+            // Get servers by role
+            candidates = lifecycleFeature.getServersByRole(role);
         } else {
             // Get all servers
             candidates = lifecycleFeature.getRegisteredServers();
@@ -179,7 +179,7 @@ public class ProxyConnectionHandler {
                 
                 // If no metrics or stale, create default metrics
                 if (metrics == null || metrics.isStale()) {
-                    metrics = new ServerMetrics(serverId, serverIdentifier.getFamily());
+                    metrics = new ServerMetrics(serverId, serverIdentifier.getRole());
                 }
                 
                 return new ServerWithMetrics(registered.get(), metrics);
@@ -213,10 +213,10 @@ public class ProxyConnectionHandler {
     /**
      * Update server metrics from heartbeat or status change
      */
-    public void updateServerMetrics(String serverId, String family, int playerCount,
+    public void updateServerMetrics(String serverId, String role, int playerCount,
                                    int maxPlayers, double tps) {
         ServerMetrics metrics = serverMetricsCache.computeIfAbsent(serverId,
-            k -> new ServerMetrics(serverId, family));
+            k -> new ServerMetrics(serverId, role));
         
         metrics.playerCount = playerCount;
         metrics.maxPlayers = maxPlayers;
