@@ -13,6 +13,12 @@ public class TableFormatter {
     private final List<List<String>> rows = new ArrayList<>();
     
     /**
+     * Create a new table formatter
+     */
+    public TableFormatter() {
+    }
+    
+    /**
      * Add headers to the table
      * @param headers The column headers
      * @return This formatter for chaining
@@ -52,39 +58,39 @@ public class TableFormatter {
         StringBuilder sb = new StringBuilder();
         
         // Calculate total width
-        int totalWidth = columnWidths.stream().mapToInt(Integer::intValue).sum() 
+        int totalWidth = columnWidths.stream().mapToInt(Integer::intValue).sum()
                         + (columnWidths.size() - 1) * 3 + 4; // 3 for " | " between columns, 4 for "| " and " |"
         
         // Top border
-        sb.append("┌").append("─".repeat(totalWidth - 2)).append("┐\n");
+        sb.append("+").append("-".repeat(totalWidth - 2)).append("+\n");
         
         // Headers
-        sb.append("│ ");
+        sb.append("| ");
         for (int i = 0; i < headers.size(); i++) {
             sb.append(padRight(headers.get(i), columnWidths.get(i)));
             if (i < headers.size() - 1) {
-                sb.append(" │ ");
+                sb.append(" | ");
             }
         }
-        sb.append(" │\n");
+        sb.append(" |\n");
         
         // Header separator
-        sb.append("├").append("─".repeat(totalWidth - 2)).append("┤\n");
+        sb.append("+").append("-".repeat(totalWidth - 2)).append("+\n");
         
         // Rows
         for (List<String> row : rows) {
-            sb.append("│ ");
+            sb.append("| ");
             for (int i = 0; i < row.size(); i++) {
                 sb.append(padRight(row.get(i), columnWidths.get(i)));
                 if (i < row.size() - 1) {
-                    sb.append(" │ ");
+                    sb.append(" | ");
                 }
             }
-            sb.append(" │\n");
+            sb.append(" |\n");
         }
         
         // Bottom border
-        sb.append("└").append("─".repeat(totalWidth - 2)).append("┘");
+        sb.append("+").append("-".repeat(totalWidth - 2)).append("+");
         
         return sb.toString();
     }
