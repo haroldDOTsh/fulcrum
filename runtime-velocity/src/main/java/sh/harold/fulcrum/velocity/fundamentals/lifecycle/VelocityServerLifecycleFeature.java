@@ -146,7 +146,6 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             registrationRequest.put("address", proxy.getBoundAddress().getHostString());
             registrationRequest.put("port", proxy.getBoundAddress().getPort());
             registrationRequest.put("maxCapacity", config.getHardCap());
-            registrationRequest.put("family", "proxy");
             
             // Use MessageBus to publish registration request
             messageBus.broadcast("registry:register", registrationRequest);
@@ -279,17 +278,17 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 if (serverInfo != null) {
                     String serverId = (String) serverInfo.get("serverId");
                     String serverType = (String) serverInfo.get("serverType");
-                    String family = (String) serverInfo.getOrDefault("family", "default");
+                    String role = (String) serverInfo.getOrDefault("role", "default");
                     String address = (String) serverInfo.get("address");
                     Integer port = (Integer) serverInfo.get("port");
                     Integer maxCapacity = (Integer) serverInfo.get("maxCapacity");
                     
-                    logger.info("Registry added server: {} ({}:{}) - Type: {}, Family: {}, Capacity: {}",
-                               serverId, address, port, serverType, family, maxCapacity);
+                    logger.info("Registry added server: {} ({}:{}) - Type: {}, Role: {}, Capacity: {}",
+                               serverId, address, port, serverType, role, maxCapacity);
                     
                     // Store server info
                     ServerIdentifier serverIdentifier = new BackendServerIdentifier(
-                        serverId, serverType, family, address, port, maxCapacity
+                        serverId, serverType, role, address, port, maxCapacity
                     );
                     backendServers.put(serverId, serverIdentifier);
                     serverHeartbeats.put(serverId, System.currentTimeMillis());
@@ -388,7 +387,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             if (connectionHandler != null) {
                 connectionHandler.updateServerMetrics(
                     serverId,
-                    heartbeat.getFamily(),
+                    heartbeat.getRole(),
                     heartbeat.getPlayerCount(),
                     heartbeat.getMaxCapacity(),
                     heartbeat.getTps()
@@ -423,7 +422,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             ServerIdentifier serverInfo = new BackendServerIdentifier(
                 announcement.getServerId(),
                 announcement.getServerType(),
-                announcement.getFamily(),
+                announcement.getRole(),
                 announcement.getAddress(),
                 announcement.getPort(),
                 announcement.getCapacity()
@@ -537,7 +536,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 if (statusChange.getNewStatus() == ServerStatusChangeMessage.Status.AVAILABLE) {
                     connectionHandler.updateServerMetrics(
                         serverId,
-                        statusChange.getServerFamily(),
+                        statusChange.getRole(),
                         statusChange.getPlayerCount(),
                         statusChange.getMaxPlayers(),
                         statusChange.getTps()
@@ -705,7 +704,6 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 heartbeat.setMaxCapacity(config.getHardCap());
                 heartbeat.setTimestamp(System.currentTimeMillis());
                 heartbeat.setTps(20.0); // Proxies don't have TPS but send default
-                heartbeat.setFamily("proxy");
                 heartbeat.setRole("proxy");
                 
                 // Send heartbeat via MessageBus - use colon separator to match registry subscription
@@ -891,8 +889,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         // Find an available lobby server
         for (Map.Entry<String, ServerIdentifier> entry : backendServers.entrySet()) {
             ServerIdentifier server = entry.getValue();
-            String family = server.getFamily();
-            if (family != null && family.toLowerCase().contains("lobby")) {
+            String role = server.getRole();
+            if (role != null && role.toLowerCase().contains("lobby")) {
                 return proxy.getServer(entry.getKey());
             }
         }
@@ -990,17 +988,17 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     }
     
     /**
-     * Gets servers by family/role
-     * @param family The family/role to filter by (e.g., "lobby", "game", "survival")
-     * @return Set of server identifiers matching the specified family
+     * Gets servers by role
+     * @param role The role to filter by (e.g., "lobby", "game", "survival")
+     * @return Set of server identifiers matching the specified role
      */
-    public Set<ServerIdentifier> getServersByFamily(String family) {
-        if (family == null || family.isEmpty()) {
+    public Set<ServerIdentifier> getServersByRole(String role) {
+        if (role == null || role.isEmpty()) {
             return new HashSet<>();
         }
         
         return backendServers.values().stream()
-            .filter(server -> family.equalsIgnoreCase(server.getFamily()))
+            .filter(server -> role.equalsIgnoreCase(server.getRole()))
             .collect(Collectors.toSet());
     }
     
@@ -1038,33 +1036,33 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     // Removed server ID generation - Registry Service handles ID allocation now
     
     /**
-     * Get the optimal server for a specific family/role
-     * @param family The server family (e.g., "lobby", "survival", "minigames")
+     * Get the optimal server for a specific role
+     * @param role The server role (e.g., "lobby", "survival", "minigames")
      * @return The optimal server identifier, or null if none available
      */
-    public String getOptimalServerByFamily(String family) {
+    public String getOptimalServerByRole(String role) {
         if (connectionHandler == null) {
             // Fallback to simple selection
             return backendServers.values().stream()
-                .filter(server -> family.equalsIgnoreCase(server.getFamily()))
+                .filter(server -> role.equalsIgnoreCase(server.getRole()))
                 .filter(server -> isServerActive(server.getServerId()))
                 .map(ServerIdentifier::getServerId)
                 .findFirst()
                 .orElse(null);
         }
         
-        RegisteredServer optimal = connectionHandler.findOptimalServer(family);
+        RegisteredServer optimal = connectionHandler.findOptimalServer(role);
         return optimal != null ? optimal.getServerInfo().getName() : null;
     }
     
     /**
-     * Get all available servers for a specific family/role
-     * @param family The server family
+     * Get all available servers for a specific role
+     * @param role The server role
      * @return List of server identifiers
      */
-    public List<String> getAllServersByFamily(String family) {
+    public List<String> getAllServersByRole(String role) {
         return backendServers.values().stream()
-            .filter(server -> family.equalsIgnoreCase(server.getFamily()))
+            .filter(server -> role.equalsIgnoreCase(server.getRole()))
             .filter(server -> isServerActive(server.getServerId()))
             .map(ServerIdentifier::getServerId)
             .collect(Collectors.toList());
@@ -1083,7 +1081,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         
         Map<String, Object> stats = new HashMap<>();
         stats.put("serverId", server.getServerId());
-        stats.put("family", server.getFamily());
+        stats.put("role", server.getRole());
         stats.put("type", server.getType());
         stats.put("address", server.getAddress());
         stats.put("port", server.getPort());
@@ -1111,17 +1109,17 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     private static class BackendServerIdentifier implements ServerIdentifier {
         private final String serverId;
         private final String type;
-        private final String family;
+        private final String role;
         private final String address;
         private final int port;
         private final int capacity;
         private int currentCapacity;
         
-        public BackendServerIdentifier(String serverId, String type, String family,
+        public BackendServerIdentifier(String serverId, String type, String role,
                                       String address, int port, int capacity) {
             this.serverId = serverId;
             this.type = type;
-            this.family = family != null ? family : "default";
+            this.role = role != null ? role : "default";
             this.address = address;
             this.port = port;
             this.capacity = capacity;
@@ -1134,8 +1132,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         }
         
         @Override
-        public String getFamily() {
-            return family;
+        public String getRole() {
+            return role;
         }
         
         @Override
