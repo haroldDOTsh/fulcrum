@@ -62,6 +62,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     private String environment;  // Store the environment string directly
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> registrationTimeoutTask;
+    private ScheduledFuture<?> registrationRetryTask;
     private final Map<String, ServerInfo> availableServers = new ConcurrentHashMap<>();
     
     // Proxy discovery and tracking
@@ -215,12 +216,15 @@ public class ServerLifecycleFeature implements PluginFeature {
         LOGGER.info("  Capacity: " + maxCapacity);
         
         // Send registration request to Registry Service
-        // Registry Service listens on proxy:register for compatibility
-        messageBus.broadcast("proxy:register", request);
-        LOGGER.info("Sent registration request to Registry Service on channel 'proxy:register'");
+        // Use the centralized registry:register channel for new architecture
+        messageBus.broadcast("registry:register", request);
+        LOGGER.info("Sent registration request to central Registry Service on channel 'registry:register'");
         
         // Schedule timeout warning if no response received
         scheduleRegistrationTimeout();
+        
+        // Schedule retry if no response received
+        scheduleRegistrationRetry();
     }
     
     private void scheduleRegistrationTimeout() {
@@ -232,11 +236,36 @@ public class ServerLifecycleFeature implements PluginFeature {
         // Schedule new timeout task
         registrationTimeoutTask = scheduler.schedule(() -> {
             if (!registered.get()) {
-                LOGGER.warning("Could not register! No confirmation received after 10 seconds. " +
-                    "Potentially no proxies are available or there's a connection issue. " +
+                LOGGER.warning("No confirmation from Registry Service after 10 seconds. " +
+                    "Registry Service may be down or there's a connection issue. " +
                     "[Server: " + serverIdentifier.getServerId() + ", Type: " + serverType + "]");
             }
         }, 10, TimeUnit.SECONDS);
+    }
+    
+    private void scheduleRegistrationRetry() {
+        // Cancel any existing retry task
+        if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
+            registrationRetryTask.cancel(false);
+        }
+        
+        // Schedule retry attempts if registration fails
+        registrationRetryTask = scheduler.schedule(() -> {
+            if (!registered.get()) {
+                // Increment BEFORE checking to fix off-by-one error
+                int attempt = registrationAttempts.incrementAndGet();
+                
+                if (attempt <= MAX_REGISTRATION_ATTEMPTS) {
+                    LOGGER.warning("Retrying registration with Registry Service (attempt " + attempt + "/" + MAX_REGISTRATION_ATTEMPTS + ")");
+                    sendInitialRegistration();
+                } else {
+                    LOGGER.severe("Failed to register with Registry Service after " + MAX_REGISTRATION_ATTEMPTS + " attempts. " +
+                        "Server will continue with temporary ID: " + serverIdentifier.getServerId());
+                    // Continue with temporary ID but still start heartbeat
+                    startHeartbeat();
+                }
+            }
+        }, 15, TimeUnit.SECONDS);
     }
     
     private void handleRegistrationResponse(ServerRegistrationResponse response) {
@@ -245,22 +274,70 @@ public class ServerLifecycleFeature implements PluginFeature {
             registrationTimeoutTask.cancel(false);
         }
         
+        // Cancel retry task if it exists
+        if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
+            registrationRetryTask.cancel(false);
+        }
+        
         if (response.isSuccess()) {
             String permanentId = response.getAssignedServerId();
-            LOGGER.info("Server registered successfully with permanent ID: " + permanentId);
+            String oldId = serverIdentifier.getServerId();
+            LOGGER.info("Successfully registered with central Registry Service! Permanent ID: " + permanentId);
             
             // Update server identifier
             serverIdentifier.updateServerId(permanentId);
             
-            // Note: MessageBus serverId is already set during initialization
+            // CRITICAL: Re-subscribe to new server-specific channel with permanent ID
+            if (!oldId.equals(permanentId)) {
+                // Subscribe to new channel for permanent ID
+                messageBus.subscribe("server:" + permanentId, envelope -> {
+                    LOGGER.fine("Received message on permanent server channel: " + envelope.getType());
+                    if (envelope.getType().equals("server.registration.response")) {
+                        try {
+                            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                            ServerRegistrationResponse resp = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
+                            handleProxyRegistrationResponse(resp);
+                        } catch (Exception e) {
+                            LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
+                        }
+                    }
+                });
+                
+                // Also subscribe to response channel for this server
+                messageBus.subscribe("server:" + permanentId + ":response", envelope -> {
+                    LOGGER.fine("Received response on permanent server response channel");
+                    // Handle any server-specific responses here
+                });
+                
+                LOGGER.info("Re-subscribed to channels with permanent ID: " + permanentId);
+            }
             
             registered.set(true);
             startHeartbeat();
+            
+            // Send server announcement after successful registration
+            sendServerAnnouncement();
         } else {
-            LOGGER.severe("Server registration failed: " + response.getMessage());
+            LOGGER.severe("Registration rejected by Registry Service: " + response.getMessage());
             // Continue with temporary ID
             startHeartbeat();
         }
+    }
+    
+    private void sendServerAnnouncement() {
+        // Broadcast server announcement for proxy discovery
+        ServerAnnouncementMessage announcement = new ServerAnnouncementMessage(
+            serverIdentifier.getServerId(),
+            serverType,
+            environment,  // Use the loaded environment
+            serverIdentifier.getFamily(),
+            maxCapacity,
+            serverIdentifier.getAddress(),
+            serverIdentifier.getPort()
+        );
+        
+        messageBus.broadcast("server.announcement", announcement);
+        LOGGER.info("Broadcast server announcement for proxy discovery");
     }
     
     private void startHeartbeat() {
@@ -273,12 +350,13 @@ public class ServerLifecycleFeature implements PluginFeature {
         heartbeatTask = new BukkitRunnable() {
             @Override
             public void run() {
+                LOGGER.info("Sending backend server heartbeat at " + System.currentTimeMillis());
                 sendHeartbeat();
             }
         };
         
-        // Send heartbeat every 30 seconds
-        heartbeatTask.runTaskTimer(plugin, 0L, 600L);
+        // Send heartbeat every 2 seconds (40 ticks) - must be less than registry timeout (5s)
+        heartbeatTask.runTaskTimer(plugin, 0L, 40L);
     }
     
     private void sendHeartbeat() {
@@ -288,10 +366,16 @@ public class ServerLifecycleFeature implements PluginFeature {
         );
         
         // Set server metrics
-        heartbeat.setTps(Bukkit.getTPS()[0]); // Get current TPS
+        double[] tps = Bukkit.getTPS();
+        double avgTps = tps.length > 0 ? tps[0] : 20.0; // Use 1-minute average
+        heartbeat.setTps(Math.min(avgTps, 20.0)); // Cap at 20
         heartbeat.setPlayerCount(Bukkit.getOnlinePlayers().size());
         heartbeat.setMaxCapacity(maxCapacity);  // This is the hard cap
         heartbeat.setUptime(System.currentTimeMillis() - startTime);
+        
+        // Estimate response time based on tick timing
+        long responseTime = (long) ((20.0 - avgTps) * 50); // Rough estimate in ms
+        heartbeat.setResponseTime(Math.max(0, responseTime));
         
         // Set role from the environment (family field is deprecated)
         heartbeat.setRole(serverIdentifier.getFamily());
@@ -302,7 +386,12 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
         
         // Broadcast heartbeat
-        messageBus.broadcast("server.heartbeat", heartbeat);
+        messageBus.broadcast("server:heartbeat", heartbeat);
+        
+        LOGGER.fine("Sent heartbeat - Players: " + heartbeat.getPlayerCount() +
+                   "/" + heartbeat.getMaxCapacity() +
+                   ", TPS: " + String.format("%.1f", heartbeat.getTps()) +
+                   ", Response: " + heartbeat.getResponseTime() + "ms");
     }
     
     @Override
@@ -313,6 +402,10 @@ public class ServerLifecycleFeature implements PluginFeature {
         
         if (registrationTimeoutTask != null && !registrationTimeoutTask.isDone()) {
             registrationTimeoutTask.cancel(false);
+        }
+        
+        if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
+            registrationRetryTask.cancel(false);
         }
         
         scheduler.shutdown();
@@ -358,13 +451,34 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
         });
         
-        // Handle registration responses from proxies - subscribe to the correct channel
+        // Handle registration responses from Registry Service
         messageBus.subscribe("server:registration:response", envelope -> {
             try {
+                // Registry Service sends a plain JSON response, not wrapped in MessageEnvelope
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                ServerRegistrationResponse response = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
-                handleProxyRegistrationResponse(response);
-                LOGGER.info("Received registration response on channel 'server:registration:response'");
+                
+                // Try to parse the payload - Registry Service sends JSON directly
+                com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
+                if (payload != null && payload.isTextual()) {
+                    // Plain JSON string from Registry Service
+                    String jsonStr = payload.asText();
+                    Map<String, Object> responseMap = mapper.readValue(jsonStr, Map.class);
+                    
+                    // Convert to ServerRegistrationResponse
+                    ServerRegistrationResponse response = new ServerRegistrationResponse();
+                    response.setSuccess((Boolean) responseMap.get("success"));
+                    response.setAssignedServerId((String) responseMap.get("assignedServerId"));
+                    response.setProxyId((String) responseMap.getOrDefault("proxyId", "registry"));
+                    response.setMessage((String) responseMap.getOrDefault("message", ""));
+                    
+                    handleRegistrationResponse(response);
+                    LOGGER.info("Received registration response from Registry Service");
+                } else {
+                    // Try as MessageEnvelope payload (for backward compatibility)
+                    ServerRegistrationResponse response = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
+                    handleProxyRegistrationResponse(response);
+                    LOGGER.info("Received registration response from proxy");
+                }
             } catch (Exception e) {
                 LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
             }
@@ -385,7 +499,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         });
         
         // Subscribe to evacuation requests
-        messageBus.subscribe("server.evacuation.request", envelope -> {
+        messageBus.subscribe("server:evacuation", envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 ServerEvacuationRequest request = mapper.treeToValue(envelope.getPayload(), ServerEvacuationRequest.class);
@@ -413,7 +527,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         knownProxies.put(proxyId, announcement);
         LOGGER.info("=== PROXY ANNOUNCEMENT RECEIVED ===");
         LOGGER.info("Proxy ID: " + proxyId);
-        LOGGER.info("Current Load: " + announcement.getCurrentLoad() + "/" + announcement.getCapacity());
+        LOGGER.info("Current Load: " + announcement.getCurrentPlayerCount() + "/" + announcement.getHardCap());
         LOGGER.info("===================================");
         
         // If we haven't registered yet, send our registration
@@ -517,7 +631,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             "Evacuation completed: " + evacuatedCount + " succeeded, " + failedCount + " failed"
         );
         
-        messageBus.broadcast("server.evacuation.response", response);
+        messageBus.broadcast("server:evacuation:response", response);
         LOGGER.info("Evacuation completed: " + evacuatedCount + " players evacuated, " + failedCount + " failed");
     }
     
