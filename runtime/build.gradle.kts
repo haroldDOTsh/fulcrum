@@ -19,10 +19,6 @@ repositories {
 
 dependencies {
     implementation(project(":data-api"))
-    implementation(project(":message-api"))
-    implementation(project(":rank-api"))
-    implementation(project(":menu-api"))
-    implementation(project(":module-api"))
     implementation(project(":message-bus-api"))
     implementation(project(":server-lifecycle-api"))
 

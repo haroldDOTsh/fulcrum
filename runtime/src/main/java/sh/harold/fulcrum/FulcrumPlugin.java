@@ -2,9 +2,9 @@ package sh.harold.fulcrum;
 
 import org.bukkit.plugin.java.JavaPlugin;
 
-import sh.harold.fulcrum.api.menu.MenuFeature;
+import sh.harold.fulcrum.api.menu.impl.MenuFeature;
 import sh.harold.fulcrum.api.message.MessageFeature;
-import sh.harold.fulcrum.api.message.scoreboard.ScoreboardFeature;
+import sh.harold.fulcrum.api.message.impl.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
 import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
@@ -14,19 +14,14 @@ import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.identity.IdentityFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
-import sh.harold.fulcrum.fundamentals.rank.RankFeature;
+import sh.harold.fulcrum.api.rank.impl.RankFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
-import sh.harold.fulcrum.module.ModuleFeature;
-import sh.harold.fulcrum.module.ModuleManager;
-import sh.harold.fulcrum.module.ModuleMetadata;
-import sh.harold.fulcrum.module.ModuleVerificationManager;
-
-import java.util.Set;
-import java.util.HashSet;
-import java.util.List;
+import sh.harold.fulcrum.api.module.impl.ModuleFeature;
+import sh.harold.fulcrum.api.module.impl.ModuleManager;
+import sh.harold.fulcrum.api.module.impl.ModuleVerificationManager;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;

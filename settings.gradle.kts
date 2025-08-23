@@ -9,10 +9,6 @@ pluginManagement {
 
 include(
     "data-api",
-    "module-api",
-    "menu-api",
-    "message-api",
-    "rank-api",
     "message-bus-api",
     "server-lifecycle-api",
     "runtime",
