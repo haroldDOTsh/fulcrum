@@ -52,6 +52,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     private final Logger logger;
     private final ServerLifecycleConfig config;
     private final ScheduledExecutorService scheduler;
+    private final boolean developmentMode;
     
     private MessageBus messageBus;
     private String proxyId;  // Will be updated when Registry assigns permanent ID
@@ -71,11 +72,13 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     
     public VelocityServerLifecycleFeature(ProxyServer proxy, Logger logger,
                                          ServerLifecycleConfig config,
-                                         ScheduledExecutorService scheduler) {
+                                         ScheduledExecutorService scheduler,
+                                         boolean developmentMode) {
         this.proxy = proxy;
         this.logger = logger;
         this.config = config;
         this.scheduler = scheduler;
+        this.developmentMode = developmentMode;
     }
     
     @Override
@@ -90,6 +93,15 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     
     @Override
     public void initialize(ServiceLocator services, Logger log) {
+        // Check if development mode is enabled
+        if (developmentMode) {
+            logger.warn("Development mode is enabled - proxy registration and heartbeats are disabled");
+            // In development mode, use a simple temporary ID and skip all network operations
+            this.proxyId = "dev-proxy-" + UUID.randomUUID().toString().substring(0, 8);
+            logger.info("Using development proxy ID: {}", proxyId);
+            return; // Skip all initialization in development mode
+        }
+        
         this.serviceLocator = services;  // Store for use in message handlers
         this.messageBus = services.getRequiredService(MessageBus.class);
         
@@ -137,6 +149,12 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     }
     
     private void sendProxyRegistrationToRegistry() {
+        // Skip registration in development mode
+        if (developmentMode) {
+            logger.info("Development mode - skipping proxy registration to Registry");
+            return;
+        }
+        
         try {
             // Send registration request to Registry Service using the expected format
             Map<String, Object> registrationRequest = new HashMap<>();
@@ -667,6 +685,12 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     }
     
     private void startHeartbeat() {
+        // Skip heartbeat in development mode
+        if (developmentMode) {
+            logger.info("Development mode - skipping proxy heartbeat");
+            return;
+        }
+        
         // Only start heartbeat if registered with Registry
         if (!registeredWithRegistry) {
             logger.warn("Cannot start heartbeat - not yet registered with Registry Service");

@@ -42,6 +42,12 @@ public class VelocityFeatureManager {
             lifecycleConfig = new ServerLifecycleConfig(); // Use defaults
         }
         
+        // Check development mode from config
+        boolean developmentMode = configLoader.get("development-mode", false);
+        if (developmentMode) {
+            logger.warn("Development mode is enabled - server registrations and heartbeats will be disabled");
+        }
+        
         // Create scheduled executor for heartbeats
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2, r -> {
             Thread t = new Thread(r, "Fulcrum-Lifecycle");
@@ -51,7 +57,7 @@ public class VelocityFeatureManager {
         
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
-        registerFeature(new VelocityServerLifecycleFeature(proxyServer, logger, lifecycleConfig, scheduler));
+        registerFeature(new VelocityServerLifecycleFeature(proxyServer, logger, lifecycleConfig, scheduler, developmentMode));
     }
     
     public void registerFeature(VelocityFeature feature) {
