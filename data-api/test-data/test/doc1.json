@@ -1,0 +1,10 @@
+{
+  "name": "Alice",
+  "active": true,
+  "email": "alice@example.com",
+  "age": 25,
+  "tags": [
+    "admin",
+    "user"
+  ]
+}

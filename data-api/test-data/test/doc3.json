@@ -1,0 +1,10 @@
+{
+  "name": "Charlie",
+  "active": true,
+  "email": "charlie@example.org",
+  "age": 35,
+  "tags": [
+    "moderator",
+    "user"
+  ]
+}
