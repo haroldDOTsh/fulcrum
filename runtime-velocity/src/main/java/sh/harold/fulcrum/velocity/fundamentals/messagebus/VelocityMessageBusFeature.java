@@ -42,18 +42,13 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     
     @Override
     public int getPriority() {
-        // Infrastructure layer - loads first
+        // Infrastructure layer - loads first (lower number = higher priority)
         return 10;
     }
     
     @Override
     public boolean isEnabled() {
         return true; // Always enabled
-    }
-    
-    @Override
-    public boolean isFundamental() {
-        return true; // Core infrastructure feature
     }
     
     @Override

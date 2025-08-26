@@ -88,7 +88,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     
     @Override
     public int getPriority() {
-        return 30; // After MessageBus (10) and Identity (20)
+        return 30; // After Identity (5), MessageBus (10), and DataAPI (20)
     }
     
     @Override

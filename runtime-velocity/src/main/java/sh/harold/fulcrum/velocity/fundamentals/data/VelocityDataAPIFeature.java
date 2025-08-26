@@ -26,8 +26,8 @@ public class VelocityDataAPIFeature implements VelocityFeature {
         this.logger = logger;
         
         // Get proxy server and data directory from service locator
-        this.proxy = serviceLocator.getService(ProxyServer.class);
-        this.dataDirectory = serviceLocator.getService(Path.class);
+        this.proxy = serviceLocator.getService(ProxyServer.class).orElse(null);
+        this.dataDirectory = serviceLocator.getService(Path.class).orElse(null);
         
         try {
             logger.info("Initializing Data API feature for Velocity...");
@@ -40,8 +40,8 @@ public class VelocityDataAPIFeature implements VelocityFeature {
             dataAPI = DataAPI.create(adapter);
             
             // Register with ServiceLocator
-            serviceLocator.registerService(DataAPI.class, dataAPI);
-            serviceLocator.registerService(ConnectionAdapter.class, adapter);
+            serviceLocator.register(DataAPI.class, dataAPI);
+            serviceLocator.register(ConnectionAdapter.class, adapter);
             
             logger.info("Data API initialized successfully for Velocity");
             
@@ -64,12 +64,7 @@ public class VelocityDataAPIFeature implements VelocityFeature {
     
     @Override
     public int getPriority() {
-        return 100; // High priority - initialize early as other features may depend on it
-    }
-    
-    @Override
-    public boolean isFundamental() {
-        return true; // This is a fundamental feature
+        return 20; // High priority - initialize early as other features may depend on it
     }
     
     /**

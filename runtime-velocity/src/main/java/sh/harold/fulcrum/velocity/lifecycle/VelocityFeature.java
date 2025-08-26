@@ -11,19 +11,11 @@ public interface VelocityFeature {
     String getName();
     
     /**
-     * Get the priority of this feature (higher = loads first)
-     * @return priority value
+     * Get the priority of this feature (lower = loads first)
+     * @return priority value (default 100)
      */
     default int getPriority() {
-        return 0;
-    }
-    
-    /**
-     * Check if this feature is fundamental (required for core functionality)
-     * @return true if fundamental
-     */
-    default boolean isFundamental() {
-        return false;
+        return 100;
     }
     
     /**

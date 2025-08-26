@@ -193,7 +193,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     
     @Override
     public int getPriority() {
-        return 50; // After DataAPI
+        return 50; // After DataAPI (20)
     }
     
     @Override

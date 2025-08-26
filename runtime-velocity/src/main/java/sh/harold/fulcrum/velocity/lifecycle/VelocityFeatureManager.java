@@ -90,11 +90,8 @@ public class VelocityFeatureManager {
                 
                 logger.info("Feature {} initialized successfully", feature.getName());
             } catch (Exception e) {
-                if (feature.isFundamental()) {
-                    throw new Exception("Failed to initialize fundamental feature: " + feature.getName(), e);
-                } else {
-                    logger.error("Failed to initialize feature: {}", feature.getName(), e);
-                }
+                logger.error("Failed to initialize feature: {}", feature.getName(), e);
+                // Continue with other features instead of failing completely
             }
         }
     }
@@ -118,7 +115,7 @@ public class VelocityFeatureManager {
         Set<String> visited = new HashSet<>();
         Set<String> visiting = new HashSet<>();
         
-        // First sort by priority (lower priority value = higher priority, loads first)
+        // First sort by priority (lower priority value loads first)
         List<VelocityFeature> prioritySorted = features.values().stream()
             .sorted((a, b) -> Integer.compare(a.getPriority(), b.getPriority()))
             .collect(Collectors.toList());

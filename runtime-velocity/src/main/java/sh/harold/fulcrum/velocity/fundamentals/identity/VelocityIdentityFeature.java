@@ -31,12 +31,7 @@ public class VelocityIdentityFeature implements VelocityFeature {
     
     @Override
     public int getPriority() {
-        return 200; // Highest priority - other features depend on this
-    }
-    
-    @Override
-    public boolean isFundamental() {
-        return true;
+        return 5; // Very high priority - loads early as other features depend on this
     }
     
     @Override
