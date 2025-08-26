@@ -638,7 +638,16 @@ public class QueryImpl implements Query {
                 
             case NOT_TYPE:
                 Class<?> notExpectedType = (Class<?>) condition.value;
-                return value == null || !notExpectedType.isInstance(value);
+                // Special handling for numeric types
+                if (value != null) {
+                    if (notExpectedType == Integer.class) {
+                        // For Integer NOT checks, reject any Number type
+                        return !(value instanceof Number);
+                    }
+                    return !notExpectedType.isInstance(value);
+                }
+                // null is considered NOT of any type
+                return true;
                 
             case IS_EMPTY:
                 if (value == null) return false;  // null is not considered "empty"
