@@ -1,101 +1,35 @@
-# Fulcrum Database Configuration
-#
-# This file configures data storage backends and Redis for cross-server communication.
+# Unified configuration for data storage and messaging
 
-# Backend configuration
-backends:
-  structured: sqlite     # options: sqlite, postgres
-  document: json         # options: json, mongo
-
-# ============================================================================
-# Redis Configuration - Auto-controlled by Development Mode
-# ============================================================================
-# IMPORTANT: Redis usage is now controlled by the development-mode setting in config.yml
-#
-# When development-mode is TRUE (config.yml):
-# - Redis is DISABLED (not required)
-# - Uses local-only message bus
-# - Perfect for single-server testing
-#
-# When development-mode is FALSE (config.yml):
-# - Redis is ENABLED (required for cross-server features)
-# - Enables cross-server messaging
-# - Required for production multi-server setups
-#
-# Redis enables:
-# - Cross-server messaging between game servers
-# - Proxy-server communication and registration
-# - Distributed player tracking across servers
-# - Shared caching for performance
-#
+# Redis configuration (used for message bus and caching)
 redis:
-  # Redis connection settings (used when development-mode=false)
-  host: "localhost"
+  enabled: true
+  host: localhost
   port: 6379
   password: ""
   database: 0
+  connection-pool:
+    min-idle: 1
+    max-idle: 8
+    max-total: 8
+    
+# Database configuration for Fulcrum Data API
+storage:
+  # Backend type: JSON or MONGODB
+  type: JSON
   
-  # Connection pool settings
-  pool:
-    max-total: 128
-    max-idle: 64
-    min-idle: 16
-    test-on-borrow: true
-    test-on-return: true
-    test-while-idle: true
-  
-  # Timeout settings (in milliseconds)
-  timeout: 2000
-  connection-timeout: 2000
-  
-  # SSL/TLS settings
-  ssl:
-    enabled: false
-
-# ============================================================================
-# Database Backend Configurations
-# ============================================================================
-
-# SQLite configuration (default for structured data)
-# Lightweight, zero-configuration database perfect for single servers
-sqlite:
-  file: "data/players.db"  # Database file location relative to plugin folder
-
-# PostgreSQL configuration (alternative for structured data)
-# Use for production deployments with high concurrency or large datasets
-postgres:
-  host: "localhost"
-  port: 5432
-  database: "players"
-  user: "dev"
-  password: "password"
-  
-  # Connection pool settings
-  pool:
-    max-size: 10
-    min-idle: 2
-    connection-timeout: 5000
-    idle-timeout: 600000
-    max-lifetime: 1800000
-
-# JSON file storage configuration (default for document data)
-# Simple file-based storage, perfect for development and small servers
+# JSON file storage settings (if type is JSON)
 json:
-  dir: "data/json/"         # Directory for JSON files
-  
-  # Pretty print JSON files (easier to read, slightly larger files)
-  pretty-print: true
-  
-  # Use compression for JSON files (reduces disk usage)
-  use-compression: false
-
-# MongoDB configuration (alternative for document data)
-# Use for production deployments requiring advanced querying and scalability
-mongo:
-  uri: "mongodb://localhost:27017"
-  database: "players"
-  
-  # Authentication
+  # Directory where JSON files will be stored
+  data-path: "data"
+  # Cache settings
+  cache:
+    enabled: true
+    max-size: 1000
+    
+# MongoDB settings (if type is MONGODB)
+mongodb:
+  connection-string: "mongodb://localhost:27017"
+  database: "fulcrum"
+  # Optional authentication
   username: ""
   password: ""
-  auth-database: "admin"
