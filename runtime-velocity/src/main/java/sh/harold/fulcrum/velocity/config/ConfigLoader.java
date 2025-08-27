@@ -2,7 +2,7 @@ package sh.harold.fulcrum.velocity.config;
 
 import org.slf4j.Logger;
 import org.yaml.snakeyaml.Yaml;
-import sh.harold.fulcrum.velocity.fundamentals.messagebus.MessageBusConfig;
+import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -14,7 +14,7 @@ public class ConfigLoader {
     private final Path dataDirectory;
     private final Logger logger;
     private final Map<String, Object> configuration;
-    private final Map<Class<?>, Object> configCache;
+    private final Map<Object, Object> configCache; // Changed to support both Class<?> and String keys
     
     public ConfigLoader(Path dataDirectory, Logger logger) {
         this.dataDirectory = dataDirectory;
@@ -66,16 +66,13 @@ public class ConfigLoader {
     private void parseConfigurations() {
         // Parse Message Bus configuration
         Map<String, Object> messageBusSection = (Map<String, Object>) configuration.get("message-bus");
+        String messageBusMode = "redis"; // Default to Redis for proxies
         if (messageBusSection != null) {
-            MessageBusConfig messageBusConfig = new MessageBusConfig();
-            messageBusConfig.setMode((String) messageBusSection.getOrDefault("mode", "redis"));
-            configCache.put(MessageBusConfig.class, messageBusConfig);
-        } else {
-            // Default to Redis for proxies if not specified
-            MessageBusConfig messageBusConfig = new MessageBusConfig();
-            messageBusConfig.setMode("redis");
-            configCache.put(MessageBusConfig.class, messageBusConfig);
+            messageBusMode = (String) messageBusSection.getOrDefault("mode", "redis");
         }
+        
+        // Store the mode directly as a String
+        configCache.put("message-bus-mode", messageBusMode);
         
         // Parse Redis configuration
         Map<String, Object> redisSection = (Map<String, Object>) configuration.get("redis");
@@ -128,6 +125,11 @@ public class ConfigLoader {
     @SuppressWarnings("unchecked")
     public <T> T getConfig(Class<T> configClass) {
         return (T) configCache.get(configClass);
+    }
+    
+    @SuppressWarnings("unchecked")
+    public <T> T getConfig(String key) {
+        return (T) configCache.get(key);
     }
     
     public Map<String, Object> getConfiguration() {

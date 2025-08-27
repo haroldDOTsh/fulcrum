@@ -4,7 +4,6 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
-import sh.harold.fulcrum.api.data.dirty.RedisDirtyDataCache;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -17,7 +16,7 @@ import java.util.stream.Collectors;
  * Redis operations implementation using Lettuce client.
  * Provides a consistent interface for Redis operations matching the proxy implementation.
  */
-public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperations, AutoCloseable {
+public class LettuceRedisOperations implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(LettuceRedisOperations.class.getName());
     
     private final RedisClient redisClient;
@@ -81,7 +80,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public void set(String key, String value, long ttlSeconds) {
         if (!available) {
             LOGGER.warning("Redis not available for SET operation");
@@ -100,7 +98,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public String get(String key) {
         if (!available) {
             return null;
@@ -115,7 +112,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public boolean delete(String key) {
         if (!available) {
             return false;
@@ -130,7 +126,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public void sAdd(String setKey, String member) {
         if (!available) {
             return;
@@ -144,7 +139,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public void sRem(String setKey, String member) {
         if (!available) {
             return;
@@ -158,7 +152,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public Set<String> sMembers(String setKey) {
         if (!available) {
             return Collections.emptySet();
@@ -173,7 +166,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public boolean sIsMember(String setKey, String member) {
         if (!available) {
             return false;
@@ -188,7 +180,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public Set<String> keys(String pattern) {
         if (!available) {
             return Collections.emptySet();
@@ -203,7 +194,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public long delete(String... keys) {
         if (!available || keys == null || keys.length == 0) {
             return 0;
@@ -218,7 +208,6 @@ public class LettuceRedisOperations implements RedisDirtyDataCache.RedisOperatio
         }
     }
     
-    @Override
     public boolean isAvailable() {
         return available && connection != null && connection.isOpen();
     }

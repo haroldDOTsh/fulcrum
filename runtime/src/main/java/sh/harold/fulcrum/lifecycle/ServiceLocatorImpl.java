@@ -11,6 +11,7 @@ import java.util.Optional;
  */
 public class ServiceLocatorImpl implements ServiceLocator {
     private final DependencyContainer container;
+    private static ServiceLocatorImpl instance;
 
     /**
      * Creates a new ServiceLocator implementation with the given container.
@@ -22,10 +23,45 @@ public class ServiceLocatorImpl implements ServiceLocator {
             throw new IllegalArgumentException("DependencyContainer cannot be null");
         }
         this.container = container;
+        instance = this;
+    }
+
+    /**
+     * Get the singleton instance of ServiceLocatorImpl.
+     * Note: This is only available after initialization.
+     *
+     * @return The instance, or null if not yet initialized
+     */
+    public static ServiceLocatorImpl getInstance() {
+        return instance;
     }
 
     @Override
     public <T> Optional<T> findService(Class<T> serviceClass) {
         return container.getOptional(serviceClass);
+    }
+
+    /**
+     * Register a service with the container.
+     * This method is only available in the implementation.
+     *
+     * @param <T>          The type of the service
+     * @param serviceClass The class of the service
+     * @param instance     The service instance
+     */
+    public <T> void registerService(Class<T> serviceClass, T instance) {
+        container.register(serviceClass, instance);
+    }
+
+    /**
+     * Unregister a service from the container.
+     * This method is only available in the implementation.
+     *
+     * @param <T>          The type of the service
+     * @param serviceClass The class of the service
+     */
+    public <T> void unregisterService(Class<T> serviceClass) {
+        // DependencyContainer doesn't have unregister, so we just ignore for now
+        // Services will be cleaned up when container is destroyed
     }
 }
