@@ -7,7 +7,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.plugin.Plugin;
 import sh.harold.fulcrum.api.module.FulcrumModule;
-import sh.harold.fulcrum.environment.EnvironmentConfig;
+import sh.harold.fulcrum.api.environment.EnvironmentConfig;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
 
 import java.util.*;

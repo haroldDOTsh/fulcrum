@@ -14,8 +14,9 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.*;
-import sh.harold.fulcrum.fundamentals.messagebus.RedisMessageBus;
-import sh.harold.fulcrum.fundamentals.messagebus.SimpleMessageBus;
+import sh.harold.fulcrum.api.messagebus.impl.RedisMessageBus;
+import sh.harold.fulcrum.api.messagebus.impl.InMemoryMessageBus;
+import sh.harold.fulcrum.api.messagebus.impl.AbstractMessageBus;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 
 import java.lang.reflect.Field;
@@ -293,11 +294,13 @@ public class MessageDebugCommand {
         try {
             Field subscriptionsField = null;
             
-            // Check if it's RedisMessageBus or SimpleMessageBus
+            // Check if it's RedisMessageBus, InMemoryMessageBus or AbstractMessageBus
             if (messageBus instanceof RedisMessageBus) {
-                subscriptionsField = RedisMessageBus.class.getDeclaredField("subscriptions");
-            } else if (messageBus instanceof SimpleMessageBus) {
-                subscriptionsField = SimpleMessageBus.class.getDeclaredField("subscriptions");
+                subscriptionsField = AbstractMessageBus.class.getDeclaredField("subscriptions");
+            } else if (messageBus instanceof InMemoryMessageBus) {
+                subscriptionsField = AbstractMessageBus.class.getDeclaredField("subscriptions");
+            } else if (messageBus instanceof AbstractMessageBus) {
+                subscriptionsField = AbstractMessageBus.class.getDeclaredField("subscriptions");
             } else {
                 // Try generic approach
                 subscriptionsField = messageBus.getClass().getDeclaredField("subscriptions");
@@ -351,10 +354,11 @@ public class MessageDebugCommand {
         try {
             Field subscriptionsField = null;
             
-            if (messageBus instanceof RedisMessageBus) {
-                subscriptionsField = RedisMessageBus.class.getDeclaredField("subscriptions");
-            } else if (messageBus instanceof SimpleMessageBus) {
-                subscriptionsField = SimpleMessageBus.class.getDeclaredField("subscriptions");
+            if (messageBus instanceof RedisMessageBus || messageBus instanceof InMemoryMessageBus) {
+                // Both extend AbstractMessageBus which has the subscriptions field
+                subscriptionsField = AbstractMessageBus.class.getDeclaredField("subscriptions");
+            } else if (messageBus instanceof AbstractMessageBus) {
+                subscriptionsField = AbstractMessageBus.class.getDeclaredField("subscriptions");
             } else {
                 subscriptionsField = messageBus.getClass().getDeclaredField("subscriptions");
             }
