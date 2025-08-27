@@ -19,8 +19,13 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Bootstrap class for Fulcrum that initializes the environment
- * detection system and environment.yml configuration before any plugins are loaded.
+ * Bootstrap class for Fulcrum that initializes the environment configuration selection system.
+ *
+ * The system works as follows:
+ * 1. environment.yml defines possible server configurations and their associated modules
+ * 2. The ENVIRONMENT file selects which configuration this server should use
+ * 3. This happens during bootstrap phase to control which plugins get loaded
+ * 4. The selected configuration is reported during server registration
  *
  * @since 1.2.0
  */
@@ -44,11 +49,11 @@ public class FulcrumBootstrapper implements PluginBootstrap {
         Map<String, Set<String>> configMap = convertConfigToMap(config);
         
         try {
-            // Initialize FulcrumEnvironment with the bootstrap-safe configuration
+            // Initialize FulcrumEnvironment with the selected configuration
             FulcrumEnvironment.initialize(environment, configMap);
-            logger.info("Fulcrum environment initialized: " + environment);
+            logger.info("Fulcrum environment initialized with configuration: " + environment);
             
-            // Log configuration summary
+            // Log which modules will be loaded for this configuration
             logConfigurationSummary(logger, config, environment);
             
         } catch (Exception e) {
@@ -64,7 +69,8 @@ public class FulcrumBootstrapper implements PluginBootstrap {
     }
     
     /**
-     * Detects the current environment from the ENVIRONMENT file
+     * Detects the current server configuration from the ENVIRONMENT file.
+     * The ENVIRONMENT file should contain the name of a configuration defined in environment.yml.
      */
     private String detectEnvironment(ComponentLogger logger) {
         Path serverRoot = Path.of(".");
@@ -72,16 +78,18 @@ public class FulcrumBootstrapper implements PluginBootstrap {
         
         try {
             if (Files.exists(environmentFile)) {
-                String environment = Files.readString(environmentFile).trim();
-                if (!environment.isEmpty()) {
-                    return environment;
+                String configuration = Files.readString(environmentFile).trim();
+                if (!configuration.isEmpty()) {
+                    logger.info("Server configuration selected from ENVIRONMENT file: " + configuration);
+                    return configuration;
                 }
             }
         } catch (IOException e) {
             logger.warn("Failed to read ENVIRONMENT file: " + e.getMessage());
         }
         
-        logger.info("Using default environment: " + DEFAULT_ENVIRONMENT);
+        logger.info("No ENVIRONMENT file found, using default configuration: " + DEFAULT_ENVIRONMENT);
+        logger.info("Create an ENVIRONMENT file containing a configuration name from environment.yml to select a specific server configuration");
         return DEFAULT_ENVIRONMENT;
     }
     
@@ -129,22 +137,23 @@ public class FulcrumBootstrapper implements PluginBootstrap {
     }
     
     /**
-     * Logs a summary of the loaded configuration
+     * Logs a summary of which modules will be loaded for the selected configuration
      */
-    private void logConfigurationSummary(ComponentLogger logger, EnvironmentConfig config, String currentEnvironment) {
+    private void logConfigurationSummary(ComponentLogger logger, EnvironmentConfig config, String selectedConfig) {
         var globalModules = config.getGlobalModules();
-        var envModules = config.getModulesForEnvironment(currentEnvironment);
+        var configModules = config.getModulesForEnvironment(selectedConfig);
         
         if (!globalModules.isEmpty()) {
-            logger.info("Global modules: " + String.join(", ", globalModules));
+            logger.info("Global modules to load: " + String.join(", ", globalModules));
         }
         
-        if (!envModules.isEmpty()) {
-            logger.info("Environment '" + currentEnvironment + "' modules: " + String.join(", ", envModules));
+        if (!configModules.isEmpty()) {
+            logger.info("Configuration '" + selectedConfig + "' modules to load: " + String.join(", ", configModules));
         }
         
-        if (globalModules.isEmpty() && envModules.isEmpty()) {
-            logger.warn("No modules configured for environment '" + currentEnvironment + "'. All modules will be enabled by default.");
+        if (globalModules.isEmpty() && configModules.isEmpty()) {
+            logger.warn("No modules configured for '" + selectedConfig + "'. All modules will be enabled by default.");
+            logger.warn("Check environment.yml to configure modules for this server configuration.");
         }
     }
 }

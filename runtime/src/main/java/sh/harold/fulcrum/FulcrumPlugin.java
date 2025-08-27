@@ -7,14 +7,13 @@ import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.message.impl.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
-import sh.harold.fulcrum.api.playerdata.PlayerDataFeature;
-import sh.harold.fulcrum.environment.EnvironmentConfig;
-import sh.harold.fulcrum.environment.EnvironmentConfigParser;
+import sh.harold.fulcrum.api.environment.EnvironmentConfig;
+import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
+import sh.harold.fulcrum.fundamentals.data.DataAPIFeature;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
-import sh.harold.fulcrum.fundamentals.identity.IdentityFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
-import sh.harold.fulcrum.api.rank.impl.RankFeature;
+import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
@@ -42,25 +41,24 @@ public final class FulcrumPlugin extends JavaPlugin {
 
         CommandRegistrar.hook(this);
 
-        // Register features
-        FeatureManager.register(new PlayerDataFeature());
+        // Register features (order matters - dependencies first)
         FeatureManager.register(new MessageFeature());
-        FeatureManager.register(new IdentityFeature());
         FeatureManager.register(new MessageBusFeature());
         FeatureManager.register(new ServerLifecycleFeature());
+        FeatureManager.register(new DataAPIFeature()); // Register DataAPI before PlayerData
+        FeatureManager.register(new PlayerDataFeature()); // Depends on DataAPI
         FeatureManager.register(new ModuleFeature());
         FeatureManager.register(new GamemodeFeature());
-        FeatureManager.register(new RankFeature());
         FeatureManager.register(new ScoreboardFeature());
         FeatureManager.register(new MenuFeature());
 
         // Initialize all features with dependency injection
         FeatureManager.initializeAll(this, container);
 
-        // Environment detection is now handled through manual context management
-        getLogger().info("Fulcrum starting with context-based module detection");
+        // Environment detection was handled during bootstrap phase
+        getLogger().info("Fulcrum starting with role-based module detection");
         
-        // Load environment configuration for module verification
+        // Load environment configuration to verify modules later
         EnvironmentConfigParser configParser = new EnvironmentConfigParser();
         EnvironmentConfig environmentConfig = configParser.loadDefaultConfiguration();
 
@@ -81,14 +79,14 @@ public final class FulcrumPlugin extends JavaPlugin {
             moduleFeature.initialize(this, container);
         }
 
-        // Note: Module loading is now handled by each module's bootstrap phase
+        // Note: Module loading is handled by each module's bootstrap phase
         // External modules use BootstrapContextHolder for identification
         
-        // Setup deferred module verification
+        // Enable module verification to check that expected modules are loaded
         this.verificationManager = new ModuleVerificationManager(getLogger(), environmentConfig, this);
         verificationManager.register();
         
-        getLogger().info("Module verification scheduled for after server load");
+        getLogger().info("Fulcrum started successfully");
     }
 
     @Override
