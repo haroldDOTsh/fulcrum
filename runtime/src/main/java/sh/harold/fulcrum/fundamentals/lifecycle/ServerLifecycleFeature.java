@@ -17,7 +17,6 @@ import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationResponse;
 import sh.harold.fulcrum.api.messagebus.messages.ServerAnnouncementMessage;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
-import sh.harold.fulcrum.fundamentals.messagebus.RedisMessageBus;
 
 import java.io.File;
 import java.io.IOException;
@@ -85,10 +84,36 @@ public class ServerLifecycleFeature implements PluginFeature {
         this.container = container;
         this.startTime = System.currentTimeMillis();
         
-        // Get MessageBus from container
+        // Check development mode from config
+        boolean developmentMode = plugin.getConfig().getBoolean("development-mode", false);
+        
+        // Get MessageBus from container (needed even in dev mode for local operations)
         this.messageBus = container.get(MessageBus.class);
-        if (messageBus == null) {
+        if (messageBus == null && !developmentMode) {
             throw new IllegalStateException("MessageBus not available - MessageBusFeature must initialize first");
+        }
+        
+        // In development mode, create a minimal server identifier and skip network operations
+        if (developmentMode) {
+            LOGGER.warning("Development mode is enabled - server registration and heartbeats are disabled");
+            
+            // Create a dummy server identifier for development
+            String tempId = "dev-" + UUID.randomUUID().toString().substring(0, 8);
+            UUID instanceUuid = UUID.randomUUID();
+            this.serverIdentifier = new DefaultServerIdentifier(
+                tempId,
+                "development",
+                "DEV",
+                instanceUuid,
+                "localhost",
+                plugin.getServer().getPort(),
+                100,
+                100
+            );
+            container.register(ServerIdentifier.class, serverIdentifier);
+            
+            LOGGER.info("Development server initialized with ID: " + tempId);
+            return; // Skip all network operations in development mode
         }
         
         // Register BungeeCord channel for player transfers
@@ -158,7 +183,9 @@ public class ServerLifecycleFeature implements PluginFeature {
     
     /**
      * Loads the server role from the ENVIRONMENT file in the server root.
-     * The environment string is used directly as the role without enum parsing.
+     * The role string should match one of the roles defined in environment.yml.
+     * This role determines which modules are loaded and is reported during registration.
+     *
      * @return The server role from the ENVIRONMENT file, or "game" as default
      */
     private String loadEnvironmentRole() {
@@ -177,9 +204,10 @@ public class ServerLifecycleFeature implements PluginFeature {
                 return "game";
             }
             
-            // Store and use the environment string directly as the family
+            // Store the role for use in heartbeats and announcements
             this.environment = env;
-            LOGGER.info("Server environment loaded: " + env);
+            LOGGER.info("Server role loaded from ENVIRONMENT file: " + env);
+            LOGGER.info("This role will be reported during server registration");
             return env;
         } catch (IOException e) {
             LOGGER.warning("Failed to read ENVIRONMENT file: " + e.getMessage());
@@ -192,15 +220,20 @@ public class ServerLifecycleFeature implements PluginFeature {
      * Send initial registration request to the Registry Service
      */
     private void sendInitialRegistration() {
+        // Skip registration in development mode
+        if (plugin.getConfig().getBoolean("development-mode", false)) {
+            LOGGER.info("Development mode - skipping server registration");
+            return;
+        }
+        
         // Create registration request with all required data
-        // Use the current server ID (which may be permanent if already registered)
         ServerRegistrationRequest request = new ServerRegistrationRequest(
             serverIdentifier.getServerId(),
             serverType,  // MINI or MEGA based on RAM
             maxCapacity   // Calculated from RAM
         );
         
-        // Set role from the loaded environment
+        // Set role from the ENVIRONMENT file (which selects from environment.yml roles)
         request.setRole(serverIdentifier.getRole());
         
         // Set server address and port - CRITICAL for proxies to connect
@@ -360,6 +393,12 @@ public class ServerLifecycleFeature implements PluginFeature {
     }
     
     private void sendHeartbeat() {
+        // Skip heartbeat in development mode
+        if (plugin.getConfig().getBoolean("development-mode", false)) {
+            LOGGER.fine("Development mode - skipping heartbeat");
+            return;
+        }
+        
         ServerHeartbeatMessage heartbeat = new ServerHeartbeatMessage(
             serverIdentifier.getServerId(),
             serverType
