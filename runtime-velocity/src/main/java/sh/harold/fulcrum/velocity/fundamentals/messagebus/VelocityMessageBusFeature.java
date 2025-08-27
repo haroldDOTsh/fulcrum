@@ -2,25 +2,23 @@ package sh.harold.fulcrum.velocity.fundamentals.messagebus;
 
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
+import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
+import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
-import sh.harold.fulcrum.velocity.config.RedisConfig;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.RedisURI;
-import io.lettuce.core.SetArgs;
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.sync.RedisCommands;
 
-import java.time.Duration;
-import java.util.concurrent.TimeUnit;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
 
 /**
- * Feature that provides message bus functionality for the Velocity proxy.
- * Supports both simple (local) and Redis-based distributed messaging.
- * Implements Redis-based proxy slot allocation for unique proxy identification.
+ * Message Bus Feature providing inter-server communication capabilities.
+ * Uses clean adapter pattern with consolidated message-bus-api.
  */
 public class VelocityMessageBusFeature implements VelocityFeature {
     
@@ -29,11 +27,8 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     private ConfigLoader configLoader;
     private Logger logger;
     private MessageBus messageBus;
-    private RedisClient redisClient;
-    private StatefulRedisConnection<String, String> redisConnection;
-    private String tempProxyId;  // Temporary ID until Registry assigns permanent one
-    private String permanentProxyId;  // Permanent ID from Registry
-    private int proxyIndex = -1;  // -1 indicates no permanent assignment yet
+    private VelocityMessageBusAdapter adapter;
+    private String proxyId;
     
     @Override
     public String getName() {
@@ -66,37 +61,148 @@ public class VelocityMessageBusFeature implements VelocityFeature {
         
         logger.info("Initializing MessageBus feature");
         
-        // Load message bus configuration
-        MessageBusConfig config = configLoader.getConfig(MessageBusConfig.class);
-        if (config == null) {
-            config = new MessageBusConfig();
-            config.setMode("redis"); // Default to Redis for production
+        // Load configuration
+        MessageBusConnectionConfig config = loadConfiguration();
+        
+        // Create Velocity-specific adapter
+        adapter = new VelocityMessageBusAdapter(proxy, plugin, serviceLocator, config, logger);
+        
+        // Store proxy ID for later use
+        proxyId = adapter.getServerId();
+        logger.info("Using temporary proxy ID: {}", proxyId);
+        
+        // Create message bus using factory
+        try {
+            messageBus = MessageBusFactory.create(adapter);
+            logger.info("MessageBus initialized with type: {}", config.getType());
+            
+        } catch (Exception e) {
+            logger.error("Failed to create message bus: {}", e.getMessage());
+            throw new RuntimeException("Failed to initialize message bus", e);
         }
         
-        // Generate temporary ID for initial use
-        tempProxyId = "temp-proxy-" + java.util.UUID.randomUUID().toString();
-        logger.info("Generated temporary proxy ID: {}", tempProxyId);
-        
-        // Create appropriate message bus based on configuration
-        if (config.isRedisMode()) {
-            RedisConfig redisConfig = configLoader.getConfig(RedisConfig.class);
-            if (redisConfig == null) {
-                logger.warn("Redis config not found, falling back to simple message bus");
-                messageBus = new VelocitySimpleMessageBus(tempProxyId, proxy);
-            } else {
-                logger.info("Initializing Redis-based message bus with temporary ID");
-                initializeRedisConnection(redisConfig);
-                // Do NOT allocate proxy slot - Registry will assign the ID
-                messageBus = new VelocityRedisMessageBus(tempProxyId, proxy, redisConfig);
-            }
-        } else {
-            logger.info("Using simple message bus with temporary ID");
-            messageBus = new VelocitySimpleMessageBus(tempProxyId, proxy);
-        }
-        
-        // Register message bus service BEFORE other features try to use it
+        // Register services
         serviceLocator.register(MessageBus.class, messageBus);
         
+        // Subscribe to basic messages
+        setupMessageHandlers();
+        
+        logger.info("MessageBus feature initialized successfully");
+        logger.info("Type: {}", config.getType());
+        if (config.getType() == MessageBusConnectionConfig.MessageBusType.REDIS) {
+            logger.info("Redis: {}:{}", config.getHost(), config.getPort());
+        }
+    }
+    
+    /**
+     * Update the proxy ID when Registry Service assigns a permanent one
+     */
+    public void updateProxyId(String newProxyId) {
+        if (adapter != null) {
+            adapter.updateProxyId(newProxyId);
+            this.proxyId = newProxyId;
+            logger.info("Proxy ID updated to permanent ID: {}", newProxyId);
+        }
+    }
+    
+    /**
+     * Get the current proxy ID (permanent if assigned, temporary otherwise)
+     */
+    public String getCurrentProxyId() {
+        return proxyId;
+    }
+    
+    @Override
+    public void shutdown() {
+        logger.info("Shutting down MessageBus feature");
+        
+        if (adapter != null) {
+            adapter.shutdown();
+        }
+        
+        if (messageBus != null) {
+            try {
+                // Message bus handles its own shutdown
+                // The adapter will be notified via onMessageBusShutdown callback
+            } catch (Exception e) {
+                logger.warn("Error during message bus shutdown: {}", e.getMessage());
+            }
+        }
+        
+        messageBus = null;
+        adapter = null;
+        
+        logger.info("MessageBus feature shutdown complete");
+    }
+    
+    private MessageBusConnectionConfig loadConfiguration() {
+        // Load Redis configuration from database-config.yml
+        try {
+            Path configPath = plugin.getDataDirectory().resolve("database-config.yml");
+            
+            // If config doesn't exist, copy default from resources
+            if (!Files.exists(configPath)) {
+                try (InputStream defaultConfig = getClass().getClassLoader()
+                        .getResourceAsStream("database-config.yml")) {
+                    if (defaultConfig != null) {
+                        Files.createDirectories(plugin.getDataDirectory());
+                        Files.copy(defaultConfig, configPath);
+                        logger.info("Created default database-config.yml");
+                    }
+                }
+            }
+            
+            // Load the configuration
+            Yaml yaml = new Yaml();
+            Map<String, Object> config;
+            
+            try (InputStream input = Files.newInputStream(configPath)) {
+                config = yaml.load(input);
+            }
+            
+            // Get Redis configuration section
+            @SuppressWarnings("unchecked")
+            Map<String, Object> redisSection = (Map<String, Object>) config.get("redis");
+            
+            if (redisSection == null) {
+                logger.warn("No Redis configuration found in database-config.yml");
+                logger.warn("Using in-memory message bus as fallback");
+                return MessageBusConnectionConfig.inMemory();
+            }
+            
+            // Check if Redis is enabled
+            Boolean enabled = (Boolean) redisSection.get("enabled");
+            if (enabled != null && !enabled) {
+                logger.info("Redis is disabled in configuration");
+                logger.info("Using in-memory message bus");
+                return MessageBusConnectionConfig.inMemory();
+            }
+            
+            // Build Redis configuration
+            MessageBusConnectionConfig.Builder builder = MessageBusConnectionConfig.builder()
+                .type(MessageBusConnectionConfig.MessageBusType.REDIS)
+                .host((String) redisSection.getOrDefault("host", "localhost"))
+                .port((Integer) redisSection.getOrDefault("port", 6379))
+                .database((Integer) redisSection.getOrDefault("database", 0));
+            
+            // Set password if provided
+            String password = (String) redisSection.get("password");
+            if (password != null && !password.isEmpty()) {
+                builder.password(password);
+            }
+            
+            MessageBusConnectionConfig messageBusConfig = builder.build();
+            logger.info("Redis configuration loaded successfully");
+            return messageBusConfig;
+            
+        } catch (Exception e) {
+            logger.error("Failed to load configuration: {}", e.getMessage());
+            logger.warn("Falling back to in-memory message bus");
+            return MessageBusConnectionConfig.inMemory();
+        }
+    }
+    
+    private void setupMessageHandlers() {
         // Subscribe to server lifecycle messages
         messageBus.subscribe("server.registration.response", envelope -> {
             logger.info("Received registration response");
@@ -106,120 +212,6 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             logger.debug("Received heartbeat message");
         });
         
-        logger.info("MessageBus feature initialized with temporary ID: {}", tempProxyId);
-        logger.info("Waiting for Registry Service to assign permanent proxy ID...");
-    }
-    
-    private void initializeRedisConnection(RedisConfig config) {
-        try {
-            // Build Redis URI for Lettuce
-            RedisURI.Builder uriBuilder = RedisURI.builder()
-                .withHost(config.getHost())
-                .withPort(config.getPort())
-                .withDatabase(config.getDatabase())
-                .withTimeout(java.time.Duration.ofMillis(2000));
-            
-            if (config.getPassword() != null && !config.getPassword().isEmpty()) {
-                uriBuilder.withPassword(config.getPassword().toCharArray());
-            }
-            
-            RedisURI redisURI = uriBuilder.build();
-            
-            // Create Redis client and connection
-            redisClient = RedisClient.create(redisURI);
-            redisConnection = redisClient.connect();
-            
-            // Test connection
-            RedisCommands<String, String> commands = redisConnection.sync();
-            String pong = commands.ping();
-            logger.info("Connected to Redis at {}:{} - Response: {}", config.getHost(), config.getPort(), pong);
-            
-        } catch (Exception e) {
-            logger.error("Failed to initialize Redis connection: {}", e.getMessage());
-            if (redisConnection != null && redisConnection.isOpen()) {
-                redisConnection.close();
-            }
-            if (redisClient != null) {
-                redisClient.shutdown();
-            }
-            throw new RuntimeException("Redis connection failed", e);
-        }
-    }
-    
-    /**
-     * Update the proxy ID when Registry Service assigns a permanent one
-     */
-    public void updateProxyId(String newProxyId) {
-        String oldId = getCurrentProxyId();
-        this.permanentProxyId = newProxyId;
-        
-        // Extract index from permanent ID if it follows the pattern
-        if (newProxyId != null && newProxyId.startsWith("fulcrum-proxy-")) {
-            try {
-                String indexStr = newProxyId.substring("fulcrum-proxy-".length());
-                this.proxyIndex = Integer.parseInt(indexStr);
-            } catch (NumberFormatException e) {
-                this.proxyIndex = 0;
-            }
-        }
-        
-        logger.info("Updated proxy ID from {} to {} (index: {})", oldId, newProxyId, proxyIndex);
-        
-        // Note: The message bus instances will continue using the old ID internally,
-        // but VelocityServerLifecycleFeature will use the updated ID for all external communications
-    }
-    
-    /**
-     * Get the current proxy ID (permanent if assigned, temporary otherwise)
-     */
-    public String getCurrentProxyId() {
-        return permanentProxyId != null ? permanentProxyId : tempProxyId;
-    }
-    
-    @Override
-    public void shutdown() {
-        // No slot to release since Registry Service manages IDs
-        
-        if (messageBus != null) {
-            logger.info("Shutting down message bus");
-            
-            if (messageBus instanceof VelocitySimpleMessageBus) {
-                ((VelocitySimpleMessageBus) messageBus).shutdown();
-            } else if (messageBus instanceof VelocityRedisMessageBus) {
-                ((VelocityRedisMessageBus) messageBus).shutdown();
-            }
-        }
-        
-        // Close Redis connection and client
-        if (redisConnection != null && redisConnection.isOpen()) {
-            redisConnection.close();
-        }
-        
-        if (redisClient != null) {
-            redisClient.shutdown();
-        }
-    }
-    
-    /**
-     * Get the proxy ID (for backward compatibility)
-     * @deprecated Use getCurrentProxyId() instead
-     */
-    @Deprecated
-    public String getProxyId() {
-        return getCurrentProxyId();
-    }
-    
-    /**
-     * Get the proxy index (-1 if no permanent ID assigned yet)
-     */
-    public int getProxyIndex() {
-        return proxyIndex;
-    }
-    
-    /**
-     * Check if a permanent proxy ID has been assigned
-     */
-    public boolean hasPermanentId() {
-        return permanentProxyId != null;
+        logger.info("Message handlers registered");
     }
 }

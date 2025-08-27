@@ -72,14 +72,12 @@ public class VelocityConnectionAdapter {
                 boolean cacheEnabled = (Boolean) cache.getOrDefault("enabled", true);
                 int maxCacheSize = ((Number) cache.getOrDefault("max-size", 1000)).intValue();
                 
-                Map<String, Object> jsonOptions = Map.of(
-                    "path", dataDir.toAbsolutePath().toString(),
-                    "cacheEnabled", cacheEnabled,
-                    "maxCacheSize", maxCacheSize
-                );
-                
-                adapter = new JsonConnectionAdapter(jsonOptions);
+                // JsonConnectionAdapter expects a Path directly
+                adapter = new JsonConnectionAdapter(dataDir);
                 logger.info("Using JSON storage backend at: {}", dataDir.toAbsolutePath());
+                if (cacheEnabled) {
+                    logger.info("Cache enabled with max size: {}", maxCacheSize);
+                }
                 break;
                 
             case MONGODB:
@@ -89,14 +87,16 @@ public class VelocityConnectionAdapter {
                 String username = (String) mongoConfig.getOrDefault("username", "");
                 String password = (String) mongoConfig.getOrDefault("password", "");
                 
-                Map<String, Object> mongoOptions = Map.of(
-                    "connectionString", connectionString,
-                    "database", database,
-                    "username", username,
-                    "password", password
-                );
+                // Build connection string with credentials if provided
+                if (!username.isEmpty() && !password.isEmpty()) {
+                    String[] parts = connectionString.split("://");
+                    if (parts.length == 2) {
+                        connectionString = parts[0] + "://" + username + ":" + password + "@" + parts[1];
+                    }
+                }
                 
-                adapter = new MongoConnectionAdapter(mongoOptions);
+                // MongoConnectionAdapter expects connectionString and database name
+                adapter = new MongoConnectionAdapter(connectionString, database);
                 logger.info("Using MongoDB storage backend: {}", database);
                 break;
                 
@@ -120,8 +120,13 @@ public class VelocityConnectionAdapter {
     public void shutdown() {
         if (adapter != null) {
             try {
-                adapter.disconnect();
-                logger.info("Data storage backend disconnected successfully");
+                // ConnectionAdapter doesn't have disconnect() method
+                // Check if it's a MongoConnectionAdapter which has close()
+                if (adapter instanceof MongoConnectionAdapter) {
+                    ((MongoConnectionAdapter) adapter).close();
+                    logger.info("MongoDB storage backend disconnected successfully");
+                }
+                // JsonConnectionAdapter doesn't need explicit cleanup
             } catch (Exception e) {
                 logger.warn("Error disconnecting data storage", e);
             }
