@@ -1,10 +1,9 @@
 package sh.harold.fulcrum.registry.heartbeat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.lettuce.core.api.sync.RedisCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sh.harold.fulcrum.registry.messagebus.RegistryMessageBus;
+import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -44,8 +43,7 @@ public class HeartbeatMonitor {
     
     private ScheduledFuture<?> monitorTask;
     private Consumer<String> onServerTimeout;
-    private RedisCommands<String, String> redisCommands;
-    private RegistryMessageBus messageBus;
+    private MessageBus messageBus;
     
     public HeartbeatMonitor(ServerRegistry serverRegistry, ScheduledExecutorService scheduler) {
         this(serverRegistry, null, scheduler);
@@ -302,16 +300,9 @@ public class HeartbeatMonitor {
     }
     
     /**
-     * Set Redis commands for broadcasting status changes
-     */
-    public void setRedisCommands(RedisCommands<String, String> redisCommands) {
-        this.redisCommands = redisCommands;
-    }
-    
-    /**
      * Set MessageBus for broadcasting status changes
      */
-    public void setMessageBus(RegistryMessageBus messageBus) {
+    public void setMessageBus(MessageBus messageBus) {
         this.messageBus = messageBus;
     }
     
@@ -334,15 +325,10 @@ public class HeartbeatMonitor {
             message.put("maxPlayers", server.getMaxCapacity());
             message.put("tps", server.getTps());
             
-            // Use MessageBus if available, otherwise fall back to direct Redis
+            // Use MessageBus if available
             if (messageBus != null) {
                 messageBus.broadcast("registry:status:change", message);
                 LOGGER.debug("Broadcast status change via MessageBus for server {}: {} -> {}",
-                            server.getServerId(), oldStatus, newStatus);
-            } else if (redisCommands != null) {
-                String json = objectMapper.writeValueAsString(message);
-                redisCommands.publish("registry:status:change", json);
-                LOGGER.debug("Broadcast status change via Redis for server {}: {} -> {}",
                             server.getServerId(), oldStatus, newStatus);
             } else {
                 LOGGER.debug("No messaging system available, skipping status change broadcast");

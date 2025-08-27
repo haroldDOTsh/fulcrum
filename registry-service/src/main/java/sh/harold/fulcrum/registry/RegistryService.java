@@ -1,25 +1,23 @@
 package sh.harold.fulcrum.registry;
 
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.RedisURI;
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
+import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
+import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
+import sh.harold.fulcrum.registry.adapter.RegistryMessageBusAdapter;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
-import sh.harold.fulcrum.registry.messagebus.RegistryMessageBus;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 
 import java.io.InputStream;
-import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -46,10 +44,8 @@ public class RegistryService {
     private CommandRegistry commandRegistry;
     private InteractiveConsole console;
     
-    private RedisClient redisClient;
-    private StatefulRedisConnection<String, String> connection;
-    private StatefulRedisPubSubConnection<String, String> pubSubConnection;
-    private RegistryMessageBus messageBus;
+    private MessageBus messageBus;
+    private RegistryMessageBusAdapter messageBusAdapter;
     
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -141,17 +137,16 @@ public class RegistryService {
         LOGGER.info("Debug mode: {}", debugMode ? "ENABLED" : "DISABLED");
         
         try {
-            // Connect to Redis
-            connectToRedis();
+            // Create MessageBus configuration from application.yml
+            MessageBusConnectionConfig connectionConfig = createMessageBusConfig();
             
-            // Initialize MessageBus
-            messageBus = new RegistryMessageBus(redisClient, "registry-service");
+            // Create MessageBus adapter and factory
+            messageBusAdapter = new RegistryMessageBusAdapter(connectionConfig, scheduler);
+            messageBus = MessageBusFactory.create(messageBusAdapter);
             
-            // Set MessageBus in RegistrationHandler
+            // Initialize RegistrationHandler with MessageBus
             registrationHandler.setMessageBus(messageBus);
-            
-            // Set up message handlers (still need direct connections for backward compatibility)
-            registrationHandler.initialize(connection, pubSubConnection);
+            registrationHandler.initialize(messageBus);
             
             // Configure HeartbeatMonitor with MessageBus for status change broadcasting
             heartbeatMonitor.setMessageBus(messageBus);
@@ -177,27 +172,35 @@ public class RegistryService {
         }
     }
     
-    private void connectToRedis() {
+    private MessageBusConnectionConfig createMessageBusConfig() {
         Map<String, Object> redisConfig = (Map<String, Object>) config.get("redis");
         String redisHost = (String) redisConfig.get("host");
         Object portObj = redisConfig.get("port");
         int redisPort = portObj instanceof Integer ? (Integer) portObj : Integer.parseInt(portObj.toString());
-        
-        RedisURI uri = RedisURI.Builder
-            .redis(redisHost, redisPort)
-            .build();
-        
-        // Add password if configured
         String password = (String) redisConfig.get("password");
-        if (password != null && !password.isEmpty()) {
-            uri.setPassword(password.toCharArray());
+        
+        // Check for message bus type configuration
+        Map<String, Object> messageBusConfig = (Map<String, Object>) config.get("message-bus");
+        String busType = "REDIS"; // Default to Redis for backward compatibility
+        if (messageBusConfig != null) {
+            busType = (String) messageBusConfig.getOrDefault("type", "REDIS");
         }
         
-        redisClient = RedisClient.create(uri);
-        connection = redisClient.connect();
-        pubSubConnection = redisClient.connectPubSub();
+        MessageBusConnectionConfig.Builder builder = MessageBusConnectionConfig.builder();
         
-        LOGGER.info("Connected to Redis at {}:{}", redisHost, redisPort);
+        if ("IN_MEMORY".equalsIgnoreCase(busType)) {
+            builder.type(MessageBusConnectionConfig.MessageBusType.IN_MEMORY);
+        } else {
+            builder.type(MessageBusConnectionConfig.MessageBusType.REDIS)
+                   .host(redisHost)
+                   .port(redisPort);
+            
+            if (password != null && !password.isEmpty()) {
+                builder.password(password);
+            }
+        }
+        
+        return builder.build();
     }
     
     private void initializeConsole() {
@@ -313,20 +316,11 @@ public class RegistryService {
             // Stop heartbeat monitoring
             heartbeatMonitor.stop();
             
-            // Shutdown MessageBus
-            if (messageBus != null) {
-                messageBus.shutdown();
-            }
+            // MessageBus shutdown is handled by the adapter
             
-            // Close Redis connections
-            if (pubSubConnection != null) {
-                pubSubConnection.close();
-            }
-            if (connection != null) {
-                connection.close();
-            }
-            if (redisClient != null) {
-                redisClient.shutdown();
+            // Shutdown adapter
+            if (messageBusAdapter != null) {
+                messageBusAdapter.shutdown();
             }
             
             // Shutdown scheduler

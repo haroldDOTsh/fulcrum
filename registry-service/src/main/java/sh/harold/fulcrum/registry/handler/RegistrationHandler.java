@@ -2,15 +2,12 @@ package sh.harold.fulcrum.registry.handler;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.sync.RedisCommands;
-import io.lettuce.core.pubsub.RedisPubSubListener;
-import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
-import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
+import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
-import sh.harold.fulcrum.registry.messagebus.RegistryMessageBus;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -37,11 +34,9 @@ public class RegistrationHandler {
     private final ObjectMapper objectMapper;
     private boolean debugMode;
     
-    private RedisCommands<String, String> sync;
-    private RedisPubSubCommands<String, String> pubSubSync;
     private final ScheduledExecutorService retryExecutor;
     private final Map<String, PendingRequest> pendingRequests;
-    private RegistryMessageBus messageBus;
+    private MessageBus messageBus;
     
     private static class PendingRequest {
         final String tempId;
@@ -88,37 +83,81 @@ public class RegistrationHandler {
     }
     
     /**
-     * Initialize Redis connections and subscriptions
+     * Initialize MessageBus subscriptions
      */
-    public void initialize(StatefulRedisConnection<String, String> connection,
-                          StatefulRedisPubSubConnection<String, String> pubSubConnection) {
-        this.sync = connection.sync();
-        this.pubSubSync = pubSubConnection.sync();
+    public void initialize(MessageBus messageBus) {
+        this.messageBus = messageBus;
         
-        // Set up message listener
-        pubSubConnection.addListener(new RegistryMessageListener());
-        
-        // Subscribe to channels
+        // Subscribe to channels with message handlers
         subscribeToChannels();
     }
     
     /**
      * Set the MessageBus instance
      */
-    public void setMessageBus(RegistryMessageBus messageBus) {
+    public void setMessageBus(MessageBus messageBus) {
         this.messageBus = messageBus;
     }
     
     private void subscribeToChannels() {
-        // Subscribe to unified channels only
-        pubSubSync.subscribe(
-            "registry:register",       // Registration requests from servers/proxies
-            "server:heartbeat",        // Heartbeat messages from backend servers and proxies
-            "proxy:unregister",        // Proxy shutdown notifications
-            "server:evacuation"        // Server evacuation requests
-        );
+        // Subscribe to registration requests
+        messageBus.subscribe("registry:register", new MessageHandler() {
+            @Override
+            public void handle(MessageEnvelope envelope) {
+                try {
+                    String json = objectMapper.writeValueAsString(envelope.getPayload());
+                    handleServerRegistration(json);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to handle registration", e);
+                }
+            }
+        });
         
-        LOGGER.info("Subscribed to registry channels");
+        // Subscribe to heartbeat messages
+        messageBus.subscribe("server:heartbeat", new MessageHandler() {
+            @Override
+            public void handle(MessageEnvelope envelope) {
+                try {
+                    // Convert full envelope to JSON for heartbeat processing
+                    Map<String, Object> envelopeMap = new HashMap<>();
+                    envelopeMap.put("type", envelope.getType());
+                    envelopeMap.put("senderId", envelope.getSenderId());
+                    envelopeMap.put("payload", objectMapper.convertValue(envelope.getPayload(), Map.class));
+                    String json = objectMapper.writeValueAsString(envelopeMap);
+                    handleServerHeartbeat(json);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to handle heartbeat", e);
+                }
+            }
+        });
+        
+        // Subscribe to proxy unregister messages
+        messageBus.subscribe("proxy:unregister", new MessageHandler() {
+            @Override
+            public void handle(MessageEnvelope envelope) {
+                try {
+                    String json = objectMapper.writeValueAsString(envelope.getPayload());
+                    handleProxyUnregister(json);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to handle proxy unregister", e);
+                }
+            }
+        });
+        
+        // Subscribe to evacuation requests
+        messageBus.subscribe("server:evacuation", new MessageHandler() {
+            @Override
+            public void handle(MessageEnvelope envelope) {
+                try {
+                    String json = objectMapper.writeValueAsString(envelope.getPayload());
+                    handleEvacuationRequest(json);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to handle evacuation request", e);
+                }
+            }
+        });
+        
+        LOGGER.info("Subscribed to registry channels via MessageBus");
     }
     
     private void startRetryMonitor() {
@@ -468,62 +507,6 @@ public class RegistrationHandler {
             
         } catch (Exception e) {
             LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
-        }
-    }
-    
-    /**
-     * Redis pub/sub listener
-     */
-    private class RegistryMessageListener implements RedisPubSubListener<String, String> {
-        @Override
-        public void message(String channel, String message) {
-            if (debugMode) {
-                LOGGER.debug("[RECEIVED] Message on channel '{}' (length: {} chars)", channel, message.length());
-            }
-            
-            switch (channel) {
-                case "registry:register":
-                    handleServerRegistration(message);
-                    break;
-                case "server:heartbeat":
-                    handleServerHeartbeat(message);
-                    break;
-                case "proxy:unregister":
-                    handleProxyUnregister(message);
-                    break;
-                case "server:evacuation":
-                    handleEvacuationRequest(message);
-                    break;
-                default:
-                    if (debugMode) {
-                        LOGGER.debug("Received message on unhandled channel: {}", channel);
-                    }
-            }
-        }
-        
-        @Override
-        public void message(String pattern, String channel, String message) {
-            // Not used
-        }
-        
-        @Override
-        public void subscribed(String channel, long count) {
-            LOGGER.debug("Subscribed to channel: {} (total: {})", channel, count);
-        }
-        
-        @Override
-        public void unsubscribed(String channel, long count) {
-            LOGGER.debug("Unsubscribed from channel: {} (total: {})", channel, count);
-        }
-        
-        @Override
-        public void psubscribed(String pattern, long count) {
-            // Not used
-        }
-        
-        @Override
-        public void punsubscribed(String pattern, long count) {
-            // Not used
         }
     }
     
