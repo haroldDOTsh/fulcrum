@@ -1,5 +1,9 @@
 # Fulcrum Registry Service Configuration
 
+# Message Bus configuration
+message-bus:
+  type: ${MESSAGE_BUS_TYPE:REDIS}  # Can be REDIS or IN_MEMORY
+
 # Redis connection settings
 redis:
   host: ${REDIS_HOST:localhost}

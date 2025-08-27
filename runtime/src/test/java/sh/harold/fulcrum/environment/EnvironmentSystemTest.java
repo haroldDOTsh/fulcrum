@@ -1,5 +1,8 @@
 package sh.harold.fulcrum.environment;
 
+import sh.harold.fulcrum.api.environment.EnvironmentConfig;
+import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;

@@ -9,7 +9,6 @@ repositories {
 
 dependencies {
     // Module dependencies
-    api(project(":module-api"))
     api(project(":message-bus-api"))
     
     // Optional Redis support for implementations
