@@ -19,3 +19,23 @@ mongodb:
   # Optional authentication
   username: ""
   password: ""
+
+# Redis configuration for Message Bus
+redis:
+  # Enable/disable Redis. When disabled, uses in-memory message bus
+  enabled: true
+  # Redis server host
+  host: localhost
+  # Redis server port
+  port: 6379
+  # Database index to use
+  database: 0
+  # Redis password (optional)
+  password: ""
+  # Connection timeout in milliseconds
+  connection-timeout: 2000
+  # Connection pool configuration
+  connection-pool:
+    min-idle: 1
+    max-idle: 8
+    max-total: 8
