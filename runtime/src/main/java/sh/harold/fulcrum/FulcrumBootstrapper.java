@@ -7,8 +7,8 @@ import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
-import sh.harold.fulcrum.environment.EnvironmentConfig;
-import sh.harold.fulcrum.environment.EnvironmentConfigParser;
+import sh.harold.fulcrum.api.environment.EnvironmentConfig;
+import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
 
 import java.io.IOException;
 import java.nio.file.Files;
