@@ -18,9 +18,9 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":data-api"))
     implementation(project(":message-bus-api"))
     implementation(project(":server-lifecycle-api"))
+    implementation(project(":data-api"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.8-R0.1-SNAPSHOT")
@@ -29,6 +29,12 @@ dependencies {
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
     implementation("org.yaml:snakeyaml:2.2")
     implementation("io.github.classgraph:classgraph:4.8.173")
+    
+    // Jackson dependencies (required for message bus serialization)
+    implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.15.2")
+    implementation("com.fasterxml.jackson.core:jackson-annotations:2.15.2")
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.15.2")
 
     // Redis dependencies (using Lettuce to match proxy implementation)
     implementation("io.lettuce:lettuce-core:6.3.2.RELEASE")
