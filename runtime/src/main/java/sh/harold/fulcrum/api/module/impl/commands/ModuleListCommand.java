@@ -7,6 +7,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
 import sh.harold.fulcrum.api.module.impl.ModuleManager;
 import sh.harold.fulcrum.api.module.impl.ModuleMetadata;
+import sh.harold.fulcrum.api.rank.RankUtils;
 
 import static io.papermc.paper.command.brigadier.Commands.literal;
 
@@ -20,7 +21,7 @@ public final class ModuleListCommand {
 
     public LiteralCommandNode<CommandSourceStack> build() {
         return literal("runtimeinfo")
-                .requires(source -> source.getSender().hasPermission("fulcrum.modules.list"))
+                .requires(source -> RankUtils.isAdmin(source.getSender()))
                 .executes(ctx -> {
                     // Default command shows runtime overview
                     CommandSourceStack source = ctx.getSource();
@@ -101,7 +102,7 @@ public final class ModuleListCommand {
                             return 1;
                         }))
                 .then(literal("reload")
-                        .requires(source -> source.getSender().hasPermission("fulcrum.admin"))
+                        .requires(source -> RankUtils.isAdmin(source.getSender()))
                         .executes(ctx -> {
                             CommandSourceStack source = ctx.getSource();
                             var sender = source.getSender();

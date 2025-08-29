@@ -17,6 +17,7 @@ import sh.harold.fulcrum.api.messagebus.messages.*;
 import sh.harold.fulcrum.api.messagebus.impl.RedisMessageBus;
 import sh.harold.fulcrum.api.messagebus.impl.InMemoryMessageBus;
 import sh.harold.fulcrum.api.messagebus.impl.AbstractMessageBus;
+import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 
 import java.lang.reflect.Field;
@@ -53,7 +54,7 @@ public class MessageDebugCommand {
      */
     public LiteralCommandNode<CommandSourceStack> build() {
         return literal("fulcrum")
-            .requires(source -> source.getSender().hasPermission("fulcrum.admin.messagedebug"))
+            .requires(source -> RankUtils.isAdmin(source.getSender()))
             .then(literal("messagedebug")
                 .then(literal("simulate")
                     .then(argument("type", StringArgumentType.word())

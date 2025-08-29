@@ -9,6 +9,7 @@ import net.kyori.adventure.audience.Audience;
 import org.jetbrains.annotations.NotNull;
 import sh.harold.fulcrum.api.message.Message;
 import sh.harold.fulcrum.api.message.impl.scoreboard.YamlMessageService;
+import sh.harold.fulcrum.api.rank.RankUtils;
 
 public final class MessageReloadCommand {
     private MessageReloadCommand() {
@@ -17,7 +18,7 @@ public final class MessageReloadCommand {
     public static LiteralCommandNode<CommandSourceStack> create(@NotNull YamlMessageService service) {
         return LiteralArgumentBuilder
                 .<CommandSourceStack>literal("messagereload")
-                .requires(source -> source.getSender().hasPermission("fulcrum.message.reload"))
+                .requires(source -> RankUtils.isAdmin(source.getSender()))
                 .executes(ctx -> execute(ctx, service))
                 .build();
     }

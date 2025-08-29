@@ -8,6 +8,7 @@ import org.bukkit.GameMode;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import sh.harold.fulcrum.api.message.Message;
+import sh.harold.fulcrum.api.rank.RankUtils;
 
 import static io.papermc.paper.command.brigadier.Commands.argument;
 import static io.papermc.paper.command.brigadier.Commands.literal;
@@ -18,7 +19,7 @@ public final class GamemodeCommand {
 
     public LiteralCommandNode<CommandSourceStack> build() {
         return literal("gm")
-                .requires(source -> source.getSender().isOp())
+                .requires(source -> RankUtils.isAdmin(source.getSender()))
                 .then(argument("gamemode", gameMode())
                         .executes(ctx -> {
                             return changeGamemodeSelf(ctx.getSource(), ctx.getArgument("gamemode", GameMode.class));
