@@ -19,24 +19,29 @@ import java.util.logging.Logger;
 public class PaperMessageBusAdapter implements MessageBusAdapter {
     private final JavaPlugin plugin;
     private final Logger logger;
-    private final ServiceLocator serviceLocator;
     private final MessageBusConnectionConfig config;
     private final AtomicBoolean running = new AtomicBoolean(true);
     
     public PaperMessageBusAdapter(JavaPlugin plugin, MessageBusConnectionConfig config) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
-        this.serviceLocator = ServiceLocatorImpl.getInstance();
         this.config = config;
     }
     
     @Override
     public String getServerId() {
-        // Try to get server identifier from service locator
-        return serviceLocator.findService(ServerIdentifier.class)
-            .map(ServerIdentifier::getServerId)
-            .orElse("paper-" + plugin.getServer().getPort());
+        // Lazy initialization - get ServiceLocator when needed
+        ServiceLocator serviceLocator = ServiceLocatorImpl.getInstance();
         
+        // If ServiceLocator is available, try to get server identifier
+        if (serviceLocator != null) {
+            return serviceLocator.findService(ServerIdentifier.class)
+                .map(ServerIdentifier::getServerId)
+                .orElse("paper-" + plugin.getServer().getPort());
+        }
+        
+        // Fallback if ServiceLocator not yet initialized
+        return "paper-" + plugin.getServer().getPort();
     }
     
     @Override

@@ -19,7 +19,6 @@ repositories {
 
 dependencies {
     implementation(project(":message-bus-api"))
-    implementation(project(":server-lifecycle-api"))
     implementation(project(":data-api"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
