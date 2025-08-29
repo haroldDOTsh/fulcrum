@@ -15,7 +15,6 @@ repositories {
 
 dependencies {
     api(project(":message-bus-api"))
-    api(project(":server-lifecycle-api"))
     api(project(":data-api"))
     
     // Velocity API
