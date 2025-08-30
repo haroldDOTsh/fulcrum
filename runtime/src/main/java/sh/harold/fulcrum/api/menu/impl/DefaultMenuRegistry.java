@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import sh.harold.fulcrum.api.menu.*;
 import sh.harold.fulcrum.api.menu.component.MenuItem;
+import sh.harold.fulcrum.api.rank.RankUtils;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -96,12 +97,23 @@ public class DefaultMenuRegistry implements MenuRegistry {
             throw new IllegalArgumentException("Template with ID '" + templateId + "' not found");
         }
         
-        // Check permissions
+        // Check rank-based access
         String permission = template.getRequiredPermission();
-        if (permission != null && !player.hasPermission(permission)) {
-            return CompletableFuture.failedFuture(
-                new SecurityException("Player lacks required permission: " + permission)
-            );
+        if (permission != null) {
+            // Check rank based on permission type
+            boolean hasAccess = false;
+            if (permission.contains("admin") || permission.contains("staff")) {
+                hasAccess = RankUtils.isAdmin(player);
+            } else {
+                // For general permissions, allow DEFAULT rank (all players)
+                hasAccess = true;
+            }
+            
+            if (!hasAccess) {
+                return CompletableFuture.failedFuture(
+                    new SecurityException("Player does not have the required rank to open this menu")
+                );
+            }
         }
         
         // Build and open the menu
