@@ -7,6 +7,9 @@ import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Registry for managing proxy servers.
@@ -14,12 +17,33 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ProxyRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProxyRegistry.class);
     
+    // Timeout before an unavailable proxy ID can be recycled (5 minutes)
+    private static final long UNAVAILABLE_PROXY_RECYCLE_TIMEOUT_MS = 5 * 60 * 1000;
+    
     private final IdAllocator idAllocator;
     private final Map<String, RegisteredProxyData> proxies = new ConcurrentHashMap<>();
+    private final Map<String, RegisteredProxyData> unavailableProxies = new ConcurrentHashMap<>();
+    private final Map<String, Long> unavailableTimestamps = new ConcurrentHashMap<>();
     private final Map<String, String> tempIdToPermId = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService cleanupExecutor = Executors.newSingleThreadScheduledExecutor();
+    private boolean debugMode = false;
     
     public ProxyRegistry(IdAllocator idAllocator) {
+        this(idAllocator, false);
+    }
+    
+    public ProxyRegistry(IdAllocator idAllocator, boolean debugMode) {
         this.idAllocator = idAllocator;
+        this.debugMode = debugMode;
+        startCleanupTask();
+    }
+    
+    /**
+     * Set debug mode
+     * @param debugMode Enable/disable verbose logging
+     */
+    public void setDebugMode(boolean debugMode) {
+        this.debugMode = debugMode;
     }
     
     /**
@@ -30,15 +54,31 @@ public class ProxyRegistry {
      * @return The allocated permanent ID
      */
     public String registerProxy(String tempId, String address, int port) {
-        // Check if this proxy is already registered
+        // Check if this proxy is already registered (active)
         String existingId = tempIdToPermId.get(tempId);
-        if (existingId != null) {
-            LOGGER.info("Proxy already registered: {} -> {} (skipping duplicate registration)",
-                       tempId, existingId);
+        if (existingId != null && proxies.containsKey(existingId)) {
+            if (debugMode) {
+                LOGGER.info("Proxy already registered and active: {} -> {} (skipping duplicate registration)",
+                           tempId, existingId);
+            }
             return existingId;
         }
         
-        // Allocate contiguous proxy ID
+        // Check if this proxy was recently unavailable (prevent ID reuse)
+        if (existingId != null && unavailableProxies.containsKey(existingId)) {
+            // Reactivate the existing proxy instead of allocating a new ID
+            RegisteredProxyData proxyData = unavailableProxies.remove(existingId);
+            unavailableTimestamps.remove(existingId);
+            proxyData.setStatus(RegisteredProxyData.Status.AVAILABLE);
+            proxyData.setLastHeartbeat(System.currentTimeMillis());
+            proxies.put(existingId, proxyData);
+            
+            LOGGER.info("Reactivated previously unavailable proxy: {} -> {} (address: {}:{})",
+                       tempId, existingId, address, port);
+            return existingId;
+        }
+        
+        // Allocate NEW contiguous proxy ID (never reuse unavailable IDs)
         String permanentId = idAllocator.allocateProxyId();
         
         // Create proxy info
@@ -48,6 +88,7 @@ public class ProxyRegistry {
         proxies.put(permanentId, proxyInfo);
         tempIdToPermId.put(tempId, permanentId);
         
+        // This is essential log - always show
         LOGGER.info("Registered proxy: {} -> {} (address: {}:{})",
                    tempId, permanentId, address, port);
         
@@ -55,19 +96,40 @@ public class ProxyRegistry {
     }
     
     /**
-     * Deregister a proxy
+     * Deregister a proxy (moves to unavailable, doesn't release ID immediately)
      * @param proxyId The proxy ID to deregister
      */
     public void deregisterProxy(String proxyId) {
         RegisteredProxyData removed = proxies.remove(proxyId);
         if (removed != null) {
-            // Release the ID for reuse
-            idAllocator.releaseProxyId(proxyId);
+            // DO NOT release the ID immediately - move to unavailable list
+            removed.setStatus(RegisteredProxyData.Status.UNAVAILABLE);
+            unavailableProxies.put(proxyId, removed);
+            unavailableTimestamps.put(proxyId, System.currentTimeMillis());
+            
+            // Keep temp ID mapping for potential reconnection
+            // tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
+            
+            LOGGER.info("Proxy {} marked as unavailable (ID reserved, not released)", proxyId);
+        }
+    }
+    
+    /**
+     * Permanently remove a proxy and release its ID (after extended timeout)
+     * @param proxyId The proxy ID to permanently remove
+     */
+    private void permanentlyRemoveProxy(String proxyId) {
+        RegisteredProxyData removed = unavailableProxies.remove(proxyId);
+        if (removed != null) {
+            unavailableTimestamps.remove(proxyId);
             
             // Remove temp ID mapping
             tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
             
-            LOGGER.info("Deregistered proxy: {}", proxyId);
+            // Explicitly release the ID only after extended timeout
+            idAllocator.releaseProxyIdExplicit(proxyId, false);
+            
+            LOGGER.info("Permanently removed proxy {} after timeout (ID now available for reuse)", proxyId);
         }
     }
     
@@ -106,9 +168,13 @@ public class ProxyRegistry {
         if (proxy != null) {
             proxy.setLastHeartbeat(System.currentTimeMillis());
             proxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
-            LOGGER.debug("Updated heartbeat for proxy: {}", proxyId);
+            if (debugMode) {
+                LOGGER.debug("Updated heartbeat for proxy: {}", proxyId);
+            }
         } else {
-            LOGGER.warn("Received heartbeat for unregistered proxy: {}", proxyId);
+            if (debugMode) {
+                LOGGER.warn("Received heartbeat for unregistered proxy: {}", proxyId);
+            }
         }
     }
     
@@ -123,12 +189,17 @@ public class ProxyRegistry {
             RegisteredProxyData.Status oldStatus = proxy.getStatus();
             if (oldStatus != status) {
                 proxy.setStatus(status);
-                LOGGER.info("Proxy {} status changed from {} to {}", proxyId, oldStatus, status);
+                if (debugMode) {
+                    LOGGER.info("Proxy {} status changed from {} to {}", proxyId, oldStatus, status);
+                }
                 
-                // Remove proxy if it's dead (ephemeral behavior)
-                if (status == RegisteredProxyData.Status.DEAD) {
+                // Mark proxy as unavailable but don't release ID immediately
+                if (status == RegisteredProxyData.Status.DEAD ||
+                    status == RegisteredProxyData.Status.UNAVAILABLE) {
                     deregisterProxy(proxyId);
-                    LOGGER.info("Removed dead proxy {} from registry (ephemeral)", proxyId);
+                    if (debugMode) {
+                        LOGGER.info("Moved proxy {} to unavailable list (ID reserved)", proxyId);
+                    }
                 }
             }
         }
@@ -149,5 +220,53 @@ public class ProxyRegistry {
      */
     public int getProxyCount() {
         return proxies.size();
+    }
+    
+    /**
+     * Get the total number of unavailable proxies
+     * @return The unavailable proxy count
+     */
+    public int getUnavailableProxyCount() {
+        return unavailableProxies.size();
+    }
+    
+    /**
+     * Force release an unavailable proxy ID (admin action)
+     * @param proxyId The proxy ID to force release
+     */
+    public void forceReleaseProxyId(String proxyId) {
+        if (unavailableProxies.containsKey(proxyId)) {
+            permanentlyRemoveProxy(proxyId);
+            LOGGER.warn("Forced release of unavailable proxy ID: {}", proxyId);
+        }
+    }
+    
+    /**
+     * Start the cleanup task for unavailable proxies
+     */
+    private void startCleanupTask() {
+        cleanupExecutor.scheduleAtFixedRate(() -> {
+            long now = System.currentTimeMillis();
+            unavailableTimestamps.entrySet().stream()
+                .filter(entry -> now - entry.getValue() > UNAVAILABLE_PROXY_RECYCLE_TIMEOUT_MS)
+                .map(Map.Entry::getKey)
+                .toList()
+                .forEach(this::permanentlyRemoveProxy);
+        }, 60, 60, TimeUnit.SECONDS); // Check every minute
+    }
+    
+    /**
+     * Shutdown the cleanup executor
+     */
+    public void shutdown() {
+        cleanupExecutor.shutdown();
+        try {
+            if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                cleanupExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            cleanupExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
