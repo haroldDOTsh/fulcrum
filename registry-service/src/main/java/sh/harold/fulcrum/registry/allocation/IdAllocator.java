@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 
 /**
  * Manages contiguous ID allocation for servers and proxies.
- * 
+ *
  * ID formats:
  * - Proxies: fulcrum-proxy-N (where N is contiguous)
  * - Backend servers: mini1, mega2, etc.
@@ -34,6 +34,32 @@ public class IdAllocator {
     // Track allocated slot letters per server
     private final Map<String, TreeSet<Character>> allocatedSlots = new ConcurrentHashMap<>();
     
+    // Debug mode flag
+    private boolean debugMode = false;
+    
+    /**
+     * Default constructor
+     */
+    public IdAllocator() {
+        this(false);
+    }
+    
+    /**
+     * Constructor with debug mode
+     * @param debugMode Enable verbose logging
+     */
+    public IdAllocator(boolean debugMode) {
+        this.debugMode = debugMode;
+    }
+    
+    /**
+     * Set debug mode
+     * @param debugMode Enable/disable verbose logging
+     */
+    public void setDebugMode(boolean debugMode) {
+        this.debugMode = debugMode;
+    }
+    
     /**
      * Allocate a new server ID
      * @param serverType The type of server (mini, mega, pool)
@@ -49,16 +75,22 @@ public class IdAllocator {
         if (!available.isEmpty()) {
             // Reuse lowest available number
             number = available.pollFirst();
-            LOGGER.debug("Reusing ID number {} for type {}", number, serverType);
+            if (debugMode) {
+                LOGGER.debug("Reusing ID number {} for type {}", number, serverType);
+            }
         } else {
             // Allocate next sequential number
             AtomicInteger nextNumber = nextNumbers.computeIfAbsent(serverType, k -> new AtomicInteger(1));
             number = nextNumber.getAndIncrement();
-            LOGGER.debug("Allocating new ID number {} for type {}", number, serverType);
+            if (debugMode) {
+                LOGGER.debug("Allocating new ID number {} for type {}", number, serverType);
+            }
         }
         
         String serverId = serverType + number;
-        LOGGER.info("Allocated server ID: {}", serverId);
+        if (debugMode) {
+            LOGGER.info("Allocated server ID: {}", serverId);
+        }
         return serverId;
     }
     
@@ -87,7 +119,9 @@ public class IdAllocator {
         
         slots.add(nextSlot);
         String slotId = baseServerId + nextSlot;
-        LOGGER.info("Allocated slot ID: {}", slotId);
+        if (debugMode) {
+            LOGGER.info("Allocated slot ID: {}", slotId);
+        }
         return slotId;
     }
     
@@ -102,15 +136,20 @@ public class IdAllocator {
         if (!available.isEmpty()) {
             // Reuse lowest available number
             number = available.pollFirst();
-            LOGGER.debug("Reusing proxy ID number {}", number);
+            if (debugMode) {
+                LOGGER.debug("Reusing proxy ID number {}", number);
+            }
         } else {
             // Allocate next sequential number
             AtomicInteger nextNumber = nextNumbers.computeIfAbsent("proxy", k -> new AtomicInteger(1));
             number = nextNumber.getAndIncrement();
-            LOGGER.debug("Allocating new proxy ID number {}", number);
+            if (debugMode) {
+                LOGGER.debug("Allocating new proxy ID number {}", number);
+            }
         }
         
         String proxyId = "fulcrum-proxy-" + number;
+        // Always log proxy ID allocation as it's essential information
         LOGGER.info("Allocated proxy ID: {}", proxyId);
         return proxyId;
     }
@@ -132,7 +171,9 @@ public class IdAllocator {
                 TreeSet<Character> slots = allocatedSlots.get(baseId);
                 if (slots != null) {
                     slots.remove(slot.charAt(0));
-                    LOGGER.info("Released slot ID: {}", serverId);
+                    if (debugMode) {
+                        LOGGER.info("Released slot ID: {}", serverId);
+                    }
                 }
             } else {
                 // This is a base server ID, release the number
@@ -142,7 +183,9 @@ public class IdAllocator {
                 // Also clear any allocated slots for this server
                 allocatedSlots.remove(serverId);
                 
-                LOGGER.info("Released server ID: {} (number {} now available for reuse)", serverId, number);
+                if (debugMode) {
+                    LOGGER.info("Released server ID: {} (number {} now available for reuse)", serverId, number);
+                }
             }
         }
     }
@@ -150,14 +193,30 @@ public class IdAllocator {
     /**
      * Release a proxy ID for reuse
      * @param proxyId The proxy ID to release
+     * @deprecated Use releaseProxyIdExplicit() for controlled ID release
      */
+    @Deprecated
     public synchronized void releaseProxyId(String proxyId) {
+        // DO NOT automatically release proxy IDs - this causes ID clashes
+        // IDs should only be released through explicit action after extended timeout
+        if (debugMode) {
+            LOGGER.debug("Proxy ID release requested for {} but ignored (preventing ID clash)", proxyId);
+        }
+    }
+    
+    /**
+     * Explicitly release a proxy ID for reuse after confirmation it won't cause conflicts
+     * @param proxyId The proxy ID to release
+     * @param forceRelease If true, forces the release even for recent disconnections
+     */
+    public synchronized void releaseProxyIdExplicit(String proxyId, boolean forceRelease) {
         Matcher matcher = PROXY_ID_PATTERN.matcher(proxyId);
         if (matcher.matches()) {
             int number = Integer.parseInt(matcher.group(1));
             TreeSet<Integer> available = availableNumbers.computeIfAbsent("proxy", k -> new TreeSet<>());
             available.add(number);
-            LOGGER.info("Released proxy ID: {} (number {} now available for reuse)", proxyId, number);
+            LOGGER.info("Explicitly released proxy ID: {} (number {} now available for reuse, forced={})",
+                proxyId, number, forceRelease);
         }
     }
     

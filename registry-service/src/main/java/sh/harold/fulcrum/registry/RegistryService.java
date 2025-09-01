@@ -56,10 +56,10 @@ public class RegistryService {
         Map<String, Object> registryConfig = (Map<String, Object>) config.get("registry");
         this.debugMode = registryConfig != null && Boolean.TRUE.equals(registryConfig.get("debug"));
         
-        // Initialize components
-        this.idAllocator = new IdAllocator();
+        // Initialize components with debug mode
+        this.idAllocator = new IdAllocator(debugMode);
         this.serverRegistry = new ServerRegistry(idAllocator);
-        this.proxyRegistry = new ProxyRegistry(idAllocator);
+        this.proxyRegistry = new ProxyRegistry(idAllocator, debugMode);
         this.heartbeatMonitor = new HeartbeatMonitor(serverRegistry, proxyRegistry, scheduler);
         
         // Initialize registration handler with debug mode
@@ -228,6 +228,8 @@ public class RegistryService {
     public void toggleDebugMode() {
         debugMode = !debugMode;
         registrationHandler.setDebugMode(debugMode);
+        idAllocator.setDebugMode(debugMode);
+        proxyRegistry.setDebugMode(debugMode);
         
         // Update logger level
         ch.qos.logback.classic.Logger rootLogger =
@@ -253,6 +255,8 @@ public class RegistryService {
             if (newDebugMode != debugMode) {
                 debugMode = newDebugMode;
                 registrationHandler.setDebugMode(debugMode);
+                idAllocator.setDebugMode(debugMode);
+                proxyRegistry.setDebugMode(debugMode);
                 
                 // Update logger level
                 ch.qos.logback.classic.Logger rootLogger =
@@ -315,6 +319,16 @@ public class RegistryService {
             
             // Stop heartbeat monitoring
             heartbeatMonitor.stop();
+            
+            // Shutdown proxy registry (cleanup executor)
+            if (proxyRegistry != null) {
+                proxyRegistry.shutdown();
+            }
+            
+            // Shutdown registration handler
+            if (registrationHandler != null) {
+                registrationHandler.shutdown();
+            }
             
             // MessageBus shutdown is handled by the adapter
             
