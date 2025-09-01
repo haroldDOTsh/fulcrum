@@ -9,8 +9,8 @@ import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
-import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
+import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 
@@ -211,20 +211,11 @@ public class RegistrationHandler {
             
             // Process based on type
             if ("proxy".equals(request.getRole()) || "proxy".equals(request.getServerType())) {
-                LOGGER.debug("[DIAGNOSTIC] Processing proxy registration for tempId: {}", tempId);
+                if (debugMode) {
+                    LOGGER.debug("Processing proxy registration for tempId: {}", tempId);
+                }
                 handleProxyRegistration(request);
-                // Note: Proxy registration already logs in handleProxyRegistration, skip generic log
-                
-                // DIAGNOSTIC: Check if the generic log is still being triggered
-                LOGGER.debug("[DIAGNOSTIC] After handleProxyRegistration - should NOT log generic message");
-                
-                // BUG FIX: The generic log was still happening after proxy registration!
-                // This log should NOT appear for proxies
-                // Commenting it out - it was creating the 4th log message
-                // LOGGER.info("Registered {} -> {} (type: {})",
-                //     request.getTempId(),
-                //     "proxy",
-                //     request.getServerType());
+                // ProxyRegistry.registerProxy already logs the essential registration info
             } else {
                 // Register the server
                 String permanentId = serverRegistry.registerServer(request);
@@ -238,7 +229,7 @@ public class RegistrationHandler {
                 // Broadcast to all proxies
                 broadcastServerAddition(request, permanentId);
                 
-                // Log only for non-proxy registrations
+                // Log only for non-proxy registrations (essential info)
                 LOGGER.info("Registered {} -> {} (type: {})",
                     request.getTempId(),
                     request.getRole() != null ? request.getRole() : "server",
@@ -294,6 +285,9 @@ public class RegistrationHandler {
             String status = (String) heartbeat.get("status");
             if ("SHUTDOWN".equals(status) && serverId != null &&
                 (serverId.startsWith("proxy-") || serverId.startsWith("fulcrum-proxy-"))) {
+                if (debugMode) {
+                    LOGGER.debug("Proxy {} signaling shutdown", serverId);
+                }
                 handleProxyShutdown(serverId);
                 return;
             }
@@ -324,19 +318,12 @@ public class RegistrationHandler {
             String address = request.getAddress();
             int port = request.getPort();
             
-            // DIAGNOSTIC: Log entry point
-            LOGGER.info("[DIAGNOSTIC] handleProxyRegistration START - tempId: {}", tempId);
+            if (debugMode) {
+                LOGGER.debug("Processing proxy registration for tempId: {}", tempId);
+            }
             
-            // Register the proxy
+            // Register the proxy - ProxyRegistry will log the essential info
             String permanentId = proxyRegistry.registerProxy(tempId, address, port);
-            
-            // DIAGNOSTIC: Check if there was an old log statement here
-            LOGGER.info("[DIAGNOSTIC] After registerProxy - permanentId: {}", permanentId);
-            
-            // NOTE: This log was causing duplicate logging - REMOVED
-            // LOGGER.info("Registered proxy {} -> {} at {}:{}", tempId, permanentId, address, port);
-            
-            // ProxyRegistry already logs the registration details
             
             // Create response payload
             Map<String, Object> responsePayload = new HashMap<>();
@@ -390,16 +377,21 @@ public class RegistrationHandler {
             response.put("address", request.getAddress());
             response.put("port", request.getPort());
             
-            // Send to server:registration:response channel via MessageBus
-            messageBus.send(request.getTempId(), "server:registration:response", response);
-            // Also send to server-specific channel for compatibility
+            // CRITICAL: Use broadcast instead of send because the backend is listening on a shared channel
+            // The backend server subscribes to "server:registration:response" to receive responses
+            messageBus.broadcast("server:registration:response", response);
+            
+            // Also broadcast to server-specific channel for redundancy
             String responseChannel = "server:" + request.getTempId() + ":registration:response";
-            messageBus.send(request.getTempId(), responseChannel, response);
+            messageBus.broadcast(responseChannel, response);
             
             if (debugMode) {
-                LOGGER.debug("[SENT] Server registration response via MessageBus to 'server:registration:response' and '{}'",
+                LOGGER.debug("[SENT] Server registration response via MessageBus broadcast to 'server:registration:response' and '{}'",
                     responseChannel);
             }
+            
+            LOGGER.info("Sent registration confirmation to {} -> {} via broadcast",
+                request.getTempId(), permanentId);
             
             // Remove from pending on success
             pendingRequests.remove(request.getTempId());
@@ -460,6 +452,7 @@ public class RegistrationHandler {
             String reason = (String) request.get("reason");
             
             if (serverId != null) {
+                // Essential log - always show evacuation requests
                 LOGGER.info("Evacuation requested for server {} - Reason: {}", serverId, reason);
                 
                 // Update server status to EVACUATING
@@ -493,23 +486,24 @@ public class RegistrationHandler {
      * Handle proxy shutdown
      */
     private void handleProxyShutdown(String proxyId) {
-        LOGGER.info("Proxy {} is shutting down - removing from registry", proxyId);
+        LOGGER.info("Proxy {} is shutting down - marking as unavailable (ID reserved)", proxyId);
         
-        // Remove the proxy from registry (ephemeral behavior)
-        proxyRegistry.deregisterProxy(proxyId);
+        // Mark proxy as unavailable but don't release ID immediately
+        proxyRegistry.updateProxyStatus(proxyId, RegisteredProxyData.Status.UNAVAILABLE);
         
-        // Broadcast proxy removal
+        // Broadcast proxy unavailability (not removal)
         try {
-            Map<String, Object> removal = new HashMap<>();
-            removal.put("proxyId", proxyId);
-            removal.put("reason", "shutdown");
-            removal.put("timestamp", System.currentTimeMillis());
+            Map<String, Object> statusUpdate = new HashMap<>();
+            statusUpdate.put("proxyId", proxyId);
+            statusUpdate.put("status", "unavailable");
+            statusUpdate.put("reason", "shutdown");
+            statusUpdate.put("timestamp", System.currentTimeMillis());
             
-            // Broadcast proxy removal via MessageBus
-            messageBus.broadcast("registry:proxy:removed", removal);
+            // Broadcast proxy status change via MessageBus
+            messageBus.broadcast("registry:proxy:unavailable", statusUpdate);
             
         } catch (Exception e) {
-            LOGGER.error("Failed to broadcast proxy removal for {}", proxyId, e);
+            LOGGER.error("Failed to broadcast proxy unavailability for {}", proxyId, e);
         }
     }
     
@@ -527,7 +521,8 @@ public class RegistrationHandler {
             // Broadcast server removal via MessageBus
             messageBus.broadcast("registry:server:removed", removal);
             
-            LOGGER.warn("Server {} timed out and was removed from registry", serverId);
+            // Essential log - always show server timeouts
+            LOGGER.warn("Server {} timed out and was removed from registry (blacklisted for 60 seconds)", serverId);
             
         } catch (Exception e) {
             LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
