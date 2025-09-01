@@ -2,6 +2,7 @@ package sh.harold.fulcrum;
 
 import org.bukkit.plugin.java.JavaPlugin;
 
+import sh.harold.fulcrum.api.chat.impl.ChatFormatFeature;
 import sh.harold.fulcrum.api.menu.impl.MenuFeature;
 import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.message.impl.scoreboard.ScoreboardFeature;
@@ -14,6 +15,7 @@ import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
 import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
+import sh.harold.fulcrum.fundamentals.rank.RankFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
@@ -47,6 +49,8 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ServerLifecycleFeature());
         FeatureManager.register(new DataAPIFeature()); // Register DataAPI before PlayerData
         FeatureManager.register(new PlayerDataFeature()); // Depends on DataAPI
+        FeatureManager.register(new RankFeature()); // Register Rank system after DataAPI
+        FeatureManager.register(new ChatFormatFeature()); // Register Chat formatting after Rank
         FeatureManager.register(new ModuleFeature());
         FeatureManager.register(new GamemodeFeature());
         FeatureManager.register(new ScoreboardFeature());
