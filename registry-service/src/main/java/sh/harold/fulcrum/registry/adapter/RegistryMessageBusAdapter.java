@@ -26,7 +26,7 @@ public class RegistryMessageBusAdapter implements MessageBusAdapter {
     }
     
     public RegistryMessageBusAdapter(MessageBusConnectionConfig connectionConfig, ScheduledExecutorService executorService) {
-        this.serverId = "registry-service-" + UUID.randomUUID().toString().substring(0, 8);
+        this.serverId = "registry-service";
         this.connectionConfig = connectionConfig;
         this.executorService = executorService != null ? executorService : Executors.newScheduledThreadPool(4);
         this.logger = Logger.getLogger("RegistryService");

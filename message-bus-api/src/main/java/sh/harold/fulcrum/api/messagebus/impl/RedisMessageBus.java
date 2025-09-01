@@ -2,6 +2,11 @@ package sh.harold.fulcrum.api.messagebus.impl;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisCommands;
+import io.lettuce.core.pubsub.RedisPubSubAdapter;
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusAdapter;
@@ -31,9 +36,9 @@ public class RedisMessageBus extends AbstractMessageBus {
     private final ScheduledExecutorService scheduler;
     private volatile boolean running = true;
     
-    // Reflective access to Redis components
-    private final Object redisConnection;
-    private final Object pubSubConnection;
+    // Redis connections
+    private final StatefulRedisConnection<String, String> redisConnection;
+    private final StatefulRedisPubSubConnection<String, String> pubSubConnection;
     
     public RedisMessageBus(MessageBusAdapter adapter) {
         super(adapter);
@@ -65,52 +70,38 @@ public class RedisMessageBus extends AbstractMessageBus {
     }
     
     private void setupMessageListener() {
-        try {
-            // Use reflection to create and add listener
-            Class<?> adapterClass = Class.forName("io.lettuce.core.pubsub.RedisPubSubAdapter");
-            Object listener = java.lang.reflect.Proxy.newProxyInstance(
-                adapterClass.getClassLoader(),
-                new Class<?>[] { adapterClass },
-                (proxy, method, args) -> {
-                    if ("message".equals(method.getName()) && args.length == 2) {
-                        String channel = (String) args[0];
-                        String message = (String) args[1];
-                        handleIncomingMessage(channel, message);
-                    }
-                    return null;
-                }
-            );
-            
-            // Add listener to pubsub connection
-            pubSubConnection.getClass().getMethod("addListener", Object.class)
-                .invoke(pubSubConnection, listener);
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to setup message listener", e);
-            throw new RuntimeException("Failed to setup message listener", e);
-        }
+        // Create a simple adapter that extends RedisPubSubAdapter
+        RedisPubSubAdapter<String, String> listener = new RedisPubSubAdapter<String, String>() {
+            @Override
+            public void message(String channel, String message) {
+                handleIncomingMessage(channel, message);
+            }
+
+            @Override
+            public void message(String pattern, String channel, String message) {
+                handleIncomingMessage(channel, message);
+            }
+        };
+        
+        // Add the listener to the pub/sub connection
+        pubSubConnection.addListener(listener);
+        
+        logger.fine("Redis message listener setup completed");
     }
     
     private void subscribeToChannels() {
-        try {
-            // Get sync commands
-            Object pubSubCommands = pubSubConnection.getClass().getMethod("sync")
-                .invoke(pubSubConnection);
-            
-            // Subscribe to channels
-            Class<?> commandsClass = pubSubCommands.getClass();
-            commandsClass.getMethod("subscribe", String[].class)
-                .invoke(pubSubCommands, new Object[] { new String[] {
-                    BROADCAST_CHANNEL,
-                    SERVER_CHANNEL_PREFIX + serverId,
-                    REQUEST_CHANNEL_PREFIX + serverId,
-                    RESPONSE_CHANNEL_PREFIX + serverId
-                }});
-            
-            logger.info("Subscribed to Redis channels for server: " + serverId);
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to subscribe to channels", e);
-            throw new RuntimeException("Failed to subscribe to channels", e);
-        }
+        // Get sync commands from the pub/sub connection
+        RedisPubSubCommands<String, String> syncCommands = pubSubConnection.sync();
+        
+        // Subscribe to channels
+        syncCommands.subscribe(
+            BROADCAST_CHANNEL,
+            SERVER_CHANNEL_PREFIX + serverId,
+            REQUEST_CHANNEL_PREFIX + serverId,
+            RESPONSE_CHANNEL_PREFIX + serverId
+        );
+        
+        logger.info("Subscribed to Redis channels for server: " + serverId);
     }
     
     private void handleIncomingMessage(String channel, String message) {
@@ -306,17 +297,11 @@ public class RedisMessageBus extends AbstractMessageBus {
     }
     
     private void publish(String channel, String message) {
-        try {
-            // Get sync commands from connection using reflection
-            Object commands = redisConnection.getClass().getMethod("sync")
-                .invoke(redisConnection);
-            
-            // Publish message
-            commands.getClass().getMethod("publish", String.class, String.class)
-                .invoke(commands, channel, message);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to publish message", e);
-        }
+        // Get sync commands from the regular connection
+        RedisCommands<String, String> commands = redisConnection.sync();
+        
+        // Publish message
+        commands.publish(channel, message);
     }
     
     private MessageEnvelope createEnvelope(String type, String targetId, Object payload) {
