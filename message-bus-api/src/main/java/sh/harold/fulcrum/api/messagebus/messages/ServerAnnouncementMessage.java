@@ -9,13 +9,17 @@ import java.io.Serializable;
 public class ServerAnnouncementMessage implements Serializable {
     private static final long serialVersionUID = 1L;
     
-    private final String serverId;     // The assigned server ID
-    private final String serverType;   // e.g., "mini", "mega", "hub"
-    private final String environment;  // Environment identifier
-    private final String role;         // Server role
-    private final int capacity;        // Max player capacity
-    private final String address;      // Server address for proxy connection
-    private final int port;           // Server port
+    private String serverId;     // The assigned server ID
+    private String serverType;   // e.g., "mini", "mega", "hub"
+    private String environment;  // Environment identifier
+    private String role;         // Server role
+    private int capacity;        // Max player capacity
+    private String address;      // Server address for proxy connection
+    private int port;           // Server port
+    
+    // Default constructor for Jackson deserialization
+    public ServerAnnouncementMessage() {
+    }
     
     public ServerAnnouncementMessage(String serverId, String serverType,
                                     String environment, String role,
@@ -33,28 +37,56 @@ public class ServerAnnouncementMessage implements Serializable {
         return serverId;
     }
     
+    public void setServerId(String serverId) {
+        this.serverId = serverId;
+    }
+    
     public String getServerType() {
         return serverType;
+    }
+    
+    public void setServerType(String serverType) {
+        this.serverType = serverType;
     }
     
     public String getEnvironment() {
         return environment;
     }
     
+    public void setEnvironment(String environment) {
+        this.environment = environment;
+    }
+    
     public String getRole() {
         return role;
+    }
+    
+    public void setRole(String role) {
+        this.role = role;
     }
     
     public int getCapacity() {
         return capacity;
     }
     
+    public void setCapacity(int capacity) {
+        this.capacity = capacity;
+    }
+    
     public String getAddress() {
         return address;
     }
     
+    public void setAddress(String address) {
+        this.address = address;
+    }
+    
     public int getPort() {
         return port;
+    }
+    
+    public void setPort(int port) {
+        this.port = port;
     }
     
     @Override
