@@ -317,10 +317,11 @@ public class ServerLifecycleFeature implements PluginFeature {
             String oldId = serverIdentifier.getServerId();
             LOGGER.info("Successfully registered with central Registry Service! Permanent ID: " + permanentId);
             
-            // Update server identifier
+            // CRITICAL: Update server identifier BEFORE starting heartbeat
+            // This ensures heartbeats use the correct permanent ID
             serverIdentifier.updateServerId(permanentId);
             
-            // CRITICAL: Re-subscribe to new server-specific channel with permanent ID
+            // Re-subscribe to new server-specific channel with permanent ID
             if (!oldId.equals(permanentId)) {
                 // Subscribe to new channel for permanent ID
                 messageBus.subscribe("server:" + permanentId, envelope -> {
@@ -346,7 +347,20 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
             
             registered.set(true);
+            
+            // CRITICAL: Cancel any existing heartbeat task before starting new one
+            if (heartbeatTask != null) {
+                heartbeatTask.cancel();
+                heartbeatTask = null;
+                LOGGER.info("Cancelled existing heartbeat task to restart with permanent ID");
+            }
+            
+            // Start heartbeat with the permanent ID
             startHeartbeat();
+            
+            // Send immediate heartbeat to confirm server is alive with new ID
+            sendHeartbeat();
+            LOGGER.info("Sent immediate heartbeat with permanent ID: " + permanentId);
             
             // Send server announcement after successful registration
             sendServerAnnouncement();
@@ -383,7 +397,8 @@ public class ServerLifecycleFeature implements PluginFeature {
         heartbeatTask = new BukkitRunnable() {
             @Override
             public void run() {
-                LOGGER.info("Sending backend server heartbeat at " + System.currentTimeMillis());
+                LOGGER.fine("Sending backend server heartbeat for ID: " + serverIdentifier.getServerId() +
+                           " at " + System.currentTimeMillis());
                 sendHeartbeat();
             }
         };
@@ -485,52 +500,95 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
         });
         
-        // Handle registration responses from Registry Service
-        messageBus.subscribe("server:registration:response", envelope -> {
+        // Handle registry re-registration requests (when registry restarts)
+        messageBus.subscribe("registry:reregistration:request", envelope -> {
             try {
-                // Registry Service sends a plain JSON response, not wrapped in MessageEnvelope
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                LOGGER.info("Registry Service requested re-registration - sending our current registration");
+                // Re-send our registration with current ID
+                sendInitialRegistration();
                 
-                // Try to parse the payload - Registry Service sends JSON directly
-                com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
-                if (payload != null && payload.isTextual()) {
-                    // Plain JSON string from Registry Service
-                    String jsonStr = payload.asText();
-                    Map<String, Object> responseMap = mapper.readValue(jsonStr, Map.class);
-                    
-                    // Convert to ServerRegistrationResponse
-                    ServerRegistrationResponse response = new ServerRegistrationResponse();
-                    response.setSuccess((Boolean) responseMap.get("success"));
-                    response.setAssignedServerId((String) responseMap.get("assignedServerId"));
-                    response.setProxyId((String) responseMap.getOrDefault("proxyId", "registry"));
-                    response.setMessage((String) responseMap.getOrDefault("message", ""));
-                    
-                    handleRegistrationResponse(response);
-                    LOGGER.info("Received registration response from Registry Service");
-                } else {
-                    // Try as MessageEnvelope payload (for backward compatibility)
-                    ServerRegistrationResponse response = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
-                    handleProxyRegistrationResponse(response);
-                    LOGGER.info("Received registration response from proxy");
+                // If we're already registered, also send an immediate heartbeat
+                if (registered.get()) {
+                    sendHeartbeat();
+                    LOGGER.info("Sent immediate heartbeat after re-registration request");
                 }
             } catch (Exception e) {
-                LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
+                LOGGER.warning("Failed to handle re-registration request: " + e.getMessage());
             }
         });
         
-        // Also subscribe to server-specific channel for targeted responses
-        messageBus.subscribe("server:" + serverIdentifier.getServerId(), envelope -> {
-            LOGGER.fine("Received message on server-specific channel: " + envelope.getType());
-            if (envelope.getType().equals("server.registration.response")) {
-                try {
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    ServerRegistrationResponse response = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
-                    handleProxyRegistrationResponse(response);
-                } catch (Exception e) {
-                    LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
+        // Handle targeted re-registration request for this specific server
+        String reregisterChannel = "server:" + serverIdentifier.getServerId() + ":reregister";
+        messageBus.subscribe(reregisterChannel, envelope -> {
+            try {
+                LOGGER.info("Registry requested targeted re-registration for this server");
+                sendInitialRegistration();
+                
+                // Send immediate heartbeat
+                if (registered.get()) {
+                    sendHeartbeat();
                 }
+            } catch (Exception e) {
+                LOGGER.warning("Failed to handle targeted re-registration request: " + e.getMessage());
             }
         });
+        
+        // Handle registration responses from Registry Service
+        messageBus.subscribe("server:registration:response", envelope -> {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
+                
+                // Check if this response is for us by checking tempId
+                String tempId = null;
+                if (payload.has("tempId")) {
+                    tempId = payload.get("tempId").asText();
+                }
+                
+                // Only process if it's our temp ID or we haven't registered yet
+                if (tempId != null && tempId.equals(serverIdentifier.getServerId())) {
+                    LOGGER.info("Received registration response from Registry Service for our tempId: " + tempId);
+                    
+                    // Parse the response from Registry Service
+                    ServerRegistrationResponse response = new ServerRegistrationResponse();
+                    response.setSuccess(payload.has("success") ? payload.get("success").asBoolean() : false);
+                    response.setAssignedServerId(payload.has("assignedServerId") ? payload.get("assignedServerId").asText() : null);
+                    response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
+                    response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
+                    
+                    handleRegistrationResponse(response);
+                } else if (tempId != null) {
+                    // Response for another server, ignore
+                    LOGGER.fine("Ignoring registration response for different server: " + tempId);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+        
+        // Also subscribe to server-specific channel for targeted responses (using tempId)
+        String serverSpecificChannel = "server:" + serverIdentifier.getServerId() + ":registration:response";
+        messageBus.subscribe(serverSpecificChannel, envelope -> {
+            try {
+                LOGGER.info("Received registration response on server-specific channel: " + serverSpecificChannel);
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
+                
+                // Parse the response
+                ServerRegistrationResponse response = new ServerRegistrationResponse();
+                response.setSuccess(payload.has("success") ? payload.get("success").asBoolean() : false);
+                response.setAssignedServerId(payload.has("assignedServerId") ? payload.get("assignedServerId").asText() : null);
+                response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
+                response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
+                
+                handleRegistrationResponse(response);
+            } catch (Exception e) {
+                LOGGER.warning("Failed to deserialize registration response on server-specific channel: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+        LOGGER.info("Subscribed to registration response channels: 'server:registration:response' and '" + serverSpecificChannel + "'");
         
         // Subscribe to evacuation requests
         messageBus.subscribe("server:evacuation", envelope -> {
