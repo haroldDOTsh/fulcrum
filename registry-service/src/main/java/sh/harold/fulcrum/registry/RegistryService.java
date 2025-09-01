@@ -157,6 +157,9 @@ public class RegistryService {
             // Initialize command registry and console
             initializeConsole();
             
+            // Request re-registration from all servers and proxies
+            requestReRegistration();
+            
             // Register shutdown hook
             Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
             
@@ -216,6 +219,7 @@ public class RegistryService {
         commandRegistry.register("clear", new ClearCommand());
         commandRegistry.register("debug", new DebugCommand(this));
         commandRegistry.register("reload", new ReloadCommand(this));
+        commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
         
         // Start interactive console
         console = new InteractiveConsole(commandRegistry);
@@ -237,6 +241,39 @@ public class RegistryService {
         rootLogger.setLevel(debugMode ? ch.qos.logback.classic.Level.DEBUG : ch.qos.logback.classic.Level.INFO);
         
         LOGGER.info("Debug mode {}", debugMode ? "ENABLED" : "DISABLED");
+    }
+    
+    /**
+     * Request re-registration from all servers and proxies
+     * This is called on Registry startup to recover state
+     */
+    private void requestReRegistration() {
+        try {
+            // Wait a moment for MessageBus to be fully ready
+            scheduler.schedule(() -> {
+                LOGGER.info("==================================================");
+                LOGGER.info("Requesting re-registration from all servers/proxies");
+                LOGGER.info("==================================================");
+                
+                // Create re-registration request
+                Map<String, Object> request = Map.of(
+                    "timestamp", System.currentTimeMillis(),
+                    "reason", "Registry Service started/restarted",
+                    "forceReregistration", true
+                );
+                
+                // Broadcast on a special channel that all servers and proxies listen to
+                messageBus.broadcast("registry:reregistration:request", request);
+                LOGGER.info("Broadcast re-registration request to all nodes");
+                
+                // Also broadcast on the standard registration request channel
+                messageBus.broadcast("proxy:request-registrations", request);
+                LOGGER.info("Sent legacy registration request for backward compatibility");
+                
+            }, 2, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            LOGGER.error("Failed to request re-registration", e);
+        }
     }
     
     /**

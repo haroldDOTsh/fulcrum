@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -33,12 +34,14 @@ public class HeartbeatMonitor {
     private static final long DEAD_TIMEOUT_MS = 30000;        // 30 seconds
     private static final long CHECK_INTERVAL_MS = 1000;       // 1 second
     private static final long GRACE_PERIOD_MS = 10000;        // 10 second grace period for new servers
+    private static final long DEAD_SERVER_BLACKLIST_MS = 60000; // 60 seconds blacklist for dead servers
     
     private final ServerRegistry serverRegistry;
     private final ProxyRegistry proxyRegistry;
     private final ScheduledExecutorService scheduler;
     private final Map<String, Long> lastHeartbeats = new ConcurrentHashMap<>();
     private final Map<String, Long> lastProxyHeartbeats = new ConcurrentHashMap<>();
+    private final Map<String, Long> deadServers = new ConcurrentHashMap<>(); // Track dead servers with removal timestamp
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     private ScheduledFuture<?> monitorTask;
@@ -62,6 +65,9 @@ public class HeartbeatMonitor {
         if (monitorTask != null) {
             return;
         }
+        
+        // Clear any existing tracking data to start fresh
+        clearTrackingData();
         
         monitorTask = scheduler.scheduleWithFixedDelay(
             this::checkTimeouts,
@@ -92,6 +98,22 @@ public class HeartbeatMonitor {
      * @param tps Server TPS
      */
     public void processHeartbeat(String serverId, int playerCount, double tps) {
+        // Check if this server was recently marked as dead
+        Long deadTime = deadServers.get(serverId);
+        if (deadTime != null) {
+            long timeSinceDeath = System.currentTimeMillis() - deadTime;
+            if (timeSinceDeath < DEAD_SERVER_BLACKLIST_MS) {
+                // Server is blacklisted, ignore heartbeat
+                LOGGER.warn("Ignoring heartbeat from dead server {} (blacklisted for {} more seconds)",
+                           serverId, (DEAD_SERVER_BLACKLIST_MS - timeSinceDeath) / 1000);
+                return;
+            } else {
+                // Blacklist period expired, remove from dead servers list
+                deadServers.remove(serverId);
+                LOGGER.info("Server {} blacklist period expired, allowing re-registration", serverId);
+            }
+        }
+        
         // Check if this is a proxy heartbeat (proxy IDs contain "proxy")
         if (serverId.contains("proxy") && proxyRegistry != null) {
             // Check if it's a registered proxy first
@@ -105,27 +127,40 @@ public class HeartbeatMonitor {
         // Try to find the server in ServerRegistry first
         RegisteredServerData server = serverRegistry.getServer(serverId);
         if (server != null) {
-            lastHeartbeats.put(serverId, System.currentTimeMillis());
+            // Use the permanent ID for tracking
+            String permanentId = server.getServerId();
+            
+            // Update tracking with permanent ID
+            lastHeartbeats.put(permanentId, System.currentTimeMillis());
+            
+            // Also track by temp ID if this was a temp ID heartbeat
+            if (!permanentId.equals(serverId)) {
+                LOGGER.debug("Received heartbeat with temp ID {}, mapping to permanent ID {}",
+                            serverId, permanentId);
+                lastHeartbeats.put(serverId, System.currentTimeMillis());
+            }
             
             RegisteredServerData.Status oldStatus = server.getStatus();
-            serverRegistry.updateServerMetrics(serverId, playerCount, tps);
+            serverRegistry.updateServerMetrics(permanentId, playerCount, tps);
             server.setStatus(RegisteredServerData.Status.AVAILABLE);
             
             if (oldStatus != RegisteredServerData.Status.AVAILABLE) {
                 LOGGER.info("Server {} status changed from {} to AVAILABLE (heartbeat received)",
-                           serverId, oldStatus);
+                           permanentId, oldStatus);
                 
                 // Broadcast status change
                 broadcastStatusChange(server, oldStatus, RegisteredServerData.Status.AVAILABLE);
             }
             
             LOGGER.debug("Heartbeat from {}: {} players, {:.1f} TPS",
-                        serverId, playerCount, tps);
+                        permanentId, playerCount, tps);
         } else if (proxyRegistry != null && proxyRegistry.getProxy(serverId) != null) {
             // It's actually a proxy, process as proxy heartbeat
             processProxyHeartbeat(serverId);
         } else {
-            LOGGER.warn("Received heartbeat from unknown server/proxy: {}", serverId);
+            LOGGER.warn("Received heartbeat from unknown server/proxy: {} - requesting re-registration", serverId);
+            // Request this specific server to re-register
+            requestServerReRegistration(serverId);
         }
     }
     
@@ -148,7 +183,59 @@ public class HeartbeatMonitor {
             
             LOGGER.debug("Heartbeat from proxy: {}", proxyId);
         } else {
-            LOGGER.warn("Received heartbeat from unknown proxy: {}", proxyId);
+            LOGGER.warn("Received heartbeat from unknown proxy: {} - requesting re-registration", proxyId);
+            // Request this specific proxy to re-register
+            requestProxyReRegistration(proxyId);
+        }
+    }
+    
+    /**
+     * Request a specific server to re-register
+     * @param serverId The server ID that needs to re-register
+     */
+    private void requestServerReRegistration(String serverId) {
+        if (messageBus != null) {
+            try {
+                Map<String, Object> request = new HashMap<>();
+                request.put("serverId", serverId);
+                request.put("timestamp", System.currentTimeMillis());
+                request.put("reason", "Unknown server detected - please re-register");
+                
+                // Send targeted re-registration request
+                messageBus.broadcast("server:" + serverId + ":reregister", request);
+                
+                // Also send on general channel in case the server is listening there
+                messageBus.broadcast("registry:reregistration:request", request);
+                
+                LOGGER.info("Requested re-registration from server: {}", serverId);
+            } catch (Exception e) {
+                LOGGER.error("Failed to request re-registration from server: {}", serverId, e);
+            }
+        }
+    }
+    
+    /**
+     * Request a specific proxy to re-register
+     * @param proxyId The proxy ID that needs to re-register
+     */
+    private void requestProxyReRegistration(String proxyId) {
+        if (messageBus != null) {
+            try {
+                Map<String, Object> request = new HashMap<>();
+                request.put("proxyId", proxyId);
+                request.put("timestamp", System.currentTimeMillis());
+                request.put("reason", "Unknown proxy detected - please re-register");
+                
+                // Send targeted re-registration request
+                messageBus.broadcast("proxy:" + proxyId + ":reregister", request);
+                
+                // Also send on general channel in case the proxy is listening there
+                messageBus.broadcast("registry:reregistration:request", request);
+                
+                LOGGER.info("Requested re-registration from proxy: {}", proxyId);
+            } catch (Exception e) {
+                LOGGER.error("Failed to request re-registration from proxy: {}", proxyId, e);
+            }
         }
     }
     
@@ -165,8 +252,11 @@ public class HeartbeatMonitor {
      */
     private void checkTimeouts() {
         long now = System.currentTimeMillis();
-        List<String> deadServers = new ArrayList<>();
+        List<String> deadServersList = new ArrayList<>();
         List<String> deadProxies = new ArrayList<>();
+        
+        // Clean up expired entries from dead servers blacklist
+        cleanupDeadServersBlacklist();
         
         // Check all registered servers
         for (RegisteredServerData server : serverRegistry.getAllServers()) {
@@ -198,7 +288,7 @@ public class HeartbeatMonitor {
                 newStatus = RegisteredServerData.Status.UNAVAILABLE;
             } else {
                 newStatus = RegisteredServerData.Status.DEAD;
-                deadServers.add(serverId);
+                deadServersList.add(serverId);
             }
             
             if (oldStatus != newStatus) {
@@ -288,8 +378,15 @@ public class HeartbeatMonitor {
         }
         
         // Remove dead servers
-        for (String serverId : deadServers) {
+        for (String serverId : deadServersList) {
             lastHeartbeats.remove(serverId);
+            
+            // Add to dead servers blacklist
+            this.deadServers.put(serverId, System.currentTimeMillis());
+            LOGGER.info("Added server {} to dead servers blacklist for {} seconds",
+                       serverId, DEAD_SERVER_BLACKLIST_MS / 1000);
+            
+            // Remove from registry
             serverRegistry.deregisterServer(serverId);
             
             // Notify callback
@@ -357,5 +454,31 @@ public class HeartbeatMonitor {
      */
     public long getGracePeriodMs() {
         return GRACE_PERIOD_MS;
+    }
+    
+    /**
+     * Clean up expired entries from the dead servers blacklist
+     * This is called periodically during checkTimeouts
+     */
+    private void cleanupDeadServersBlacklist() {
+        long now = System.currentTimeMillis();
+        deadServers.entrySet().removeIf(entry -> {
+            long timeSinceDeath = now - entry.getValue();
+            if (timeSinceDeath >= DEAD_SERVER_BLACKLIST_MS) {
+                LOGGER.debug("Removing server {} from dead servers blacklist (expired)", entry.getKey());
+                return true;
+            }
+            return false;
+        });
+    }
+    
+    /**
+     * Clear all tracking data (used when starting fresh)
+     */
+    public void clearTrackingData() {
+        lastHeartbeats.clear();
+        lastProxyHeartbeats.clear();
+        deadServers.clear();
+        LOGGER.info("Cleared all heartbeat tracking data");
     }
 }
