@@ -211,7 +211,20 @@ public class RegistrationHandler {
             
             // Process based on type
             if ("proxy".equals(request.getRole()) || "proxy".equals(request.getServerType())) {
+                LOGGER.debug("[DIAGNOSTIC] Processing proxy registration for tempId: {}", tempId);
                 handleProxyRegistration(request);
+                // Note: Proxy registration already logs in handleProxyRegistration, skip generic log
+                
+                // DIAGNOSTIC: Check if the generic log is still being triggered
+                LOGGER.debug("[DIAGNOSTIC] After handleProxyRegistration - should NOT log generic message");
+                
+                // BUG FIX: The generic log was still happening after proxy registration!
+                // This log should NOT appear for proxies
+                // Commenting it out - it was creating the 4th log message
+                // LOGGER.info("Registered {} -> {} (type: {})",
+                //     request.getTempId(),
+                //     "proxy",
+                //     request.getServerType());
             } else {
                 // Register the server
                 String permanentId = serverRegistry.registerServer(request);
@@ -224,11 +237,13 @@ public class RegistrationHandler {
                 
                 // Broadcast to all proxies
                 broadcastServerAddition(request, permanentId);
+                
+                // Log only for non-proxy registrations
+                LOGGER.info("Registered {} -> {} (type: {})",
+                    request.getTempId(),
+                    request.getRole() != null ? request.getRole() : "server",
+                    request.getServerType());
             }
-            LOGGER.info("Registered {} -> {} (type: {})",
-                request.getTempId(),
-                request.getRole() != null ? request.getRole() : "server",
-                request.getServerType());
             
         } catch (Exception e) {
             LOGGER.error("Failed to handle server registration", e);
@@ -309,10 +324,19 @@ public class RegistrationHandler {
             String address = request.getAddress();
             int port = request.getPort();
             
+            // DIAGNOSTIC: Log entry point
+            LOGGER.info("[DIAGNOSTIC] handleProxyRegistration START - tempId: {}", tempId);
+            
             // Register the proxy
             String permanentId = proxyRegistry.registerProxy(tempId, address, port);
             
-            LOGGER.info("Registered proxy {} -> {} at {}:{}", tempId, permanentId, address, port);
+            // DIAGNOSTIC: Check if there was an old log statement here
+            LOGGER.info("[DIAGNOSTIC] After registerProxy - permanentId: {}", permanentId);
+            
+            // NOTE: This log was causing duplicate logging - REMOVED
+            // LOGGER.info("Registered proxy {} -> {} at {}:{}", tempId, permanentId, address, port);
+            
+            // ProxyRegistry already logs the registration details
             
             // Create response payload
             Map<String, Object> responsePayload = new HashMap<>();
