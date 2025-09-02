@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serializable;
 
 /**
@@ -14,29 +16,42 @@ public class ServerEvacuationRequest implements Serializable {
     private final long timestamp;
     private final int timeoutMillis;
     
+    @JsonCreator
+    public ServerEvacuationRequest(
+            @JsonProperty("serverId") String serverId,
+            @JsonProperty("reason") String reason,
+            @JsonProperty("timestamp") Long timestamp,
+            @JsonProperty("timeoutMillis") Integer timeoutMillis) {
+        this.serverId = serverId;
+        this.reason = reason;
+        this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
+        this.timeoutMillis = timeoutMillis != null ? timeoutMillis : 5000;
+    }
+    
     public ServerEvacuationRequest(String serverId, String reason) {
-        this(serverId, reason, 5000); // Default 5 second timeout
+        this(serverId, reason, null, null);
     }
     
     public ServerEvacuationRequest(String serverId, String reason, int timeoutMillis) {
-        this.serverId = serverId;
-        this.reason = reason;
-        this.timestamp = System.currentTimeMillis();
-        this.timeoutMillis = timeoutMillis;
+        this(serverId, reason, null, timeoutMillis);
     }
     
+    @JsonProperty("serverId")
     public String getServerId() {
         return serverId;
     }
     
+    @JsonProperty("reason")
     public String getReason() {
         return reason;
     }
     
+    @JsonProperty("timestamp")
     public long getTimestamp() {
         return timestamp;
     }
     
+    @JsonProperty("timeoutMillis")
     public int getTimeoutMillis() {
         return timeoutMillis;
     }

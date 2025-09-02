@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -157,6 +158,21 @@ public class RegistrationHandler {
             }
         });
         
+        // Subscribe to server removal notifications
+        messageBus.subscribe("registry:server:remove", new MessageHandler() {
+            @Override
+            public void handle(MessageEnvelope envelope) {
+                try {
+                    // Try to deserialize as ServerRemovalNotification
+                    ServerRemovalNotification notification = objectMapper.convertValue(
+                        envelope.getPayload(), ServerRemovalNotification.class);
+                    handleServerRemovalNotification(notification);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to handle server removal notification", e);
+                }
+            }
+        });
+        
         LOGGER.info("Subscribed to registry channels via MessageBus");
     }
     
@@ -206,8 +222,14 @@ public class RegistrationHandler {
                     request.getTempId(), request.getServerType(), request.getRole());
             }
             
-            // Store as pending
-            pendingRequests.put(tempId, new PendingRequest(tempId, json));
+            // Check if already being processed (prevent duplicate processing)
+            PendingRequest existing = pendingRequests.putIfAbsent(tempId, new PendingRequest(tempId, json));
+            if (existing != null) {
+                if (debugMode) {
+                    LOGGER.debug("Registration for {} already in progress, skipping duplicate", tempId);
+                }
+                return;
+            }
             
             // Process based on type
             if ("proxy".equals(request.getRole()) || "proxy".equals(request.getServerType())) {
@@ -281,14 +303,19 @@ public class RegistrationHandler {
                     serverId, serverId.startsWith("fulcrum-proxy-"));
             }
             
-            // Check if this is a proxy shutdown signal
+            // Check if this is a shutdown signal (for ANY server, not just proxies)
             String status = (String) heartbeat.get("status");
-            if ("SHUTDOWN".equals(status) && serverId != null &&
-                (serverId.startsWith("proxy-") || serverId.startsWith("fulcrum-proxy-"))) {
+            if ("SHUTDOWN".equals(status) && serverId != null) {
                 if (debugMode) {
-                    LOGGER.debug("Proxy {} signaling shutdown", serverId);
+                    LOGGER.debug("Server {} signaling shutdown", serverId);
                 }
-                handleProxyShutdown(serverId);
+                // Handle shutdown based on server type
+                if (serverId.startsWith("proxy-") || serverId.startsWith("fulcrum-proxy-")) {
+                    handleProxyShutdown(serverId);
+                } else {
+                    // Handle backend server shutdown
+                    handleServerShutdown(serverId);
+                }
                 return;
             }
             
@@ -479,6 +506,66 @@ public class RegistrationHandler {
             
         } catch (Exception e) {
             LOGGER.error("Failed to handle evacuation request", e);
+        }
+    }
+    
+    /**
+     * Handle server removal notification from backend servers
+     */
+    private void handleServerRemovalNotification(ServerRemovalNotification notification) {
+        String serverId = notification.getServerId();
+        String reason = notification.getReason();
+        
+        LOGGER.info("Received server removal notification for {} - Reason: {}", serverId, reason);
+        
+        // Mark the server as stopping
+        serverRegistry.updateStatus(serverId, "STOPPING");
+        
+        // Remove the server from the registry (deregisterServer handles cleanup)
+        serverRegistry.deregisterServer(serverId);
+        
+        // Broadcast server removal to all proxies and other listeners
+        try {
+            Map<String, Object> removal = new HashMap<>();
+            removal.put("serverId", serverId);
+            removal.put("serverType", notification.getServerType());
+            removal.put("reason", reason);
+            removal.put("timestamp", notification.getTimestamp());
+            
+            // Broadcast server removal via MessageBus
+            messageBus.broadcast("registry:server:removed", removal);
+            
+            LOGGER.info("Server {} removed from registry (reason: {})", serverId, reason);
+            
+        } catch (Exception e) {
+            LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
+        }
+    }
+    
+    /**
+     * Handle backend server shutdown from heartbeat
+     */
+    private void handleServerShutdown(String serverId) {
+        LOGGER.info("Server {} is shutting down - removing from registry", serverId);
+        
+        // Update server status
+        serverRegistry.updateStatus(serverId, "STOPPING");
+        
+        // Remove the server from the registry (deregisterServer handles cleanup)
+        serverRegistry.deregisterServer(serverId);
+        
+        // Broadcast server removal
+        try {
+            Map<String, Object> removal = new HashMap<>();
+            removal.put("serverId", serverId);
+            removal.put("reason", "shutdown");
+            removal.put("timestamp", System.currentTimeMillis());
+            
+            // Broadcast server removal via MessageBus
+            messageBus.broadcast("registry:server:removed", removal);
+            
+        } catch (Exception e) {
+            LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
         }
     }
     

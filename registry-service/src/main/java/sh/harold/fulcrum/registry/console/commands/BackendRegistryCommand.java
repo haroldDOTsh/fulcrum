@@ -2,6 +2,7 @@ package sh.harold.fulcrum.registry.console.commands;
 
 import sh.harold.fulcrum.registry.console.CommandHandler;
 import sh.harold.fulcrum.registry.console.TableFormatter;
+import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 
@@ -19,9 +20,15 @@ public class BackendRegistryCommand implements CommandHandler {
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     
     private final ServerRegistry serverRegistry;
+    private final HeartbeatMonitor heartbeatMonitor;
     
     public BackendRegistryCommand(ServerRegistry serverRegistry) {
+        this(serverRegistry, null);
+    }
+    
+    public BackendRegistryCommand(ServerRegistry serverRegistry, HeartbeatMonitor heartbeatMonitor) {
         this.serverRegistry = serverRegistry;
+        this.heartbeatMonitor = heartbeatMonitor;
     }
     
     @Override
@@ -37,7 +44,23 @@ public class BackendRegistryCommand implements CommandHandler {
             }
         }
         
+        // Get all active servers
         List<RegisteredServerData> servers = new ArrayList<>(serverRegistry.getAllServers());
+        
+        // Add recently dead servers if heartbeat monitor is available
+        if (heartbeatMonitor != null) {
+            servers.addAll(heartbeatMonitor.getRecentlyDeadServers());
+        }
+        
+        // Sort servers: active first, then by server ID
+        servers.sort((a, b) -> {
+            if (a.getStatus() == RegisteredServerData.Status.DEAD && b.getStatus() != RegisteredServerData.Status.DEAD) {
+                return 1;
+            } else if (a.getStatus() != RegisteredServerData.Status.DEAD && b.getStatus() == RegisteredServerData.Status.DEAD) {
+                return -1;
+            }
+            return a.getServerId().compareTo(b.getServerId());
+        });
         
         if (servers.isEmpty()) {
             System.out.println("No backend servers registered.");
@@ -116,11 +139,20 @@ public class BackendRegistryCommand implements CommandHandler {
         }
         
         // Show server statistics
+        int deadCount = 0;
+        if (heartbeatMonitor != null) {
+            deadCount = heartbeatMonitor.getRecentlyDeadServers().size();
+        }
+        
         System.out.println("\nServer Statistics:");
         System.out.println("  Total servers: " + servers.size());
         System.out.println("  Available: " + serverRegistry.getAvailableServerCount());
         System.out.println("  Unavailable: " + serverRegistry.getUnavailableServerCount());
-        System.out.println("  Dead: " + (servers.size() - serverRegistry.getAvailableServerCount() - serverRegistry.getUnavailableServerCount()));
+        System.out.println("  Dead/Stalled: " + deadCount);
+        
+        if (deadCount > 0) {
+            System.out.println("\n  Note: Dead/stalled servers are shown for 60 seconds after failure");
+        }
         
         return true;
     }

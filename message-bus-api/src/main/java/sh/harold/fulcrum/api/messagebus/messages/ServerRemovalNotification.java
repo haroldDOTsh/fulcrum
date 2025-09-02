@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serializable;
 
 /**
@@ -14,25 +16,38 @@ public class ServerRemovalNotification implements Serializable {
     private final String reason;
     private final long timestamp;
     
-    public ServerRemovalNotification(String serverId, String serverType, String reason) {
+    @JsonCreator
+    public ServerRemovalNotification(
+            @JsonProperty("serverId") String serverId,
+            @JsonProperty("serverType") String serverType,
+            @JsonProperty("reason") String reason,
+            @JsonProperty("timestamp") Long timestamp) {
         this.serverId = serverId;
         this.serverType = serverType;
         this.reason = reason;
-        this.timestamp = System.currentTimeMillis();
+        this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
     }
     
+    public ServerRemovalNotification(String serverId, String serverType, String reason) {
+        this(serverId, serverType, reason, null);
+    }
+    
+    @JsonProperty("serverId")
     public String getServerId() {
         return serverId;
     }
     
+    @JsonProperty("serverType")
     public String getServerType() {
         return serverType;
     }
     
+    @JsonProperty("reason")
     public String getReason() {
         return reason;
     }
     
+    @JsonProperty("timestamp")
     public long getTimestamp() {
         return timestamp;
     }

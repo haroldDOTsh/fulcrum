@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serializable;
 
 /**
@@ -16,35 +18,52 @@ public class ServerEvacuationResponse implements Serializable {
     private final String message;
     private final long timestamp;
     
-    public ServerEvacuationResponse(String serverId, boolean success, int playersEvacuated, int playersFailed, String message) {
+    @JsonCreator
+    public ServerEvacuationResponse(
+            @JsonProperty("serverId") String serverId,
+            @JsonProperty("success") boolean success,
+            @JsonProperty("playersEvacuated") int playersEvacuated,
+            @JsonProperty("playersFailed") int playersFailed,
+            @JsonProperty("message") String message,
+            @JsonProperty("timestamp") Long timestamp) {
         this.serverId = serverId;
         this.success = success;
         this.playersEvacuated = playersEvacuated;
         this.playersFailed = playersFailed;
         this.message = message;
-        this.timestamp = System.currentTimeMillis();
+        this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
     }
     
+    public ServerEvacuationResponse(String serverId, boolean success, int playersEvacuated, int playersFailed, String message) {
+        this(serverId, success, playersEvacuated, playersFailed, message, null);
+    }
+    
+    @JsonProperty("serverId")
     public String getServerId() {
         return serverId;
     }
     
+    @JsonProperty("success")
     public boolean isSuccess() {
         return success;
     }
     
+    @JsonProperty("playersEvacuated")
     public int getPlayersEvacuated() {
         return playersEvacuated;
     }
     
+    @JsonProperty("playersFailed")
     public int getPlayersFailed() {
         return playersFailed;
     }
     
+    @JsonProperty("message")
     public String getMessage() {
         return message;
     }
     
+    @JsonProperty("timestamp")
     public long getTimestamp() {
         return timestamp;
     }

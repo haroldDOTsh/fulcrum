@@ -2,6 +2,7 @@ package sh.harold.fulcrum.registry.console.commands;
 
 import sh.harold.fulcrum.registry.console.CommandHandler;
 import sh.harold.fulcrum.registry.console.TableFormatter;
+import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 
@@ -19,9 +20,15 @@ public class ProxyRegistryCommand implements CommandHandler {
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     
     private final ProxyRegistry proxyRegistry;
+    private final HeartbeatMonitor heartbeatMonitor;
     
     public ProxyRegistryCommand(ProxyRegistry proxyRegistry) {
+        this(proxyRegistry, null);
+    }
+    
+    public ProxyRegistryCommand(ProxyRegistry proxyRegistry, HeartbeatMonitor heartbeatMonitor) {
         this.proxyRegistry = proxyRegistry;
+        this.heartbeatMonitor = heartbeatMonitor;
     }
     
     @Override
@@ -37,7 +44,25 @@ public class ProxyRegistryCommand implements CommandHandler {
             }
         }
         
+        // Get all active proxies
         List<RegisteredProxyData> proxies = new ArrayList<>(proxyRegistry.getAllProxies());
+        
+        // Add recently dead proxies if heartbeat monitor is available
+        if (heartbeatMonitor != null) {
+            proxies.addAll(heartbeatMonitor.getRecentlyDeadProxies());
+        }
+        
+        // Sort proxies: active first, then by proxy ID
+        proxies.sort((a, b) -> {
+            boolean aDead = a.getStatus() == RegisteredProxyData.Status.DEAD;
+            boolean bDead = b.getStatus() == RegisteredProxyData.Status.DEAD;
+            if (aDead && !bDead) {
+                return 1;
+            } else if (!aDead && bDead) {
+                return -1;
+            }
+            return a.getProxyId().compareTo(b.getProxyId());
+        });
         
         if (proxies.isEmpty()) {
             System.out.println("No proxies registered.");
@@ -62,16 +87,35 @@ public class ProxyRegistryCommand implements CommandHandler {
         for (int i = startIndex; i < endIndex; i++) {
             RegisteredProxyData proxy = proxies.get(i);
             
-            // Calculate status based on heartbeat (15 seconds timeout)
-            long timeSinceHeartbeat = currentTime - proxy.getLastHeartbeat();
+            // Use the proxy's actual status if available
             String status;
             String statusColored;
-            if (timeSinceHeartbeat < 15000) {
-                status = "ONLINE";
-                statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_GREEN);
+            
+            if (proxy.getStatus() != null) {
+                status = proxy.getStatus().toString();
+                switch (proxy.getStatus()) {
+                    case AVAILABLE:
+                        statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_GREEN);
+                        break;
+                    case UNAVAILABLE:
+                        statusColored = TableFormatter.color(status, TableFormatter.YELLOW);
+                        break;
+                    case DEAD:
+                        statusColored = TableFormatter.color("STALLED", TableFormatter.BRIGHT_RED);
+                        break;
+                    default:
+                        statusColored = status;
+                }
             } else {
-                status = "OFFLINE";
-                statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_RED);
+                // Fallback: Calculate based on heartbeat (15 seconds timeout)
+                long timeSinceHeartbeat = currentTime - proxy.getLastHeartbeat();
+                if (timeSinceHeartbeat < 15000) {
+                    status = "ONLINE";
+                    statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_GREEN);
+                } else {
+                    status = "OFFLINE";
+                    statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_RED);
+                }
             }
             
             String heartbeatTime = DATE_FORMAT.format(new Date(proxy.getLastHeartbeat()));
@@ -92,7 +136,19 @@ public class ProxyRegistryCommand implements CommandHandler {
             System.out.println("\nUse 'proxyregistry <page>' to view other pages");
         }
         
-        System.out.println("Total proxies: " + proxies.size());
+        // Show statistics
+        int activeCount = (int) proxies.stream()
+            .filter(p -> p.getStatus() != RegisteredProxyData.Status.DEAD)
+            .count();
+        int deadCount = proxies.size() - activeCount;
+        
+        System.out.println("\nProxy Statistics:");
+        System.out.println("  Total proxies: " + proxies.size());
+        System.out.println("  Active: " + activeCount);
+        if (deadCount > 0) {
+            System.out.println("  Dead/Stalled: " + deadCount);
+            System.out.println("\n  Note: Dead/stalled proxies are shown for 60 seconds after failure");
+        }
         
         return true;
     }
