@@ -10,6 +10,7 @@ import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +43,8 @@ public class HeartbeatMonitor {
     private final Map<String, Long> lastHeartbeats = new ConcurrentHashMap<>();
     private final Map<String, Long> lastProxyHeartbeats = new ConcurrentHashMap<>();
     private final Map<String, Long> deadServers = new ConcurrentHashMap<>(); // Track dead servers with removal timestamp
+    private final Map<String, RegisteredServerData> recentlyDeadServers = new ConcurrentHashMap<>(); // Track recently dead servers for display
+    private final Map<String, RegisteredProxyData> recentlyDeadProxies = new ConcurrentHashMap<>(); // Track recently dead proxies for display
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     private ScheduledFuture<?> monitorTask;
@@ -158,9 +161,8 @@ public class HeartbeatMonitor {
             // It's actually a proxy, process as proxy heartbeat
             processProxyHeartbeat(serverId);
         } else {
-            LOGGER.warn("Received heartbeat from unknown server/proxy: {} - requesting re-registration", serverId);
-            // Request this specific server to re-register
-            requestServerReRegistration(serverId);
+            // Just log warning about unknown node, don't request re-registration
+            LOGGER.warn("Received heartbeat from unknown server/proxy: {} - ignoring (manual re-registration required)", serverId);
         }
     }
     
@@ -183,59 +185,8 @@ public class HeartbeatMonitor {
             
             LOGGER.debug("Heartbeat from proxy: {}", proxyId);
         } else {
-            LOGGER.warn("Received heartbeat from unknown proxy: {} - requesting re-registration", proxyId);
-            // Request this specific proxy to re-register
-            requestProxyReRegistration(proxyId);
-        }
-    }
-    
-    /**
-     * Request a specific server to re-register
-     * @param serverId The server ID that needs to re-register
-     */
-    private void requestServerReRegistration(String serverId) {
-        if (messageBus != null) {
-            try {
-                Map<String, Object> request = new HashMap<>();
-                request.put("serverId", serverId);
-                request.put("timestamp", System.currentTimeMillis());
-                request.put("reason", "Unknown server detected - please re-register");
-                
-                // Send targeted re-registration request
-                messageBus.broadcast("server:" + serverId + ":reregister", request);
-                
-                // Also send on general channel in case the server is listening there
-                messageBus.broadcast("registry:reregistration:request", request);
-                
-                LOGGER.info("Requested re-registration from server: {}", serverId);
-            } catch (Exception e) {
-                LOGGER.error("Failed to request re-registration from server: {}", serverId, e);
-            }
-        }
-    }
-    
-    /**
-     * Request a specific proxy to re-register
-     * @param proxyId The proxy ID that needs to re-register
-     */
-    private void requestProxyReRegistration(String proxyId) {
-        if (messageBus != null) {
-            try {
-                Map<String, Object> request = new HashMap<>();
-                request.put("proxyId", proxyId);
-                request.put("timestamp", System.currentTimeMillis());
-                request.put("reason", "Unknown proxy detected - please re-register");
-                
-                // Send targeted re-registration request
-                messageBus.broadcast("proxy:" + proxyId + ":reregister", request);
-                
-                // Also send on general channel in case the proxy is listening there
-                messageBus.broadcast("registry:reregistration:request", request);
-                
-                LOGGER.info("Requested re-registration from proxy: {}", proxyId);
-            } catch (Exception e) {
-                LOGGER.error("Failed to request re-registration from proxy: {}", proxyId, e);
-            }
+            // Just log warning about unknown proxy, don't request re-registration
+            LOGGER.warn("Received heartbeat from unknown proxy: {} - ignoring (manual re-registration required)", proxyId);
         }
     }
     
@@ -371,8 +322,23 @@ public class HeartbeatMonitor {
                 }
             }
             
-            // Remove dead proxies from tracking
+            // Remove dead proxies from tracking and save for display
             for (String proxyId : deadProxies) {
+                // Save the proxy data before removal for display purposes
+                RegisteredProxyData deadProxy = proxyRegistry.getProxy(proxyId);
+                if (deadProxy != null) {
+                    // Create a snapshot of the dead proxy
+                    RegisteredProxyData snapshot = new RegisteredProxyData(
+                        deadProxy.getProxyId(),
+                        deadProxy.getAddress(),
+                        deadProxy.getPort()
+                    );
+                    snapshot.setLastHeartbeat(deadProxy.getLastHeartbeat());
+                    snapshot.setStatus(RegisteredProxyData.Status.DEAD);
+                    
+                    recentlyDeadProxies.put(proxyId, snapshot);
+                }
+                
                 lastProxyHeartbeats.remove(proxyId);
             }
         }
@@ -380,6 +346,27 @@ public class HeartbeatMonitor {
         // Remove dead servers
         for (String serverId : deadServersList) {
             lastHeartbeats.remove(serverId);
+            
+            // Save the server data before removal for display purposes
+            RegisteredServerData deadServer = serverRegistry.getServer(serverId);
+            if (deadServer != null) {
+                // Create a snapshot of the dead server
+                RegisteredServerData snapshot = new RegisteredServerData(
+                    deadServer.getServerId(),
+                    deadServer.getTempId(),
+                    deadServer.getServerType(),
+                    deadServer.getAddress(),
+                    deadServer.getPort(),
+                    deadServer.getMaxCapacity()
+                );
+                snapshot.setRole(deadServer.getRole());
+                snapshot.setStatus(RegisteredServerData.Status.DEAD);
+                snapshot.setLastHeartbeat(deadServer.getLastHeartbeat());
+                snapshot.setPlayerCount(deadServer.getPlayerCount());
+                snapshot.setTps(deadServer.getTps());
+                
+                recentlyDeadServers.put(serverId, snapshot);
+            }
             
             // Add to dead servers blacklist
             this.deadServers.put(serverId, System.currentTimeMillis());
@@ -466,6 +453,18 @@ public class HeartbeatMonitor {
             long timeSinceDeath = now - entry.getValue();
             if (timeSinceDeath >= DEAD_SERVER_BLACKLIST_MS) {
                 LOGGER.debug("Removing server {} from dead servers blacklist (expired)", entry.getKey());
+                // Also remove from recently dead servers display list
+                recentlyDeadServers.remove(entry.getKey());
+                return true;
+            }
+            return false;
+        });
+        
+        // Clean up expired dead proxies (use same timeout as servers)
+        recentlyDeadProxies.entrySet().removeIf(entry -> {
+            long timeSinceDeath = now - entry.getValue().getLastHeartbeat();
+            if (timeSinceDeath >= DEAD_SERVER_BLACKLIST_MS) {
+                LOGGER.debug("Removing proxy {} from dead proxies list (expired)", entry.getKey());
                 return true;
             }
             return false;
@@ -479,6 +478,24 @@ public class HeartbeatMonitor {
         lastHeartbeats.clear();
         lastProxyHeartbeats.clear();
         deadServers.clear();
+        recentlyDeadServers.clear();
+        recentlyDeadProxies.clear();
         LOGGER.info("Cleared all heartbeat tracking data");
+    }
+    
+    /**
+     * Get recently dead servers (servers that stopped heartbeating but haven't been cleaned up yet)
+     * @return Collection of recently dead servers
+     */
+    public Collection<RegisteredServerData> getRecentlyDeadServers() {
+        return new ArrayList<>(recentlyDeadServers.values());
+    }
+    
+    /**
+     * Get recently dead proxies (proxies that stopped heartbeating but haven't been cleaned up yet)
+     * @return Collection of recently dead proxies
+     */
+    public Collection<RegisteredProxyData> getRecentlyDeadProxies() {
+        return new ArrayList<>(recentlyDeadProxies.values());
     }
 }

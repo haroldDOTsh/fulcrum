@@ -53,38 +53,58 @@ public class ProxyRegistry {
      * @param port The proxy port
      * @return The allocated permanent ID
      */
-    public String registerProxy(String tempId, String address, int port) {
+    public synchronized String registerProxy(String tempId, String address, int port) {
         // Check if this proxy is already registered (active)
         String existingId = tempIdToPermId.get(tempId);
-        if (existingId != null && proxies.containsKey(existingId)) {
-            if (debugMode) {
-                LOGGER.info("Proxy already registered and active: {} -> {} (skipping duplicate registration)",
-                           tempId, existingId);
+        if (existingId != null) {
+            // Check if proxy is still active
+            if (proxies.containsKey(existingId)) {
+                if (debugMode) {
+                    LOGGER.info("Proxy already registered and active: {} -> {} (skipping duplicate registration)",
+                               tempId, existingId);
+                }
+                return existingId;
             }
-            return existingId;
-        }
-        
-        // Check if this proxy was recently unavailable (prevent ID reuse)
-        if (existingId != null && unavailableProxies.containsKey(existingId)) {
-            // Reactivate the existing proxy instead of allocating a new ID
-            RegisteredProxyData proxyData = unavailableProxies.remove(existingId);
-            unavailableTimestamps.remove(existingId);
-            proxyData.setStatus(RegisteredProxyData.Status.AVAILABLE);
-            proxyData.setLastHeartbeat(System.currentTimeMillis());
-            proxies.put(existingId, proxyData);
             
-            LOGGER.info("Reactivated previously unavailable proxy: {} -> {} (address: {}:{})",
-                       tempId, existingId, address, port);
-            return existingId;
+            // Check if this proxy was recently unavailable (prevent ID reuse)
+            RegisteredProxyData unavailableProxy = unavailableProxies.get(existingId);
+            if (unavailableProxy != null) {
+                // Reactivate the existing proxy instead of allocating a new ID
+                unavailableProxies.remove(existingId);
+                unavailableTimestamps.remove(existingId);
+                unavailableProxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
+                unavailableProxy.setLastHeartbeat(System.currentTimeMillis());
+                // Note: address and port are final, can't update them
+                // If proxy reconnects with different address/port, it would need a new registration
+                proxies.put(existingId, unavailableProxy);
+                
+                LOGGER.info("Reactivated previously unavailable proxy: {} -> {} (original address: {}:{})",
+                           tempId, existingId, unavailableProxy.getAddress(), unavailableProxy.getPort());
+                if (!unavailableProxy.getAddress().equals(address) || unavailableProxy.getPort() != port) {
+                    LOGGER.warn("Proxy {} reconnected with different address/port ({}:{} -> {}:{})",
+                               existingId, unavailableProxy.getAddress(), unavailableProxy.getPort(), address, port);
+                }
+                return existingId;
+            }
+            
+            // Clean up orphaned mapping
+            tempIdToPermId.remove(tempId);
+            LOGGER.debug("Cleaned up orphaned temp ID mapping for proxy {}", tempId);
         }
         
         // Allocate NEW contiguous proxy ID (never reuse unavailable IDs)
         String permanentId = idAllocator.allocateProxyId();
         
+        // Check for ID collision (extremely rare but possible)
+        if (proxies.containsKey(permanentId) || unavailableProxies.containsKey(permanentId)) {
+            LOGGER.error("Proxy ID collision detected for {} - this should not happen!", permanentId);
+            throw new IllegalStateException("Proxy ID collision: " + permanentId);
+        }
+        
         // Create proxy info
         RegisteredProxyData proxyInfo = new RegisteredProxyData(permanentId, address, port);
         
-        // Register the proxy
+        // Register the proxy atomically
         proxies.put(permanentId, proxyInfo);
         tempIdToPermId.put(tempId, permanentId);
         
@@ -99,7 +119,7 @@ public class ProxyRegistry {
      * Deregister a proxy (moves to unavailable, doesn't release ID immediately)
      * @param proxyId The proxy ID to deregister
      */
-    public void deregisterProxy(String proxyId) {
+    public synchronized void deregisterProxy(String proxyId) {
         RegisteredProxyData removed = proxies.remove(proxyId);
         if (removed != null) {
             // DO NOT release the ID immediately - move to unavailable list
@@ -118,7 +138,7 @@ public class ProxyRegistry {
      * Permanently remove a proxy and release its ID (after extended timeout)
      * @param proxyId The proxy ID to permanently remove
      */
-    private void permanentlyRemoveProxy(String proxyId) {
+    private synchronized void permanentlyRemoveProxy(String proxyId) {
         RegisteredProxyData removed = unavailableProxies.remove(proxyId);
         if (removed != null) {
             unavailableTimestamps.remove(proxyId);

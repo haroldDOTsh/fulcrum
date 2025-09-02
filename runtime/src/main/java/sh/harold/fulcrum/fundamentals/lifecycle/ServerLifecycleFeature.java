@@ -15,6 +15,7 @@ import sh.harold.fulcrum.api.messagebus.messages.ServerHeartbeatMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationRequest;
 import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationResponse;
 import sh.harold.fulcrum.api.messagebus.messages.ServerAnnouncementMessage;
+import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 
@@ -24,6 +25,7 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -458,6 +460,31 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
         
         scheduler.shutdown();
+        
+        // Send shutdown notification to registry
+        if (messageBus != null && !plugin.getConfig().getBoolean("development-mode", false)) {
+            try {
+                // Send ServerRemovalNotification to registry
+                ServerRemovalNotification removalNotification = new ServerRemovalNotification(
+                    serverIdentifier.getServerId(),
+                    serverType,
+                    "SHUTDOWN"
+                );
+                messageBus.broadcast("registry:server:remove", removalNotification);
+                LOGGER.info("Sent server removal notification to registry for server: " + serverIdentifier.getServerId());
+                
+                // Send shutdown status via heartbeat channel (same pattern as proxy)
+                Map<String, Object> shutdownMessage = new HashMap<>();
+                shutdownMessage.put("serverId", serverIdentifier.getServerId());
+                shutdownMessage.put("status", "SHUTDOWN");
+                shutdownMessage.put("timestamp", System.currentTimeMillis());
+                
+                messageBus.broadcast("server:heartbeat", shutdownMessage);
+                LOGGER.info("Sent shutdown status heartbeat for server: " + serverIdentifier.getServerId());
+            } catch (Exception e) {
+                LOGGER.warning("Failed to send shutdown notifications: " + e.getMessage());
+            }
+        }
         
         // Send deregistration message if we have a proxy
         String proxyId = registeredProxyId.get();
