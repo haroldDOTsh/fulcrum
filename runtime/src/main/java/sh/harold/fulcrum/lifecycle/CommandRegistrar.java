@@ -7,9 +7,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class CommandRegistrar {
-
+    private static final Logger LOGGER = Logger.getLogger(CommandRegistrar.class.getName());
     private static final List<LiteralCommandNode<CommandSourceStack>> pending = new ArrayList<>();
     private static boolean registered = false;
 
@@ -21,12 +23,19 @@ public final class CommandRegistrar {
     }
 
     public static void hook(JavaPlugin plugin) {
-        if (registered) return;
+        if (registered) {
+            LOGGER.warning("CommandRegistrar.hook() called but already registered; ignoring.");
+            return;
+        }
         registered = true;
 
         plugin.getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             for (var command : pending) {
-                event.registrar().register(command);
+                try {
+                    event.registrar().register(command);
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Failed to register command: /" + command.getLiteral(), e);
+                }
             }
         });
     }
