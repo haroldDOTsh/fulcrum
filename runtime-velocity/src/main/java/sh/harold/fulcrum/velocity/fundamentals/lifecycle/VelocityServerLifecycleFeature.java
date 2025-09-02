@@ -6,7 +6,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
+import sh.harold.fulcrum.velocity.api.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.messages.*;
@@ -134,7 +134,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         logger.info("Heartbeat will start after successful registration with Registry Service");
         
         // Register connection handler for when no backend servers are available
+        logger.info("[DIAGNOSTIC] Creating ProxyConnectionHandler with proxyId: {}", proxyId);
         connectionHandler = new ProxyConnectionHandler(proxy, proxyId, logger, this);
+        logger.info("[DIAGNOSTIC] ProxyConnectionHandler created successfully");
         
         // Get the plugin instance from service locator to register event
         services.getService(FulcrumVelocityPlugin.class).ifPresent(plugin -> {
@@ -524,6 +526,55 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             }
         });
         
+        // Handle registry re-registration requests (when registry restarts)
+        messageBus.subscribe("registry:reregistration:request", envelope -> {
+            try {
+                logger.info("Registry Service requested re-registration - sending proxy registration");
+                
+                // Re-send our proxy registration
+                sendProxyRegistrationToRegistry();
+                
+                // If we're already registered, send immediate heartbeat
+                if (registeredWithRegistry) {
+                    // Send immediate heartbeat
+                    ServerHeartbeatMessage heartbeat = new ServerHeartbeatMessage(proxyId, "PROXY");
+                    heartbeat.setPlayerCount(proxy.getPlayerCount());
+                    heartbeat.setMaxCapacity(config.getHardCap());
+                    heartbeat.setTimestamp(System.currentTimeMillis());
+                    heartbeat.setTps(20.0);
+                    heartbeat.setRole("proxy");
+                    
+                    messageBus.broadcast("server:heartbeat", heartbeat);
+                    logger.info("Sent immediate proxy heartbeat after re-registration request");
+                }
+            } catch (Exception e) {
+                logger.error("Failed to handle re-registration request", e);
+            }
+        });
+        
+        // Handle targeted re-registration request for this specific proxy
+        String reregisterChannel = "proxy:" + proxyId + ":reregister";
+        messageBus.subscribe(reregisterChannel, envelope -> {
+            try {
+                logger.info("Registry requested targeted re-registration for this proxy");
+                sendProxyRegistrationToRegistry();
+                
+                // Send immediate heartbeat if registered
+                if (registeredWithRegistry) {
+                    ServerHeartbeatMessage heartbeat = new ServerHeartbeatMessage(proxyId, "PROXY");
+                    heartbeat.setPlayerCount(proxy.getPlayerCount());
+                    heartbeat.setMaxCapacity(config.getHardCap());
+                    heartbeat.setTimestamp(System.currentTimeMillis());
+                    heartbeat.setTps(20.0);
+                    heartbeat.setRole("proxy");
+                    
+                    messageBus.broadcast("server:heartbeat", heartbeat);
+                }
+            } catch (Exception e) {
+                logger.error("Failed to handle targeted re-registration request", e);
+            }
+        });
+        
         // Handle server status change messages from registry
         messageBus.subscribe("registry:status:change", envelope -> {
             Object payload = envelope.getPayload();
@@ -619,8 +670,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             
             logger.info("Total servers registered in Velocity: {}", proxy.getAllServers().size());
             
-            // CRITICAL: Check if server is in the try list
-            checkTryListConfiguration(serverId);
+            // Dynamic server registration successful - ProxyConnectionHandler will handle player connections
+            logger.info("✓ Server '{}' dynamically registered and available for player connections", serverId);
             
         } catch (Exception e) {
             logger.error("Exception while adding server to Velocity: {} at {}:{}",
@@ -629,50 +680,6 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         }
         
         logger.info("=== END DEBUG: ADDING SERVER TO VELOCITY ===");
-    }
-    
-    /**
-     * Check if the server is in Velocity's try list and warn if not
-     */
-    private void checkTryListConfiguration(String serverId) {
-        try {
-            // Get the configuration
-            com.velocitypowered.api.proxy.config.ProxyConfig config = proxy.getConfiguration();
-            
-            // Get the current try list
-            List<String> tryServers = config.getAttemptConnectionOrder();
-            logger.info("Current 'try' list from config: {}", tryServers);
-            
-            if (tryServers.isEmpty()) {
-                logger.error("===============================================");
-                logger.error("CRITICAL CONFIGURATION ISSUE DETECTED!");
-                logger.error("===============================================");
-                logger.error("The 'try' list in velocity.toml is EMPTY!");
-                logger.error("This means players cannot connect to any servers.");
-                logger.error("");
-                logger.error("SOLUTION:");
-                logger.error("1. Edit velocity.toml");
-                logger.error("2. Under [servers] section, add:");
-                logger.error("   try = [\"mega1\"]");
-                logger.error("3. Restart Velocity");
-                logger.error("");
-                logger.error("OR for dynamic registration, add:");
-                logger.error("   try = [\"lobby\", \"hub\"]");
-                logger.error("===============================================");
-            } else if (!tryServers.contains(serverId)) {
-                logger.warn("===============================================");
-                logger.warn("WARNING: Server '{}' is NOT in the try list!", serverId);
-                logger.warn("Players won't be able to connect to this server initially.");
-                logger.warn("They can only reach it via /server {} command.", serverId);
-                logger.warn("");
-                logger.warn("To fix: Add '{}' to the 'try' list in velocity.toml", serverId);
-                logger.warn("===============================================");
-            } else {
-                logger.info("✓ Server '{}' is properly configured in the try list", serverId);
-            }
-        } catch (Exception e) {
-            logger.error("Failed to check try list configuration", e);
-        }
     }
     
     // Removed validateServer method - Registry Service handles validation now
@@ -963,6 +970,14 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             
             logger.info("[REGISTERED] Proxy successfully registered with permanent ID: {} (was: {})", proxyId, oldId);
             
+            // Update ProxyConnectionHandler with the permanent ID
+            if (connectionHandler != null) {
+                connectionHandler.updateProxyId(assignedProxyId);
+                logger.info("Updated ProxyConnectionHandler with permanent proxy ID");
+            } else {
+                logger.warn("ProxyConnectionHandler is null, cannot update proxy ID!");
+            }
+            
             // Update VelocityMessageBusFeature with the permanent ID
             if (serviceLocator != null) {
                 serviceLocator.getService(VelocityMessageBusFeature.class).ifPresent(messageBusFeature -> {
@@ -1065,8 +1080,14 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
      * @return The optimal server identifier, or null if none available
      */
     public String getOptimalServerByRole(String role) {
+        if (role == null || role.isEmpty()) {
+            logger.warn("getOptimalServerByRole called with null/empty role");
+            return null;
+        }
+        
         if (connectionHandler == null) {
-            // Fallback to simple selection
+            // Fallback to simple selection when connection handler not available
+            logger.debug("Connection handler not available, using simple selection for role: {}", role);
             return backendServers.values().stream()
                 .filter(server -> role.equalsIgnoreCase(server.getRole()))
                 .filter(server -> isServerActive(server.getServerId()))
@@ -1075,8 +1096,15 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 .orElse(null);
         }
         
+        // Use the connection handler's optimal selection algorithm
         RegisteredServer optimal = connectionHandler.findOptimalServer(role);
-        return optimal != null ? optimal.getServerInfo().getName() : null;
+        if (optimal != null) {
+            logger.debug("Found optimal {} server: {}", role, optimal.getServerInfo().getName());
+            return optimal.getServerInfo().getName();
+        } else {
+            logger.debug("No {} servers available", role);
+            return null;
+        }
     }
     
     /**
