@@ -87,12 +87,11 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                 playerDoc.set("username", player.getName());
                 
                 // Check if this is a new session (last join was more than 30 seconds ago)
-                Long lastJoin = playerDoc.get("lastJoin", 0L);
-                if (lastJoin == null) lastJoin = 0L;
+                // Handle numeric type conversion (JSON storage may return Double instead of Long)
+                Long lastJoin = getNumericAsLong(playerDoc.get("lastJoin"), 0L);
                 
                 if (System.currentTimeMillis() - lastJoin > 30000) {
-                    Integer joinCount = playerDoc.get("joinCount", 0);
-                    if (joinCount == null) joinCount = 0;
+                    Integer joinCount = getNumericAsInteger(playerDoc.get("joinCount"), 0);
                     playerDoc.set("joinCount", joinCount + 1);
                 }
                 
@@ -152,11 +151,11 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                 playerDoc.set("gamemode", player.getGameMode().toString());
                 
                 // Calculate and update session time
-                Long lastJoin = playerDoc.get("lastJoin", 0L);
-                if (lastJoin != null && lastJoin > 0) {
+                // Handle numeric type conversion (JSON storage may return Double instead of Long)
+                Long lastJoin = getNumericAsLong(playerDoc.get("lastJoin"), 0L);
+                if (lastJoin > 0) {
                     long sessionDuration = System.currentTimeMillis() - lastJoin;
-                    Long totalPlaytime = playerDoc.get("totalPlaytime", 0L);
-                    if (totalPlaytime == null) totalPlaytime = 0L;
+                    Long totalPlaytime = getNumericAsLong(playerDoc.get("totalPlaytime"), 0L);
                     playerDoc.set("totalPlaytime", totalPlaytime + sessionDuration);
                     
                     logger.fine(String.format("Updated playtime for %s: session %d ms, total %d ms",
@@ -215,5 +214,77 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     @Override
     public Class<?>[] getDependencies() {
         return new Class<?>[] { DataAPI.class };
+    }
+    
+    /**
+     * Safely converts a numeric value to Long, handling different numeric types
+     * that may be returned from different storage backends (e.g., JSON returns Double)
+     *
+     * @param value The value to convert
+     * @param defaultValue The default value if conversion fails
+     * @return The value as a Long
+     */
+    private Long getNumericAsLong(Object value, Long defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        
+        if (value instanceof Long) {
+            return (Long) value;
+        } else if (value instanceof Double) {
+            return ((Double) value).longValue();
+        } else if (value instanceof Integer) {
+            return ((Integer) value).longValue();
+        } else if (value instanceof Float) {
+            return ((Float) value).longValue();
+        } else if (value instanceof Number) {
+            return ((Number) value).longValue();
+        } else if (value instanceof String) {
+            try {
+                return Long.parseLong((String) value);
+            } catch (NumberFormatException e) {
+                logger.fine("Failed to parse Long from string: " + value);
+                return defaultValue;
+            }
+        }
+        
+        logger.fine("Unexpected type for Long conversion: " + value.getClass().getName());
+        return defaultValue;
+    }
+    
+    /**
+     * Safely converts a numeric value to Integer, handling different numeric types
+     * that may be returned from different storage backends (e.g., JSON returns Double)
+     *
+     * @param value The value to convert
+     * @param defaultValue The default value if conversion fails
+     * @return The value as an Integer
+     */
+    private Integer getNumericAsInteger(Object value, Integer defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        
+        if (value instanceof Integer) {
+            return (Integer) value;
+        } else if (value instanceof Double) {
+            return ((Double) value).intValue();
+        } else if (value instanceof Long) {
+            return ((Long) value).intValue();
+        } else if (value instanceof Float) {
+            return ((Float) value).intValue();
+        } else if (value instanceof Number) {
+            return ((Number) value).intValue();
+        } else if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                logger.fine("Failed to parse Integer from string: " + value);
+                return defaultValue;
+            }
+        }
+        
+        logger.fine("Unexpected type for Integer conversion: " + value.getClass().getName());
+        return defaultValue;
     }
 }
