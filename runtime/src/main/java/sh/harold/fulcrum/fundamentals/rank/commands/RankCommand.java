@@ -16,6 +16,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.Bukkit;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankCategory;
 import sh.harold.fulcrum.api.rank.RankService;
@@ -142,6 +143,9 @@ public class RankCommand {
                     .append(Component.text("Your rank has been updated to ", NamedTextColor.GRAY))
                     .append(Component.text(rank.getDisplayName(), rank.getNameColor()))
                     .build());
+                
+                // Update command permissions for tab completion
+                refreshPlayerCommands(target);
             }).exceptionally(ex -> {
                 sender.sendMessage(Component.text("✗ Failed to set rank: " + ex.getMessage(), NamedTextColor.RED));
                 logger.log(Level.WARNING, "Failed to set rank", ex);
@@ -217,6 +221,9 @@ public class RankCommand {
                     .append(Component.text(rank.getDisplayName(), rank.getNameColor()))
                     .append(Component.text(" rank", NamedTextColor.GRAY))
                     .build());
+                
+                // Update command permissions for tab completion
+                refreshPlayerCommands(target);
             }).exceptionally(ex -> {
                 sender.sendMessage(Component.text("✗ Failed to add rank: " + ex.getMessage(), NamedTextColor.RED));
                 logger.log(Level.WARNING, "Failed to add rank", ex);
@@ -292,6 +299,9 @@ public class RankCommand {
                     .append(Component.text(rank.getDisplayName(), rank.getNameColor()))
                     .append(Component.text(" rank has been removed", NamedTextColor.GRAY))
                     .build());
+                
+                // Update command permissions for tab completion
+                refreshPlayerCommands(target);
             }).exceptionally(ex -> {
                 sender.sendMessage(Component.text("✗ Failed to remove rank: " + ex.getMessage(), NamedTextColor.RED));
                 logger.log(Level.WARNING, "Failed to remove rank", ex);
@@ -537,6 +547,9 @@ public class RankCommand {
                 
                 // Notify the target player
                 target.sendMessage(Component.text("Your ranks have been reset", NamedTextColor.YELLOW));
+                
+                // Update command permissions for tab completion
+                refreshPlayerCommands(target);
             }).exceptionally(ex -> {
                 sender.sendMessage(Component.text("✗ Failed to clear ranks: " + ex.getMessage(), NamedTextColor.RED));
                 logger.log(Level.WARNING, "Failed to clear ranks", ex);
@@ -692,5 +705,22 @@ public class RankCommand {
         }
         
         return builder.buildFuture();
+    }
+    
+    /**
+     * Refreshes a player's command tree to update tab completion
+     * after their rank has changed.
+     */
+    private void refreshPlayerCommands(Player player) {
+        // Schedule on next tick to ensure rank change is fully processed
+        Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("Fulcrum"), () -> {
+            try {
+                // Use Paper's API to update the player's command tree
+                player.updateCommands();
+                logger.fine("Updated command tree for player: " + player.getName());
+            } catch (Exception e) {
+                logger.warning("Failed to update command tree for " + player.getName() + ": " + e.getMessage());
+            }
+        });
     }
 }
