@@ -9,7 +9,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
+import sh.harold.fulcrum.velocity.api.ServerIdentifier;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -21,7 +21,7 @@ public class ProxyConnectionHandler {
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     
     private final ProxyServer proxy;
-    private final String proxyId;
+    private String proxyId;  // Changed from final to allow updates
     private final Logger logger;
     private final VelocityServerLifecycleFeature lifecycleFeature;
     
@@ -33,6 +33,17 @@ public class ProxyConnectionHandler {
         this.proxyId = proxyId;
         this.logger = logger;
         this.lifecycleFeature = lifecycleFeature;
+        logger.info("[DIAGNOSTIC] ProxyConnectionHandler initialized with proxyId: {}", proxyId);
+    }
+    
+    /**
+     * Update the proxy ID when permanent ID is received from registry
+     * @param newProxyId The new permanent proxy ID
+     */
+    public void updateProxyId(String newProxyId) {
+        String oldId = this.proxyId;
+        this.proxyId = newProxyId;
+        logger.info("[DIAGNOSTIC] ProxyConnectionHandler updated proxyId from {} to {}", oldId, newProxyId);
     }
     
     /**
@@ -78,33 +89,24 @@ public class ProxyConnectionHandler {
             logger.info("=== PlayerChooseInitialServerEvent ===");
             logger.info("Player: {}", playerName);
             
-            // Use optimal server selection for lobby servers
-            RegisteredServer targetServer = findOptimalServer("lobby");
-            String selectionReason = "";
-            
-            if (targetServer != null) {
-                selectionReason = "Optimal lobby server selected";
-                logger.info("Selected optimal lobby server '{}' for player {}",
-                    targetServer.getServerInfo().getName(), playerName);
-            } else {
-                // If no lobby servers, try any available server with optimal selection
-                logger.warn("No lobby servers available for player {}, checking other servers...", playerName);
-                targetServer = findOptimalServer(null);
-                
-                if (targetServer != null) {
-                    selectionReason = "Optimal server selected (non-lobby)";
-                    logger.info("Selected optimal server '{}' for player {}",
-                        targetServer.getServerInfo().getName(), playerName);
-                }
-            }
+            // For initial connections, use the special method that can fall back to any server
+            RegisteredServer targetServer = findAnyOptimalServer();
             
             // Set the selected server or disconnect if none available
             if (targetServer != null) {
                 event.setInitialServer(targetServer);
-                logger.info("Player {} connecting to initial server: {} ({})",
-                    playerName,
-                    targetServer.getServerInfo().getName(),
-                    selectionReason);
+                
+                // Check if it's a lobby server or fallback
+                ServerMetrics metrics = serverMetricsCache.get(targetServer.getServerInfo().getName());
+                String serverRole = metrics != null ? metrics.role : "unknown";
+                
+                if ("lobby".equalsIgnoreCase(serverRole)) {
+                    logger.info("Player {} connecting to lobby server: {}",
+                        playerName, targetServer.getServerInfo().getName());
+                } else {
+                    logger.warn("Player {} connecting to non-lobby server '{}' (role: {}) - no lobby servers available",
+                        playerName, targetServer.getServerInfo().getName(), serverRole);
+                }
             } else {
                 // No servers available at all
                 String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
@@ -112,6 +114,7 @@ public class ProxyConnectionHandler {
                 
                 logger.error("No servers available for player {} ({}) [Timestamp: {}, Proxy: {}]",
                     playerName, playerUuid, timestamp, proxyId);
+                logger.info("[DIAGNOSTIC] Current proxyId in disconnect message: {}", proxyId);
                 
                 // Build the disconnection message
                 Component mainMessage = Component.text()
@@ -147,21 +150,20 @@ public class ProxyConnectionHandler {
     
     /**
      * Find the optimal server based on role and load
-     * @param role The server role (e.g., "lobby", "survival", "minigames"), or null for any
-     * @return The optimal server, if available
+     * @param role The server role (e.g., "lobby", "survival", "minigames")
+     * @return The optimal server of that role, or null if none available
      */
     public RegisteredServer findOptimalServer(String role) {
-        Set<ServerIdentifier> candidates;
-        
-        if (role != null) {
-            // Get servers by role
-            candidates = lifecycleFeature.getServersByRole(role);
-        } else {
-            // Get all servers
-            candidates = lifecycleFeature.getRegisteredServers();
+        if (role == null) {
+            logger.warn("findOptimalServer called with null role - use findAnyOptimalServer() for initial connections");
+            return null;
         }
         
+        // Get servers by specific role only
+        Set<ServerIdentifier> candidates = lifecycleFeature.getServersByRole(role);
+        
         if (candidates.isEmpty()) {
+            logger.debug("No servers found for role: {}", role);
             return null;
         }
         
@@ -192,17 +194,84 @@ public class ProxyConnectionHandler {
         if (!serversWithMetrics.isEmpty()) {
             // Select best server (lowest load factor)
             RegisteredServer optimal = serversWithMetrics.get(0).server;
-            logger.debug("Selected optimal server: {} with load factor: {}", 
+            logger.debug("Selected optimal {} server: {} with load factor: {}",
+                        role,
                         optimal.getServerInfo().getName(),
                         serversWithMetrics.get(0).metrics.getLoadFactor());
             return optimal;
         }
         
-        // If no healthy servers, fall back to any available server
+        // If no healthy servers of this role, still only check servers of the SAME ROLE
+        // This prevents sending players to wrong game modes
         for (ServerIdentifier server : candidates) {
             Optional<RegisteredServer> registered = proxy.getServer(server.getServerId());
             if (registered.isPresent()) {
-                logger.debug("No healthy servers found, using fallback: {}", server.getServerId());
+                logger.debug("No healthy {} servers found, using unhealthy fallback: {}",
+                           role, server.getServerId());
+                return registered.get();
+            }
+        }
+        
+        logger.debug("No {} servers available at all", role);
+        return null;
+    }
+    
+    /**
+     * Find any optimal server for initial player connection
+     * This method should ONLY be used for initial connections when no specific role is required
+     * @return The optimal server from any role, prioritizing lobby servers
+     */
+    public RegisteredServer findAnyOptimalServer() {
+        // First, try to find a lobby server
+        RegisteredServer lobbyServer = findOptimalServer("lobby");
+        if (lobbyServer != null) {
+            return lobbyServer;
+        }
+        
+        // If no lobby servers, find the best server from ANY role
+        Set<ServerIdentifier> allServers = lifecycleFeature.getRegisteredServers();
+        
+        if (allServers.isEmpty()) {
+            logger.debug("No servers available at all");
+            return null;
+        }
+        
+        // Sort ALL servers by load factor
+        List<ServerWithMetrics> serversWithMetrics = allServers.stream()
+            .map(serverIdentifier -> {
+                String serverId = serverIdentifier.getServerId();
+                Optional<RegisteredServer> registered = proxy.getServer(serverId);
+                
+                if (!registered.isPresent()) {
+                    return null;
+                }
+                
+                ServerMetrics metrics = serverMetricsCache.get(serverId);
+                
+                if (metrics == null || metrics.isStale()) {
+                    metrics = new ServerMetrics(serverId, serverIdentifier.getRole());
+                }
+                
+                return new ServerWithMetrics(registered.get(), metrics);
+            })
+            .filter(Objects::nonNull)
+            .filter(swm -> swm.metrics.isHealthy())
+            .sorted(Comparator.comparingDouble(swm -> swm.metrics.getLoadFactor()))
+            .collect(Collectors.toList());
+        
+        if (!serversWithMetrics.isEmpty()) {
+            RegisteredServer optimal = serversWithMetrics.get(0).server;
+            logger.info("No lobby servers available - selected {} server as fallback for initial connection",
+                       serversWithMetrics.get(0).metrics.role);
+            return optimal;
+        }
+        
+        // Last resort: any server at all
+        for (ServerIdentifier server : allServers) {
+            Optional<RegisteredServer> registered = proxy.getServer(server.getServerId());
+            if (registered.isPresent()) {
+                logger.warn("No healthy servers found - using any available server for initial connection: {}",
+                          server.getServerId());
                 return registered.get();
             }
         }

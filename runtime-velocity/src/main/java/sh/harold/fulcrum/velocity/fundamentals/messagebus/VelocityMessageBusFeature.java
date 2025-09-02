@@ -208,9 +208,8 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             logger.info("Received registration response");
         });
         
-        messageBus.subscribe("server:heartbeat", envelope -> {
-            logger.debug("Received heartbeat message");
-        });
+        // Note: Heartbeat handling is done in VelocityServerLifecycleFeature
+        // to avoid duplicate processing
         
         logger.info("Message handlers registered");
     }
