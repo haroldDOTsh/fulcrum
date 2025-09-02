@@ -26,14 +26,29 @@ public final class RankUtils {
      * @return true if the player has the required rank or higher, false otherwise
      */
     public static boolean hasRankOrHigher(Player player, Rank requiredRank) {
+        logger.info("[DEBUG] Checking rank for player " + player.getName() + ", requires " + requiredRank.name());
+        
         RankService rankService = ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null);
         if (rankService == null) {
-            logger.warning("RankService not available, denying access");
+            logger.warning("[DEBUG] RankService not available! Denying access for " + player.getName());
             return false;
         }
         
-        Rank playerRank = rankService.getEffectiveRankSync(player.getUniqueId());
-        return playerRank.getPriority() >= requiredRank.getPriority();
+        try {
+            Rank playerRank = rankService.getEffectiveRankSync(player.getUniqueId());
+            boolean hasPermission = playerRank.getPriority() >= requiredRank.getPriority();
+            
+            logger.info("[DEBUG] Player " + player.getName() +
+                       " has rank " + playerRank.name() + " (priority " + playerRank.getPriority() +
+                       "), needs " + requiredRank.name() + " (priority " + requiredRank.getPriority() +
+                       ") -> " + (hasPermission ? "ALLOWED" : "DENIED"));
+            
+            return hasPermission;
+        } catch (Exception e) {
+            logger.severe("[DEBUG] Error checking rank for " + player.getName() + ": " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
     }
     
     /**
@@ -47,6 +62,7 @@ public final class RankUtils {
     public static boolean hasRankOrHigher(CommandSender sender, Rank requiredRank) {
         // Console always has admin privileges
         if (sender instanceof ConsoleCommandSender) {
+            logger.info("[DEBUG] Permission check for console - always allowed");
             return true;
         }
         
@@ -55,17 +71,94 @@ public final class RankUtils {
         }
         
         // Non-player, non-console senders (e.g., command blocks) are treated as admin
+        logger.info("[DEBUG] Permission check for command block - always allowed");
         return true;
     }
     
     /**
-     * Checks if a player is staff (HELPER, MODERATOR, or ADMIN).
-     * 
+     * Checks if a player is staff (HELPER, MODERATOR, ADMIN, or higher).
+     * This includes any rank with STAFF category or higher priority than HELPER.
+     *
      * @param player the player to check
      * @return true if the player is staff, false otherwise
      */
     public static boolean isStaff(Player player) {
-        return hasRankOrHigher(player, Rank.HELPER);
+        logger.info("[DEBUG] isStaff check for player " + player.getName());
+        
+        RankService rankService = ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null);
+        if (rankService == null) {
+            logger.warning("[DEBUG] RankService not available! Denying staff access for " + player.getName());
+            return false;
+        }
+        
+        try {
+            Rank playerRank = rankService.getEffectiveRankSync(player.getUniqueId());
+            
+            // Check if rank is in STAFF category or has staff-level priority
+            boolean isStaff = playerRank.getCategory() == RankCategory.STAFF ||
+                              playerRank.getPriority() >= Rank.HELPER.getPriority();
+            
+            logger.info("[DEBUG] Player " + player.getName() +
+                       " has rank " + playerRank.name() +
+                       " (category: " + playerRank.getCategory() +
+                       ", priority: " + playerRank.getPriority() +
+                       ") -> isStaff: " + isStaff);
+            
+            return isStaff;
+        } catch (Exception e) {
+            logger.severe("[DEBUG] Error checking staff status for " + player.getName() + ": " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+    
+    /**
+     * Checks if a player has a specific rank by rank ID.
+     *
+     * @param player the player to check
+     * @param rankId the rank ID to check (e.g., "MVP_PLUS_PLUS", "ADMIN")
+     * @return true if the player has the specific rank, false otherwise
+     */
+    public static boolean isRank(Player player, String rankId) {
+        if (rankId == null || rankId.isEmpty()) {
+            logger.warning("[DEBUG] isRank check with null/empty rankId for " + player.getName());
+            return false;
+        }
+        
+        logger.info("[DEBUG] isRank check for player " + player.getName() + ", rank: " + rankId);
+        
+        RankService rankService = ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null);
+        if (rankService == null) {
+            logger.warning("[DEBUG] RankService not available! Denying rank check for " + player.getName());
+            return false;
+        }
+        
+        try {
+            // Try to parse the rank ID
+            Rank targetRank;
+            try {
+                targetRank = Rank.valueOf(rankId.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                logger.warning("[DEBUG] Invalid rank ID: " + rankId);
+                return false;
+            }
+            
+            Rank playerRank = rankService.getEffectiveRankSync(player.getUniqueId());
+            
+            // Check exact match
+            boolean hasRank = playerRank == targetRank;
+            
+            logger.info("[DEBUG] Player " + player.getName() +
+                       " has rank " + playerRank.name() +
+                       ", checking for " + targetRank.name() +
+                       " -> " + hasRank);
+            
+            return hasRank;
+        } catch (Exception e) {
+            logger.severe("[DEBUG] Error checking rank for " + player.getName() + ": " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
     }
     
     /**
@@ -89,13 +182,14 @@ public final class RankUtils {
     }
     
     /**
-     * Checks if a player is an admin (ADMIN or MODERATOR).
-     * 
+     * Checks if a player is an admin (ADMIN rank).
+     *
      * @param player the player to check
      * @return true if the player is admin, false otherwise
      */
     public static boolean isAdmin(Player player) {
-        return hasRankOrHigher(player, Rank.MODERATOR);
+        logger.info("[DEBUG] isAdmin check for player " + player.getName() + " (requires ADMIN)");
+        return hasRankOrHigher(player, Rank.ADMIN);
     }
     
     /**
@@ -107,14 +201,18 @@ public final class RankUtils {
      */
     public static boolean isAdmin(CommandSender sender) {
         if (sender instanceof ConsoleCommandSender) {
+            logger.info("[DEBUG] isAdmin check for console - always true");
             return true;
         }
         
         if (sender instanceof Player player) {
-            return isAdmin(player);
+            boolean isAdmin = isAdmin(player);
+            logger.info("[DEBUG] isAdmin check for " + player.getName() + " -> " + isAdmin);
+            return isAdmin;
         }
         
         // Command blocks are treated as admin
+        logger.info("[DEBUG] isAdmin check for command block - always true");
         return true;
     }
     
@@ -127,14 +225,19 @@ public final class RankUtils {
      */
     public static boolean canManageRanks(CommandSender sender) {
         if (sender instanceof ConsoleCommandSender) {
+            logger.info("[DEBUG] canManageRanks check for console - always true");
             return true;
         }
         
         if (sender instanceof Player player) {
-            return hasRankOrHigher(player, Rank.ADMIN);
+            logger.info("[DEBUG] canManageRanks check for " + player.getName() + " (requires ADMIN)");
+            boolean canManage = hasRankOrHigher(player, Rank.ADMIN);
+            logger.info("[DEBUG] canManageRanks result for " + player.getName() + " -> " + canManage);
+            return canManage;
         }
         
         // Command blocks cannot manage ranks
+        logger.info("[DEBUG] canManageRanks check for command block - false");
         return false;
     }
     
