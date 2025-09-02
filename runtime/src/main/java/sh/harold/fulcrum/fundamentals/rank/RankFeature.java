@@ -122,6 +122,14 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                 // New player, set default rank
                 setPrimaryRank(playerId, Rank.DEFAULT);
             }
+            
+            // Update command permissions for tab completion after rank load
+            // This ensures tab completion reflects their current rank
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                player.updateCommands();
+                logger.fine("Updated command tree for " + player.getName() + " on join");
+            }, 10L); // Small delay to ensure everything is loaded
+            
         }).exceptionally(ex -> {
             logger.log(Level.WARNING, "Failed to load ranks for " + player.getName(), ex);
             return null;
@@ -194,6 +202,15 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             
             // Save to storage
             savePlayerRanks(playerId).join();
+            
+            // Update command permissions if player is online
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player != null && player.isOnline()) {
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    player.updateCommands();
+                    logger.fine("Updated command tree for " + player.getName() + " after primary rank change");
+                });
+            }
         });
     }
     
@@ -212,6 +229,15 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             
             // Save to storage
             savePlayerRanks(playerId).join();
+            
+            // Update command permissions if player is online
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player != null && player.isOnline()) {
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    player.updateCommands();
+                    logger.fine("Updated command tree for " + player.getName() + " after rank addition");
+                });
+            }
         });
     }
     
@@ -231,6 +257,15 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                 
                 // Save to storage
                 savePlayerRanks(playerId).join();
+                
+                // Update command permissions if player is online
+                Player player = plugin.getServer().getPlayer(playerId);
+                if (player != null && player.isOnline()) {
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        player.updateCommands();
+                        logger.fine("Updated command tree for " + player.getName() + " after rank removal");
+                    });
+                }
             }
         });
     }
@@ -270,6 +305,15 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             
             // Set default rank
             setPrimaryRank(playerId, Rank.DEFAULT).join();
+            
+            // Update command permissions if player is online
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player != null && player.isOnline()) {
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    player.updateCommands();
+                    logger.fine("Updated command tree for " + player.getName() + " after rank reset");
+                });
+            }
         });
     }
     
