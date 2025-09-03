@@ -117,6 +117,7 @@ public class ProxyRegistry {
     
     /**
      * Deregister a proxy (moves to unavailable, doesn't release ID immediately)
+     * Used for timeout/hung scenarios where we want to reserve the ID
      * @param proxyId The proxy ID to deregister
      */
     public synchronized void deregisterProxy(String proxyId) {
@@ -130,8 +131,40 @@ public class ProxyRegistry {
             // Keep temp ID mapping for potential reconnection
             // tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
             
-            LOGGER.info("Proxy {} marked as unavailable (ID reserved, not released)", proxyId);
+            LOGGER.info("Proxy {} marked as unavailable (ID reserved for reconnection)", proxyId);
         }
+    }
+    
+    /**
+     * Immediately remove a proxy and release its ID (for graceful shutdown)
+     * @param proxyId The proxy ID to remove
+     * @return true if the proxy was removed, false if not found
+     */
+    public synchronized boolean removeProxyImmediately(String proxyId) {
+        RegisteredProxyData removed = proxies.remove(proxyId);
+        if (removed != null) {
+            // Remove temp ID mapping
+            tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
+            
+            // Immediately release the ID for reuse
+            idAllocator.releaseProxyIdExplicit(proxyId, true);
+            
+            LOGGER.info("Proxy {} removed immediately and ID released (graceful shutdown)", proxyId);
+            return true;
+        }
+        
+        // Also check unavailable proxies
+        removed = unavailableProxies.remove(proxyId);
+        if (removed != null) {
+            unavailableTimestamps.remove(proxyId);
+            tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
+            idAllocator.releaseProxyIdExplicit(proxyId, true);
+            
+            LOGGER.info("Unavailable proxy {} removed immediately and ID released", proxyId);
+            return true;
+        }
+        
+        return false;
     }
     
     /**
