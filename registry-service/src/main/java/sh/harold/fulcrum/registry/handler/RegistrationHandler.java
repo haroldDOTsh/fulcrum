@@ -8,19 +8,23 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
+import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
+import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Handles all registration and communication logic for the registry service.
@@ -38,6 +42,10 @@ public class RegistrationHandler {
     private final ScheduledExecutorService retryExecutor;
     private final Map<String, PendingRequest> pendingRequests;
     private MessageBus messageBus;
+    
+    // State management for ongoing proxy registrations
+    private final Map<String, CompletableFuture<String>> ongoingProxyRegistrations = new ConcurrentHashMap<>();
+    private static final long REGISTRATION_TIMEOUT_SECONDS = 30;
     
     private static class PendingRequest {
         final String tempId;
@@ -87,10 +95,20 @@ public class RegistrationHandler {
      * Initialize MessageBus subscriptions
      */
     public void initialize(MessageBus messageBus) {
+        if (this.messageBus != null) {
+            LOGGER.warn("MessageBus was already set! Overwriting previous instance");
+        }
+        
         this.messageBus = messageBus;
+        
+        if (this.messageBus == null) {
+            throw new IllegalStateException("MessageBus cannot be null");
+        }
         
         // Subscribe to channels with message handlers
         subscribeToChannels();
+        
+        LOGGER.info("RegistrationHandler initialized");
     }
     
     /**
@@ -101,18 +119,45 @@ public class RegistrationHandler {
     }
     
     private void subscribeToChannels() {
+        if (messageBus == null) {
+            throw new IllegalStateException("MessageBus is null in subscribeToChannels");
+        }
+        
         // Subscribe to registration requests
-        messageBus.subscribe("registry:register", new MessageHandler() {
+        
+        // Create the handler first to ensure it's not null
+        MessageHandler registrationHandler = new MessageHandler() {
             @Override
             public void handle(MessageEnvelope envelope) {
+                LOGGER.debug("Registration handler invoked");
+                
                 try {
-                    String json = objectMapper.writeValueAsString(envelope.getPayload());
-                    handleServerRegistration(json);
+                    Object payload = envelope.getPayload();
+                    
+                    // Check if payload is already a ServerRegistrationRequest
+                    if (payload instanceof sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest) {
+                        sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest request =
+                            (sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest) payload;
+                        
+                        // Convert to JSON for processing
+                        String json = objectMapper.writeValueAsString(request);
+                        handleServerRegistration(json);
+                    } else if (payload instanceof Map) {
+                        String json = objectMapper.writeValueAsString(payload);
+                        handleServerRegistration(json);
+                    } else {
+                        // Try to convert anyway
+                        String json = objectMapper.writeValueAsString(payload);
+                        handleServerRegistration(json);
+                    }
                 } catch (Exception e) {
-                    LOGGER.error("Failed to handle registration", e);
+                    LOGGER.error("Failed to handle registration message", e);
                 }
             }
-        });
+        };
+        
+        // Subscribe with the handler
+        messageBus.subscribe("registry:register", registrationHandler);
         
         // Subscribe to heartbeat messages
         messageBus.subscribe("server:heartbeat", new MessageHandler() {
@@ -173,10 +218,59 @@ public class RegistrationHandler {
             }
         });
         
-        LOGGER.info("Subscribed to registry channels via MessageBus");
+        // Subscribe to proxy channel for shutdown notifications
+        messageBus.subscribe("registry:proxy", new MessageHandler() {
+            @Override
+            public void handle(MessageEnvelope envelope) {
+                try {
+                    Object payload = envelope.getPayload();
+                    
+                    // Handle JsonNode payloads (which come from the MessageBus deserialization)
+                    if (payload instanceof com.fasterxml.jackson.databind.JsonNode) {
+                        try {
+                            // Convert JsonNode to ServerRemovalNotification
+                            ServerRemovalNotification notification = objectMapper.treeToValue(
+                                (com.fasterxml.jackson.databind.JsonNode) payload,
+                                ServerRemovalNotification.class
+                            );
+                            if ("PROXY".equalsIgnoreCase(notification.getServerType())) {
+                                handleProxyRemoval(notification);
+                            }
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to convert JsonNode to ServerRemovalNotification", e);
+                        }
+                    }
+                    // Check if this is already a ServerRemovalNotification
+                    else if (payload instanceof ServerRemovalNotification) {
+                        ServerRemovalNotification notification = (ServerRemovalNotification) payload;
+                        if ("PROXY".equalsIgnoreCase(notification.getServerType())) {
+                            handleProxyRemoval(notification);
+                        }
+                    } else if (payload instanceof Map) {
+                        Map<String, Object> map = (Map<String, Object>) payload;
+                        // Check if it has the fields of a ServerRemovalNotification
+                        if (map.containsKey("serverId") && map.containsKey("serverType") && map.containsKey("reason")) {
+                            ServerRemovalNotification notification = objectMapper.convertValue(
+                                payload, ServerRemovalNotification.class);
+                            
+                            if ("PROXY".equalsIgnoreCase(notification.getServerType())) {
+                                RegistrationHandler.this.handleProxyRemoval(notification);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    LOGGER.error("Failed to handle message on registry:proxy channel", e);
+                }
+            }
+        });
     }
     
     private void startRetryMonitor() {
+        // Clean up completed registration futures periodically
+        retryExecutor.scheduleAtFixedRate(() -> {
+            cleanupCompletedRegistrations();
+        }, 60, 60, TimeUnit.SECONDS);
+        
         retryExecutor.scheduleAtFixedRate(() -> {
             long now = System.currentTimeMillis();
             pendingRequests.entrySet().removeIf(entry -> {
@@ -211,16 +305,25 @@ public class RegistrationHandler {
      */
     private void handleServerRegistration(String json) {
         if (debugMode) {
-            LOGGER.debug("[RECEIVED] Registration request on registry channel");
+            LOGGER.debug("Registration request received");
         }
+        
         try {
-            RegistrationRequest request = objectMapper.readValue(json, RegistrationRequest.class);
+            // ALL services now use ServerRegistrationRequest from message-bus-api
+            // This includes: backend servers, limbo service, and proxy servers
+            sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest apiRequest =
+                objectMapper.readValue(json, sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest.class);
+            
+            // Convert to internal RegistrationRequest format for processing
+            RegistrationRequest request = new RegistrationRequest();
+            request.setTempId(apiRequest.getTempId());
+            request.setServerType(apiRequest.getServerType());
+            request.setRole(apiRequest.getRole());
+            request.setAddress(apiRequest.getAddress());
+            request.setPort(apiRequest.getPort());
+            request.setMaxCapacity(apiRequest.getMaxCapacity());
             
             String tempId = request.getTempId();
-            if (debugMode) {
-                LOGGER.debug("[PROCESSING] Registration for {} ({}) - Type: {}",
-                    request.getTempId(), request.getServerType(), request.getRole());
-            }
             
             // Check if already being processed (prevent duplicate processing)
             PendingRequest existing = pendingRequests.putIfAbsent(tempId, new PendingRequest(tempId, json));
@@ -233,11 +336,7 @@ public class RegistrationHandler {
             
             // Process based on type
             if ("proxy".equals(request.getRole()) || "proxy".equals(request.getServerType())) {
-                if (debugMode) {
-                    LOGGER.debug("Processing proxy registration for tempId: {}", tempId);
-                }
                 handleProxyRegistration(request);
-                // ProxyRegistry.registerProxy already logs the essential registration info
             } else {
                 // Register the server
                 String permanentId = serverRegistry.registerServer(request);
@@ -306,13 +405,14 @@ public class RegistrationHandler {
             // Check if this is a shutdown signal (for ANY server, not just proxies)
             String status = (String) heartbeat.get("status");
             if ("SHUTDOWN".equals(status) && serverId != null) {
-                if (debugMode) {
-                    LOGGER.debug("Server {} signaling shutdown", serverId);
-                }
-                // Handle shutdown based on server type
+                LOGGER.info("[HEARTBEAT] Received SHUTDOWN status from server: {}", serverId);
+                // Handle graceful shutdown based on server type
                 if (serverId.startsWith("proxy-") || serverId.startsWith("fulcrum-proxy-")) {
-                    handleProxyShutdown(serverId);
+                    LOGGER.info("[HEARTBEAT] Processing graceful shutdown for proxy: {}", serverId);
+                    // Graceful shutdown from heartbeat - immediately release ID
+                    handleProxyGracefulShutdown(serverId);
                 } else {
+                    LOGGER.info("[HEARTBEAT] Processing shutdown for backend server: {}", serverId);
                     // Handle backend server shutdown
                     handleServerShutdown(serverId);
                 }
@@ -345,42 +445,150 @@ public class RegistrationHandler {
             String address = request.getAddress();
             int port = request.getPort();
             
-            if (debugMode) {
-                LOGGER.debug("Processing proxy registration for tempId: {}", tempId);
+            // Check if a registration is already in progress for this tempId
+            CompletableFuture<String> existingFuture = ongoingProxyRegistrations.get(tempId);
+            if (existingFuture != null && !existingFuture.isDone()) {
+                LOGGER.info("Registration already in progress for tempId: {}, waiting for completion", tempId);
+                existingFuture.whenComplete((proxyId, throwable) -> {
+                    if (throwable != null) {
+                        LOGGER.error("Existing registration failed for tempId: {}", tempId, throwable);
+                        sendProxyRegistrationResponse(tempId, null, false, "Registration failed: " + throwable.getMessage());
+                    } else {
+                        LOGGER.info("Reusing result from ongoing registration - ProxyID: {}", proxyId);
+                        sendProxyRegistrationResponse(tempId, proxyId, true, "Proxy registered successfully (reused)");
+                    }
+                    // Remove from pending
+                    pendingRequests.remove(tempId);
+                });
+                return;
             }
             
-            // Register the proxy - ProxyRegistry will log the essential info
-            String permanentId = proxyRegistry.registerProxy(tempId, address, port);
-            
-            // Create response payload
-            Map<String, Object> responsePayload = new HashMap<>();
-            responsePayload.put("proxyId", permanentId);
-            responsePayload.put("tempId", tempId);
-            responsePayload.put("success", true);
-            responsePayload.put("message", "Proxy registered successfully");
-            responsePayload.put("timestamp", System.currentTimeMillis());
-            
-            // Wrap in MessageEnvelope for proper MessageBus handling
-            Map<String, Object> envelope = new HashMap<>();
-            envelope.put("type", "proxy:registration:response");
-            envelope.put("senderId", "registry-service");
-            envelope.put("targetId", tempId);
-            envelope.put("correlationId", java.util.UUID.randomUUID().toString());
-            envelope.put("timestamp", System.currentTimeMillis());
-            envelope.put("version", 1);
-            envelope.put("payload", responsePayload);
-            
-            // Send to proxy:registration:response channel via MessageBus
-            messageBus.send(tempId, "proxy:registration:response", responsePayload);
-            if (debugMode) {
-                LOGGER.debug("[SENT] Proxy registration response via MessageBus to 'proxy:registration:response'");
+            // Check if this proxy was recently registered (within 30 seconds)
+            // This helps prevent duplicate registrations during registry startup
+            String existingProxyId = proxyRegistry.getProxyByAddress(address, port);
+            if (existingProxyId != null && proxyRegistry.wasRecentlyRegistered(existingProxyId, 30000)) {
+                LOGGER.info("Proxy at {}:{} was recently registered as {} (within 30s), skipping re-registration",
+                           address, port, existingProxyId);
+                
+                // Send the existing proxy ID back as response
+                sendProxyRegistrationResponse(tempId, existingProxyId, true, "Proxy already registered (recent registration)");
+                
+                // Remove from pending
+                pendingRequests.remove(tempId);
+                return;
             }
             
-            // Remove from pending
-            pendingRequests.remove(tempId);
+            // Log registration attempt details in debug mode
+            if (debugMode) {
+                LOGGER.debug("Proxy registration attempt:");
+                LOGGER.debug("  - Temp ID: {}", tempId);
+                LOGGER.debug("  - Address: {}:{}", address, port);
+                LOGGER.debug("  - Is temp ID: {}", tempId.startsWith("temp-"));
+                LOGGER.debug("  - Existing proxies: {}", proxyRegistry.getAllProxies().size());
+            }
+            
+            // Check if this proxy might already be registered
+            if (!tempId.startsWith("temp-") && proxyRegistry.getProxy(tempId) != null) {
+                RegisteredProxyData existingProxy = proxyRegistry.getProxy(tempId);
+                if (existingProxy != null && proxyRegistry.wasRecentlyRegistered(tempId, 30000)) {
+                    LOGGER.info("Proxy {} is already registered and was registered recently (within 30s), skipping",
+                               tempId);
+                    
+                    // Send confirmation with existing ID
+                    sendProxyRegistrationResponse(tempId, tempId, true, "Proxy already registered");
+                    
+                    // Remove from pending
+                    pendingRequests.remove(tempId);
+                    return;
+                }
+            }
+            
+            // Create a new CompletableFuture for this registration
+            CompletableFuture<String> registrationFuture = CompletableFuture.supplyAsync(() -> {
+                return performProxyRegistration(tempId, address, port);
+            });
+            
+            // Store the future in the ongoing registrations map before setting up completion handler
+            ongoingProxyRegistrations.put(tempId, registrationFuture);
+            
+            // Add timeout handling
+            registrationFuture.orTimeout(REGISTRATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .whenComplete((proxyId, throwable) -> {
+                    // Remove from ongoing registrations map
+                    ongoingProxyRegistrations.remove(tempId);
+                    
+                    if (throwable != null) {
+                        if (throwable instanceof TimeoutException) {
+                            LOGGER.error("Registration timeout for tempId: {} after {} seconds",
+                                tempId, REGISTRATION_TIMEOUT_SECONDS);
+                            sendProxyRegistrationResponse(tempId, null, false, "Registration timeout");
+                        } else {
+                            LOGGER.error("Registration failed for tempId: {}", tempId, throwable);
+                            sendProxyRegistrationResponse(tempId, null, false, "Registration failed: " + throwable.getMessage());
+                        }
+                    } else {
+                        LOGGER.info("Registration completed successfully - ProxyID: {}", proxyId);
+                        sendProxyRegistrationResponse(tempId, proxyId, true, "Proxy registered successfully");
+                    }
+                    
+                    // Remove from pending
+                    pendingRequests.remove(tempId);
+                });
             
         } catch (Exception e) {
             LOGGER.error("Failed to handle proxy registration", e);
+            // Clean up on error
+            ongoingProxyRegistrations.remove(request.getTempId());
+            pendingRequests.remove(request.getTempId());
+        }
+    }
+    
+    /**
+     * Perform the actual proxy registration
+     */
+    private String performProxyRegistration(String tempId, String address, int port) {
+        try {
+            // Register the proxy - ProxyRegistry will handle deduplication internally
+            String permanentId = proxyRegistry.registerProxy(tempId, address, port);
+            
+            if (debugMode) {
+                LOGGER.debug("Proxy registered: {} -> {}", tempId, permanentId);
+            }
+            
+            // Initialize heartbeat tracking for the newly registered proxy
+            // The proxy will send heartbeats with the permanent ID after receiving the response
+            heartbeatMonitor.processHeartbeat(permanentId, 0, 20.0);
+            
+            // Also track by temp ID temporarily in case proxy sends heartbeat before updating its ID
+            heartbeatMonitor.processHeartbeat(tempId, 0, 20.0);
+            
+            return permanentId;
+        } catch (Exception e) {
+            LOGGER.error("Failed to perform proxy registration for tempId: {}", tempId, e);
+            throw new RuntimeException("Failed to register proxy: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Send proxy registration response
+     */
+    private void sendProxyRegistrationResponse(String tempId, String proxyId, boolean success, String message) {
+        try {
+            Map<String, Object> responsePayload = new HashMap<>();
+            responsePayload.put("proxyId", proxyId);
+            responsePayload.put("tempId", tempId);
+            responsePayload.put("success", success);
+            responsePayload.put("message", message);
+            responsePayload.put("timestamp", System.currentTimeMillis());
+            
+            // Send to proxy:registration:response channel via MessageBus
+            messageBus.broadcast("proxy:registration:response", responsePayload);
+            
+            if (debugMode) {
+                LOGGER.debug("Sent proxy registration response for tempId: {} -> proxyId: {}", tempId, proxyId);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to send proxy registration response for tempId: {}", tempId, e);
         }
     }
     
@@ -406,10 +614,17 @@ public class RegistrationHandler {
             
             // CRITICAL: Use broadcast instead of send because the backend is listening on a shared channel
             // The backend server subscribes to "server:registration:response" to receive responses
+            LOGGER.info("[REGISTRY-DEBUG] Broadcasting server registration response:");
+            LOGGER.info("[REGISTRY-DEBUG]   - tempId: {}", request.getTempId());
+            LOGGER.info("[REGISTRY-DEBUG]   - assignedServerId: {}", permanentId);
+            LOGGER.info("[REGISTRY-DEBUG]   - channel: server:registration:response");
+            LOGGER.info("[REGISTRY-DEBUG]   - response object: {}", response);
+            
             messageBus.broadcast("server:registration:response", response);
             
             // Also broadcast to server-specific channel for redundancy
             String responseChannel = "server:" + request.getTempId() + ":registration:response";
+            LOGGER.info("[REGISTRY-DEBUG] Also broadcasting to specific channel: {}", responseChannel);
             messageBus.broadcast(responseChannel, response);
             
             if (debugMode) {
@@ -570,27 +785,67 @@ public class RegistrationHandler {
     }
     
     /**
-     * Handle proxy shutdown
+     * Handle proxy shutdown from heartbeat timeout (reserve ID for reconnection)
      */
     private void handleProxyShutdown(String proxyId) {
-        LOGGER.info("Proxy {} is shutting down - marking as unavailable (ID reserved)", proxyId);
+        LOGGER.info("Proxy {} timed out - marking as unavailable (ID reserved for reconnection)", proxyId);
         
-        // Mark proxy as unavailable but don't release ID immediately
-        proxyRegistry.updateProxyStatus(proxyId, RegisteredProxyData.Status.UNAVAILABLE);
+        // Remove from heartbeat monitoring
+        heartbeatMonitor.unregisterProxy(proxyId);
         
-        // Broadcast proxy unavailability (not removal)
+        // Mark proxy as DEAD which will move it to unavailable list (ID reserved)
+        proxyRegistry.updateProxyStatus(proxyId, RegisteredProxyData.Status.DEAD);
+        
+        LOGGER.info("Marked proxy {} as DEAD (timeout - ID reserved for potential reconnection)", proxyId);
+        
+        // Broadcast proxy unavailability
         try {
-            Map<String, Object> statusUpdate = new HashMap<>();
-            statusUpdate.put("proxyId", proxyId);
-            statusUpdate.put("status", "unavailable");
-            statusUpdate.put("reason", "shutdown");
-            statusUpdate.put("timestamp", System.currentTimeMillis());
+            Map<String, Object> removal = new HashMap<>();
+            removal.put("proxyId", proxyId);
+            removal.put("reason", "timeout");
+            removal.put("status", "unavailable");
+            removal.put("timestamp", System.currentTimeMillis());
             
-            // Broadcast proxy status change via MessageBus
-            messageBus.broadcast("registry:proxy:unavailable", statusUpdate);
-            
+            messageBus.broadcast("registry:proxy:unavailable", removal);
         } catch (Exception e) {
             LOGGER.error("Failed to broadcast proxy unavailability for {}", proxyId, e);
+        }
+    }
+    
+    /**
+     * Handle proxy graceful shutdown from heartbeat (immediately release ID)
+     */
+    private void handleProxyGracefulShutdown(String proxyId) {
+        // Remove from heartbeat monitoring
+        heartbeatMonitor.unregisterProxy(proxyId);
+        
+        // IMMEDIATELY remove proxy and release ID (graceful shutdown)
+        boolean removed = proxyRegistry.removeProxyImmediately(proxyId);
+        
+        if (removed) {
+            LOGGER.info("Proxy {} removed - graceful shutdown from heartbeat", proxyId);
+            
+            // Get proxy details for broadcast (if available)
+            RegisteredProxyData proxy = proxyRegistry.getProxy(proxyId);
+            
+            // Broadcast removal to other services
+            Map<String, Object> removalInfo = new HashMap<>();
+            removalInfo.put("proxyId", proxyId);
+            if (proxy != null) {
+                removalInfo.put("address", proxy.getAddress());
+                removalInfo.put("port", proxy.getPort());
+            }
+            removalInfo.put("reason", "graceful_shutdown");
+            removalInfo.put("gracefulShutdown", true);
+            removalInfo.put("timestamp", System.currentTimeMillis());
+            
+            try {
+                messageBus.broadcast("registry:proxy:removed", removalInfo);
+            } catch (Exception e) {
+                LOGGER.error("Failed to broadcast proxy removal for {}", proxyId, e);
+            }
+        } else {
+            LOGGER.warn("Failed to remove proxy from registry: {}", proxyId);
         }
     }
     
@@ -616,7 +871,83 @@ public class RegistrationHandler {
         }
     }
     
+    /**
+     * Handle proxy removal notification (ServerRemovalNotification from proxy - graceful shutdown)
+     */
+    private void handleProxyRemoval(ServerRemovalNotification notification) {
+        try {
+            String proxyId = notification.getServerId();
+            
+            // Check if proxy exists in registry
+            RegisteredProxyData proxy = proxyRegistry.getProxy(proxyId);
+            
+            if (proxy != null) {
+                // Unregister from heartbeat monitoring
+                heartbeatMonitor.unregisterProxy(proxyId);
+                
+                // IMMEDIATELY remove proxy and release ID (graceful shutdown)
+                boolean removed = proxyRegistry.removeProxyImmediately(proxyId);
+                
+                if (removed) {
+                    LOGGER.info("Proxy {} removed - graceful shutdown", proxyId);
+                    
+                    // Broadcast removal to other services
+                    Map<String, Object> removalInfo = new HashMap<>();
+                    removalInfo.put("proxyId", proxy.getProxyId());
+                    removalInfo.put("address", proxy.getAddress());
+                    removalInfo.put("port", proxy.getPort());
+                    removalInfo.put("reason", notification.getReason());
+                    removalInfo.put("gracefulShutdown", true);
+                    removalInfo.put("timestamp", System.currentTimeMillis());
+                    
+                    messageBus.broadcast("registry:proxy:removed", removalInfo);
+                } else {
+                    LOGGER.warn("Failed to remove proxy from registry: {}", proxy.getProxyId());
+                }
+            } else {
+                // Try with the ID as a temporary ID first
+                String permanentId = proxyRegistry.getPermanentId(proxyId);
+                if (permanentId != null) {
+                    // proxyId was actually a temporary ID, use permanent ID
+                    proxy = proxyRegistry.getProxy(permanentId);
+                    if (proxy != null) {
+                        heartbeatMonitor.unregisterProxy(permanentId);
+                        heartbeatMonitor.unregisterProxy(proxyId); // Also remove temp ID
+                        
+                        // IMMEDIATELY remove and release ID
+                        boolean removed = proxyRegistry.removeProxyImmediately(permanentId);
+                        
+                        if (removed) {
+                            LOGGER.info("Proxy {} removed - graceful shutdown", permanentId);
+                            
+                            // Broadcast removal
+                            Map<String, Object> removalInfo = new HashMap<>();
+                            removalInfo.put("proxyId", permanentId);
+                            removalInfo.put("tempId", proxyId);
+                            removalInfo.put("reason", notification.getReason());
+                            removalInfo.put("gracefulShutdown", true);
+                            removalInfo.put("timestamp", System.currentTimeMillis());
+                            
+                            messageBus.broadcast("registry:proxy:removed", removalInfo);
+                        }
+                    }
+                } else {
+                    LOGGER.warn("Could not find proxy to remove: {}", proxyId);
+                    
+                    // Still try to unregister from heartbeat
+                    heartbeatMonitor.unregisterProxy(proxyId);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error handling proxy removal", e);
+        }
+    }
+    
     public void shutdown() {
+        // Cancel any ongoing registrations
+        ongoingProxyRegistrations.values().forEach(future -> future.cancel(true));
+        ongoingProxyRegistrations.clear();
+        
         retryExecutor.shutdown();
         try {
             if (!retryExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -624,6 +955,32 @@ public class RegistrationHandler {
             }
         } catch (InterruptedException e) {
             retryExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
         }
+    }
+    
+    /**
+     * Clean up completed registration futures
+     */
+    private void cleanupCompletedRegistrations() {
+        ongoingProxyRegistrations.entrySet().removeIf(entry -> {
+            CompletableFuture<String> future = entry.getValue();
+            if (future.isDone() || future.isCancelled() || future.isCompletedExceptionally()) {
+                if (debugMode) {
+                    LOGGER.debug("Cleaning up completed registration for tempId: {}", entry.getKey());
+                }
+                return true;
+            }
+            return false;
+        });
+    }
+    
+    /**
+     * Get the count of ongoing proxy registrations
+     */
+    public int getOngoingRegistrationCount() {
+        return (int) ongoingProxyRegistrations.values().stream()
+            .filter(future -> !future.isDone())
+            .count();
     }
 }

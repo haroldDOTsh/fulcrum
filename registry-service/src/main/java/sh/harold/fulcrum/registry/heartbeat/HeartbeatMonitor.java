@@ -124,6 +124,8 @@ public class HeartbeatMonitor {
             if (proxy != null) {
                 processProxyHeartbeat(serverId);
                 return;
+            } else {
+                LOGGER.debug("Proxy {} not found in registry", serverId);
             }
         }
         
@@ -168,12 +170,26 @@ public class HeartbeatMonitor {
     
     /**
      * Process a heartbeat from a proxy
-     * @param proxyId The proxy ID
+     * @param proxyId The proxy ID (could be temp or permanent)
      */
     private void processProxyHeartbeat(String proxyId) {
+        // Check if this is a temp ID that maps to a permanent proxy
+        RegisteredProxyData proxy = proxyRegistry.getProxy(proxyId);
+        
+        if (proxy == null && proxyId.startsWith("temp-proxy-")) {
+            // Try to find proxy by checking all registered proxies
+            // This handles the case where proxy sends heartbeat with temp ID before updating
+            LOGGER.debug("Received heartbeat with temp ID {}, checking for matching proxy", proxyId);
+            
+            // For now, just log the issue - the proxy should update its ID after receiving response
+            LOGGER.debug("Proxy {} still using temporary ID for heartbeats - waiting for ID update", proxyId);
+            // Still track the heartbeat to prevent false timeout
+            lastProxyHeartbeats.put(proxyId, System.currentTimeMillis());
+            return;
+        }
+        
         lastProxyHeartbeats.put(proxyId, System.currentTimeMillis());
         
-        RegisteredProxyData proxy = proxyRegistry.getProxy(proxyId);
         if (proxy != null) {
             RegisteredProxyData.Status oldStatus = proxy.getStatus();
             proxyRegistry.updateHeartbeat(proxyId);
@@ -497,5 +513,17 @@ public class HeartbeatMonitor {
      */
     public Collection<RegisteredProxyData> getRecentlyDeadProxies() {
         return new ArrayList<>(recentlyDeadProxies.values());
+    }
+    
+    /**
+     * Unregister a proxy from heartbeat monitoring
+     * @param proxyId The proxy ID to unregister
+     */
+    public void unregisterProxy(String proxyId) {
+        if (proxyId != null) {
+            lastProxyHeartbeats.remove(proxyId);
+            lastHeartbeats.remove(proxyId);  // Remove from both maps in case it was tracked as a server too
+            LOGGER.debug("Unregistered proxy {} from heartbeat monitoring", proxyId);
+        }
     }
 }

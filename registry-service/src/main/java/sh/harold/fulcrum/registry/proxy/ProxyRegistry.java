@@ -25,6 +25,8 @@ public class ProxyRegistry {
     private final Map<String, RegisteredProxyData> unavailableProxies = new ConcurrentHashMap<>();
     private final Map<String, Long> unavailableTimestamps = new ConcurrentHashMap<>();
     private final Map<String, String> tempIdToPermId = new ConcurrentHashMap<>();
+    private final Map<String, Long> registrationTimestamps = new ConcurrentHashMap<>(); // Track when proxies were registered
+    private final Map<String, String> addressPortToProxyId = new ConcurrentHashMap<>(); // Track proxy by address:port
     private final ScheduledExecutorService cleanupExecutor = Executors.newSingleThreadScheduledExecutor();
     private boolean debugMode = false;
     
@@ -54,7 +56,23 @@ public class ProxyRegistry {
      * @return The allocated permanent ID
      */
     public synchronized String registerProxy(String tempId, String address, int port) {
-        // Check if this proxy is already registered (active)
+        String addressPortKey = address + ":" + port;
+        
+        // First check if a proxy with this address:port already exists
+        String existingByAddress = addressPortToProxyId.get(addressPortKey);
+        if (existingByAddress != null && proxies.containsKey(existingByAddress)) {
+            // Check if this was registered recently (within 30 seconds)
+            Long registrationTime = registrationTimestamps.get(existingByAddress);
+            if (registrationTime != null && (System.currentTimeMillis() - registrationTime) < 30000) {
+                LOGGER.info("Proxy at {}:{} was recently registered as {} (within 30s), reusing existing ID",
+                           address, port, existingByAddress);
+                // Update the temp ID mapping to point to the existing proxy
+                tempIdToPermId.put(tempId, existingByAddress);
+                return existingByAddress;
+            }
+        }
+        
+        // Check if this proxy is already registered (active) by temp ID
         String existingId = tempIdToPermId.get(tempId);
         if (existingId != null) {
             // Check if proxy is still active
@@ -107,6 +125,8 @@ public class ProxyRegistry {
         // Register the proxy atomically
         proxies.put(permanentId, proxyInfo);
         tempIdToPermId.put(tempId, permanentId);
+        registrationTimestamps.put(permanentId, System.currentTimeMillis());
+        addressPortToProxyId.put(addressPortKey, permanentId);
         
         // This is essential log - always show
         LOGGER.info("Registered proxy: {} -> {} (address: {}:{})",
@@ -136,6 +156,31 @@ public class ProxyRegistry {
     }
     
     /**
+     * Check if a proxy was recently registered
+     * @param proxyId The proxy ID to check
+     * @param withinMillis The time window in milliseconds
+     * @return true if the proxy was registered within the specified time window
+     */
+    public boolean wasRecentlyRegistered(String proxyId, long withinMillis) {
+        Long registrationTime = registrationTimestamps.get(proxyId);
+        if (registrationTime != null) {
+            return (System.currentTimeMillis() - registrationTime) < withinMillis;
+        }
+        return false;
+    }
+    
+    /**
+     * Get a proxy ID by address and port
+     * @param address The proxy address
+     * @param port The proxy port
+     * @return The proxy ID if found, null otherwise
+     */
+    public String getProxyByAddress(String address, int port) {
+        String key = address + ":" + port;
+        return addressPortToProxyId.get(key);
+    }
+    
+    /**
      * Immediately remove a proxy and release its ID (for graceful shutdown)
      * @param proxyId The proxy ID to remove
      * @return true if the proxy was removed, false if not found
@@ -143,8 +188,11 @@ public class ProxyRegistry {
     public synchronized boolean removeProxyImmediately(String proxyId) {
         RegisteredProxyData removed = proxies.remove(proxyId);
         if (removed != null) {
-            // Remove temp ID mapping
+            // Remove all mappings
             tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
+            registrationTimestamps.remove(proxyId);
+            String addressPortKey = removed.getAddress() + ":" + removed.getPort();
+            addressPortToProxyId.remove(addressPortKey);
             
             // Immediately release the ID for reuse
             idAllocator.releaseProxyIdExplicit(proxyId, true);
@@ -158,6 +206,9 @@ public class ProxyRegistry {
         if (removed != null) {
             unavailableTimestamps.remove(proxyId);
             tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
+            registrationTimestamps.remove(proxyId);
+            String addressPortKey = removed.getAddress() + ":" + removed.getPort();
+            addressPortToProxyId.remove(addressPortKey);
             idAllocator.releaseProxyIdExplicit(proxyId, true);
             
             LOGGER.info("Unavailable proxy {} removed immediately and ID released", proxyId);
@@ -176,8 +227,11 @@ public class ProxyRegistry {
         if (removed != null) {
             unavailableTimestamps.remove(proxyId);
             
-            // Remove temp ID mapping
+            // Remove all mappings
             tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
+            registrationTimestamps.remove(proxyId);
+            String addressPortKey = removed.getAddress() + ":" + removed.getPort();
+            addressPortToProxyId.remove(addressPortKey);
             
             // Explicitly release the ID only after extended timeout
             idAllocator.releaseProxyIdExplicit(proxyId, false);
@@ -306,6 +360,70 @@ public class ProxyRegistry {
                 .toList()
                 .forEach(this::permanentlyRemoveProxy);
         }, 60, 60, TimeUnit.SECONDS); // Check every minute
+    }
+    
+    /**
+     * Get the count of registered proxies
+     */
+    public int getRegisteredProxyCount() {
+        return proxies.size();
+    }
+    
+    /**
+     * Check if a proxy with the given tempId is registered
+     */
+    public boolean isProxyRegisteredByTempId(String tempId) {
+        String permanentId = tempIdToPermId.get(tempId);
+        return permanentId != null && proxies.containsKey(permanentId);
+    }
+    
+    /**
+     * Check if a proxy with the given proxyId is registered
+     */
+    public boolean isProxyRegisteredByProxyId(String proxyId) {
+        return proxies.containsKey(proxyId);
+    }
+    
+    /**
+     * Get proxy ID by temporary ID
+     * @param tempId The temporary ID
+     * @return The proxy ID if found, null otherwise
+     */
+    public String getProxyIdByTempId(String tempId) {
+        String permanentId = tempIdToPermId.get(tempId);
+        if (permanentId != null && proxies.containsKey(permanentId)) {
+            return permanentId;
+        }
+        return null;
+    }
+    
+    /**
+     * Re-register or update an existing proxy
+     * @param tempId The temporary ID from the proxy
+     * @param address The proxy address
+     * @param metadata Additional metadata
+     * @return The allocated or existing permanent ID
+     */
+    public synchronized String reRegisterProxy(String tempId, String address, Map<String, Object> metadata) {
+        // Extract port from metadata if available
+        int port = 0;
+        if (metadata != null && metadata.containsKey("port")) {
+            Object portObj = metadata.get("port");
+            if (portObj instanceof Number) {
+                port = ((Number) portObj).intValue();
+            }
+        }
+        
+        // Check if already registered
+        String existingId = getProxyIdByTempId(tempId);
+        if (existingId != null) {
+            LOGGER.info("Proxy {} already registered with ID: {}, updating registration timestamp", tempId, existingId);
+            registrationTimestamps.put(existingId, System.currentTimeMillis());
+            return existingId;
+        }
+        
+        // Otherwise, register as new
+        return registerProxy(tempId, address, port);
     }
     
     /**
