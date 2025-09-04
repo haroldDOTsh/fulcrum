@@ -5,6 +5,9 @@ import org.slf4j.Logger;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.ServerLifecycleConfig;
+import sh.harold.fulcrum.velocity.fundamentals.commands.VelocityCommandFeature;
+import sh.harold.fulcrum.velocity.fundamentals.data.VelocityDataAPIFeature;
+import sh.harold.fulcrum.velocity.fundamentals.data.VelocityPlayerDataFeature;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
@@ -55,9 +58,13 @@ public class VelocityFeatureManager {
             return t;
         });
         
+        // Register features in dependency order
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
+        registerFeature(new VelocityDataAPIFeature());
         registerFeature(new VelocityServerLifecycleFeature(proxyServer, logger, lifecycleConfig, scheduler, developmentMode));
+        registerFeature(new VelocityPlayerDataFeature());
+        registerFeature(new VelocityCommandFeature());
     }
     
     public void registerFeature(VelocityFeature feature) {

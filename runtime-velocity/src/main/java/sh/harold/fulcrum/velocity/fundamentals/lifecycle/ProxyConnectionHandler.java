@@ -33,7 +33,6 @@ public class ProxyConnectionHandler {
         this.proxyId = proxyId;
         this.logger = logger;
         this.lifecycleFeature = lifecycleFeature;
-        logger.info("[DIAGNOSTIC] ProxyConnectionHandler initialized with proxyId: {}", proxyId);
     }
     
     /**
@@ -43,7 +42,21 @@ public class ProxyConnectionHandler {
     public void updateProxyId(String newProxyId) {
         String oldId = this.proxyId;
         this.proxyId = newProxyId;
-        logger.info("[DIAGNOSTIC] ProxyConnectionHandler updated proxyId from {} to {}", oldId, newProxyId);
+        logger.info("ProxyConnectionHandler updated proxyId from {} to {} (is permanent: {})",
+                    oldId, newProxyId, !newProxyId.startsWith("temp-"));
+        
+        // Warn if updating to a temp ID from a permanent one
+        if (newProxyId.startsWith("temp-") && !oldId.startsWith("temp-")) {
+            logger.warn("WARNING: ProxyConnectionHandler reverting from permanent ID to temp ID!");
+        }
+    }
+    
+    /**
+     * Get the current proxy ID
+     * @return The current proxy ID
+     */
+    public String getProxyId() {
+        return proxyId;
     }
     
     /**
@@ -86,8 +99,7 @@ public class ProxyConnectionHandler {
     public EventTask onPlayerChooseInitialServer(PlayerChooseInitialServerEvent event) {
         return EventTask.async(() -> {
             String playerName = event.getPlayer().getUsername();
-            logger.info("=== PlayerChooseInitialServerEvent ===");
-            logger.info("Player: {}", playerName);
+            logger.debug("Player {} choosing initial server", playerName);
             
             // For initial connections, use the special method that can fall back to any server
             RegisteredServer targetServer = findAnyOptimalServer();
@@ -112,9 +124,10 @@ public class ProxyConnectionHandler {
                 String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
                 String playerUuid = event.getPlayer().getUniqueId().toString();
                 
-                logger.error("No servers available for player {} ({}) [Timestamp: {}, Proxy: {}]",
-                    playerName, playerUuid, timestamp, proxyId);
-                logger.info("[DIAGNOSTIC] Current proxyId in disconnect message: {}", proxyId);
+                // Log with current proxy ID
+                String currentProxyId = this.proxyId;
+                logger.error("No servers available for player {} ({}) [Timestamp: {}, Proxy: {} (is permanent: {})]",
+                    playerName, playerUuid, timestamp, currentProxyId, !currentProxyId.startsWith("temp-"));
                 
                 // Build the disconnection message
                 Component mainMessage = Component.text()
@@ -134,7 +147,7 @@ public class ProxyConnectionHandler {
                     .append(Component.text(timestamp, NamedTextColor.WHITE))
                     .append(Component.newline())
                     .append(Component.text("Proxy ID: ", NamedTextColor.GRAY))
-                    .append(Component.text(proxyId, NamedTextColor.WHITE))
+                    .append(Component.text(this.proxyId, NamedTextColor.WHITE))
                     .build();
                 
                 Component fullMessage = Component.text()
