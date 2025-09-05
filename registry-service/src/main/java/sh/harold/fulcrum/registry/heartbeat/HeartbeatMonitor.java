@@ -3,11 +3,13 @@ package sh.harold.fulcrum.registry.heartbeat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
+import sh.harold.fulcrum.registry.state.RegistrationState;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -181,6 +183,31 @@ public class HeartbeatMonitor {
             // This handles the case where proxy sends heartbeat with temp ID before updating
             LOGGER.debug("Received heartbeat with temp ID {}, checking for matching proxy", proxyId);
             
+            // Check if there's a permanent ID mapping for this temp ID
+            String permanentId = proxyRegistry.getPermanentId(proxyId);
+            if (permanentId != null) {
+                LOGGER.info("Mapping temp ID {} to permanent ID {} for heartbeat processing",
+                           proxyId, permanentId);
+                proxy = proxyRegistry.getProxy(permanentId);
+                if (proxy != null) {
+                    // Update tracking with both IDs temporarily
+                    lastProxyHeartbeats.put(permanentId, System.currentTimeMillis());
+                    lastProxyHeartbeats.put(proxyId, System.currentTimeMillis());
+                    
+                    // Update proxy status
+                    RegisteredProxyData.Status oldStatus = proxy.getStatus();
+                    proxyRegistry.updateHeartbeat(permanentId);
+                    
+                    if (oldStatus != RegisteredProxyData.Status.AVAILABLE) {
+                        LOGGER.info("Proxy {} status changed from {} to AVAILABLE (heartbeat via temp ID)",
+                                   permanentId, oldStatus);
+                    }
+                    
+                    LOGGER.debug("Heartbeat from proxy: {} (via temp ID: {})", permanentId, proxyId);
+                    return;
+                }
+            }
+            
             // For now, just log the issue - the proxy should update its ID after receiving response
             LOGGER.debug("Proxy {} still using temporary ID for heartbeats - waiting for ID update", proxyId);
             // Still track the heartbeat to prevent false timeout
@@ -188,18 +215,61 @@ public class HeartbeatMonitor {
             return;
         }
         
-        lastProxyHeartbeats.put(proxyId, System.currentTimeMillis());
-        
         if (proxy != null) {
+            RegistrationState currentState = proxy.getRegistrationState();
+            
+            // Only process heartbeats for registered proxies
+            if (currentState != RegistrationState.REGISTERED) {
+                LOGGER.warn("Received heartbeat from proxy {} in non-REGISTERED state: {} - ignoring",
+                    proxyId, currentState);
+                
+                // If proxy is in RE_REGISTERING state, try to complete re-registration
+                if (currentState == RegistrationState.RE_REGISTERING) {
+                    boolean transitioned = proxy.transitionTo(
+                        RegistrationState.REGISTERED,
+                        "Heartbeat received - completing re-registration"
+                    );
+                    if (transitioned) {
+                        LOGGER.info("Proxy {} re-registration completed (state: {} -> REGISTERED)",
+                            proxyId, currentState);
+                    }
+                } else if (currentState == RegistrationState.DISCONNECTED) {
+                    // Proxy was disconnected but is sending heartbeats again
+                    boolean transitioned = proxy.transitionTo(
+                        RegistrationState.RE_REGISTERING,
+                        "Heartbeat received from disconnected proxy"
+                    );
+                    if (transitioned) {
+                        // Now try to complete re-registration
+                        proxy.transitionTo(
+                            RegistrationState.REGISTERED,
+                            "Automatic re-registration completed"
+                        );
+                        LOGGER.info("Proxy {} automatically re-registered after disconnect", proxyId);
+                    }
+                }
+                // Don't update heartbeat tracking for non-registered proxies
+                return;
+            }
+            
+            lastProxyHeartbeats.put(proxyId, System.currentTimeMillis());
+            
+            // Also track by the proxy's actual ID in case it's different
+            String actualId = proxy.getProxyIdString();
+            if (!actualId.equals(proxyId)) {
+                LOGGER.debug("Also tracking heartbeat for actual proxy ID: {}", actualId);
+                lastProxyHeartbeats.put(actualId, System.currentTimeMillis());
+            }
+            
             RegisteredProxyData.Status oldStatus = proxy.getStatus();
             proxyRegistry.updateHeartbeat(proxyId);
             
             if (oldStatus != RegisteredProxyData.Status.AVAILABLE) {
-                LOGGER.info("Proxy {} status changed from {} to AVAILABLE (heartbeat received)",
-                           proxyId, oldStatus);
+                LOGGER.info("Proxy {} status changed from {} to AVAILABLE (heartbeat received, state: {})",
+                           proxyId, oldStatus, currentState);
             }
             
-            LOGGER.debug("Heartbeat from proxy: {}", proxyId);
+            LOGGER.debug("Heartbeat from proxy: {} (state: {})", proxyId, currentState);
         } else {
             // Just log warning about unknown proxy, don't request re-registration
             LOGGER.warn("Received heartbeat from unknown proxy: {} - ignoring (manual re-registration required)", proxyId);
@@ -285,7 +355,7 @@ public class HeartbeatMonitor {
         // Check all registered proxies if ProxyRegistry is available
         if (proxyRegistry != null) {
             for (RegisteredProxyData proxy : proxyRegistry.getAllProxies()) {
-                String proxyId = proxy.getProxyId();
+                String proxyId = proxy.getProxyIdString();
                 Long lastHeartbeat = lastProxyHeartbeats.get(proxyId);
                 
                 if (lastHeartbeat == null) {
@@ -345,7 +415,7 @@ public class HeartbeatMonitor {
                 if (deadProxy != null) {
                     // Create a snapshot of the dead proxy
                     RegisteredProxyData snapshot = new RegisteredProxyData(
-                        deadProxy.getProxyId(),
+                        deadProxy.getProxyIdString(),
                         deadProxy.getAddress(),
                         deadProxy.getPort()
                     );
@@ -427,7 +497,7 @@ public class HeartbeatMonitor {
             
             // Use MessageBus if available
             if (messageBus != null) {
-                messageBus.broadcast("registry:status:change", message);
+                messageBus.broadcast(ChannelConstants.REGISTRY_STATUS_CHANGE, message);
                 LOGGER.debug("Broadcast status change via MessageBus for server {}: {} -> {}",
                             server.getServerId(), oldStatus, newStatus);
             } else {
