@@ -10,8 +10,8 @@ dependencies {
     // Core dependencies
     compileOnly("com.fasterxml.jackson.core:jackson-databind:2.17.0")
     
-    // Redis support
-    compileOnly("io.lettuce:lettuce-core:6.3.0.RELEASE")
+    // Redis support - changed to implementation to provide transitive Netty dependencies
+    implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
     
     // Logging
     compileOnly("org.slf4j:slf4j-api:2.0.9")
