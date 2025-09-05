@@ -1,12 +1,15 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
 import java.io.Serializable;
 
 /**
  * Request sent by a server to register itself with the network.
  * The server uses a temporary ID initially and receives a permanent ID in the response.
  */
-public class ServerRegistrationRequest implements Serializable {
+@MessageType("server.registration.request")
+public class ServerRegistrationRequest implements BaseMessage {
     private static final long serialVersionUID = 1L;
     
     private String tempId;        // Temporary UUID used before registration

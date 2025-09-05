@@ -2,13 +2,16 @@ package sh.harold.fulcrum.api.messagebus.messages;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
 import java.io.Serializable;
 
 /**
  * Message sent to backend servers to trigger evacuation of all players.
  * Servers should move all players to available lobby servers upon receiving this message.
  */
-public class ServerEvacuationRequest implements Serializable {
+@MessageType("server.evacuation.request")
+public class ServerEvacuationRequest implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     
     private final String serverId;

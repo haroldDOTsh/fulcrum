@@ -2,13 +2,16 @@ package sh.harold.fulcrum.api.messagebus.messages;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
 import java.io.Serializable;
 
 /**
  * Response message sent after server evacuation is complete.
  * Indicates whether all players were successfully evacuated.
  */
-public class ServerEvacuationResponse implements Serializable {
+@MessageType("server.evacuation.response")
+public class ServerEvacuationResponse implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     
     private final String serverId;

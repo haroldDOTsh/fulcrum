@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.Serializable;
@@ -8,7 +10,8 @@ import java.io.Serializable;
  * Notification sent to proxies that a server will be removed from the registry.
  * Proxies should remove the server from their internal maps and prevent new connections.
  */
-public class ServerRemovalNotification implements Serializable {
+@MessageType("server.removal")
+public class ServerRemovalNotification implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     
     private final String serverId;

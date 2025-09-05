@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
 import java.io.Serializable;
 import java.util.Set;
 import java.util.HashSet;
@@ -8,7 +10,8 @@ import java.util.HashSet;
  * Periodic heartbeat message sent by servers to indicate they are alive and their current status.
  * This message is sent every 30 seconds to maintain server registration and health tracking.
  */
-public class ServerHeartbeatMessage implements Serializable {
+@MessageType("server.heartbeat")
+public class ServerHeartbeatMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     
     private String serverId;
@@ -19,6 +22,7 @@ public class ServerHeartbeatMessage implements Serializable {
     private long uptime;              // Milliseconds since server start
     private String role;              // From environment file (e.g., "game", "lobby", "auth")
     private Set<String> availablePools; // For pool-specific servers
+    private String status;            // Server status (AVAILABLE, FULL, EVACUATING, etc.)
     private long timestamp;
     
     public ServerHeartbeatMessage() {
@@ -103,6 +107,14 @@ public class ServerHeartbeatMessage implements Serializable {
     
     public void setTimestamp(long timestamp) {
         this.timestamp = timestamp;
+    }
+    
+    public String getStatus() {
+        return status;
+    }
+    
+    public void setStatus(String status) {
+        this.status = status;
     }
     
     /**

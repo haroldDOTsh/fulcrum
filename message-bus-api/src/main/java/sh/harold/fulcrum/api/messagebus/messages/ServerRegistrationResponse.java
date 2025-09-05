@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
 import java.io.Serializable;
 
 /**
@@ -7,7 +9,8 @@ import java.io.Serializable;
  * Contains the assigned permanent server ID or failure information.
  * This message is also forwarded to all proxies for dynamic backend registration.
  */
-public class ServerRegistrationResponse implements Serializable {
+@MessageType("server.registration.response")
+public class ServerRegistrationResponse implements BaseMessage {
     private static final long serialVersionUID = 1L;
     
     private String tempId;            // The temporary ID from the request
