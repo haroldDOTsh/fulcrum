@@ -3,6 +3,7 @@ package sh.harold.fulcrum.registry.console.commands;
 import sh.harold.fulcrum.registry.RegistryService;
 import sh.harold.fulcrum.registry.console.CommandHandler;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,7 +36,7 @@ public class ReRegistrationCommand implements CommandHandler {
             );
             
             // Broadcast re-registration request
-            messageBus.broadcast("registry:reregistration:request", request);
+            messageBus.broadcast(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, request);
             System.out.println("Broadcast re-registration request to all nodes");
             
             System.out.println("\nServers and proxies should re-register within a few seconds.");
