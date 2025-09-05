@@ -8,6 +8,7 @@ import io.lettuce.core.api.sync.RedisCommands;
 import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusAdapter;
@@ -23,13 +24,11 @@ import java.util.logging.Level;
  *
  * This implementation is stateless beyond its connection state and
  * uses dynamic loading to avoid direct dependencies on Lettuce classes.
+ *
+ * Supports both legacy channel names and new standardized channel names
+ * for backward compatibility during migration.
  */
 public class RedisMessageBus extends AbstractMessageBus {
-    
-    private static final String BROADCAST_CHANNEL = "fulcrum:broadcast";
-    private static final String SERVER_CHANNEL_PREFIX = "fulcrum:server:";
-    private static final String REQUEST_CHANNEL_PREFIX = "fulcrum:request:";
-    private static final String RESPONSE_CHANNEL_PREFIX = "fulcrum:response:";
     
     // Message TTL in seconds (30 seconds for registration messages)
     private static final long REGISTRATION_MESSAGE_TTL_SECONDS = 30;
@@ -74,7 +73,7 @@ public class RedisMessageBus extends AbstractMessageBus {
             cleanupStaleMessages();
             
             adapter.onMessageBusReady();
-            logger.info("RedisMessageBus initialized with server ID: " + serverId);
+            logger.info("RedisMessageBus initialized with server ID: " + adapter.getServerId());
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Failed to initialize Redis message bus", e);
             throw new RuntimeException("Failed to initialize Redis message bus", e);
@@ -102,18 +101,37 @@ public class RedisMessageBus extends AbstractMessageBus {
     }
     
     private void subscribeToChannels() {
-        // Get sync commands from the pub/sub connection
-        RedisPubSubCommands<String, String> syncCommands = pubSubConnection.sync();
+        // Use async commands to prevent blocking during initial subscription
+        var asyncCommands = pubSubConnection.async();
         
-        // Subscribe to default channels
-        syncCommands.subscribe(
-            BROADCAST_CHANNEL,
-            SERVER_CHANNEL_PREFIX + serverId,
-            REQUEST_CHANNEL_PREFIX + serverId,
-            RESPONSE_CHANNEL_PREFIX + serverId
-        );
+        // Subscribe to standardized channels only
+        String currentServerId = adapter.getServerId();
         
-        logger.info("Subscribed to Redis channels for server: " + serverId);
+        // Subscribe asynchronously to prevent timeout issues
+        asyncCommands.subscribe(
+            ChannelConstants.BROADCAST_CHANNEL,
+            ChannelConstants.getServerDirectChannel(currentServerId),
+            ChannelConstants.getRequestChannel(currentServerId),
+            ChannelConstants.getResponseChannel(currentServerId)
+        ).thenAccept(result -> {
+            logger.info("Subscribed to standardized Redis channels for server: " + currentServerId);
+        }).exceptionally(throwable -> {
+            logger.log(Level.WARNING, "Failed to subscribe to initial channels", throwable);
+            // Fallback to sync subscription on error
+            try {
+                RedisPubSubCommands<String, String> syncCommands = pubSubConnection.sync();
+                syncCommands.subscribe(
+                    ChannelConstants.BROADCAST_CHANNEL,
+                    ChannelConstants.getServerDirectChannel(currentServerId),
+                    ChannelConstants.getRequestChannel(currentServerId),
+                    ChannelConstants.getResponseChannel(currentServerId)
+                );
+                logger.info("Fallback: Subscribed to standardized Redis channels for server: " + currentServerId);
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "Failed to subscribe to channels even with fallback", e);
+            }
+            return null;
+        });
     }
     
     /**
@@ -122,13 +140,19 @@ public class RedisMessageBus extends AbstractMessageBus {
      */
     private void subscribeToTypeChannel(String type) {
         try {
-            RedisPubSubCommands<String, String> syncCommands = pubSubConnection.sync();
-            String typeChannel = "fulcrum:" + type;
+            // Use async commands to prevent blocking
+            var asyncCommands = pubSubConnection.async();
             
-            // Subscribe to the specific type channel
-            syncCommands.subscribe(typeChannel);
+            // Use the standardized channel format directly
+            String standardChannel = type.startsWith("fulcrum.") ? type : "fulcrum.custom." + type;
             
-            logger.fine("Subscribed to Redis channel: " + typeChannel + " for type: " + type);
+            // Subscribe to the standardized channel asynchronously
+            asyncCommands.subscribe(standardChannel).thenAccept(result -> {
+                logger.fine("Subscribed to channel: " + standardChannel + " for type: " + type);
+            }).exceptionally(throwable -> {
+                logger.log(Level.WARNING, "Failed to subscribe to type channel: " + type, throwable);
+                return null;
+            });
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to subscribe to type channel: " + type, e);
         }
@@ -143,7 +167,8 @@ public class RedisMessageBus extends AbstractMessageBus {
         // This allows the service to receive messages broadcast to specific types
         subscribeToTypeChannel(type);
         
-        logger.info("Subscribed to type '" + type + "' with handler and Redis channel 'fulcrum:" + type + "'");
+        String channel = type.startsWith("fulcrum.") ? type : "fulcrum.custom." + type;
+        logger.info("Subscribed to type '" + type + "' with handler and channel '" + channel + "'");
     }
     
     private void handleIncomingMessage(String channel, String message) {
@@ -167,9 +192,11 @@ public class RedisMessageBus extends AbstractMessageBus {
             // Skip duplicate check for registration responses and other type-based messages
             if (!isRegistrationResponse) {
                 // Only check for duplicates on direct server-to-server messages
-                boolean isDirectMessage = channel.equals(SERVER_CHANNEL_PREFIX + serverId) ||
-                                        channel.equals(REQUEST_CHANNEL_PREFIX + serverId) ||
-                                        channel.equals(RESPONSE_CHANNEL_PREFIX + serverId);
+                String currentServerId = adapter.getServerId();
+                boolean isDirectMessage =
+                    channel.equals(ChannelConstants.getServerDirectChannel(currentServerId)) ||
+                    channel.equals(ChannelConstants.getRequestChannel(currentServerId)) ||
+                    channel.equals(ChannelConstants.getResponseChannel(currentServerId));
                 
                 if (isDirectMessage && isDuplicateMessage(envelope)) {
                     logger.info("[REDIS-DEBUG] Skipping duplicate direct message on channel: " + channel);
@@ -179,15 +206,15 @@ public class RedisMessageBus extends AbstractMessageBus {
                 logger.info("[REDIS-DEBUG] Registration response - bypassing duplicate check");
             }
             
-            // Handle response messages
-            if (channel.startsWith(RESPONSE_CHANNEL_PREFIX)) {
+            // Handle response messages (standardized format only)
+            if (channel.startsWith(ChannelConstants.RESPONSE_PREFIX)) {
                 logger.info("[REDIS-DEBUG] Handling as RESPONSE message");
                 handleResponse(envelope);
                 return;
             }
             
-            // Handle request messages
-            if (channel.startsWith(REQUEST_CHANNEL_PREFIX)) {
+            // Handle request messages (standardized format only)
+            if (channel.startsWith(ChannelConstants.REQUEST_PREFIX)) {
                 logger.info("[REDIS-DEBUG] Handling as REQUEST message");
                 handleRequest(envelope);
                 return;
@@ -240,12 +267,11 @@ public class RedisMessageBus extends AbstractMessageBus {
                 storeMessageWithTTL(envelope, serialized, REGISTRATION_MESSAGE_TTL_SECONDS);
             }
             
-            // CRITICAL: Only publish to the specific type channel, not broadcast
-            // This prevents duplicate message issues where the same message arrives on multiple channels
-            String typeChannel = "fulcrum:" + type;
-            publish(typeChannel, serialized);
+            // Use the standardized channel for this type
+            String standardChannel = type.startsWith("fulcrum.") ? type : "fulcrum.custom." + type;
+            publish(standardChannel, serialized);
             
-            logger.fine("Broadcasted message type: " + type + " to channel: " + typeChannel);
+            logger.fine("Broadcasted message type: " + type + " to channel: " + standardChannel);
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to broadcast message", e);
         }
@@ -262,7 +288,8 @@ public class RedisMessageBus extends AbstractMessageBus {
                 storeMessageWithTTL(envelope, serialized, REGISTRATION_MESSAGE_TTL_SECONDS);
             }
             
-            String channel = SERVER_CHANNEL_PREFIX + targetServerId;
+            // Use standardized channel
+            String channel = ChannelConstants.getServerDirectChannel(targetServerId);
             publish(channel, serialized);
             
             logger.fine("Sent message type: " + type + " to server: " + targetServerId);
@@ -291,7 +318,7 @@ public class RedisMessageBus extends AbstractMessageBus {
             // Create request envelope with correlation ID
             MessageEnvelope envelope = new MessageEnvelope(
                 type,
-                serverId,
+                adapter.getServerId(),
                 targetServerId,
                 correlationId,
                 System.currentTimeMillis(),
@@ -300,7 +327,7 @@ public class RedisMessageBus extends AbstractMessageBus {
             );
             
             String serialized = serializeEnvelope(envelope);
-            String channel = REQUEST_CHANNEL_PREFIX + targetServerId;
+            String channel = ChannelConstants.getRequestChannel(targetServerId);
             publish(channel, serialized);
             
             logger.fine("Sent request to server: " + targetServerId + " with correlation ID: " + correlationId);
@@ -342,6 +369,11 @@ public class RedisMessageBus extends AbstractMessageBus {
     
     private void handleMessage(MessageEnvelope envelope) {
         logger.info("[REDIS-DEBUG] handleMessage called for type: " + envelope.getType());
+        
+        // First process typed handlers
+        processTypedHandlers(envelope);
+        
+        // Then process regular handlers
         List<MessageHandler> handlers = getHandlers(envelope.getType());
         
         if (handlers != null && !handlers.isEmpty()) {
@@ -442,7 +474,7 @@ public class RedisMessageBus extends AbstractMessageBus {
                 
                 MessageEnvelope response = new MessageEnvelope(
                     requestEnvelope.getType() + "_response",
-                    serverId,
+                    adapter.getServerId(),
                     requestEnvelope.getSenderId(),
                     requestEnvelope.getCorrelationId(),
                     System.currentTimeMillis(),
@@ -451,7 +483,7 @@ public class RedisMessageBus extends AbstractMessageBus {
                 );
                 
                 String serialized = serializeEnvelope(response);
-                String channel = RESPONSE_CHANNEL_PREFIX + requestEnvelope.getSenderId();
+                String channel = ChannelConstants.getResponseChannel(requestEnvelope.getSenderId());
                 publish(channel, serialized);
             } catch (Exception e) {
                 logger.log(Level.WARNING, "Failed to send error response", e);
@@ -470,7 +502,7 @@ public class RedisMessageBus extends AbstractMessageBus {
     private MessageEnvelope createEnvelope(String type, String targetId, Object payload) {
         return new MessageEnvelope(
             type,
-            serverId,
+            adapter.getServerId(),  // CRITICAL: Use dynamic ID from adapter instead of cached value
             targetId,
             UUID.randomUUID(),
             System.currentTimeMillis(),
@@ -554,9 +586,74 @@ public class RedisMessageBus extends AbstractMessageBus {
     }
     
     /**
+     * Publish an envelope to the message bus.
+     * Implementation of abstract method from AbstractMessageBus.
+     *
+     * @param envelope the message envelope to publish
+     */
+    @Override
+    protected void publishEnvelope(MessageEnvelope envelope) {
+        try {
+            String serialized = serializeEnvelope(envelope);
+            
+            // Determine the channel based on the envelope
+            String channel;
+            if (envelope.getTargetId() != null) {
+                // Direct message to specific server
+                channel = ChannelConstants.getServerDirectChannel(envelope.getTargetId());
+            } else {
+                // Broadcast message
+                String type = envelope.getType();
+                channel = type.startsWith("fulcrum.") ? type : "fulcrum.custom." + type;
+            }
+            
+            // Store message with TTL if it's a registration message
+            if (isRegistrationMessage(envelope.getType())) {
+                storeMessageWithTTL(envelope, serialized, REGISTRATION_MESSAGE_TTL_SECONDS);
+            }
+            
+            publish(channel, serialized);
+            
+            logger.fine("Published envelope type: " + envelope.getType() + " to channel: " + channel);
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "Failed to publish envelope", e);
+            throw new RuntimeException("Failed to publish envelope", e);
+        }
+    }
+    
+    /**
      * Checks if the Redis connection is available.
      */
     public boolean isConnected() {
         return connectionManager != null && connectionManager.isConnected();
+    }
+    
+    /**
+     * Subscribe to a channel asynchronously without blocking.
+     * This is useful for subscribing to channels after server registration
+     * without causing heartbeat delays.
+     *
+     * @param channel the channel to subscribe to
+     * @param handler the message handler for this channel
+     */
+    public void subscribeAsync(String channel, MessageHandler handler) {
+        // Store the handler first
+        super.subscribe(channel, handler);
+        
+        // Then subscribe to the Redis channel asynchronously
+        try {
+            var asyncCommands = pubSubConnection.async();
+            
+            String standardChannel = channel.startsWith("fulcrum.") ? channel : "fulcrum.custom." + channel;
+            
+            asyncCommands.subscribe(standardChannel).thenAccept(result -> {
+                logger.fine("Async subscribed to channel: " + standardChannel);
+            }).exceptionally(throwable -> {
+                logger.log(Level.WARNING, "Failed to async subscribe to channel: " + channel, throwable);
+                return null;
+            });
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "Error during async subscription to channel: " + channel, e);
+        }
     }
 }

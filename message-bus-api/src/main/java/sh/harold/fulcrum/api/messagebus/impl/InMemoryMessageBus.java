@@ -25,7 +25,7 @@ public class InMemoryMessageBus extends AbstractMessageBus {
         super(adapter);
         this.objectMapper = new ObjectMapper();
         adapter.onMessageBusReady();
-        logger.info("InMemoryMessageBus initialized with server ID: " + serverId);
+        logger.info("InMemoryMessageBus initialized with server ID: " + adapter.getServerId());
     }
     
     @Override
@@ -44,7 +44,7 @@ public class InMemoryMessageBus extends AbstractMessageBus {
         logger.fine("Sending message type: " + type + " to server: " + targetServerId + " (local only)");
         
         // In in-memory mode, only deliver if target is this server
-        if (serverId.equals(targetServerId)) {
+        if (adapter.getServerId().equals(targetServerId)) {
             MessageEnvelope envelope = createEnvelope(type, targetServerId, payload);
             deliverMessage(envelope);
         }
@@ -55,7 +55,7 @@ public class InMemoryMessageBus extends AbstractMessageBus {
         logger.fine("Requesting from server: " + targetServerId + " with type: " + type + " (local only)");
         
         // In in-memory mode, we can only handle requests to ourselves
-        if (!serverId.equals(targetServerId)) {
+        if (!adapter.getServerId().equals(targetServerId)) {
             CompletableFuture<Object> future = new CompletableFuture<>();
             future.completeExceptionally(new IllegalStateException(
                 "InMemoryMessageBus cannot send requests to remote servers"));
@@ -80,7 +80,7 @@ public class InMemoryMessageBus extends AbstractMessageBus {
     private MessageEnvelope createEnvelope(String type, String targetId, Object payload) {
         return new MessageEnvelope(
             type,
-            serverId,
+            adapter.getServerId(),  // CRITICAL: Use dynamic ID from adapter
             targetId,
             UUID.randomUUID(),
             System.currentTimeMillis(),
@@ -90,10 +90,26 @@ public class InMemoryMessageBus extends AbstractMessageBus {
     }
     
     /**
+     * Publish an envelope to the message bus.
+     * Implementation of abstract method from AbstractMessageBus.
+     *
+     * @param envelope the message envelope to publish
+     */
+    @Override
+    protected void publishEnvelope(MessageEnvelope envelope) {
+        // In-memory bus just delivers locally
+        deliverMessage(envelope);
+    }
+    
+    /**
      * Delivers a message to local handlers.
      * This is a synchronous operation executed in the caller's thread.
      */
     private void deliverMessage(MessageEnvelope envelope) {
+        // First process typed handlers
+        processTypedHandlers(envelope);
+        
+        // Then process regular handlers
         List<MessageHandler> handlers = getHandlers(envelope.getType());
         if (handlers != null) {
             for (MessageHandler handler : handlers) {
