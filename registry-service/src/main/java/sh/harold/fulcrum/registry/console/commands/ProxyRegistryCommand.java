@@ -121,7 +121,7 @@ public class ProxyRegistryCommand implements CommandHandler {
             String heartbeatTime = DATE_FORMAT.format(new Date(proxy.getLastHeartbeat()));
             
             table.addRow(
-                proxy.getProxyId(),
+                proxy.getProxyIdString(),
                 proxy.getAddress(),
                 String.valueOf(proxy.getPort()),
                 heartbeatTime,
