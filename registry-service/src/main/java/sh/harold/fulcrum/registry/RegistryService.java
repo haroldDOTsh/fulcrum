@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
 import sh.harold.fulcrum.registry.adapter.RegistryMessageBusAdapter;
@@ -297,7 +298,7 @@ public class RegistryService {
                 );
                 
                 // Broadcast on a special channel that all servers and proxies listen to
-                messageBus.broadcast("registry:reregistration:request", request);
+                messageBus.broadcast(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, request);
                 LOGGER.info("Broadcast re-registration request to all nodes (after 10 second grace period)");
                 
             }, 10, TimeUnit.SECONDS); // Increased from 2 to 10 seconds
