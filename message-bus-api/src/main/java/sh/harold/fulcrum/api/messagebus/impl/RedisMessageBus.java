@@ -177,11 +177,7 @@ public class RedisMessageBus extends AbstractMessageBus {
         }
         
         try {
-            logger.info("[REDIS-DEBUG] Received message on channel: " + channel);
-            logger.info("[REDIS-DEBUG] Raw message: " + message);
-            
             MessageEnvelope envelope = deserializeEnvelope(message);
-            logger.info("[REDIS-DEBUG] Deserialized envelope type: " + envelope.getType() + ", sender: " + envelope.getSenderId());
             
             // CRITICAL FIX: Registration response messages should NEVER skip duplicate check
             // These come through type-based subscription channels and need to be handled
@@ -199,29 +195,23 @@ public class RedisMessageBus extends AbstractMessageBus {
                     channel.equals(ChannelConstants.getResponseChannel(currentServerId));
                 
                 if (isDirectMessage && isDuplicateMessage(envelope)) {
-                    logger.info("[REDIS-DEBUG] Skipping duplicate direct message on channel: " + channel);
                     return;
                 }
-            } else {
-                logger.info("[REDIS-DEBUG] Registration response - bypassing duplicate check");
             }
             
             // Handle response messages (standardized format only)
             if (channel.startsWith(ChannelConstants.RESPONSE_PREFIX)) {
-                logger.info("[REDIS-DEBUG] Handling as RESPONSE message");
                 handleResponse(envelope);
                 return;
             }
             
             // Handle request messages (standardized format only)
             if (channel.startsWith(ChannelConstants.REQUEST_PREFIX)) {
-                logger.info("[REDIS-DEBUG] Handling as REQUEST message");
                 handleRequest(envelope);
                 return;
             }
             
             // Handle regular messages (including type-based broadcasts)
-            logger.info("[REDIS-DEBUG] Handling as REGULAR message - will invoke handlers for type: " + envelope.getType());
             handleMessage(envelope);
         } catch (Exception e) {
             logger.log(Level.WARNING, "Error handling incoming message on channel " + channel, e);
@@ -368,8 +358,6 @@ public class RedisMessageBus extends AbstractMessageBus {
     }
     
     private void handleMessage(MessageEnvelope envelope) {
-        logger.info("[REDIS-DEBUG] handleMessage called for type: " + envelope.getType());
-        
         // First process typed handlers
         processTypedHandlers(envelope);
         
@@ -377,7 +365,6 @@ public class RedisMessageBus extends AbstractMessageBus {
         List<MessageHandler> handlers = getHandlers(envelope.getType());
         
         if (handlers != null && !handlers.isEmpty()) {
-            logger.info("[REDIS-DEBUG] Found " + handlers.size() + " handlers for type: " + envelope.getType());
             // Check if the payload needs deserialization
             Object deserializedPayload = deserializePayload(envelope);
             
@@ -407,16 +394,11 @@ public class RedisMessageBus extends AbstractMessageBus {
             
             for (MessageHandler handler : handlers) {
                 try {
-                    logger.info("[REDIS-DEBUG] Invoking handler: " + handler.getClass().getName());
                     handler.handle(processedEnvelope);
-                    logger.info("[REDIS-DEBUG] Handler invoked successfully");
                 } catch (Exception e) {
                     logger.log(Level.WARNING, "Error handling message of type: " + envelope.getType(), e);
                 }
             }
-        } else {
-            logger.info("[REDIS-DEBUG] No handlers found for type: " + envelope.getType());
-            logger.info("[REDIS-DEBUG] Available subscriptions: " + subscriptions.keySet());
         }
     }
     
