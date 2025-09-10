@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.ProxyAnnouncementMessage;
@@ -251,9 +252,10 @@ public class ServerLifecycleFeature implements PluginFeature {
         LOGGER.info("  Capacity: " + maxCapacity);
         
         // Send registration request to Registry Service
-        // Use the centralized registry:register channel for new architecture
-        messageBus.broadcast("registry:register", request);
-        LOGGER.info("Sent registration request to central Registry Service on channel 'registry:register'");
+        // CRITICAL FIX: Use server:heartbeat channel which we KNOW works
+        // Use the standardized registration channel
+        messageBus.broadcast(ChannelConstants.REGISTRY_REGISTRATION_REQUEST, request);
+        LOGGER.info("Sent registration request to central Registry Service");
         
         // Schedule timeout warning if no response received
         scheduleRegistrationTimeout();
@@ -323,31 +325,6 @@ public class ServerLifecycleFeature implements PluginFeature {
             // This ensures heartbeats use the correct permanent ID
             serverIdentifier.updateServerId(permanentId);
             
-            // Re-subscribe to new server-specific channel with permanent ID
-            if (!oldId.equals(permanentId)) {
-                // Subscribe to new channel for permanent ID
-                messageBus.subscribe("server:" + permanentId, envelope -> {
-                    LOGGER.fine("Received message on permanent server channel: " + envelope.getType());
-                    if (envelope.getType().equals("server.registration.response")) {
-                        try {
-                            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                            ServerRegistrationResponse resp = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
-                            handleProxyRegistrationResponse(resp);
-                        } catch (Exception e) {
-                            LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
-                        }
-                    }
-                });
-                
-                // Also subscribe to response channel for this server
-                messageBus.subscribe("server:" + permanentId + ":response", envelope -> {
-                    LOGGER.fine("Received response on permanent server response channel");
-                    // Handle any server-specific responses here
-                });
-                
-                LOGGER.info("Re-subscribed to channels with permanent ID: " + permanentId);
-            }
-            
             registered.set(true);
             
             // CRITICAL: Cancel any existing heartbeat task before starting new one
@@ -366,6 +343,49 @@ public class ServerLifecycleFeature implements PluginFeature {
             
             // Send server announcement after successful registration
             sendServerAnnouncement();
+            
+            // Re-subscribe to new server-specific channels with permanent ID
+            // The Redis subscriptions are now async by default, but we still wrap in CompletableFuture
+            // to ensure the registration response handler doesn't block
+            if (!oldId.equals(permanentId)) {
+                // Run subscriptions asynchronously to avoid blocking the registration response handler
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        // Subscribe to new channel for permanent ID
+                        messageBus.subscribe(ChannelConstants.getServerDirectChannel(permanentId), envelope -> {
+                            LOGGER.fine("Received message on permanent server channel: " + envelope.getType());
+                            if (envelope.getType().equals("server.registration.response")) {
+                                try {
+                                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                                    ServerRegistrationResponse resp = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
+                                    handleProxyRegistrationResponse(resp);
+                                } catch (Exception e) {
+                                    LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
+                                }
+                            }
+                        });
+                        LOGGER.info("Subscribed to direct channel: " + ChannelConstants.getServerDirectChannel(permanentId));
+                    } catch (Exception e) {
+                        LOGGER.warning("Failed to subscribe to direct channel (will retry): " + e.getMessage());
+                    }
+                    
+                    try {
+                        // Also subscribe to response channel for this server
+                        messageBus.subscribe(ChannelConstants.getResponseChannel(permanentId), envelope -> {
+                            LOGGER.fine("Received response on permanent server response channel");
+                            // Handle any server-specific responses here
+                        });
+                        LOGGER.info("Subscribed to response channel: " + ChannelConstants.getResponseChannel(permanentId));
+                    } catch (Exception e) {
+                        LOGGER.warning("Failed to subscribe to response channel (will retry): " + e.getMessage());
+                    }
+                    
+                    LOGGER.info("Re-subscribed to channels with permanent ID: " + permanentId);
+                }).exceptionally(throwable -> {
+                    LOGGER.warning("Error during async channel subscription: " + throwable.getMessage());
+                    return null;
+                });
+            }
         } else {
             LOGGER.severe("Registration rejected by Registry Service: " + response.getMessage());
             // Continue with temporary ID
@@ -385,7 +405,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             serverIdentifier.getPort()
         );
         
-        messageBus.broadcast("server.announcement", announcement);
+        messageBus.broadcast(ChannelConstants.SERVER_ANNOUNCEMENT, announcement);
         LOGGER.info("Broadcast server announcement for proxy discovery");
     }
     
@@ -438,7 +458,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
         
         // Broadcast heartbeat
-        messageBus.broadcast("server:heartbeat", heartbeat);
+        messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, heartbeat);
         
         LOGGER.fine("Sent heartbeat - Players: " + heartbeat.getPlayerCount() +
                    "/" + heartbeat.getMaxCapacity() +
@@ -470,7 +490,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                     serverType,
                     "SHUTDOWN"
                 );
-                messageBus.broadcast("registry:server:remove", removalNotification);
+                messageBus.broadcast(ChannelConstants.REGISTRY_SERVER_REMOVED, removalNotification);
                 LOGGER.info("Sent server removal notification to registry for server: " + serverIdentifier.getServerId());
                 
                 // Send shutdown status via heartbeat channel (same pattern as proxy)
@@ -479,7 +499,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                 shutdownMessage.put("status", "SHUTDOWN");
                 shutdownMessage.put("timestamp", System.currentTimeMillis());
                 
-                messageBus.broadcast("server:heartbeat", shutdownMessage);
+                messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, shutdownMessage);
                 LOGGER.info("Sent shutdown status heartbeat for server: " + serverIdentifier.getServerId());
             } catch (Exception e) {
                 LOGGER.warning("Failed to send shutdown notifications: " + e.getMessage());
@@ -496,7 +516,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             );
             deregister.setRole(serverIdentifier.getRole());
             
-            messageBus.send("proxy:" + proxyId, "server.deregistration", deregister);
+            messageBus.send(ChannelConstants.getProxyDirectChannel(proxyId), "server.deregistration", deregister);
         }
         
         LOGGER.info("Server lifecycle shutting down");
@@ -506,7 +526,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     
     private void setupMessageHandlers() {
         // Handle proxy announcements (new proxy coming online)
-        messageBus.subscribe("proxy:announce", envelope -> {
+        messageBus.subscribe(ChannelConstants.PROXY_ANNOUNCEMENT, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 ProxyAnnouncementMessage announcement = mapper.treeToValue(envelope.getPayload(), ProxyAnnouncementMessage.class);
@@ -517,7 +537,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         });
         
         // Handle proxy request for registrations (when new proxy comes online)
-        messageBus.subscribe("proxy:request-registrations", envelope -> {
+        messageBus.subscribe(ChannelConstants.PROXY_REQUEST_REGISTRATIONS, envelope -> {
             try {
                 LOGGER.info("New proxy came online - sending our registration");
                 // Send our registration information with current ID (permanent if already assigned)
@@ -528,7 +548,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         });
         
         // Handle registry re-registration requests (when registry restarts)
-        messageBus.subscribe("registry:reregistration:request", envelope -> {
+        messageBus.subscribe(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, envelope -> {
             try {
                 LOGGER.info("Registry Service requested re-registration - sending our current registration");
                 // Re-send our registration with current ID
@@ -545,7 +565,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         });
         
         // Handle targeted re-registration request for this specific server
-        String reregisterChannel = "server:" + serverIdentifier.getServerId() + ":reregister";
+        String reregisterChannel = ChannelConstants.getServerReregisterChannel(serverIdentifier.getServerId());
         messageBus.subscribe(reregisterChannel, envelope -> {
             try {
                 LOGGER.info("Registry requested targeted re-registration for this server");
@@ -561,7 +581,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         });
         
         // Handle registration responses from Registry Service
-        messageBus.subscribe("server:registration:response", envelope -> {
+        messageBus.subscribe(ChannelConstants.SERVER_REGISTRATION_RESPONSE, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
@@ -595,7 +615,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         });
         
         // Also subscribe to server-specific channel for targeted responses (using tempId)
-        String serverSpecificChannel = "server:" + serverIdentifier.getServerId() + ":registration:response";
+        String serverSpecificChannel = ChannelConstants.getServerRegistrationResponseChannel(serverIdentifier.getServerId());
         messageBus.subscribe(serverSpecificChannel, envelope -> {
             try {
                 LOGGER.info("Received registration response on server-specific channel: " + serverSpecificChannel);
@@ -618,7 +638,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         LOGGER.info("Subscribed to registration response channels: 'server:registration:response' and '" + serverSpecificChannel + "'");
         
         // Subscribe to evacuation requests
-        messageBus.subscribe("server:evacuation", envelope -> {
+        messageBus.subscribe(ChannelConstants.SERVER_EVACUATION_REQUEST, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 ServerEvacuationRequest request = mapper.treeToValue(envelope.getPayload(), ServerEvacuationRequest.class);
@@ -629,7 +649,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         });
         
         // Subscribe to server announcements to track available servers
-        messageBus.subscribe("server.announcement", envelope -> {
+        messageBus.subscribe(ChannelConstants.SERVER_ANNOUNCEMENT, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 ServerAnnouncementMessage announcement = mapper.treeToValue(envelope.getPayload(), ServerAnnouncementMessage.class);
@@ -750,7 +770,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             "Evacuation completed: " + evacuatedCount + " succeeded, " + failedCount + " failed"
         );
         
-        messageBus.broadcast("server:evacuation:response", response);
+        messageBus.broadcast(ChannelConstants.SERVER_EVACUATION_RESPONSE, response);
         LOGGER.info("Evacuation completed: " + evacuatedCount + " players evacuated, " + failedCount + " failed");
     }
     
