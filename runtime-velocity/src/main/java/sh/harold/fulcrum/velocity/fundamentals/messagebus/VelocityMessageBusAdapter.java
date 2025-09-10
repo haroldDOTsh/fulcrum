@@ -34,7 +34,7 @@ public class VelocityMessageBusAdapter implements MessageBusAdapter {
         this.config = config;
         
         // Generate temporary proxy ID (will be updated by VelocityServerLifecycleFeature)
-        this.proxyId = "temp-proxy-" + java.util.UUID.randomUUID().toString();
+        this.proxyId = "temp-proxy-" + java.util.UUID.randomUUID();
     }
     
     @Override
@@ -48,7 +48,8 @@ public class VelocityMessageBusAdapter implements MessageBusAdapter {
     public void updateProxyId(String newProxyId) {
         String oldId = this.proxyId;
         this.proxyId = newProxyId;
-        logger.info("Updated proxy ID from {} to {}", oldId, newProxyId);
+        logger.info("[REGISTRATION_FLOW] VelocityMessageBusAdapter ID updated from {} to {}", oldId, newProxyId);
+        logger.info("[REGISTRATION_FLOW] All future messages will use sender ID: {}", this.proxyId);
     }
     
     @Override
