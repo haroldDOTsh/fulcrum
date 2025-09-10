@@ -135,11 +135,6 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             return "v1_21_R1";
         }
 
-        // Add more version mappings as needed
-        // if (minecraftVersion.startsWith("1.22")) {
-        //     return "v1_22_R1";
-        // }
-
         return "unknown";
     }
 
