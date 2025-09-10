@@ -35,9 +35,11 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
             () -> new RuntimeException("ProxyServer not available"));
         this.dataAPI = serviceLocator.getService(DataAPI.class).orElseThrow(
             () -> new RuntimeException("DataAPI not available"));
+        this.plugin = serviceLocator.getService(FulcrumVelocityPlugin.class).orElseThrow(
+            () -> new RuntimeException("FulcrumVelocityPlugin not available"));
         
-        // Register event listeners
-        proxy.getEventManager().register(this, this);
+        // Register event listeners - MUST use plugin instance as container
+        proxy.getEventManager().register(plugin, this);
         
         logger.info("PlayerDataFeature initialized for Velocity - tracking proxy player data");
     }

@@ -2,13 +2,18 @@ package sh.harold.fulcrum.velocity.fundamentals.lifecycle;
 
 import com.velocitypowered.api.event.EventTask;
 import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
+import com.velocitypowered.api.event.player.ServerConnectedEvent;
+import com.velocitypowered.api.event.player.ServerPreConnectEvent;
+import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.velocity.api.ProxyIdentifier;
 import sh.harold.fulcrum.velocity.api.ServerIdentifier;
 
 import java.time.LocalDateTime;
@@ -21,43 +26,81 @@ public class ProxyConnectionHandler {
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     
     private final ProxyServer proxy;
-    private String proxyId;  // Changed from final to allow updates
+    private ProxyIdentifier proxyId;  // Changed to use ProxyIdentifier
     private final Logger logger;
     private final VelocityServerLifecycleFeature lifecycleFeature;
     
     // Cache server metrics for optimal selection
     private final Map<String, ServerMetrics> serverMetricsCache = new ConcurrentHashMap<>();
     
-    public ProxyConnectionHandler(ProxyServer proxy, String proxyId, Logger logger, VelocityServerLifecycleFeature lifecycleFeature) {
+    public ProxyConnectionHandler(ProxyServer proxy, String proxyIdString, Logger logger, VelocityServerLifecycleFeature lifecycleFeature) {
         this.proxy = proxy;
-        this.proxyId = proxyId;
+        // Parse the initial proxy ID string
+        if (ProxyIdentifier.isValid(proxyIdString)) {
+            this.proxyId = ProxyIdentifier.parse(proxyIdString);
+        } else {
+            // Handle legacy format
+            this.proxyId = ProxyIdentifier.fromLegacy(proxyIdString);
+        }
         this.logger = logger;
         this.lifecycleFeature = lifecycleFeature;
     }
     
     /**
      * Update the proxy ID when permanent ID is received from registry
-     * @param newProxyId The new permanent proxy ID
+     * @param newProxyIdString The new permanent proxy ID string
      */
-    public void updateProxyId(String newProxyId) {
-        String oldId = this.proxyId;
+    public void updateProxyId(String newProxyIdString) {
+        ProxyIdentifier oldId = this.proxyId;
+        
+        // Parse the new proxy ID
+        ProxyIdentifier newProxyId;
+        if (ProxyIdentifier.isValid(newProxyIdString)) {
+            newProxyId = ProxyIdentifier.parse(newProxyIdString);
+        } else {
+            // Handle legacy format
+            newProxyId = ProxyIdentifier.fromLegacy(newProxyIdString);
+        }
+        
         this.proxyId = newProxyId;
         logger.info("ProxyConnectionHandler updated proxyId from {} to {} (is permanent: {})",
-                    oldId, newProxyId, !newProxyId.startsWith("temp-"));
+                    oldId.getFormattedId(), newProxyId.getFormattedId(),
+                    !newProxyIdString.startsWith("temp-"));
         
         // Warn if updating to a temp ID from a permanent one
-        if (newProxyId.startsWith("temp-") && !oldId.startsWith("temp-")) {
+        if (newProxyIdString.startsWith("temp-") && !oldId.getFormattedId().startsWith("temp-")) {
             logger.warn("WARNING: ProxyConnectionHandler reverting from permanent ID to temp ID!");
         }
     }
     
     /**
+     * Update the proxy ID when permanent ID is received from registry (with ProxyIdentifier)
+     * @param newProxyIdString The new permanent proxy ID string
+     * @param identifier The ProxyIdentifier instance
+     */
+    public void updateProxyId(String newProxyIdString, ProxyIdentifier identifier) {
+        ProxyIdentifier oldId = this.proxyId;
+        this.proxyId = identifier;
+        logger.info("[ProxyConnectionHandler] Updated proxy ID from {} to {} (using provided ProxyIdentifier)",
+                   oldId != null ? oldId.getFormattedId() : "null", identifier.getFormattedId());
+    }
+    
+    /**
      * Get the current proxy ID
-     * @return The current proxy ID
+     * @return The current proxy ID as a string
      */
     public String getProxyId() {
+        return proxyId.getFormattedId();
+    }
+    
+    /**
+     * Get the current proxy identifier
+     * @return The current ProxyIdentifier
+     */
+    public ProxyIdentifier getProxyIdentifier() {
         return proxyId;
     }
+    
     
     /**
      * Internal class to track server metrics for optimal selection
@@ -125,7 +168,7 @@ public class ProxyConnectionHandler {
                 String playerUuid = event.getPlayer().getUniqueId().toString();
                 
                 // Log with current proxy ID
-                String currentProxyId = this.proxyId;
+                String currentProxyId = this.proxyId.getFormattedId();
                 logger.error("No servers available for player {} ({}) [Timestamp: {}, Proxy: {} (is permanent: {})]",
                     playerName, playerUuid, timestamp, currentProxyId, !currentProxyId.startsWith("temp-"));
                 
@@ -147,7 +190,7 @@ public class ProxyConnectionHandler {
                     .append(Component.text(timestamp, NamedTextColor.WHITE))
                     .append(Component.newline())
                     .append(Component.text("Proxy ID: ", NamedTextColor.GRAY))
-                    .append(Component.text(this.proxyId, NamedTextColor.WHITE))
+                    .append(Component.text(this.proxyId.getFormattedId(), NamedTextColor.WHITE))
                     .build();
                 
                 Component fullMessage = Component.text()
@@ -315,6 +358,38 @@ public class ProxyConnectionHandler {
     public void removeServerMetrics(String serverId) {
         serverMetricsCache.remove(serverId);
         logger.debug("Removed metrics for server: {}", serverId);
+    }
+    
+    /**
+     * Handle player disconnect event
+     */
+    @Subscribe
+    public void onPlayerDisconnect(DisconnectEvent event) {
+        Player player = event.getPlayer();
+        logger.debug("Player {} disconnected from proxy", player.getUsername());
+    }
+    
+    /**
+     * Handle server pre-connect event
+     */
+    @Subscribe
+    public void onServerPreConnect(ServerPreConnectEvent event) {
+        Player player = event.getPlayer();
+        logger.debug("Player {} pre-connecting to server {}",
+            player.getUsername(),
+            event.getOriginalServer().getServerInfo().getName());
+    }
+    
+    /**
+     * Handle server connected event
+     */
+    @Subscribe
+    public void onServerConnected(ServerConnectedEvent event) {
+        Player player = event.getPlayer();
+        RegisteredServer server = event.getServer();
+        logger.debug("Player {} connected to server {}",
+            player.getUsername(),
+            server.getServerInfo().getName());
     }
     
     /**

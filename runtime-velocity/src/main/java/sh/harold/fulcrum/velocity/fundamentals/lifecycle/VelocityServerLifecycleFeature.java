@@ -7,9 +7,11 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.velocity.api.ServerIdentifier;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.messages.*;
+import sh.harold.fulcrum.api.messagebus.messages.ServerHeartbeatMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
 import sh.harold.fulcrum.api.messagebus.messages.ServerStatusChangeMessage;
 import sh.harold.fulcrum.velocity.config.ServerLifecycleConfig;
@@ -17,6 +19,7 @@ import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeat
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
+import sh.harold.fulcrum.velocity.api.ProxyIdentifier;
 
 import java.net.InetSocketAddress;
 
@@ -55,7 +58,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     private final boolean developmentMode;
     
     private MessageBus messageBus;
-    private String proxyId;  // Will be updated when Registry assigns permanent ID
+    private ProxyIdentifier proxyIdentifier;  // Will be updated when Registry assigns permanent ID
+    private String proxyId;  // String representation for compatibility
     private ProxyAnnouncementMessage currentProxyData;
     private ScheduledFuture<?> heartbeatTask;
     private ScheduledFuture<?> cleanupTask;
@@ -98,7 +102,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         if (developmentMode) {
             logger.warn("Development mode is enabled - proxy registration and heartbeats are disabled");
             // In development mode, use a simple temporary ID and skip all network operations
-            this.proxyId = "dev-proxy-" + UUID.randomUUID().toString().substring(0, 8);
+            this.proxyIdentifier = ProxyIdentifier.fromLegacy("dev-proxy-" + UUID.randomUUID().toString().substring(0, 8));
+            this.proxyId = proxyIdentifier.getFormattedId();
             logger.info("Using development proxy ID: {}", proxyId);
             return; // Skip all initialization in development mode
         }
@@ -109,12 +114,16 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         // Get temporary proxy ID from VelocityMessageBusFeature
         services.getService(VelocityMessageBusFeature.class).ifPresentOrElse(
             messageBusFeature -> {
-                this.proxyId = messageBusFeature.getCurrentProxyId();
+                String tempId = messageBusFeature.getCurrentProxyId();
+                this.proxyIdentifier = ProxyIdentifier.fromLegacy(tempId);
+                this.proxyId = tempId;  // Keep legacy format until Registry assigns permanent ID
                 logger.info("Using temporary proxy ID from MessageBusFeature: {}", proxyId);
             },
             () -> {
                 // Generate temporary ID if MessageBusFeature is not available
-                this.proxyId = "temp-proxy-" + UUID.randomUUID().toString();
+                String tempId = "temp-proxy-" + UUID.randomUUID().toString();
+                this.proxyIdentifier = ProxyIdentifier.fromLegacy(tempId);
+                this.proxyId = tempId;  // Keep legacy format until Registry assigns permanent ID
                 logger.warn("MessageBusFeature not available, generated temporary ID: {}", proxyId);
             }
         );
@@ -163,7 +172,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             logger.info("[REGISTRATION] Preparing to register with ID: {} (is temp: {})",
                 proxyId, proxyId.startsWith("temp-"));
             
-            // Use the SAME ServerRegistrationRequest that backend servers and limbo use
+            // Use the SAME ServerRegistrationRequest that backend servers use
             ServerRegistrationRequest request = new ServerRegistrationRequest(
                 proxyId,      // tempId
                 "proxy",      // serverType
@@ -175,8 +184,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             request.setAddress(proxy.getBoundAddress().getHostString());
             request.setPort(proxy.getBoundAddress().getPort());
             
-            // Use the proper registry:register channel
-            messageBus.broadcast("registry:register", request);
+            // Use the standardized channel for registration
+            messageBus.broadcast(ChannelConstants.REGISTRY_REGISTRATION_REQUEST, request);
             logger.info("[ATTEMPT {}/{}] Sent proxy registration to Registry Service with tempId: {}",
                        registrationAttempts, MAX_REGISTRATION_ATTEMPTS, proxyId);
             logger.debug("Registration request: tempId={}, type={}, role={}, address={}:{}, capacity={}",
@@ -276,11 +285,11 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         proxyRegistration.put("currentPlayerCount", proxy.getPlayerCount());
         
         // Publish proxy registration info for other services
-        messageBus.broadcast("fulcrum:proxy:registered", proxyRegistration);
+        messageBus.broadcast(ChannelConstants.FULCRUM_PROXY_REGISTERED, proxyRegistration);
         logger.info("Published proxy registration with permanent ID: {}", proxyId);
         
         // Send announcement to network
-        messageBus.broadcast("proxy:announce", currentProxyData);
+        messageBus.broadcast(ChannelConstants.PROXY_ANNOUNCEMENT, currentProxyData);
     }
     
     private void setupMessageHandlers() {
@@ -291,7 +300,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         // Remove direct Redis listener to avoid duplicate processing
         
         // Listen for server additions from Registry Service
-        messageBus.subscribe("registry:server:added", envelope -> {
+        messageBus.subscribe(ChannelConstants.REGISTRY_SERVER_ADDED, envelope -> {
             logger.info("=== SERVER ADDED BY REGISTRY ===");
             Object payload = envelope.getPayload();
             
@@ -335,7 +344,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         });
         
         // Listen for server removals from Registry Service
-        messageBus.subscribe("registry:server:removed", envelope -> {
+        messageBus.subscribe(ChannelConstants.REGISTRY_SERVER_REMOVED, envelope -> {
             logger.info("=== SERVER REMOVED BY REGISTRY ===");
             Object payload = envelope.getPayload();
             
@@ -372,7 +381,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         });
         
         // Handle server removal notifications (for evacuation scenarios)
-        messageBus.subscribe("server.removal.notification", envelope -> {
+        messageBus.subscribe(ChannelConstants.SERVER_EVACUATION_REQUEST, envelope -> {
             try {
                 ObjectMapper mapper = new ObjectMapper();
                 ServerRemovalNotification notification = null;
@@ -393,7 +402,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         });
         
         // Handle server heartbeats
-        messageBus.subscribe("server:heartbeat", envelope -> {
+        messageBus.subscribe(ChannelConstants.SERVER_HEARTBEAT, envelope -> {
             Object payload = envelope.getPayload();
             ServerHeartbeatMessage heartbeat = null;
             
@@ -432,7 +441,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         });
         
         // Handle server announcements (post-approval)
-        messageBus.subscribe("server:announce", envelope -> {
+        messageBus.subscribe(ChannelConstants.SERVER_ANNOUNCEMENT, envelope -> {
             Object payload = envelope.getPayload();
             ServerAnnouncementMessage announcement = null;
             
@@ -469,8 +478,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         });
         
         // Handle proxy registration response from Registry Service via MessageBus
-        messageBus.subscribe("proxy:registration:response", envelope -> {
-            logger.debug("Proxy registration response received");
+        messageBus.subscribe(ChannelConstants.PROXY_REGISTRATION_RESPONSE, envelope -> {
+            logger.info("[PROXY RESPONSE RECEIVED] Received proxy registration response on channel: {}",
+                       ChannelConstants.PROXY_REGISTRATION_RESPONSE);
             
             try {
                 Object payload = envelope.getPayload();
@@ -487,6 +497,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 }
                 
                 if (response != null) {
+                    logger.info("[PROXY RESPONSE] Processing response: tempId={}, proxyId={}, success={}",
+                               response.get("tempId"), response.get("proxyId"), response.get("success"));
                     handleProxyRegistrationResponse(response);
                 } else {
                     logger.error("Failed to extract response from payload");
@@ -496,8 +508,41 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             }
         });
         
+        // ALSO listen on the backward-compatible channel
+        messageBus.subscribe("fulcrum.registry.registration.response", envelope -> {
+            logger.info("[PROXY RESPONSE RECEIVED] Received proxy registration response on LEGACY channel");
+            
+            try {
+                Object payload = envelope.getPayload();
+                Map<String, Object> response = null;
+                
+                if (payload instanceof JsonNode) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    response = mapper.treeToValue((JsonNode) payload, Map.class);
+                } else if (payload instanceof Map) {
+                    response = (Map<String, Object>) payload;
+                } else if (payload instanceof String) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    response = mapper.readValue((String) payload, Map.class);
+                }
+                
+                if (response != null) {
+                    // Only process if it has a proxyId (proxy-specific response)
+                    if (response.containsKey("proxyId") && response.get("proxyId") != null) {
+                        logger.info("[PROXY RESPONSE] Processing response from legacy channel: tempId={}, proxyId={}, success={}",
+                                   response.get("tempId"), response.get("proxyId"), response.get("success"));
+                        handleProxyRegistrationResponse(response);
+                    }
+                } else {
+                    logger.error("Failed to extract response from payload");
+                }
+            } catch (Exception e) {
+                logger.error("Failed to process proxy registration response from legacy channel", e);
+            }
+        });
+        
         // Handle proxy discovery requests - for OTHER servers discovering this proxy
-        messageBus.subscribe("proxy:discovery", envelope -> {
+        messageBus.subscribe(ChannelConstants.PROXY_DISCOVERY_REQUEST, envelope -> {
             logger.debug("Proxy discovery request received");
             Object payload = envelope.getPayload();
             ProxyDiscoveryRequest request = null;
@@ -533,7 +578,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 );
                 response.addProxy(proxyInfo);
                 
-                messageBus.broadcast("proxy:discovery:response", response);
+                messageBus.broadcast(ChannelConstants.PROXY_DISCOVERY_RESPONSE, response);
                 logger.debug("Sent discovery response for proxy: {}", proxyId);
             } else {
                 logger.debug("Not responding to discovery request - proxy not yet registered");
@@ -541,7 +586,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         });
         
         // Handle registry re-registration requests (when registry restarts)
-        messageBus.subscribe("registry:reregistration:request", envelope -> {
+        messageBus.subscribe(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, envelope -> {
             try {
                 logger.info("[RE-REGISTRATION] Registry Service requested re-registration");
                 logger.info("[RE-REGISTRATION] Current proxy ID: {} (registered: {}, temp: {})",
@@ -608,7 +653,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         });
         
         // Handle server status change messages from registry
-        messageBus.subscribe("registry:status:change", envelope -> {
+        messageBus.subscribe(ChannelConstants.REGISTRY_STATUS_CHANGE, envelope -> {
             Object payload = envelope.getPayload();
             ServerStatusChangeMessage statusChange = null;
             
@@ -786,8 +831,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 heartbeat.setTps(20.0); // Proxies don't have TPS but send default
                 heartbeat.setRole("proxy");
                 
-                // Send heartbeat via MessageBus - use colon separator to match registry subscription
-                messageBus.broadcast("server:heartbeat", heartbeat);
+                // Send heartbeat via MessageBus - use standardized channel
+                messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, heartbeat);
                 logger.debug("Sent heartbeat for proxy: {} (permanent: {})", currentProxyId, !currentProxyId.startsWith("temp-"));
                 
                 // Log capacity warnings
@@ -802,7 +847,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 statusUpdate.put("proxyId", currentProxyId);
                 statusUpdate.put("currentPlayerCount", currentPlayers);
                 statusUpdate.put("lastHeartbeat", System.currentTimeMillis());
-                messageBus.broadcast("fulcrum:proxy:status", statusUpdate);
+                messageBus.broadcast(ChannelConstants.FULCRUM_PROXY_STATUS, statusUpdate);
                 
                 logger.debug("Sent proxy heartbeat - ID: {}, Current players: {}", currentProxyId, currentPlayers);
             } catch (Exception e) {
@@ -833,7 +878,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                             });
                             
                             // Notify network of server removal
-                            messageBus.broadcast("server:removed", serverId);
+                            messageBus.broadcast(ChannelConstants.SERVER_REMOVAL_NOTIFICATION, serverId);
                         }
                         return true;
                     }
@@ -883,7 +928,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             );
             
             // Send on the channel that RegistrationHandler is monitoring
-            messageBus.broadcast("registry:proxy", removalNotification);
+            messageBus.broadcast(ChannelConstants.REGISTRY_PROXY_SHUTDOWN, removalNotification);
             logger.info("Sent ServerRemovalNotification to Registry Service on registry:proxy channel");
             
             // Also send via proxy:announcement for backward compatibility
@@ -892,27 +937,24 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             announcement.put("status", "SHUTDOWN");
             announcement.put("timestamp", System.currentTimeMillis());
             
-            messageBus.broadcast("proxy:announcement", announcement);
+            messageBus.broadcast(ChannelConstants.PROXY_ANNOUNCEMENT, announcement);
             logger.info("Sent proxy shutdown announcement to Registry Service");
             
             // Also send via server:heartbeat with SHUTDOWN status
             ServerHeartbeatMessage shutdownHeartbeat = new ServerHeartbeatMessage(proxyId, "PROXY");
+            shutdownHeartbeat.setStatus("SHUTDOWN");
             shutdownHeartbeat.setPlayerCount(0);
+            shutdownHeartbeat.setMaxCapacity(0);
+            shutdownHeartbeat.setTps(20.0);  // tps (not applicable for proxy, using default)
             shutdownHeartbeat.setTimestamp(System.currentTimeMillis());
             
-            // Add a shutdown status field by extending the message
-            Map<String, Object> shutdownMessage = new HashMap<>();
-            shutdownMessage.put("serverId", proxyId);
-            shutdownMessage.put("status", "SHUTDOWN");
-            shutdownMessage.put("timestamp", System.currentTimeMillis());
-            
-            messageBus.broadcast("server:heartbeat", shutdownMessage);
+            messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, shutdownHeartbeat);
             logger.info("Sent proxy shutdown signal via server:heartbeat channel");
             
             // Send removal notification for other services
             Map<String, Object> fulcrumRemoval = new HashMap<>();
             fulcrumRemoval.put("proxyId", proxyId);
-            messageBus.broadcast("fulcrum:proxy:removed", fulcrumRemoval);
+            messageBus.broadcast(ChannelConstants.FULCRUM_PROXY_REMOVED, fulcrumRemoval);
             logger.info("Published proxy removal notification");
         } catch (Exception e) {
             logger.error("Failed to send shutdown notification to Registry Service", e);
@@ -927,7 +969,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             0,  // Soft cap
             -1  // Indicates shutdown
         );
-        messageBus.broadcast("proxy:shutdown", shutdown);
+        messageBus.broadcast(ChannelConstants.PROXY_SHUTDOWN, shutdown);
         
         logger.info("VelocityServerLifecycleFeature shutdown complete");
     }
@@ -995,7 +1037,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     private void sendRegistrationRequest() {
         logger.info("Sending request for backend servers to register");
         int proxyIndex = extractProxyIndex(proxyId);
-        messageBus.broadcast("proxy:request-registrations",
+        messageBus.broadcast(ChannelConstants.PROXY_REQUEST_REGISTRATIONS,
             new ProxyAnnouncementMessage(
                 proxyId,
                 proxyIndex,
@@ -1033,14 +1075,23 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             
             // Update our proxy ID with the permanent one from Registry
             String oldId = this.proxyId;
-            this.proxyId = assignedProxyId;
+            
+            // Parse the new permanent ID into ProxyIdentifier if it's in the new format
+            if (ProxyIdentifier.isValid(assignedProxyId)) {
+                this.proxyIdentifier = ProxyIdentifier.parse(assignedProxyId);
+                this.proxyId = assignedProxyId;
+            } else {
+                // Handle legacy format from Registry (shouldn't happen with updated Registry)
+                this.proxyIdentifier = ProxyIdentifier.fromLegacy(assignedProxyId);
+                this.proxyId = assignedProxyId;  // Keep original for backward compatibility
+            }
             registeredWithRegistry = true;
             
             logger.info("Proxy successfully registered with permanent ID: {} (was: {})", proxyId, oldId);
             
             // Update ProxyConnectionHandler with the permanent ID
             if (connectionHandler != null) {
-                connectionHandler.updateProxyId(assignedProxyId);
+                connectionHandler.updateProxyId(assignedProxyId, proxyIdentifier);
                 logger.info("Updated ProxyConnectionHandler with permanent proxy ID");
             } else {
                 logger.warn("ProxyConnectionHandler is null, cannot update proxy ID!");
@@ -1089,14 +1140,14 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             testHeartbeat.setRole("proxy");
             
             logger.info("[TEST HEARTBEAT] Sending test heartbeat with ID: {}", assignedProxyId);
-            messageBus.broadcast("server:heartbeat", testHeartbeat);
+            messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, testHeartbeat);
             
             // NOW start heartbeat after successful registration
             logger.info("[REGISTRATION] Starting regular heartbeat task after successful registration");
             startHeartbeat();
             
             // Send initial heartbeat and announcement
-            messageBus.broadcast("proxy:announce", currentProxyData);
+            messageBus.broadcast(ChannelConstants.PROXY_ANNOUNCEMENT, currentProxyData);
             logger.info("Sent initial proxy announcement with permanent ID");
         } else {
             logger.error("[FAILED] Proxy registration failed: {}", response.get("message"));
@@ -1152,7 +1203,12 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     }
     
     private int extractProxyIndex(String proxyId) {
-        // Extract index from ID format: fulcrum-proxy-N
+        // If we have a ProxyIdentifier, use its instance ID
+        if (proxyIdentifier != null) {
+            return proxyIdentifier.getInstanceId();
+        }
+        
+        // Fallback: Extract index from legacy ID format: fulcrum-proxy-N
         if (proxyId != null && proxyId.startsWith("fulcrum-proxy-")) {
             try {
                 String indexStr = proxyId.substring("fulcrum-proxy-".length());
