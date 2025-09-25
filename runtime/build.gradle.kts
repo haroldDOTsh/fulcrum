@@ -15,6 +15,7 @@ repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
     maven("https://oss.sonatype.org/content/groups/public/")
+    maven("https://maven.enginehub.org/repo/") // FAWE repository
 }
 
 dependencies {
@@ -36,8 +37,14 @@ dependencies {
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.15.2")
 
     // Redis dependencies (using Lettuce to match proxy implementation)
-    implementation("io.lettuce:lettuce-core:6.3.2.RELEASE")
+    implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
     implementation("org.apache.commons:commons-pool2:2.12.0") // Still needed for connection pooling
+    
+    // World Editing
+    compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Core:2.11.2")
+    compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit:2.11.2") {
+        isTransitive = false
+    }
 
     // (Optional test setup)
     testImplementation(platform("org.junit:junit-bom:5.10.2"))

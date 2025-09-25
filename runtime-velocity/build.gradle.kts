@@ -25,6 +25,9 @@ dependencies {
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.0")
     
+    // Netty for network functionality
+    implementation("io.netty:netty-all:4.1.100.Final")
+    
     // YAML configuration
     implementation("org.yaml:snakeyaml:2.0")
     
@@ -107,7 +110,8 @@ tasks {
             "-XX:+UnlockExperimentalVMOptions",
             "-XX:+ParallelRefProcEnabled",
             "-XX:+AlwaysPreTouch",
-            "-XX:MaxInlineLevel=15"
+            "-XX:MaxInlineLevel=15",
+            "-Dvelocity.packet-decode-logging=true"
         )
         
         // Automatically copy the built plugin jar to the plugins folder

@@ -29,6 +29,19 @@ dependencies {
     // Redis client (same as used in runtime)
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
     
+    // Reactive Streams (required by Lettuce for reactive commands)
+    implementation("io.projectreactor:reactor-core:3.6.0")
+    implementation("org.reactivestreams:reactive-streams:1.0.4")
+    
+    // Netty dependencies (explicit to ensure all are included)
+    implementation("io.netty:netty-common:4.1.101.Final")
+    implementation("io.netty:netty-buffer:4.1.101.Final")
+    implementation("io.netty:netty-codec:4.1.101.Final")
+    implementation("io.netty:netty-handler:4.1.101.Final")
+    implementation("io.netty:netty-transport:4.1.101.Final")
+    implementation("io.netty:netty-resolver:4.1.101.Final")
+    implementation("io.netty:netty-transport-native-unix-common:4.1.101.Final")
+    
     // JSON processing
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.0")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.16.0")
@@ -68,11 +81,24 @@ tasks.shadowJar {
     // Include all runtime dependencies
     configurations = listOf(project.configurations.runtimeClasspath.get())
     
-    // Don't minimize to avoid issues with reflection
+    // Don't minimize - we need all classes including inner classes
     // minimize {
     //     exclude(dependency("ch.qos.logback:.*"))
     //     exclude(dependency("org.slf4j:.*"))
     // }
+    
+    // Merge duplicate files to avoid conflicts
+    exclude("META-INF/*.SF")
+    exclude("META-INF/*.DSA")
+    exclude("META-INF/*.RSA")
+    exclude("META-INF/DEPENDENCIES")
+    exclude("META-INF/LICENSE")
+    exclude("META-INF/LICENSE.txt")
+    exclude("META-INF/NOTICE")
+    exclude("META-INF/NOTICE.txt")
+    
+    // Transform services files
+    transform(com.github.jengelman.gradle.plugins.shadow.transformers.ServiceFileTransformer::class.java)
     
     manifest {
         attributes["Main-Class"] = "sh.harold.fulcrum.registry.RegistryService"
