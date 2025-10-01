@@ -27,6 +27,7 @@ dependencies {
 
     // Other runtime deps
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
+    implementation("org.postgresql:postgresql:42.7.4") // JDBC driver for world Postgres access
     implementation("org.yaml:snakeyaml:2.2")
     implementation("io.github.classgraph:classgraph:4.8.173")
     
