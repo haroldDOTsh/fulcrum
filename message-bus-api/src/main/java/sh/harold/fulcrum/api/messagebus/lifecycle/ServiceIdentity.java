@@ -5,7 +5,7 @@ import java.util.UUID;
 
 /**
  * Represents the identity of a service in the Fulcrum ecosystem.
- * This is a standardized way to identify any service (backend server, proxy, limbo, etc.)
+ * This is a standardized way to identify any service (backend server, proxy, registry service, etc.)
  */
 public class ServiceIdentity {
     
@@ -22,8 +22,8 @@ public class ServiceIdentity {
      * Create a new service identity.
      * 
      * @param tempId Temporary ID used during registration
-     * @param serviceType Type of service (SERVER, PROXY, LIMBO, REGISTRY)
-     * @param role Service role (e.g., "game", "lobby", "proxy", "limbo")
+     * @param serviceType Type of service (SERVER, PROXY, REGISTRY)
+     * @param role Service role (e.g., "game", "lobby", "proxy")
      * @param address Service address/hostname
      * @param port Service port
      */
@@ -141,3 +141,4 @@ public class ServiceIdentity {
         return Objects.hash(instanceUuid);
     }
 }
+

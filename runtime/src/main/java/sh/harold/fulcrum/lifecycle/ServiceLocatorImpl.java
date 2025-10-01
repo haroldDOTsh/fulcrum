@@ -61,7 +61,10 @@ public class ServiceLocatorImpl implements ServiceLocator {
      * @param serviceClass The class of the service
      */
     public <T> void unregisterService(Class<T> serviceClass) {
-        // DependencyContainer doesn't have unregister, so we just ignore for now
-        // Services will be cleaned up when container is destroyed
+        container.unregister(serviceClass);
+    }
+
+    public static void reset() {
+        instance = null;
     }
 }
