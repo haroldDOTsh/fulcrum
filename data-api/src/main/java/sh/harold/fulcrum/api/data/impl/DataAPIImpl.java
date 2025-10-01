@@ -100,4 +100,9 @@ public class DataAPIImpl implements DataAPI {
     public Transaction transaction(Transaction.IsolationLevel isolationLevel) {
         return new TransactionImpl(backend, isolationLevel).begin();
     }
+
+    @Override
+    public StorageBackend getStorageBackend() {
+        return backend;
+    }
 }

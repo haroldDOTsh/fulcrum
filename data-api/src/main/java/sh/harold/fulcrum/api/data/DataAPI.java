@@ -2,6 +2,7 @@ package sh.harold.fulcrum.api.data;
 
 import sh.harold.fulcrum.api.data.impl.DataAPIImpl;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
+import sh.harold.fulcrum.api.data.storage.StorageBackend;
 import sh.harold.fulcrum.api.data.transaction.Transaction;
 import java.util.UUID;
 
@@ -73,4 +74,11 @@ public interface DataAPI {
      * @return A new transaction instance
      */
     Transaction transaction(Transaction.IsolationLevel isolationLevel);
+    
+    /**
+     * Get the underlying storage backend backing this DataAPI instance.
+     *
+     * @return The storage backend implementation
+     */
+    StorageBackend getStorageBackend();
 }
