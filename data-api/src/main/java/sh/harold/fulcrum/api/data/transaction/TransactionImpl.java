@@ -5,6 +5,7 @@ import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.data.storage.StorageBackend;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -290,13 +291,18 @@ public class TransactionImpl implements Transaction {
         }
         
         @Override
+        public CompletableFuture<Document> selectAsync(String id) {
+            return CompletableFuture.completedFuture(select(id));
+        }
+        
+        @Override
         public Document select(String id) {
             return new TransactionalDocument(collectionName, id, transaction);
         }
         
         @Override
-        public Document document(String id) {
-            return select(id);
+        public CompletableFuture<Document> createAsync(String id, Map<String, Object> data) {
+            return CompletableFuture.completedFuture(create(id, data));
         }
         
         @Override
@@ -304,6 +310,11 @@ public class TransactionImpl implements Transaction {
             transaction.addOperation(new TransactionOperation(
                 OperationType.CREATE, collectionName, id, data));
             return new TransactionalDocument(collectionName, id, transaction);
+        }
+        
+        @Override
+        public CompletableFuture<Boolean> deleteAsync(String id) {
+            return CompletableFuture.completedFuture(delete(id));
         }
         
         @Override
@@ -324,8 +335,20 @@ public class TransactionImpl implements Transaction {
         }
         
         @Override
+        public CompletableFuture<List<Document>> allAsync() {
+            return CompletableFuture.failedFuture(
+                new UnsupportedOperationException("Batch reads not supported in transactions"));
+        }
+        
+        @Override
         public List<Document> all() {
             throw new UnsupportedOperationException("Batch reads not supported in transactions");
+        }
+        
+        @Override
+        public CompletableFuture<Long> countAsync() {
+            return CompletableFuture.failedFuture(
+                new UnsupportedOperationException("Count not supported in transactions"));
         }
         
         @Override
@@ -350,10 +373,10 @@ public class TransactionImpl implements Transaction {
             this.pendingChanges = new HashMap<>();
         }
         
+        @Override
         public String getId() {
             return id;
         }
-        
         @Override
         public Object get(String path) {
             // First check pending changes
@@ -391,6 +414,12 @@ public class TransactionImpl implements Transaction {
             // Save after each set operation to ensure it's captured in transaction
             save();
             return this;
+        }
+
+        @Override
+        public CompletableFuture<Document> setAsync(String path, Object value) {
+            set(path, value);
+            return CompletableFuture.completedFuture(this);
         }
         
         public Document increment(String path, Number delta) {
@@ -486,3 +515,5 @@ public class TransactionImpl implements Transaction {
         }
     }
 }
+
+
