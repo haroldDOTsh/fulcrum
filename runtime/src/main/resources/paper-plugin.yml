@@ -1,8 +1,8 @@
 name: Fulcrum
 version: 1.4.1
 main: sh.harold.fulcrum.FulcrumPlugin
-description: Eternum's next-generation plugin backbone
-author: harold-waste
+description: DEEZ
+author: Hqrxld, ZECHEESELORD
 website: https://github.com/harold-waste/fulcrum
 api-version: '1.21'
 folia-supported: false
@@ -12,9 +12,11 @@ bootstrapper: sh.harold.fulcrum.FulcrumBootstrapper
 
 # Dependencies
 dependencies:
-  server: {}
+  server:
+    FastAsyncWorldEdit:
+      load: BEFORE
+      required: true
   bootstrap: []
-# Permissions
 
 # Load order
 load: STARTUP
