@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.fundamentals.lifecycle;
 
 import org.bukkit.Bukkit;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
@@ -17,16 +18,21 @@ import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationRequest;
 import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationResponse;
 import sh.harold.fulcrum.api.messagebus.messages.ServerAnnouncementMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
+import sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand;
+import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -66,6 +72,11 @@ public class ServerLifecycleFeature implements PluginFeature {
     private ScheduledFuture<?> registrationTimeoutTask;
     private ScheduledFuture<?> registrationRetryTask;
     private final Map<String, ServerInfo> availableServers = new ConcurrentHashMap<>();
+
+    private SimpleSlotOrchestrator slotOrchestrator;
+    private final Set<String> slotProvisionSubscriptions = ConcurrentHashMap.newKeySet();
+    private Map<String, Integer> configuredSlotFamilies = new LinkedHashMap<>();
+    private String primarySlotFamily;
     
     // Proxy discovery and tracking
     private final Map<String, ProxyAnnouncementMessage> knownProxies = new ConcurrentHashMap<>();
@@ -155,25 +166,36 @@ public class ServerLifecycleFeature implements PluginFeature {
         int softCap = serverType.equals("MEGA") ? 60 : 10;
         int hardCap = serverType.equals("MEGA") ? 70 : 15;
         
-        this.serverIdentifier = new DefaultServerIdentifier(
-            tempId,
-            role,
-            serverType,
-            instanceUuid,
-            address,
-            port,
-            softCap,
-            hardCap
-        );
-        
+            this.serverIdentifier = new DefaultServerIdentifier(
+                tempId,
+                role,
+                serverType,
+                instanceUuid,
+                address,
+                port,
+                softCap,
+                hardCap
+            );
+
         // Register services
         container.register(ServerIdentifier.class, serverIdentifier);
-        
+
+        this.slotOrchestrator = new SimpleSlotOrchestrator(messageBus, serverIdentifier);
+        this.configuredSlotFamilies = loadSlotFamilies(role);
+        slotOrchestrator.configureFamilies(configuredSlotFamilies);
+        this.primarySlotFamily = configuredSlotFamilies.keySet().stream().findFirst().orElse(role);
+        LOGGER.info("Configured slot families: " + configuredSlotFamilies);
+
+        if (ServiceLocatorImpl.getInstance() != null) {
+            ServiceLocatorImpl.getInstance().registerService(SimpleSlotOrchestrator.class, slotOrchestrator);
+        }
+
         LOGGER.info("Starting server with temporary ID: " + tempId);
-        
+
         // Setup message handlers
         setupMessageHandlers();
-        
+
+
         // Schedule initial registration after server has fully loaded
         new BukkitRunnable() {
             @Override
@@ -183,7 +205,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
         }.runTaskLater(plugin, 20L); // 1 second after server starts
     }
-    
+
     /**
      * Loads the server role from the ENVIRONMENT file in the server root.
      * The role string should match one of the roles defined in environment.yml.
@@ -217,6 +239,84 @@ public class ServerLifecycleFeature implements PluginFeature {
             this.environment = "game";
             return "game";
         }
+    }
+
+    private void subscribeToSlotProvisionChannel(String serverId) {
+        if (serverId == null || messageBus == null) {
+            return;
+        }
+
+        if (!slotProvisionSubscriptions.add(serverId)) {
+            return; // already subscribed
+        }
+
+        String channel = ChannelConstants.getSlotProvisionChannel(serverId);
+        messageBus.subscribe(channel, envelope -> {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                SlotProvisionCommand command = mapper.treeToValue(envelope.getPayload(), SlotProvisionCommand.class);
+                if (slotOrchestrator != null) {
+                    slotOrchestrator.handleProvisionCommand(command);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("Failed to handle slot provision command: " + e.getMessage());
+            }
+        });
+        LOGGER.info("Subscribed to slot provision channel: " + channel);
+    }
+
+    private Map<String, Integer> loadSlotFamilies(String fallbackFamily) {
+        Map<String, Integer> families = new LinkedHashMap<>();
+
+        if (plugin.getConfig().isConfigurationSection("slot-families")) {
+            ConfigurationSection section = plugin.getConfig().getConfigurationSection("slot-families");
+            if (section != null) {
+                for (String key : section.getKeys(false)) {
+                    int max = Math.max(1, section.getInt(key + ".max-slots", section.getInt(key, 1)));
+                    families.put(key, max);
+                }
+            }
+        } else if (plugin.getConfig().isList("slot-families")) {
+            for (Object entry : plugin.getConfig().getList("slot-families")) {
+                if (entry instanceof String) {
+                    families.put((String) entry, 1);
+                } else if (entry instanceof Map) {
+                    Map<?, ?> map = (Map<?, ?>) entry;
+                    Object familyObj = map.get("family");
+                    if (familyObj != null) {
+                        String family = familyObj.toString();
+                        int max = coerceInt(map.get("max-slots"), 1);
+                        families.put(family, Math.max(1, max));
+                    }
+                }
+            }
+        } else if (plugin.getConfig().contains("slot-family")) {
+            String family = plugin.getConfig().getString("slot-family");
+            if (family != null && !family.isBlank()) {
+                int max = plugin.getConfig().getInt("slot-family-max", 1);
+                families.put(family, Math.max(1, max));
+            }
+        }
+
+        if (families.isEmpty() && fallbackFamily != null && !fallbackFamily.isBlank()) {
+            families.put(fallbackFamily, 1);
+        }
+
+        return families;
+    }
+
+    private int coerceInt(Object value, int defaultValue) {
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        if (value != null) {
+            try {
+                return Integer.parseInt(value.toString());
+            } catch (NumberFormatException ignored) {
+                return defaultValue;
+            }
+        }
+        return defaultValue;
     }
     
     /**
@@ -336,7 +436,19 @@ public class ServerLifecycleFeature implements PluginFeature {
             
             // Start heartbeat with the permanent ID
             startHeartbeat();
-            
+
+            if (slotOrchestrator != null) {
+                String family = primarySlotFamily != null ? primarySlotFamily : serverType.toLowerCase(Locale.ROOT);
+                slotOrchestrator.onServerRegistered(family, environment, maxCapacity);
+            }
+
+            subscribeToSlotProvisionChannel(permanentId);
+
+            if (messageBus != null) {
+                messageBus.refreshServerIdentity();
+                LOGGER.info("Message bus server ID refreshed to " + serverIdentifier.getServerId());
+            }
+
             // Send immediate heartbeat to confirm server is alive with new ID
             sendHeartbeat();
             LOGGER.info("Sent immediate heartbeat with permanent ID: " + permanentId);
@@ -440,12 +552,13 @@ public class ServerLifecycleFeature implements PluginFeature {
             serverIdentifier.getServerId(),
             serverType
         );
-        
+
         // Set server metrics
         double[] tps = Bukkit.getTPS();
         double avgTps = tps.length > 0 ? tps[0] : 20.0; // Use 1-minute average
         heartbeat.setTps(Math.min(avgTps, 20.0)); // Cap at 20
-        heartbeat.setPlayerCount(Bukkit.getOnlinePlayers().size());
+        int onlinePlayers = Bukkit.getOnlinePlayers().size();
+        heartbeat.setPlayerCount(onlinePlayers);
         heartbeat.setMaxCapacity(maxCapacity);  // This is the hard cap
         heartbeat.setUptime(System.currentTimeMillis() - startTime);
         
@@ -459,10 +572,14 @@ public class ServerLifecycleFeature implements PluginFeature {
         
         // Broadcast heartbeat
         messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, heartbeat);
-        
+
         LOGGER.fine("Sent heartbeat - Players: " + heartbeat.getPlayerCount() +
                    "/" + heartbeat.getMaxCapacity() +
                    ", TPS: " + String.format("%.1f", heartbeat.getTps()));
+
+        if (slotOrchestrator != null) {
+            slotOrchestrator.publishSnapshots();
+        }
     }
     
     @Override
@@ -480,7 +597,11 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
         
         scheduler.shutdown();
-        
+
+        if (ServiceLocatorImpl.getInstance() != null) {
+            ServiceLocatorImpl.getInstance().unregisterService(SimpleSlotOrchestrator.class);
+        }
+
         // Send shutdown notification to registry
         if (messageBus != null && !plugin.getConfig().getBoolean("development-mode", false)) {
             try {
@@ -525,6 +646,8 @@ public class ServerLifecycleFeature implements PluginFeature {
     // Message handlers
     
     private void setupMessageHandlers() {
+        subscribeToSlotProvisionChannel(serverIdentifier.getServerId());
+
         // Handle proxy announcements (new proxy coming online)
         messageBus.subscribe(ChannelConstants.PROXY_ANNOUNCEMENT, envelope -> {
             try {

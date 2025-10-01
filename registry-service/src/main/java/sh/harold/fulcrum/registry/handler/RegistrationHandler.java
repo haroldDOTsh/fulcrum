@@ -10,6 +10,8 @@ import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest;
+import sh.harold.fulcrum.api.messagebus.messages.SlotFamilyAdvertisementMessage;
+import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -188,7 +190,35 @@ public class RegistrationHandler {
                 }
             }
         });
-        
+
+        // Subscribe to logical slot status updates
+        messageBus.subscribe(ChannelConstants.REGISTRY_SLOT_STATUS, new MessageHandler() {
+            @Override
+            public void handle(MessageEnvelope envelope) {
+                try {
+                    SlotStatusUpdateMessage update = objectMapper.treeToValue(
+                        envelope.getPayload(), SlotStatusUpdateMessage.class);
+                    serverRegistry.updateSlot(update.getServerId(), update);
+                } catch (Exception e) {
+                    LOGGER.warn("Failed to process slot status update", e);
+                }
+            }
+        });
+
+        // Subscribe to slot family advertisements
+        messageBus.subscribe(ChannelConstants.REGISTRY_SLOT_FAMILY_ADVERTISEMENT, new MessageHandler() {
+            @Override
+            public void handle(MessageEnvelope envelope) {
+                try {
+                    SlotFamilyAdvertisementMessage message = objectMapper.treeToValue(
+                        envelope.getPayload(), SlotFamilyAdvertisementMessage.class);
+                    serverRegistry.updateFamilyCapabilities(message.getServerId(), message.getFamilyCapacities());
+                } catch (Exception e) {
+                    LOGGER.warn("Failed to process slot family advertisement", e);
+                }
+            }
+        });
+
         // Subscribe to proxy unregister messages
         messageBus.subscribe(ChannelConstants.PROXY_UNREGISTER, new MessageHandler() {
             @Override
