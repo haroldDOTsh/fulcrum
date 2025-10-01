@@ -3,6 +3,7 @@ package sh.harold.fulcrum.velocity.fundamentals.messagebus;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 import org.yaml.snakeyaml.Yaml;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
@@ -204,7 +205,7 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     
     private void setupMessageHandlers() {
         // Subscribe to server lifecycle messages
-        messageBus.subscribe("server.registration.response", envelope -> {
+        messageBus.subscribe(ChannelConstants.SERVER_REGISTRATION_RESPONSE, envelope -> {
             logger.info("Received registration response");
         });
         

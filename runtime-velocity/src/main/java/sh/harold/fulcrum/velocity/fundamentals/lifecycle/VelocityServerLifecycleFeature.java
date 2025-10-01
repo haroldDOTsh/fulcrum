@@ -741,14 +741,14 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             
             // Debug: Try to retrieve the server we just added
             proxy.getServer(serverId).ifPresentOrElse(
-                server -> logger.info("✓ Server {} successfully retrievable from Velocity", serverId),
-                () -> logger.error("✗ Server {} NOT retrievable from Velocity after registration!", serverId)
+                server -> logger.info("??? Server {} successfully retrievable from Velocity", serverId),
+                () -> logger.error("??? Server {} NOT retrievable from Velocity after registration!", serverId)
             );
             
             logger.info("Total servers registered in Velocity: {}", proxy.getAllServers().size());
             
             // Dynamic server registration successful - ProxyConnectionHandler will handle player connections
-            logger.info("✓ Server '{}' dynamically registered and available for player connections", serverId);
+            logger.info("??? Server '{}' dynamically registered and available for player connections", serverId);
             
         } catch (Exception e) {
             logger.error("Exception while adding server to Velocity: {} at {}:{}",
@@ -970,6 +970,15 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             -1  // Indicates shutdown
         );
         messageBus.broadcast(ChannelConstants.PROXY_SHUTDOWN, shutdown);
+        try {
+            scheduler.shutdown();
+            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                scheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            scheduler.shutdownNow();
+        }
         
         logger.info("VelocityServerLifecycleFeature shutdown complete");
     }

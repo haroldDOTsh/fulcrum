@@ -44,7 +44,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         
         FulcrumVelocityPlugin plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
         
-        // Register commands (currently no commands to register after limbo removal)
+        // Register proxy commands when they are introduced
         
         logger.info("VelocityCommandFeature initialized");
     }
@@ -56,3 +56,4 @@ public class VelocityCommandFeature implements VelocityFeature {
         logger.info("VelocityCommandFeature shut down");
     }
 }
+
