@@ -6,7 +6,7 @@ import java.util.Optional;
 
 /**
  * Adapter interface for different storage backends.
- * Provides connection details and configuration for MongoDB or JSON storage.
+ * Provides connection details and configuration for MongoDB, PostgreSQL, or JSON storage.
  */
 public interface ConnectionAdapter {
     
