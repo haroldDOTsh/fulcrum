@@ -7,6 +7,7 @@ import com.google.gson.GsonBuilder;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Default implementation of the Document interface.
@@ -53,17 +54,13 @@ public class DocumentImpl implements Document {
     }
     
     @Override
-    public Document set(String path, Object value) {
+    public CompletableFuture<Document> setAsync(String path, Object value) {
         setValueAtPath(path, value);
-        try {
-            backend.saveDocument(collection, id, data).get();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to save document", e);
-        }
-        return this;
+        Map<String, Object> snapshot = new HashMap<>(data);
+        return backend.saveDocument(collection, id, snapshot)
+            .thenApply(ignored -> this);
     }
     
-    @SuppressWarnings("unchecked")
     private void setValueAtPath(String path, Object value) {
         String[] parts = path.split("\\.");
         Map<String, Object> current = data;
@@ -75,7 +72,9 @@ public class DocumentImpl implements Document {
                 next = new HashMap<String, Object>();
                 current.put(part, next);
             }
-            current = (Map<String, Object>) next;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> nextMap = (Map<String, Object>) next;
+            current = nextMap;
         }
         
         current.put(parts[parts.length - 1], value);
@@ -98,11 +97,12 @@ public class DocumentImpl implements Document {
     }
     
     // Package-private getters for internal use
-    String getId() {
+    @Override
+    public String getId() {
         return id;
     }
-    
     String getCollection() {
         return collection;
     }
 }
+

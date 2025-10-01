@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.api.data;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Interface representing a single document in a collection.
@@ -30,12 +31,28 @@ public interface Document {
     /**
      * Set a value in the document at the given path.
      * Supports nested paths and will create intermediate objects as needed.
+     *
+     * The default implementation blocks until the asynchronous update completes.
+     * Call {@link #setAsync(String, Object)} when running on threads that must
+     * remain non-blocking (for example, the Paper main thread).
      * 
      * @param path The path where to set the value
      * @param value The value to set
      * @return This document for chaining
      */
-    Document set(String path, Object value);
+    default Document set(String path, Object value) {
+        return setAsync(path, value).join();
+    }
+    
+    /**
+     * Asynchronously set a value in the document at the given path.
+     * The returned future completes when the backing storage has been updated.
+     *
+     * @param path The path where to set the value
+     * @param value The value to set
+     * @return A future that completes with this document instance
+     */
+    CompletableFuture<Document> setAsync(String path, Object value);
     
     /**
      * Check if this document exists in the storage backend.
@@ -43,6 +60,16 @@ public interface Document {
      * @return true if the document exists, false otherwise
      */
     boolean exists();
+    
+    /**
+     * Get the storage identifier for this document, if available.
+     * Implementations backed by persistent storage should override this method.
+     *
+     * @return The document identifier, or null if not applicable
+     */
+    default String getId() {
+        return null;
+    }
     
     /**
      * Convert the document to a Map representation.
@@ -58,3 +85,4 @@ public interface Document {
      */
     String toJson();
 }
+
