@@ -2,6 +2,7 @@ package sh.harold.fulcrum.lifecycle;
 
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
+import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -22,6 +23,29 @@ public final class CommandRegistrar {
         pending.add(command);
     }
 
+    public static void registerAlias(LiteralCommandNode<CommandSourceStack> target, String alias) {
+        if (target == null) {
+            throw new IllegalArgumentException("Target command node cannot be null");
+        }
+        if (alias == null || alias.isBlank()) {
+            throw new IllegalArgumentException("Alias literal cannot be null or blank");
+        }
+
+        var builder = Commands.literal(alias);
+        var requirement = target.getRequirement();
+        if (requirement != null) {
+            builder.requires(requirement);
+        }
+
+        var command = target.getCommand();
+        if (command != null) {
+            builder.executes(command);
+        }
+
+        builder.redirect(target);
+        register(builder.build());
+    }
+
     public static void hook(JavaPlugin plugin) {
         if (registered) {
             LOGGER.warning("CommandRegistrar.hook() called but already registered; ignoring.");
@@ -38,5 +62,10 @@ public final class CommandRegistrar {
                 }
             }
         });
+    }
+
+    public static void reset() {
+        pending.clear();
+        registered = false;
     }
 }
