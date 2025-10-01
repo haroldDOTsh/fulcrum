@@ -121,4 +121,9 @@ public class InMemoryMessageBus extends AbstractMessageBus {
             }
         }
     }
+
+    @Override
+    public void refreshServerIdentity() {
+        logger.info("InMemoryMessageBus server ID now: " + adapter.getServerId());
+    }
 }

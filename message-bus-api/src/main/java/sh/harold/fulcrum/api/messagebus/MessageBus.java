@@ -52,4 +52,20 @@ public interface MessageBus {
      * @param handler the handler to remove
      */
     void unsubscribe(String type, MessageHandler handler);
+
+    /**
+     * Refresh the transport's notion of this server's identifier.
+     * Implementations should resubscribe to any identity-based channels
+     * when the runtime receives a new permanent server ID.
+     */
+    default void refreshServerIdentity() {
+        // Default implementations may ignore this.
+    }
+
+    /**
+     * @return the current server identifier used by the transport layer, or null if unknown.
+     */
+    default String currentServerId() {
+        return null;
+    }
 }

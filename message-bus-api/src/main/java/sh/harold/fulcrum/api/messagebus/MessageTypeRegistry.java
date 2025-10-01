@@ -56,7 +56,13 @@ public class MessageTypeRegistry {
                 sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationRequest.class);
             register("server.evacuation.response",
                 sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationResponse.class);
-            
+            register("slot.status.update",
+                sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage.class);
+            register("slot.family.advertisement",
+                sh.harold.fulcrum.api.messagebus.messages.SlotFamilyAdvertisementMessage.class);
+            register("slot.provision.command",
+                sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand.class);
+
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to register some built-in message types", e);
