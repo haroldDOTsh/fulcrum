@@ -83,7 +83,20 @@ public final class ChannelConstants {
     
     /** Server removal notification */
     public static final String SERVER_REMOVAL_NOTIFICATION = "fulcrum.server.lifecycle.removal";
-    
+
+    // ============================================
+    // Slot Channels - Logical Server Slots
+    // ============================================
+
+    /** Logical slot status updates from backends */
+    public static final String REGISTRY_SLOT_STATUS = "fulcrum.registry.slot.status";
+
+    /** Slot family capability advertisement */
+    public static final String REGISTRY_SLOT_FAMILY_ADVERTISEMENT = "fulcrum.registry.slot.family";
+
+    /** Prefix for directed slot provision commands */
+    public static final String SERVER_SLOT_PROVISION_PREFIX = "fulcrum.server.slot.provision.";
+
     // ============================================
     // Proxy Channels - Registration & Lifecycle
     // ============================================
@@ -188,7 +201,16 @@ public final class ChannelConstants {
     public static String getServerDirectChannel(String serverId) {
         return SERVER_DIRECT_PREFIX + serverId;
     }
-    
+
+    /**
+     * Get the slot provision channel for a specific server.
+     * @param serverId the server identifier
+     * @return the channel name used for slot provision commands
+     */
+    public static String getSlotProvisionChannel(String serverId) {
+        return SERVER_SLOT_PROVISION_PREFIX + serverId;
+    }
+
     /**
      * Get the direct communication channel for a specific proxy.
      * @param proxyId The proxy ID
