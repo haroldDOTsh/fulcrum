@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Service Lifecycle Management System provides a unified, standardized way for all Fulcrum services (backend servers, proxies, limbo servers, etc.) to handle:
+The Service Lifecycle Management System provides a unified, standardized way for all Fulcrum services (backend servers, proxies, and supporting services) to handle:
 - Service registration with the central registry
 - Automatic heartbeat management
 - Graceful shutdown procedures
@@ -15,7 +15,7 @@ The Service Lifecycle Management System provides a unified, standardized way for
 Represents the unique identity of a service:
 - Temporary ID (used during registration)
 - Permanent ID (assigned by registry)
-- Service type (SERVER, PROXY, LIMBO, REGISTRY)
+- Service type (SERVER, PROXY, REGISTRY)
 - Service role (game, lobby, auth, etc.)
 - Network address and port
 - Instance UUID and start time
@@ -171,3 +171,4 @@ The system uses sensible defaults:
 - Heartbeat timeout: 5 seconds
 
 These can be adjusted by extending ServiceLifecycleManager if needed.
+
