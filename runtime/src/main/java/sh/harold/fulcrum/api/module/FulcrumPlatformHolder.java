@@ -54,7 +54,7 @@ public final class FulcrumPlatformHolder {
     /**
      * Clear the stored instance. This should only be used for testing purposes.
      */
-    static void reset() {
+    public static void reset() {
         platform = null;
     }
 }

@@ -40,12 +40,14 @@ public final class FeatureManager {
         // Initialize features in priority order
         plugin.getLogger().info("=== FEATURE INITIALIZATION ORDER ===");
         for (PluginFeature feature : sortedFeatures) {
-            plugin.getLogger().info("Initializing: " + feature.getClass().getSimpleName() + " (priority: " + feature.getPriority() + ")");
+            plugin.getLogger().info("Initializing: " + feature.getClass().getSimpleName()
+                    + " (priority: " + feature.getPriority() + ")");
             try {
                 feature.initialize(plugin, container);
-                plugin.getLogger().info("✓ Successfully initialized: " + feature.getClass().getSimpleName());
+                plugin.getLogger().info("Successfully initialized: " + feature.getClass().getSimpleName());
             } catch (Exception e) {
-                plugin.getLogger().severe("✗ FAILED to initialize: " + feature.getClass().getSimpleName() + " - " + e.getMessage());
+                plugin.getLogger().severe("FAILED to initialize: " + feature.getClass().getSimpleName()
+                        + " - " + e.getMessage());
                 e.printStackTrace();
             }
         }
@@ -69,8 +71,8 @@ public final class FeatureManager {
         Class<?>[] dependencies = feature.getDependencies();
         for (Class<?> dependency : dependencies) {
             if (!container.isAvailable(dependency)) {
-                plugin.getLogger().warning("Feature " + feature.getClass().getSimpleName() +
-                        " has unmet dependency: " + dependency.getSimpleName());
+                plugin.getLogger().warning("Feature " + feature.getClass().getSimpleName()
+                        + " has unmet dependency: " + dependency.getSimpleName());
             }
         }
     }
@@ -85,16 +87,14 @@ public final class FeatureManager {
                 feature.shutdown();
             } catch (Exception e) {
                 if (plugin != null) {
-                    plugin.getLogger().severe("Error shutting down feature: " + feature.getClass().getSimpleName());
+                    plugin.getLogger().severe("Error shutting down feature: "
+                            + feature.getClass().getSimpleName());
                 }
                 e.printStackTrace();
             }
         }
 
-        // Clear the container
-        if (container != null) {
-            container.clear();
-        }
+        clear();
     }
 
     /**
@@ -115,13 +115,15 @@ public final class FeatureManager {
     }
 
     /**
-     * Clear all registered features.
-     * Used mainly for testing.
+     * Clear all registered features and cached state.
+     * Used mainly for testing and reload-safe teardown.
      */
     public static void clear() {
         features.clear();
         if (container != null) {
             container.clear();
         }
+        container = null;
+        plugin = null;
     }
 }

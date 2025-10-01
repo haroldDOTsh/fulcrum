@@ -16,6 +16,7 @@ import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
 import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
+import sh.harold.fulcrum.fundamentals.world.WorldFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
@@ -35,6 +36,11 @@ public final class FulcrumPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        FeatureManager.clear();
+        CommandRegistrar.reset();
+        ServiceLocatorImpl.reset();
+        FulcrumPlatformHolder.reset();
+
         // Save default config if it doesn't exist
         saveDefaultConfig();
         
@@ -55,6 +61,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new GamemodeFeature());
         FeatureManager.register(new ScoreboardFeature());
         FeatureManager.register(new MenuFeature());
+        FeatureManager.register(new WorldFeature()); // World management with FAWE
 
         // Initialize all features with dependency injection
         FeatureManager.initializeAll(this, container);
@@ -99,6 +106,12 @@ public final class FulcrumPlugin extends JavaPlugin {
             moduleManager.disableAll();
         }
         FeatureManager.shutdownAll();
+        CommandRegistrar.reset();
+        ServiceLocatorImpl.reset();
+        FulcrumPlatformHolder.reset();
+        moduleManager = null;
+        container = null;
+        verificationManager = null;
     }
     
 }

@@ -2,12 +2,14 @@ package sh.harold.fulcrum.fundamentals.data;
 
 import sh.harold.fulcrum.api.data.impl.json.JsonConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.sql.SQLException;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -101,6 +103,36 @@ public class FulcrumConnectionAdapter {
                 logger.info("Using MongoDB storage backend: " + database);
                 break;
                 
+            case POSTGRES:
+                String jdbcUrl = config.getString("postgres.jdbc-url", "jdbc:postgresql://localhost:5432/fulcrum");
+                String postgresDatabase = config.getString("postgres.database", "fulcrum");
+                String postgresUsername = config.getString("postgres.username", "fulcrum_user");
+                String postgresPassword = config.getString("postgres.password", "");
+                
+                Map<String, Object> postgresOptions = Map.of(
+                    "jdbcUrl", jdbcUrl,
+                    "database", postgresDatabase,
+                    "username", postgresUsername
+                );
+
+                adapter = new PostgresConnectionAdapter(jdbcUrl, postgresUsername, postgresPassword, postgresDatabase);
+                try (var connection = ((PostgresConnectionAdapter) adapter).getConnection()) {
+                    if (connection.isValid(5)) {
+                        logger.info("Connected to PostgreSQL database '" + postgresDatabase + "'");
+                        logger.info("Using PostgreSQL storage backend: " + postgresDatabase);
+                    } else {
+                        logger.severe("PostgreSQL connection reported invalid for database '" + postgresDatabase + "'");
+                        throw new RuntimeException("PostgreSQL connection validation failed");
+                    }
+                } catch (SQLException ex) {
+                    logger.severe("Failed to connect to PostgreSQL (" + postgresDatabase + "): " + ex.getMessage());
+                    if (adapter instanceof PostgresConnectionAdapter postgresAdapter) {
+                        postgresAdapter.close();
+                    }
+                    throw new RuntimeException("Unable to establish PostgreSQL connection", ex);
+                }
+                break;
+                
             default:
                 throw new IllegalStateException("Unsupported storage type: " + storageType);
         }
@@ -113,6 +145,8 @@ public class FulcrumConnectionAdapter {
             try {
                 if (adapter instanceof MongoConnectionAdapter) {
                     ((MongoConnectionAdapter) adapter).close();
+                } else if (adapter instanceof PostgresConnectionAdapter) {
+                    ((PostgresConnectionAdapter) adapter).close();
                 }
                 // JSON adapter doesn't need explicit disconnect
                 logger.info("Data storage backend disconnected successfully");
