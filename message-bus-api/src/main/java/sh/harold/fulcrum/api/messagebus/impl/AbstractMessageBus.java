@@ -117,7 +117,12 @@ public abstract class AbstractMessageBus implements MessageBus {
     protected String getServerId() {
         return adapter.getServerId();
     }
-    
+
+    @Override
+    public String currentServerId() {
+        return adapter.getServerId();
+    }
+
     @Override
     public void subscribe(String type, MessageHandler handler) {
         subscriptions.computeIfAbsent(type, k -> new CopyOnWriteArrayList<>()).add(handler);
