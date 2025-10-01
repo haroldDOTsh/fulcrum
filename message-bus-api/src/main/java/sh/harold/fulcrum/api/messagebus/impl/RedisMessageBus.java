@@ -43,10 +43,11 @@ public class RedisMessageBus extends AbstractMessageBus {
     private final Map<UUID, CompletableFuture<Object>> pendingRequests;
     private final ScheduledExecutorService scheduler;
     private volatile boolean running = true;
-    
+
     // Redis connections
     private final StatefulRedisConnection<String, String> redisConnection;
     private final StatefulRedisPubSubConnection<String, String> pubSubConnection;
+    private volatile String subscribedServerId;
     
     public RedisMessageBus(MessageBusAdapter adapter) {
         super(adapter);
@@ -115,6 +116,7 @@ public class RedisMessageBus extends AbstractMessageBus {
             ChannelConstants.getResponseChannel(currentServerId)
         ).thenAccept(result -> {
             logger.info("Subscribed to standardized Redis channels for server: " + currentServerId);
+            subscribedServerId = currentServerId;
         }).exceptionally(throwable -> {
             logger.log(Level.WARNING, "Failed to subscribe to initial channels", throwable);
             // Fallback to sync subscription on error
@@ -127,6 +129,7 @@ public class RedisMessageBus extends AbstractMessageBus {
                     ChannelConstants.getResponseChannel(currentServerId)
                 );
                 logger.info("Fallback: Subscribed to standardized Redis channels for server: " + currentServerId);
+                subscribedServerId = currentServerId;
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "Failed to subscribe to channels even with fallback", e);
             }
@@ -169,6 +172,55 @@ public class RedisMessageBus extends AbstractMessageBus {
         
         String channel = type.startsWith("fulcrum.") ? type : "fulcrum.custom." + type;
         logger.info("Subscribed to type '" + type + "' with handler and channel '" + channel + "'");
+    }
+
+    @Override
+    public synchronized void refreshServerIdentity() {
+        if (!running || !adapter.isRunning()) {
+            return;
+        }
+
+        String newServerId = adapter.getServerId();
+        String oldServerId = subscribedServerId;
+
+        if (Objects.equals(newServerId, oldServerId) || newServerId == null || newServerId.isBlank()) {
+            return;
+        }
+
+        try {
+            // Use async commands so we don't block the Redis pub/sub event loop thread.
+            var asyncCommands = pubSubConnection.async();
+
+            if (oldServerId != null) {
+                asyncCommands.unsubscribe(
+                    ChannelConstants.getServerDirectChannel(oldServerId),
+                    ChannelConstants.getRequestChannel(oldServerId),
+                    ChannelConstants.getResponseChannel(oldServerId)
+                ).whenComplete((ignored, throwable) -> {
+                    if (throwable != null) {
+                        logger.log(Level.WARNING, "Failed to unsubscribe from identity channels for server: " + oldServerId, throwable);
+                    } else {
+                        logger.info("RedisMessageBus unsubscribed from identity channels for server: " + oldServerId);
+                    }
+                });
+            }
+
+            asyncCommands.subscribe(
+                ChannelConstants.getServerDirectChannel(newServerId),
+                ChannelConstants.getRequestChannel(newServerId),
+                ChannelConstants.getResponseChannel(newServerId)
+            ).whenComplete((ignored, throwable) -> {
+                if (throwable != null) {
+                    logger.log(Level.SEVERE, "Failed to subscribe to identity channels for server: " + newServerId, throwable);
+                    return;
+                }
+
+                subscribedServerId = newServerId;
+                logger.info("RedisMessageBus updated server ID: " + oldServerId + " -> " + newServerId);
+            });
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, "Failed to refresh Redis channel subscriptions for new server ID", ex);
+        }
     }
     
     private void handleIncomingMessage(String channel, String message) {
