@@ -54,7 +54,7 @@ public class ModuleFeature implements PluginFeature {
         }
 
         try {
-            CommandRegistrar.register(new ModuleListCommand(moduleManager).build());
+            CommandRegistrar.register(new ModuleListCommand(plugin, moduleManager).build());
             commandsRegistered = true;
             plugin.getLogger().info("Registered Module List Command");
         } catch (Exception e) {
