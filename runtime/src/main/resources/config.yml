@@ -9,3 +9,10 @@ development-mode: true
 module:
   # Directory where modules are stored
   directory: modules
+
+# Slot family host filters (docs/slot-family-discovery-notes.md)
+# allow: optional whitelist of familyIds; when empty all families are permitted
+# deny: optional blacklist of familyIds applied after the allow list
+slot-family-filters:
+  allow: []
+  deny: []
