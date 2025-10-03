@@ -1,5 +1,8 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSetter;
+
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
@@ -15,7 +18,7 @@ public class SlotFamilyAdvertisementMessage implements BaseMessage, Serializable
     private static final long serialVersionUID = 1L;
 
     private String serverId;
-    private Map<String, Integer> familyCapacities = new HashMap<>();
+    private final Map<String, Integer> familyCapacities = new HashMap<>();
 
     public SlotFamilyAdvertisementMessage() {
         // jackson
@@ -34,14 +37,16 @@ public class SlotFamilyAdvertisementMessage implements BaseMessage, Serializable
         this.serverId = serverId;
     }
 
+    @JsonProperty("familyCapacities")
     public Map<String, Integer> getFamilyCapacities() {
         return Collections.unmodifiableMap(familyCapacities);
     }
 
-    public void setFamilyCapacities(Map<String, Integer> familyCapacities) {
-        this.familyCapacities.clear();
-        if (familyCapacities != null) {
-            familyCapacities.forEach((family, cap) -> this.familyCapacities.put(family, Math.max(1, cap)));
+    @JsonSetter("familyCapacities")
+    public void setFamilyCapacities(Map<String, Integer> capacities) {
+        familyCapacities.clear();
+        if (capacities != null) {
+            capacities.forEach((family, cap) -> familyCapacities.put(family, Math.max(1, cap)));
         }
     }
 

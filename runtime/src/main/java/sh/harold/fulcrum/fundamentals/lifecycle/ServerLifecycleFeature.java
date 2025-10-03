@@ -19,7 +19,10 @@ import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationResponse;
 import sh.harold.fulcrum.api.messagebus.messages.ServerAnnouncementMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
 import sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand;
+import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
+import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyFilter;
+import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
@@ -29,10 +32,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -41,6 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.Collections;
 import java.util.logging.Logger;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Executors;
@@ -49,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 import org.bukkit.entity.Player;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
+import java.util.stream.Collectors;
 
 /**
  * Server lifecycle feature that manages server registration and heartbeat.
@@ -74,9 +77,10 @@ public class ServerLifecycleFeature implements PluginFeature {
     private final Map<String, ServerInfo> availableServers = new ConcurrentHashMap<>();
 
     private SimpleSlotOrchestrator slotOrchestrator;
+    private SlotFamilyService slotFamilyService;
+    private SlotFamilyFilter slotFamilyFilter = SlotFamilyFilter.allowAll();
+    private volatile List<SlotFamilyDescriptor> activeSlotFamilies = Collections.emptyList();
     private final Set<String> slotProvisionSubscriptions = ConcurrentHashMap.newKeySet();
-    private Map<String, Integer> configuredSlotFamilies = new LinkedHashMap<>();
-    private String primarySlotFamily;
     
     // Proxy discovery and tracking
     private final Map<String, ProxyAnnouncementMessage> knownProxies = new ConcurrentHashMap<>();
@@ -181,10 +185,9 @@ public class ServerLifecycleFeature implements PluginFeature {
         container.register(ServerIdentifier.class, serverIdentifier);
 
         this.slotOrchestrator = new SimpleSlotOrchestrator(messageBus, serverIdentifier);
-        this.configuredSlotFamilies = loadSlotFamilies(role);
-        slotOrchestrator.configureFamilies(configuredSlotFamilies);
-        this.primarySlotFamily = configuredSlotFamilies.keySet().stream().findFirst().orElse(role);
-        LOGGER.info("Configured slot families: " + configuredSlotFamilies);
+        this.slotFamilyService = container.getOptional(SlotFamilyService.class).orElse(null);
+        this.slotFamilyFilter = loadSlotFamilyFilter();
+        refreshSlotFamilies();
 
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(SimpleSlotOrchestrator.class, slotOrchestrator);
@@ -241,6 +244,46 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
     }
 
+    private SlotFamilyFilter loadSlotFamilyFilter() {
+        if (plugin == null) {
+            return SlotFamilyFilter.allowAll();
+        }
+        SlotFamilyFilter.Builder builder = SlotFamilyFilter.builder();
+        ConfigurationSection section = plugin.getConfig().getConfigurationSection("slot-family-filters");
+        if (section != null) {
+            builder.allowAll(section.getStringList("allow"));
+            builder.denyAll(section.getStringList("deny"));
+        }
+        SlotFamilyFilter filter = builder.build();
+        LOGGER.info(() -> "Slot family filter => allow=" + filter.getAllow() + ", deny=" + filter.getDeny());
+        return filter;
+    }
+
+    private void refreshSlotFamilies() {
+        if (slotOrchestrator == null) {
+            return;
+        }
+        if (slotFamilyService == null) {
+            LOGGER.warning("SlotFamilyService unavailable; no slot families will be advertised.");
+            slotOrchestrator.configureFamilies(Collections.emptyList());
+            activeSlotFamilies = Collections.emptyList();
+            return;
+        }
+
+        List<SlotFamilyDescriptor> descriptors = slotFamilyService.refreshDescriptors(slotFamilyFilter);
+        slotOrchestrator.configureFamilies(descriptors);
+        activeSlotFamilies = descriptors;
+
+        if (descriptors.isEmpty()) {
+            LOGGER.warning("No slot families discovered; registry will treat this server as idle.");
+        } else {
+            String summary = descriptors.stream()
+                .map(SlotFamilyDescriptor::getFamilyId)
+                .collect(Collectors.joining(", "));
+            LOGGER.info("Configured slot families: " + summary);
+        }
+    }
+
     private void subscribeToSlotProvisionChannel(String serverId) {
         if (serverId == null || messageBus == null) {
             return;
@@ -265,60 +308,6 @@ public class ServerLifecycleFeature implements PluginFeature {
         LOGGER.info("Subscribed to slot provision channel: " + channel);
     }
 
-    private Map<String, Integer> loadSlotFamilies(String fallbackFamily) {
-        Map<String, Integer> families = new LinkedHashMap<>();
-
-        if (plugin.getConfig().isConfigurationSection("slot-families")) {
-            ConfigurationSection section = plugin.getConfig().getConfigurationSection("slot-families");
-            if (section != null) {
-                for (String key : section.getKeys(false)) {
-                    int max = Math.max(1, section.getInt(key + ".max-slots", section.getInt(key, 1)));
-                    families.put(key, max);
-                }
-            }
-        } else if (plugin.getConfig().isList("slot-families")) {
-            for (Object entry : plugin.getConfig().getList("slot-families")) {
-                if (entry instanceof String) {
-                    families.put((String) entry, 1);
-                } else if (entry instanceof Map) {
-                    Map<?, ?> map = (Map<?, ?>) entry;
-                    Object familyObj = map.get("family");
-                    if (familyObj != null) {
-                        String family = familyObj.toString();
-                        int max = coerceInt(map.get("max-slots"), 1);
-                        families.put(family, Math.max(1, max));
-                    }
-                }
-            }
-        } else if (plugin.getConfig().contains("slot-family")) {
-            String family = plugin.getConfig().getString("slot-family");
-            if (family != null && !family.isBlank()) {
-                int max = plugin.getConfig().getInt("slot-family-max", 1);
-                families.put(family, Math.max(1, max));
-            }
-        }
-
-        if (families.isEmpty() && fallbackFamily != null && !fallbackFamily.isBlank()) {
-            families.put(fallbackFamily, 1);
-        }
-
-        return families;
-    }
-
-    private int coerceInt(Object value, int defaultValue) {
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
-        if (value != null) {
-            try {
-                return Integer.parseInt(value.toString());
-            } catch (NumberFormatException ignored) {
-                return defaultValue;
-            }
-        }
-        return defaultValue;
-    }
-    
     /**
      * Send initial registration request to the Registry Service
      */
@@ -438,8 +427,12 @@ public class ServerLifecycleFeature implements PluginFeature {
             startHeartbeat();
 
             if (slotOrchestrator != null) {
-                String family = primarySlotFamily != null ? primarySlotFamily : serverType.toLowerCase(Locale.ROOT);
-                slotOrchestrator.onServerRegistered(family, environment, maxCapacity);
+                slotOrchestrator.onServerRegistered(
+                    null,
+                    environment,
+                    serverIdentifier.getSoftCap(),
+                    serverIdentifier.getHardCap()
+                );
             }
 
             subscribeToSlotProvisionChannel(permanentId);

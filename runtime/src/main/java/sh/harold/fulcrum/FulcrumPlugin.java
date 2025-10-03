@@ -24,9 +24,11 @@ import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.api.module.impl.ModuleFeature;
 import sh.harold.fulcrum.api.module.impl.ModuleManager;
 import sh.harold.fulcrum.api.module.impl.ModuleVerificationManager;
+import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
+    private SlotFamilyService slotFamilyService;
     private DependencyContainer container;
     private ModuleVerificationManager verificationManager;
 
@@ -46,8 +48,14 @@ public final class FulcrumPlugin extends JavaPlugin {
         
         // Initialize dependency container
         container = new DependencyContainer();
+        ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
 
         CommandRegistrar.hook(this);
+
+        this.moduleManager = new ModuleManager(getLogger(), this);
+        this.slotFamilyService = new SlotFamilyService(moduleManager);
+        container.register(ModuleManager.class, moduleManager);
+        container.register(SlotFamilyService.class, slotFamilyService);
 
         // Register features (order matters - dependencies first)
         FeatureManager.register(new MessageFeature());
@@ -74,21 +82,10 @@ public final class FulcrumPlugin extends JavaPlugin {
         EnvironmentConfig environmentConfig = configParser.loadDefaultConfiguration();
 
         // Create service locator and platform
-        ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
         FulcrumPlatform platform = new FulcrumPlatform(serviceLocator);
-        this.moduleManager = new ModuleManager(getLogger(), this);
-        
+
         // Initialize FulcrumPlatformHolder to make platform accessible to external modules
         FulcrumPlatformHolder.initialize(platform);
-
-        // Register ModuleManager in the container
-        container.register(ModuleManager.class, moduleManager);
-
-        // Re-initialize ModuleFeature now that ModuleManager is available
-        ModuleFeature moduleFeature = FeatureManager.getFeature(ModuleFeature.class);
-        if (moduleFeature != null && !moduleFeature.areCommandsRegistered()) {
-            moduleFeature.initialize(this, container);
-        }
 
         // Note: Module loading is handled by each module's bootstrap phase
         // External modules use BootstrapContextHolder for identification

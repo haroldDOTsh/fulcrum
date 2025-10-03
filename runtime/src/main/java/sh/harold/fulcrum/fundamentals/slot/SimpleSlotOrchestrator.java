@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.fundamentals.slot;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -18,6 +19,7 @@ import sh.harold.fulcrum.api.messagebus.messages.SlotFamilyAdvertisementMessage;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand;
 import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
+import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
 
 /**
  * Pragmatic orchestration layer that advertises slot families and mints logical slots on demand.
@@ -30,7 +32,8 @@ public class SimpleSlotOrchestrator {
     private final AtomicBoolean active = new AtomicBoolean(false);
 
     private final Map<String, FamilyProfile> families = new ConcurrentHashMap<>();
-    private volatile int serverMaxPlayers;
+    private volatile int serverSoftCap;
+    private volatile int serverHardCap;
     private volatile String environment;
     private volatile String primaryFamily;
 
@@ -39,33 +42,134 @@ public class SimpleSlotOrchestrator {
         this.serverIdentifier = serverIdentifier;
     }
 
+    private double computeUsedPlayerBudget() {
+        double used = 0.0;
+        for (FamilyProfile profile : families.values()) {
+            used += profile.slots.size() * resolvePlayerCost(profile.descriptor);
+        }
+        return used;
+    }
+
+    private double availablePlayerBudget() {
+        int budget = serverSoftCap > 0 ? serverSoftCap : serverHardCap;
+        if (budget <= 0) {
+            return 0.0;
+        }
+        return Math.max(0.0, budget - computeUsedPlayerBudget());
+    }
+
+    private int computeAvailableSlots(FamilyProfile profile, double availablePlayers) {
+        double cost = resolvePlayerCost(profile.descriptor);
+        if (cost <= 0.0) {
+            return 0;
+        }
+        return (int) Math.floor(availablePlayers / cost);
+    }
+
+    private double resolvePlayerCost(SlotFamilyDescriptor descriptor) {
+        double factor = descriptor.getPlayerEquivalentFactor() / 10.0;
+        int maxPlayers = resolveMaxPlayers(descriptor);
+        return maxPlayers * factor;
+    }
+
+    private int resolveMaxPlayers(FamilyProfile profile) {
+        return resolveMaxPlayers(profile.descriptor);
+    }
+
+    private int resolveMaxPlayers(SlotFamilyDescriptor descriptor) {
+        int maxPlayers = descriptor.getMaxPlayers();
+        if (maxPlayers > 0) {
+            return maxPlayers;
+        }
+        int fallback = serverSoftCap > 0 ? serverSoftCap : serverHardCap;
+        return Math.max(1, fallback);
+    }
+
+    private void validateActiveFamilies() {
+        if (families.isEmpty()) {
+            return;
+        }
+        if (serverSoftCap <= 0 && serverHardCap <= 0) {
+            return;
+        }
+        families.values().forEach(profile -> logDescriptorWarnings(profile.descriptor));
+    }
+
+    private void logDescriptorWarnings(SlotFamilyDescriptor descriptor) {
+        int hardCap = serverHardCap > 0 ? serverHardCap : serverSoftCap;
+        int maxPlayers = resolveMaxPlayers(descriptor);
+        if (hardCap > 0 && maxPlayers > hardCap) {
+            LOGGER.warning(() -> "Family " + descriptor.getFamilyId() + " declares maxPlayers=" + maxPlayers
+                + " exceeding server hard cap " + hardCap + " (docs/slot-family-discovery-notes.md)");
+        }
+
+        double playerCost = resolvePlayerCost(descriptor);
+        if (hardCap > 0 && playerCost > hardCap) {
+            LOGGER.warning(() -> "Family " + descriptor.getFamilyId() + " consumes "
+                + String.format("%.1f", playerCost) + " player budget which exceeds hard cap " + hardCap
+                + " (docs/slot-family-discovery-notes.md)");
+        }
+    }
+
     /**
-     * Configure the slot families the server can host along with max concurrent slots per family.
+     * Configure the slot families the server can host using module descriptors
+     * (docs/slot-family-discovery-notes.md: Module-led discovery).
      */
-    public void configureFamilies(Map<String, Integer> familyCapacities) {
-        families.clear();
-        if (familyCapacities != null) {
-            familyCapacities.forEach((family, maxSlots) -> {
-                if (family == null || family.isBlank()) {
-                    return;
+    public synchronized void configureFamilies(Collection<SlotFamilyDescriptor> descriptors) {
+        Map<String, FamilyProfile> nextProfiles = new LinkedHashMap<>();
+        if (descriptors != null) {
+            for (SlotFamilyDescriptor descriptor : descriptors) {
+                if (descriptor == null) {
+                    continue;
                 }
-                families.put(family, new FamilyProfile(family, Math.max(1, maxSlots)));
+                String familyId = descriptor.getFamilyId();
+                if (familyId == null || familyId.isBlank()) {
+                    continue;
+                }
+                FamilyProfile profile = families.remove(familyId);
+                if (profile == null) {
+                    profile = new FamilyProfile(descriptor);
+                } else {
+                    profile.updateDescriptor(descriptor);
+                }
+                nextProfiles.put(familyId, profile);
+            }
+        }
+
+        // Families left in the map were removed; drop their slots.
+        if (!families.isEmpty()) {
+            families.values().forEach(profile -> {
+                if (!profile.slots.isEmpty()) {
+                    LOGGER.info(() -> "Clearing " + profile.slots.size() + " slots for retired family " + profile.name);
+                }
+                profile.slots.clear();
             });
         }
+
+        families.clear();
+        families.putAll(nextProfiles);
         primaryFamily = families.keySet().stream().findFirst().orElse(primaryFamily);
+
+        validateActiveFamilies();
+
+        if (active.get()) {
+            advertiseFamilies();
+        }
     }
 
     /**
      * Called once the backend has a permanent ID and is ready to advertise.
      */
-    public void onServerRegistered(String fallbackFamily, String environment, int maxPlayers) {
+    public void onServerRegistered(String fallbackFamily,
+                                   String environment,
+                                   int softCap,
+                                   int hardCap) {
         this.environment = environment;
-        this.serverMaxPlayers = maxPlayers;
-        if (families.isEmpty() && fallbackFamily != null) {
-            families.put(fallbackFamily, new FamilyProfile(fallbackFamily, 1));
-        }
+        this.serverSoftCap = softCap;
+        this.serverHardCap = hardCap;
         primaryFamily = families.keySet().stream().findFirst().orElse(fallbackFamily);
         active.set(true);
+        validateActiveFamilies();
         advertiseFamilies();
     }
 
@@ -87,7 +191,8 @@ public class SimpleSlotOrchestrator {
             return;
         }
         Map<String, Integer> payload = new HashMap<>();
-        families.values().forEach(profile -> payload.put(profile.name, profile.maxSlots));
+        double availablePlayers = availablePlayerBudget();
+        families.forEach((name, profile) -> payload.put(name, computeAvailableSlots(profile, availablePlayers)));
         SlotFamilyAdvertisementMessage message = new SlotFamilyAdvertisementMessage(
             serverIdentifier.getServerId(),
             payload
@@ -113,8 +218,25 @@ public class SimpleSlotOrchestrator {
             LOGGER.warning(() -> "Provision command received for unsupported family " + command.getFamily());
             return false;
         }
-        if (profile.slots.size() >= profile.maxSlots) {
-            LOGGER.warning(() -> "Family " + profile.name + " at capacity (" + profile.maxSlots + ")" );
+        double currentUsed = computeUsedPlayerBudget();
+        double playerCost = resolvePlayerCost(profile.descriptor);
+        double projected = currentUsed + playerCost;
+
+        if (serverHardCap > 0 && projected > serverHardCap) {
+            LOGGER.warning(() -> "Refusing provision for " + profile.name + " because projected budget "
+                + String.format("%.1f", projected) + " exceeds hard cap " + serverHardCap);
+            return false;
+        }
+        if (serverSoftCap > 0 && projected > serverSoftCap) {
+            LOGGER.warning(() -> "Provision for " + profile.name + " exceeds soft cap " + serverSoftCap
+                + " (projected=" + String.format("%.1f", projected) + ")");
+        }
+
+        double availablePlayers = Math.max(0.0, (serverSoftCap > 0 ? serverSoftCap : serverHardCap) - currentUsed);
+        int availableSlots = computeAvailableSlots(profile, availablePlayers);
+        if (availableSlots <= 0) {
+            LOGGER.warning(() -> "Family " + profile.name + " has no remaining budget (availablePlayers="
+                + String.format("%.1f", availablePlayers) + ")");
         }
 
         Map<String, String> metadata = new HashMap<>(command.getReadOnlyMetadata());
@@ -157,8 +279,10 @@ public class SimpleSlotOrchestrator {
             return null;
         }
 
-        if (profile.slots.size() >= profile.maxSlots) {
-            LOGGER.warning(() -> "Debug slot registration exceeds capacity (" + profile.maxSlots + ") for family " + family);
+        double availablePlayers = availablePlayerBudget();
+        int availableSlots = computeAvailableSlots(profile, availablePlayers);
+        if (availableSlots <= 0) {
+            LOGGER.warning(() -> "Debug slot registration exceeds budget for family " + family);
         }
 
         TrackedSlot slot = createSlot(profile, variant, status, onlinePlayers, metadata);
@@ -224,7 +348,8 @@ public class SimpleSlotOrchestrator {
 
     public Map<String, Integer> getFamilyCapacities() {
         Map<String, Integer> snapshot = new LinkedHashMap<>();
-        families.forEach((name, profile) -> snapshot.put(name, profile.maxSlots));
+        double availablePlayers = availablePlayerBudget();
+        families.forEach((name, profile) -> snapshot.put(name, computeAvailableSlots(profile, availablePlayers)));
         return Collections.unmodifiableMap(snapshot);
     }
 
@@ -279,14 +404,19 @@ public class SimpleSlotOrchestrator {
                                    int onlinePlayers,
                                    Map<String, String> metadata) {
         String suffix = generateSuffix(profile.counter.getAndIncrement());
-        TrackedSlot slot = new TrackedSlot(serverIdentifier.getServerId() + suffix, suffix, profile.name);
+        SlotFamilyDescriptor descriptor = profile.descriptor;
+        TrackedSlot slot = new TrackedSlot(serverIdentifier.getServerId() + suffix, suffix, profile.name, descriptor);
         slot.variant = variant;
         slot.status = status != null ? status : SlotLifecycleStatus.AVAILABLE;
         slot.onlinePlayers = Math.max(0, onlinePlayers);
-        slot.maxPlayers = Math.max(1, serverMaxPlayers / Math.max(1, profile.maxSlots));
+        int maxPlayers = resolveMaxPlayers(descriptor);
+        slot.maxPlayers = maxPlayers;
         if (metadata != null && !metadata.isEmpty()) {
             slot.metadata.putAll(metadata);
         }
+        slot.metadata.putIfAbsent("familyMinPlayers", String.valueOf(descriptor.getMinPlayers()));
+        slot.metadata.putIfAbsent("familyMaxPlayers", String.valueOf(maxPlayers));
+        slot.metadata.putIfAbsent("playerEquivalentFactor", String.valueOf(descriptor.getPlayerEquivalentFactor()));
         profile.slots.put(slot.suffix, slot);
         return slot;
     }
@@ -304,13 +434,17 @@ public class SimpleSlotOrchestrator {
 
     private static class FamilyProfile {
         final String name;
-        final int maxSlots;
+        volatile SlotFamilyDescriptor descriptor;
         final AtomicInteger counter = new AtomicInteger(0);
         final Map<String, TrackedSlot> slots = new ConcurrentHashMap<>();
 
-        FamilyProfile(String name, int maxSlots) {
-            this.name = name;
-            this.maxSlots = maxSlots;
+        FamilyProfile(SlotFamilyDescriptor descriptor) {
+            this.name = descriptor.getFamilyId();
+            this.descriptor = descriptor;
+        }
+
+        void updateDescriptor(SlotFamilyDescriptor descriptor) {
+            this.descriptor = descriptor;
         }
     }
 
@@ -318,16 +452,18 @@ public class SimpleSlotOrchestrator {
         final String slotId;
         final String suffix;
         final String family;
+        final SlotFamilyDescriptor descriptor;
         String variant;
         SlotLifecycleStatus status = SlotLifecycleStatus.AVAILABLE;
         int maxPlayers;
         int onlinePlayers;
         final Map<String, String> metadata = new ConcurrentHashMap<>();
 
-        TrackedSlot(String slotId, String suffix, String family) {
+        TrackedSlot(String slotId, String suffix, String family, SlotFamilyDescriptor descriptor) {
             this.slotId = slotId;
             this.suffix = suffix;
             this.family = family;
+            this.descriptor = descriptor;
         }
     }
 }
