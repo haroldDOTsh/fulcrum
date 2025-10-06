@@ -17,6 +17,7 @@ import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
+import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 
 import java.io.InputStream;
 import java.util.Map;
@@ -47,6 +48,7 @@ public class RegistryService {
     
     private MessageBus messageBus;
     private RegistryMessageBusAdapter messageBusAdapter;
+    private SlotProvisionService slotProvisionService;
     
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -157,6 +159,7 @@ public class RegistryService {
             }
             
             messageBus = MessageBusFactory.create(messageBusAdapter);
+            slotProvisionService = new SlotProvisionService(serverRegistry, messageBus);
             
             // Log which implementation was created
             String busClassName = messageBus.getClass().getSimpleName();
@@ -247,6 +250,9 @@ public class RegistryService {
         commandRegistry.register("debug", new DebugCommand(this));
         commandRegistry.register("reload", new ReloadCommand(this));
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
+        if (slotProvisionService != null) {
+            commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
+        }
         
         // Start interactive console
         console = new InteractiveConsole(commandRegistry);
@@ -312,7 +318,7 @@ public class RegistryService {
      */
     public void reloadConfiguration() {
         LOGGER.info("Reloading configuration...");
-        
+
         try {
             Map<String, Object> newConfig = loadYamlConfig();
             
@@ -343,6 +349,10 @@ public class RegistryService {
         } catch (Exception e) {
             LOGGER.error("Failed to reload configuration", e);
         }
+    }
+
+    public SlotProvisionService getSlotProvisionService() {
+        return slotProvisionService;
     }
     
     /**
