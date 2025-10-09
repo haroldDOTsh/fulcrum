@@ -93,6 +93,20 @@ public final class ChannelConstants {
 
     /** Slot family capability advertisement */
     public static final String REGISTRY_SLOT_FAMILY_ADVERTISEMENT = "fulcrum.registry.slot.family";
+    /** Player matchmaking requests from proxies */
+    public static final String REGISTRY_PLAYER_REQUEST = "fulcrum.registry.player.request";
+    /** Registry broadcast used to locate the proxy currently hosting a player */
+    public static final String REGISTRY_PLAYER_LOCATE_REQUEST = "fulcrum.registry.player.locate";
+    /** Proxies respond to the registry with the result of a locate request */
+    public static final String REGISTRY_PLAYER_LOCATE_RESPONSE = "fulcrum.registry.player.locate.response";
+
+    /** Prefix for player routing commands to proxies */
+    private static final String PLAYER_ROUTE_PREFIX = "fulcrum.registry.player.route.";
+
+    /** Player routing acknowledgement channel */
+    public static final String PLAYER_ROUTE_ACK = "fulcrum.registry.player.route.ack";
+    private static final String SERVER_PLAYER_ROUTE_PREFIX = "fulcrum.server.player.route.";
+
 
     /** Prefix for directed slot provision commands */
     public static final String SERVER_SLOT_PROVISION_PREFIX = "fulcrum.server.slot.provision.";
@@ -209,6 +223,19 @@ public final class ChannelConstants {
      */
     public static String getSlotProvisionChannel(String serverId) {
         return SERVER_SLOT_PROVISION_PREFIX + serverId;
+    }
+
+    /**
+     * Get the player routing channel for a proxy.
+     * @param proxyId the proxy identifier
+     * @return the channel name used for routing commands
+     */
+    public static String getPlayerRouteChannel(String proxyId) {
+        return PLAYER_ROUTE_PREFIX + proxyId;
+    }
+
+    public static String getServerPlayerRouteChannel(String serverId) {
+        return SERVER_PLAYER_ROUTE_PREFIX + serverId;
     }
 
     /**
