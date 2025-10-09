@@ -79,7 +79,7 @@ Desktop.ini
 GEMINI.md
 # Minecraft Development
 # Server files
-server/
+/server/
 test-server/
 run/
 runtime-velocity/run/
