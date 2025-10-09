@@ -21,6 +21,10 @@ import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
 import sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand;
 import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
+import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
+import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyFilter;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -81,6 +85,8 @@ public class ServerLifecycleFeature implements PluginFeature {
     private SlotFamilyFilter slotFamilyFilter = SlotFamilyFilter.allowAll();
     private volatile List<SlotFamilyDescriptor> activeSlotFamilies = Collections.emptyList();
     private final Set<String> slotProvisionSubscriptions = ConcurrentHashMap.newKeySet();
+    private final Set<String> playerRouteSubscriptions = ConcurrentHashMap.newKeySet();
+    private final ObjectMapper playerRouteMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     
     // Proxy discovery and tracking
     private final Map<String, ProxyAnnouncementMessage> knownProxies = new ConcurrentHashMap<>();
@@ -284,6 +290,35 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
     }
 
+
+    private void subscribeToPlayerRouteChannel(String serverId) {
+        if (messageBus == null || serverId == null || serverId.isBlank()) {
+            return;
+        }
+        if (!playerRouteSubscriptions.add(serverId)) {
+            return; // already subscribed
+        }
+        String channel = ChannelConstants.getServerPlayerRouteChannel(serverId);
+        messageBus.subscribe(channel, envelope -> {
+            try {
+                PlayerRouteCommand command = playerRouteMapper.convertValue(envelope.getPayload(), PlayerRouteCommand.class);
+                if (command == null) {
+                    return;
+                }
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
+                    if (locator != null) {
+                        locator.findService(PlayerRoutingListener.class)
+                            .ifPresent(listener -> listener.handleRouteCommand(command));
+                    }
+                });
+            } catch (Exception ex) {
+                LOGGER.warning("Failed to handle player route command from registry: " + ex.getMessage());
+            }
+        });
+        LOGGER.info("Subscribed to player route channel: " + channel);
+    }
+
     private void subscribeToSlotProvisionChannel(String serverId) {
         if (serverId == null || messageBus == null) {
             return;
@@ -436,6 +471,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
 
             subscribeToSlotProvisionChannel(permanentId);
+            subscribeToPlayerRouteChannel(permanentId);
 
             if (messageBus != null) {
                 messageBus.refreshServerIdentity();
@@ -640,6 +676,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     
     private void setupMessageHandlers() {
         subscribeToSlotProvisionChannel(serverIdentifier.getServerId());
+        subscribeToPlayerRouteChannel(serverIdentifier.getServerId());
 
         // Handle proxy announcements (new proxy coming online)
         messageBus.subscribe(ChannelConstants.PROXY_ANNOUNCEMENT, envelope -> {
@@ -957,3 +994,4 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
     }
 }
+
