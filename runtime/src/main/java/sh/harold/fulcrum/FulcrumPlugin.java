@@ -25,6 +25,11 @@ import sh.harold.fulcrum.api.module.impl.ModuleFeature;
 import sh.harold.fulcrum.api.module.impl.ModuleManager;
 import sh.harold.fulcrum.api.module.impl.ModuleVerificationManager;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
+import sh.harold.fulcrum.minigame.MinigameEngine;
+import sh.harold.fulcrum.minigame.MinigameModule;
+import sh.harold.fulcrum.minigame.MinigameEngineFeature;
+import sh.harold.fulcrum.minigame.MinigameRegistration;
+import sh.harold.fulcrum.fundamentals.minigame.debug.DebugMinigameFeature;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
@@ -70,9 +75,14 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ScoreboardFeature());
         FeatureManager.register(new MenuFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
+        FeatureManager.register(new MinigameEngineFeature());
+        FeatureManager.register(new DebugMinigameFeature());
 
         // Initialize all features with dependency injection
         FeatureManager.initializeAll(this, container);
+
+        container.getOptional(MinigameEngine.class)
+            .ifPresent(this::registerMinigameModules);
 
         // Environment detection was handled during bootstrap phase
         getLogger().info("Fulcrum starting with role-based module detection");
@@ -97,6 +107,18 @@ public final class FulcrumPlugin extends JavaPlugin {
         getLogger().info("Fulcrum started successfully");
     }
 
+    private void registerMinigameModules(MinigameEngine engine) {
+        moduleManager.getLoadedModules().forEach(metadata -> {
+            if (metadata.instance() instanceof MinigameModule minigameModule) {
+                for (MinigameRegistration registration : minigameModule.registerMinigames(engine)) {
+                    engine.registerRegistration(registration);
+                    getLogger().info(() -> "Registered minigame family " + registration.getFamilyId()
+                        + " from module " + metadata.name());
+                }
+            }
+        });
+    }
+
     @Override
     public void onDisable() {
         if (moduleManager != null) {
@@ -112,3 +134,5 @@ public final class FulcrumPlugin extends JavaPlugin {
     }
     
 }
+
+
