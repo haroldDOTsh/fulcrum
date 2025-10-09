@@ -1112,6 +1112,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     messageBusFeature.updateProxyId(assignedProxyId);
                     logger.info("Updated MessageBusFeature with permanent proxy ID");
                 });
+                serviceLocator.getService(sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature.class)
+                    .ifPresent(feature -> feature.onProxyIdUpdated(assignedProxyId));
             }
             
             // Now register in Redis with permanent ID
