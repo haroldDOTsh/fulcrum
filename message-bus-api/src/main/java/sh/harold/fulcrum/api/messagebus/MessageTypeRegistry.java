@@ -62,6 +62,10 @@ public class MessageTypeRegistry {
                 sh.harold.fulcrum.api.messagebus.messages.SlotFamilyAdvertisementMessage.class);
             register("slot.provision.command",
                 sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand.class);
+            register("player.locate.request",
+                sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest.class);
+            register("player.locate.response",
+                sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {

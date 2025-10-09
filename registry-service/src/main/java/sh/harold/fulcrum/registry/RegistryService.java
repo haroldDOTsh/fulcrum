@@ -18,6 +18,7 @@ import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
+import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 
 import java.io.InputStream;
 import java.util.Map;
@@ -49,6 +50,7 @@ public class RegistryService {
     private MessageBus messageBus;
     private RegistryMessageBusAdapter messageBusAdapter;
     private SlotProvisionService slotProvisionService;
+    private PlayerRoutingService playerRoutingService;
     
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -160,6 +162,8 @@ public class RegistryService {
             
             messageBus = MessageBusFactory.create(messageBusAdapter);
             slotProvisionService = new SlotProvisionService(serverRegistry, messageBus);
+            playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry);
+            playerRoutingService.initialize();
             
             // Log which implementation was created
             String busClassName = messageBus.getClass().getSimpleName();
@@ -253,6 +257,7 @@ public class RegistryService {
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
         }
+        commandRegistry.register("debugminigamepipeline", new DebugMinigamePipelineCommand(messageBus, proxyRegistry));
         
         // Start interactive console
         console = new InteractiveConsole(commandRegistry);
@@ -406,6 +411,10 @@ public class RegistryService {
             // Shutdown registration handler
             if (registrationHandler != null) {
                 registrationHandler.shutdown();
+            }
+            
+            if (playerRoutingService != null) {
+                playerRoutingService.shutdown();
             }
             
             // MessageBus shutdown is handled by the adapter
@@ -564,3 +573,4 @@ public class RegistryService {
         service.start();
     }
 }
+
