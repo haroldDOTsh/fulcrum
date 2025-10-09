@@ -92,6 +92,8 @@ version_manifest.json
 # Plugin development
 plugins/
 world/
+!**/src/main/java/**/world/
+!**/src/test/java/**/world/
 world_nether/
 world_the_end/
 logs/
