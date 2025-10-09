@@ -63,6 +63,7 @@ public class VelocityFeatureManager {
         registerFeature(new VelocityMessageBusFeature());
         registerFeature(new VelocityDataAPIFeature());
         registerFeature(new VelocityServerLifecycleFeature(proxyServer, logger, lifecycleConfig, scheduler, developmentMode));
+        registerFeature(new sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature());
         registerFeature(new VelocityPlayerDataFeature());
         registerFeature(new VelocityCommandFeature());
     }
