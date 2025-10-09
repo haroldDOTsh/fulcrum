@@ -9,6 +9,7 @@ import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -35,44 +36,49 @@ public class SlotProvisionService {
             return Optional.empty();
         }
 
-        RegisteredServerData candidate = selectCandidate(familyId);
-        if (candidate == null) {
+        List<RegisteredServerData> candidates = selectCandidates(familyId);
+        if (candidates.isEmpty()) {
             LOGGER.debug("No provision candidate available for family {}", familyId);
             return Optional.empty();
         }
 
-        if (!candidate.reserveFamilySlot(familyId)) {
-            LOGGER.debug("Failed to reserve budget on server {} for family {} (race)",
-                candidate.getServerId(), familyId);
-            return Optional.empty();
+        for (RegisteredServerData candidate : candidates) {
+            if (!candidate.reserveFamilySlot(familyId)) {
+                LOGGER.debug("Failed to reserve budget on server {} for family {} (race)",
+                    candidate.getServerId(), familyId);
+                continue;
+            }
+
+            SlotProvisionCommand command = new SlotProvisionCommand(candidate.getServerId(), familyId);
+            if (metadata != null && !metadata.isEmpty()) {
+                command.setMetadata(metadata);
+            }
+
+            try {
+                messageBus.broadcast(ChannelConstants.getSlotProvisionChannel(candidate.getServerId()), command);
+                int remaining = candidate.getAvailableFamilySlots(familyId);
+                LOGGER.info("Provisioning {} on {} ({} slots remaining)",
+                    familyId, candidate.getServerId(), remaining);
+                return Optional.of(new ProvisionResult(candidate.getServerId(), familyId, remaining, command));
+            } catch (Exception ex) {
+                candidate.releaseFamilySlot(familyId);
+                LOGGER.error("Failed to dispatch SlotProvisionCommand to {} for family {}", candidate.getServerId(), familyId, ex);
+            }
         }
 
-        SlotProvisionCommand command = new SlotProvisionCommand(candidate.getServerId(), familyId);
-        if (metadata != null && !metadata.isEmpty()) {
-            command.setMetadata(metadata);
-        }
-
-        try {
-            messageBus.broadcast(ChannelConstants.getSlotProvisionChannel(candidate.getServerId()), command);
-            int remaining = candidate.getAvailableFamilySlots(familyId);
-            LOGGER.info("Provisioning {} on {} ({} slots remaining)",
-                familyId, candidate.getServerId(), remaining);
-            return Optional.of(new ProvisionResult(candidate.getServerId(), familyId, remaining, command));
-        } catch (Exception ex) {
-            candidate.releaseFamilySlot(familyId);
-            LOGGER.error("Failed to dispatch SlotProvisionCommand to {} for family {}", candidate.getServerId(), familyId, ex);
-            return Optional.empty();
-        }
+        LOGGER.warn("Failed to provision family {} on any candidate backend", familyId);
+        return Optional.empty();
     }
 
-    private RegisteredServerData selectCandidate(String familyId) {
+    private List<RegisteredServerData> selectCandidates(String familyId) {
         return serverRegistry.getAllServers().stream()
             .filter(server -> isProvisionable(server, familyId))
-            .max(Comparator
+            .sorted(Comparator
                 .comparingInt((RegisteredServerData server) -> server.getAvailableFamilySlots(familyId))
                 .thenComparing((a, b) -> Integer.compare(b.getPlayerCount(), a.getPlayerCount()))
-                .thenComparing(RegisteredServerData::getServerId))
-            .orElse(null);
+                .thenComparing(RegisteredServerData::getServerId)
+                .reversed())
+            .toList();
     }
 
     private boolean isProvisionable(RegisteredServerData server, String familyId) {

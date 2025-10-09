@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
@@ -30,6 +32,7 @@ public class SimpleSlotOrchestrator {
     private final MessageBus messageBus;
     private final ServerIdentifier serverIdentifier;
     private final AtomicBoolean active = new AtomicBoolean(false);
+    private final CopyOnWriteArrayList<Consumer<ProvisionedSlot>> provisionListeners = new CopyOnWriteArrayList<>();
 
     private final Map<String, FamilyProfile> families = new ConcurrentHashMap<>();
     private volatile int serverSoftCap;
@@ -241,13 +244,46 @@ public class SimpleSlotOrchestrator {
 
         Map<String, String> metadata = new HashMap<>(command.getReadOnlyMetadata());
         metadata.putIfAbsent("requestId", command.getRequestId().toString());
+        metadata.putIfAbsent("family", profile.name);
+        if (command.getVariant() != null && !command.getVariant().isBlank()) {
+            metadata.putIfAbsent("variant", command.getVariant());
+        }
 
-        TrackedSlot slot = createSlot(profile, command.getVariant(), SlotLifecycleStatus.AVAILABLE, 0, metadata);
+        TrackedSlot slot = createSlot(profile, command.getVariant(), SlotLifecycleStatus.PROVISIONING, 0, metadata);
         if (slot == null) {
             return false;
         }
+
         broadcastSlotUpdate(slot);
+        notifyProvisioned(slot);
         return true;
+    }
+
+    public void addProvisionListener(Consumer<ProvisionedSlot> listener) {
+        if (listener == null) {
+            return;
+        }
+        provisionListeners.addIfAbsent(listener);
+    }
+
+    private void notifyProvisioned(TrackedSlot slot) {
+        if (provisionListeners.isEmpty()) {
+            return;
+        }
+        Map<String, String> metadataSnapshot = new HashMap<>(slot.metadata);
+        ProvisionedSlot snapshot = new ProvisionedSlot(
+            slot.slotId,
+            slot.family,
+            slot.variant,
+            Collections.unmodifiableMap(metadataSnapshot)
+        );
+        provisionListeners.forEach(listener -> {
+            try {
+                listener.accept(snapshot);
+            } catch (Exception ex) {
+                LOGGER.warning(() -> "Provision listener threw exception: " + ex.getMessage());
+            }
+        });
     }
 
     /**
@@ -312,6 +348,28 @@ public class SimpleSlotOrchestrator {
         slot.onlinePlayers = Math.max(0, onlinePlayers);
         if (metadata != null && !metadata.isEmpty()) {
             slot.metadata.putAll(metadata);
+        }
+        broadcastSlotUpdate(slot);
+        return true;
+    }
+
+    /**
+     * Update metadata for an existing slot without altering lifecycle state.
+     */
+    public boolean updateSlotMetadata(String slotId, Map<String, String> metadata) {
+        TrackedSlot slot = findSlot(slotId);
+        if (slot == null) {
+            LOGGER.warning(() -> "Attempted to update metadata for unknown slot " + slotId);
+            return false;
+        }
+        if (metadata != null && !metadata.isEmpty()) {
+            metadata.forEach((key, value) -> {
+                if (value == null) {
+                    slot.metadata.remove(key);
+                } else {
+                    slot.metadata.put(key, value);
+                }
+            });
         }
         broadcastSlotUpdate(slot);
         return true;
@@ -414,6 +472,10 @@ public class SimpleSlotOrchestrator {
         if (metadata != null && !metadata.isEmpty()) {
             slot.metadata.putAll(metadata);
         }
+        slot.metadata.putIfAbsent("family", profile.name);
+        if (variant != null && !variant.isBlank()) {
+            slot.metadata.put("variant", variant);
+        }
         slot.metadata.putIfAbsent("familyMinPlayers", String.valueOf(descriptor.getMinPlayers()));
         slot.metadata.putIfAbsent("familyMaxPlayers", String.valueOf(maxPlayers));
         slot.metadata.putIfAbsent("playerEquivalentFactor", String.valueOf(descriptor.getPlayerEquivalentFactor()));
@@ -466,4 +528,13 @@ public class SimpleSlotOrchestrator {
             this.descriptor = descriptor;
         }
     }
+
+    public record ProvisionedSlot(String slotId,
+                                  String familyId,
+                                  String variant,
+                                  Map<String, String> metadata) {
+    }
+
 }
+
+

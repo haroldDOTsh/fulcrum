@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
@@ -70,6 +71,7 @@ public class SlotProvisionCommand implements BaseMessage, Serializable {
         this.metadata = metadata != null ? new HashMap<>(metadata) : new HashMap<>();
     }
 
+    @JsonIgnore
     public Map<String, String> getReadOnlyMetadata() {
         return Collections.unmodifiableMap(metadata);
     }
