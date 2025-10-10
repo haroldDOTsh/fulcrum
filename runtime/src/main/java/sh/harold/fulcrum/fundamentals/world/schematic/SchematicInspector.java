@@ -10,8 +10,8 @@ import com.sk89q.jnbt.StringTag;
 import com.sk89q.jnbt.Tag;
 import com.sk89q.worldedit.extent.clipboard.BlockArrayClipboard;
 import com.sk89q.worldedit.extent.clipboard.Clipboard;
+import com.sk89q.worldedit.extent.clipboard.io.BuiltInClipboardFormat;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormat;
-import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormats;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardReader;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.Region;
@@ -46,14 +46,8 @@ public class SchematicInspector {
     }
 
     private static ClipboardFormat resolveDefaultFormat() {
-        ClipboardFormat format = ClipboardFormats.findByExtension("schem");
-        if (format == null) {
-            format = ClipboardFormats.findByAlias("schematic");
-        }
-        if (format == null) {
-            format = ClipboardFormats.findByAlias("schem");
-        }
-        return format;
+        // Sponge .schem is the canonical format across modern editors.
+        return BuiltInClipboardFormat.SPONGE_SCHEMATIC;
     }
 
     private final Logger logger;
@@ -424,9 +418,6 @@ public class SchematicInspector {
 
     public record InspectionResult(BlockArrayClipboard clipboard, List<PoiDefinition> pois, boolean originDetected) {}
 }
-
-
-
 
 
 
