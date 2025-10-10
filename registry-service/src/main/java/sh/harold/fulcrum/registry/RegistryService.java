@@ -256,6 +256,7 @@ public class RegistryService {
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
+            commandRegistry.register("provisionminigame", new ProvisionMinigameCommand(slotProvisionService));
         }
         commandRegistry.register("debugminigamepipeline", new DebugMinigamePipelineCommand(messageBus, proxyRegistry));
         
@@ -573,4 +574,3 @@ public class RegistryService {
         service.start();
     }
 }
-
