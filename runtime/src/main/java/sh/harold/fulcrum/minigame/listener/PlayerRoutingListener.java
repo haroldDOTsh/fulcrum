@@ -97,6 +97,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             command.getSlotId(),
             metadata.getOrDefault("family", ""),
             metadata.getOrDefault("variant", ""),
+            command.getProxyId(),
             target.getWorld() != null ? target.getWorld().getName() : "",
             metadata
         );
@@ -202,4 +203,3 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
     private record PendingTeleport(Location location) {
     }
 }
-

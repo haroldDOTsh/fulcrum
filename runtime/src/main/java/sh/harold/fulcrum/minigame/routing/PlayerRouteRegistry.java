@@ -25,6 +25,7 @@ public final class PlayerRouteRegistry {
             assignment.slotId(),
             assignment.familyId(),
             assignment.variant(),
+            assignment.proxyId(),
             assignment.targetWorld(),
             metadata
         );
@@ -54,6 +55,7 @@ public final class PlayerRouteRegistry {
                                   String slotId,
                                   String familyId,
                                   String variant,
+                                  String proxyId,
                                   String targetWorld,
                                   Map<String, String> metadata) {
     }

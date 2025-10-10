@@ -56,6 +56,7 @@ import org.bukkit.entity.Player;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.util.stream.Collectors;
+import java.util.Optional;
 
 /**
  * Server lifecycle feature that manages server registration and heartbeat.
@@ -107,6 +108,9 @@ public class ServerLifecycleFeature implements PluginFeature {
         this.plugin = plugin;
         this.container = container;
         this.startTime = System.currentTimeMillis();
+        if (container != null) {
+            container.register(ServerLifecycleFeature.class, this);
+        }
         
         // Check development mode from config
         boolean developmentMode = plugin.getConfig().getBoolean("development-mode", false);
@@ -668,6 +672,10 @@ public class ServerLifecycleFeature implements PluginFeature {
             
             messageBus.send(ChannelConstants.getProxyDirectChannel(proxyId), "server.deregistration", deregister);
         }
+
+        if (container != null) {
+            container.unregister(ServerLifecycleFeature.class);
+        }
         
         LOGGER.info("Server lifecycle shutting down");
     }
@@ -864,6 +872,10 @@ public class ServerLifecycleFeature implements PluginFeature {
             // Don't retry - wait for proxy announcements
         }
     }
+
+    public Optional<String> getCurrentProxyId() {
+        return Optional.ofNullable(registeredProxyId.get());
+    }
     
     private void handleEvacuationRequest(ServerEvacuationRequest request) {
         if (!request.getServerId().equals(serverIdentifier.getServerId())) {
@@ -994,4 +1006,3 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
     }
 }
-
