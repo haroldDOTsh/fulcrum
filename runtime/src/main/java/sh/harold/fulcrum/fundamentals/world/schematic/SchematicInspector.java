@@ -306,7 +306,7 @@ public class SchematicInspector {
         if (block == null) {
             return false;
         }
-        String id = block.getBlockType().getId().toLowerCase(Locale.ROOT);
+        String id = block.getBlockType().id().toLowerCase(Locale.ROOT);
         return id.contains("sign");
     }
 
