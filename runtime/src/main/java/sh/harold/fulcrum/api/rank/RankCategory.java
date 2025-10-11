@@ -5,17 +5,17 @@ package sh.harold.fulcrum.api.rank;
  */
 public enum RankCategory {
     /**
-     * Standard player ranks (DEFAULT, VIP, MVP, etc.)
+     * Standard player ranks (DEFAULT, DONATOR_1-3, etc.)
      */
     PLAYER,
     
     /**
-     * Subscription-based ranks (MVP_PLUS, MVP_PLUS_PLUS)
+     * Subscription-based ranks (e.g., DONATOR_4)
      */
     SUBSCRIPTION,
     
     /**
-     * Staff ranks (HELPER, MODERATOR, ADMIN)
+     * Staff ranks (HELPER, STAFF)
      */
     STAFF,
     

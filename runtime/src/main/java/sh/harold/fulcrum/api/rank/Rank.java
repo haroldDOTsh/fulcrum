@@ -7,22 +7,20 @@ import net.kyori.adventure.text.format.NamedTextColor;
  * Supports permanent ranks, staff ranks, and subscription ranks with layering.
  */
 public enum Rank {
-    // Player ranks
+    // Base player rank
     DEFAULT("Default", "&7", 0, "", "", NamedTextColor.GRAY, RankCategory.PLAYER),
-    VIP("VIP", "&a", 10, "&a[VIP]", "&a[V]", NamedTextColor.GREEN, RankCategory.PLAYER),
-    MVP("MVP", "&b", 20, "&b[MVP]", "&b[M]", NamedTextColor.AQUA, RankCategory.PLAYER),
     
-    // Special ranks
-    YOUTUBER("YouTuber", "&c", 15, "&c[YT]", "&c[YT]", NamedTextColor.RED, RankCategory.SPECIAL),
+    // Donator ranks (permanent purchases)
+    DONATOR_1("Donator I", "&a", 10, "&a[Donator I]", "&a[D1]", NamedTextColor.GREEN, RankCategory.PLAYER),
+    DONATOR_2("Donator II", "&b", 20, "&b[Donator II]", "&b[D2]", NamedTextColor.AQUA, RankCategory.PLAYER),
+    DONATOR_3("Donator III", "&d", 30, "&d[Donator III]", "&d[D3]", NamedTextColor.LIGHT_PURPLE, RankCategory.PLAYER),
     
-    // Subscription ranks
-    MVP_PLUS("MVP+", "&b", 30, "&b[MVP&6+&b]", "&b[M&6+&b]", NamedTextColor.AQUA, RankCategory.SUBSCRIPTION),
-    MVP_PLUS_PLUS("MVP++", "&6", 40, "&6[MVP&c++&6]", "&6[M&c++&6]", NamedTextColor.GOLD, RankCategory.SUBSCRIPTION),
+    // Subscription rank
+    DONATOR_4("Donator IV", "&6", 40, "&6[Donator IV]", "&6[D4]", NamedTextColor.GOLD, RankCategory.SUBSCRIPTION),
     
     // Staff ranks
     HELPER("Helper", "&9", 100, "&9[HELPER]", "&9[H]", NamedTextColor.BLUE, RankCategory.STAFF),
-    MODERATOR("Moderator", "&2", 200, "&2[MOD]", "&2[M]", NamedTextColor.DARK_GREEN, RankCategory.STAFF),
-    ADMIN("Admin", "&4", 300, "&4[ADMIN]", "&4[A]", NamedTextColor.DARK_RED, RankCategory.STAFF);
+    STAFF("Staff", "&4", 200, "&4[STAFF]", "&4[S]", NamedTextColor.DARK_RED, RankCategory.STAFF);
     
     private final String displayName;
     private final String colorCode;

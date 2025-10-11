@@ -6,9 +6,6 @@ import com.velocitypowered.api.proxy.Player;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
-import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
-
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -46,17 +43,9 @@ public final class VelocityRankUtils {
                     return false;
                 }
                 
-                // Get the player's rank from the document
-                String rankStr = playerDoc.get("rank", "DEFAULT");
-                Rank playerRank;
-                
-                try {
-                    playerRank = Rank.valueOf(rankStr.toUpperCase());
-                } catch (IllegalArgumentException e) {
-                    logger.warn("Invalid rank '{}' for player {}, defaulting to DEFAULT", 
-                               rankStr, player.getUsername());
-                    playerRank = Rank.DEFAULT;
-                }
+                // Get the player's rank from the document (supports new rankInfo schema)
+                String rankStr = resolvePrimaryRank(playerDoc);
+                Rank playerRank = parseRank(rankStr, player.getUsername(), logger);
                 
                 boolean hasPermission = playerRank.getPriority() >= requiredRank.getPriority();
                 
@@ -124,7 +113,7 @@ public final class VelocityRankUtils {
     }
     
     /**
-     * Checks if a player is admin (ADMIN rank).
+     * Checks if a player is admin (STAFF rank).
      * 
      * @param player the player to check
      * @param dataAPI the DataAPI instance
@@ -132,11 +121,11 @@ public final class VelocityRankUtils {
      * @return CompletableFuture with true if the player is admin
      */
     public static CompletableFuture<Boolean> isAdmin(Player player, DataAPI dataAPI, Logger logger) {
-        return hasRankOrHigher(player, Rank.ADMIN, dataAPI, logger);
+        return hasRankOrHigher(player, Rank.STAFF, dataAPI, logger);
     }
     
     /**
-     * Checks if a CommandSource is admin.
+     * Checks if a CommandSource is admin (STAFF).
      * Console is always treated as admin.
      * 
      * @param source the command source to check
@@ -175,15 +164,8 @@ public final class VelocityRankUtils {
                     return Rank.DEFAULT;
                 }
                 
-                String rankStr = playerDoc.get("rank", "DEFAULT");
-                
-                try {
-                    return Rank.valueOf(rankStr.toUpperCase());
-                } catch (IllegalArgumentException e) {
-                    logger.warn("Invalid rank '{}' for player {}, returning DEFAULT", 
-                               rankStr, player.getUsername());
-                    return Rank.DEFAULT;
-                }
+                String rankStr = resolvePrimaryRank(playerDoc);
+                return parseRank(rankStr, player.getUsername(), logger);
             } catch (Exception e) {
                 logger.error("Error getting rank for {}: {}", player.getUsername(), e.getMessage());
                 return Rank.DEFAULT;
@@ -193,7 +175,7 @@ public final class VelocityRankUtils {
     
     /**
      * Gets the effective rank of a CommandSource.
-     * Console is treated as ADMIN.
+     * Console is treated as STAFF.
      * 
      * @param source the command source
      * @param dataAPI the DataAPI instance
@@ -202,7 +184,7 @@ public final class VelocityRankUtils {
      */
     public static CompletableFuture<Rank> getEffectiveRank(CommandSource source, DataAPI dataAPI, Logger logger) {
         if (source instanceof ConsoleCommandSource) {
-            return CompletableFuture.completedFuture(Rank.ADMIN);
+            return CompletableFuture.completedFuture(Rank.STAFF);
         }
         
         if (source instanceof Player) {
@@ -210,5 +192,27 @@ public final class VelocityRankUtils {
         }
         
         return CompletableFuture.completedFuture(Rank.DEFAULT);
+    }
+    
+    private static String resolvePrimaryRank(Document playerDoc) {
+        String primary = playerDoc.get("rankInfo.primary", null);
+        if (primary != null && !primary.isBlank()) {
+            return primary;
+        }
+        String fallback = playerDoc.get("rank", null);
+        if (fallback == null || fallback.isBlank()) {
+            return Rank.DEFAULT.name();
+        }
+        return fallback;
+    }
+    
+    private static Rank parseRank(String rawRank, String username, Logger logger) {
+        String candidate = (rawRank == null || rawRank.isBlank()) ? Rank.DEFAULT.name() : rawRank;
+        try {
+            return Rank.valueOf(candidate.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            logger.warn("Invalid rank '{}' for player {}, defaulting to DEFAULT", candidate, username);
+            return Rank.DEFAULT;
+        }
     }
 }

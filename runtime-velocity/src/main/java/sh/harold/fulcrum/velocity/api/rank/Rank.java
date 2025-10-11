@@ -5,22 +5,18 @@ package sh.harold.fulcrum.velocity.api.rank;
  * Copy of the main Rank enum for use in Velocity context.
  */
 public enum Rank {
-    // Player ranks
+    // Base player rank
     DEFAULT("Default", 0),
-    VIP("VIP", 10),
-    MVP("MVP", 20),
     
-    // Special ranks
-    YOUTUBER("YouTuber", 15),
-    
-    // Subscription ranks
-    MVP_PLUS("MVP+", 30),
-    MVP_PLUS_PLUS("MVP++", 40),
+    // Donator ranks
+    DONATOR_1("Donator I", 10),
+    DONATOR_2("Donator II", 20),
+    DONATOR_3("Donator III", 30),
+    DONATOR_4("Donator IV", 40),
     
     // Staff ranks
     HELPER("Helper", 100),
-    MODERATOR("Moderator", 200),
-    ADMIN("Admin", 300);
+    STAFF("Staff", 200);
     
     private final String displayName;
     private final int priority;
@@ -55,6 +51,6 @@ public enum Rank {
      * Checks if this rank is admin.
      */
     public boolean isAdmin() {
-        return this == ADMIN;
+        return this == STAFF;
     }
 }

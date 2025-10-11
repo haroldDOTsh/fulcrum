@@ -76,7 +76,7 @@ public final class RankUtils {
     }
     
     /**
-     * Checks if a player is staff (HELPER, MODERATOR, ADMIN, or higher).
+     * Checks if a player is staff (HELPER, STAFF, or higher).
      * This includes any rank with STAFF category or higher priority than HELPER.
      *
      * @param player the player to check
@@ -116,7 +116,7 @@ public final class RankUtils {
      * Checks if a player has a specific rank by rank ID.
      *
      * @param player the player to check
-     * @param rankId the rank ID to check (e.g., "MVP_PLUS_PLUS", "ADMIN")
+     * @param rankId the rank ID to check (e.g., "DONATOR_4", "STAFF")
      * @return true if the player has the specific rank, false otherwise
      */
     public static boolean isRank(Player player, String rankId) {
@@ -182,14 +182,14 @@ public final class RankUtils {
     }
     
     /**
-     * Checks if a player is an admin (ADMIN rank).
+     * Checks if a player is an admin (STAFF rank).
      *
      * @param player the player to check
      * @return true if the player is admin, false otherwise
      */
     public static boolean isAdmin(Player player) {
-        logger.info("[DEBUG] isAdmin check for player " + player.getName() + " (requires ADMIN)");
-        return hasRankOrHigher(player, Rank.ADMIN);
+        logger.info("[DEBUG] isAdmin check for player " + player.getName() + " (requires STAFF)");
+        return hasRankOrHigher(player, Rank.STAFF);
     }
     
     /**
@@ -211,14 +211,14 @@ public final class RankUtils {
             return isAdmin;
         }
         
-        // Command blocks are treated as admin
-        logger.info("[DEBUG] isAdmin check for command block - always true");
+        // Command blocks are treated as staff-equivalent
+        logger.info("[DEBUG] isAdmin check for command block - treated as STAFF");
         return true;
     }
     
     /**
      * Checks if a CommandSender can manage ranks.
-     * Only ADMIN rank and console can manage ranks.
+     * Only STAFF rank and console can manage ranks.
      * 
      * @param sender the command sender to check
      * @return true if the sender can manage ranks, false otherwise
@@ -230,8 +230,8 @@ public final class RankUtils {
         }
         
         if (sender instanceof Player player) {
-            logger.info("[DEBUG] canManageRanks check for " + player.getName() + " (requires ADMIN)");
-            boolean canManage = hasRankOrHigher(player, Rank.ADMIN);
+            logger.info("[DEBUG] canManageRanks check for " + player.getName() + " (requires STAFF)");
+            boolean canManage = hasRankOrHigher(player, Rank.STAFF);
             logger.info("[DEBUG] canManageRanks result for " + player.getName() + " -> " + canManage);
             return canManage;
         }
@@ -243,7 +243,7 @@ public final class RankUtils {
     
     /**
      * Gets the effective rank of a CommandSender.
-     * Console and command blocks are treated as ADMIN.
+     * Console and command blocks are treated as STAFF.
      * 
      * @param sender the command sender
      * @return the effective rank of the sender
@@ -258,7 +258,7 @@ public final class RankUtils {
             return rankService.getEffectiveRankSync(player.getUniqueId());
         }
         
-        // Console and command blocks are treated as ADMIN
-        return Rank.ADMIN;
+        // Console and command blocks are treated as STAFF-level
+        return Rank.STAFF;
     }
 }

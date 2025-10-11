@@ -40,27 +40,63 @@ public interface RankService {
      * 
      * @param playerId the UUID of the player
      * @param rank the rank to set
+     * @param context information about who initiated the change
      * @return future that completes when the rank is set
      */
-    CompletableFuture<Void> setPrimaryRank(UUID playerId, Rank rank);
+    CompletableFuture<Void> setPrimaryRank(UUID playerId, Rank rank, RankChangeContext context);
+    
+    /**
+     * Sets the primary rank for a player with system context.
+     *
+     * @param playerId the UUID of the player
+     * @param rank the rank to set
+     * @return future that completes when the rank is set
+     */
+    default CompletableFuture<Void> setPrimaryRank(UUID playerId, Rank rank) {
+        return setPrimaryRank(playerId, rank, RankChangeContext.system());
+    }
     
     /**
      * Adds a rank to a player without removing existing ranks.
      * 
      * @param playerId the UUID of the player
      * @param rank the rank to add
+     * @param context information about who initiated the change
      * @return future that completes when the rank is added
      */
-    CompletableFuture<Void> addRank(UUID playerId, Rank rank);
+    CompletableFuture<Void> addRank(UUID playerId, Rank rank, RankChangeContext context);
+    
+    /**
+     * Adds a rank to a player using system context.
+     *
+     * @param playerId the UUID of the player
+     * @param rank the rank to add
+     * @return future that completes when the rank is added
+     */
+    default CompletableFuture<Void> addRank(UUID playerId, Rank rank) {
+        return addRank(playerId, rank, RankChangeContext.system());
+    }
     
     /**
      * Removes a rank from a player.
      * 
      * @param playerId the UUID of the player
      * @param rank the rank to remove
+     * @param context information about who initiated the change
      * @return future that completes when the rank is removed
      */
-    CompletableFuture<Void> removeRank(UUID playerId, Rank rank);
+    CompletableFuture<Void> removeRank(UUID playerId, Rank rank, RankChangeContext context);
+    
+    /**
+     * Removes a rank from a player using system context.
+     *
+     * @param playerId the UUID of the player
+     * @param rank the rank to remove
+     * @return future that completes when the rank is removed
+     */
+    default CompletableFuture<Void> removeRank(UUID playerId, Rank rank) {
+        return removeRank(playerId, rank, RankChangeContext.system());
+    }
     
     /**
      * Resolves the effective rank for a player when they have multiple ranks.
@@ -120,7 +156,18 @@ public interface RankService {
      * Clears all ranks for a player and sets them to DEFAULT.
      * 
      * @param playerId the UUID of the player
+     * @param context information about who initiated the change
      * @return future that completes when ranks are cleared
      */
-    CompletableFuture<Void> resetRanks(UUID playerId);
+    CompletableFuture<Void> resetRanks(UUID playerId, RankChangeContext context);
+    
+    /**
+     * Clears all ranks for a player using system context.
+     *
+     * @param playerId the UUID of the player
+     * @return future that completes when ranks are cleared
+     */
+    default CompletableFuture<Void> resetRanks(UUID playerId) {
+        return resetRanks(playerId, RankChangeContext.system());
+    }
 }

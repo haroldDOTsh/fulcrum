@@ -16,9 +16,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.Bukkit;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankCategory;
+import sh.harold.fulcrum.api.rank.RankChangeContext;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.api.rank.RankUtils;
 
@@ -112,7 +112,7 @@ public class RankCommand {
     
     private boolean hasManagePermission(CommandSourceStack source) {
         // Use RankUtils to check if sender can manage ranks
-        // This checks for ADMIN rank or console
+        // This checks for STAFF rank or console
         return RankUtils.canManageRanks(source.getSender());
     }
     
@@ -127,9 +127,11 @@ public class RankCommand {
             return 0;
         }
         
+        RankChangeContext context = resolveContext(sender);
+        
         int changed = 0;
         for (Player target : resolver.resolve(ctx.getSource())) {
-            rankService.setPrimaryRank(target.getUniqueId(), rank).thenAccept(v -> {
+            rankService.setPrimaryRank(target.getUniqueId(), rank, context).thenAccept(v -> {
                 sender.sendMessage(Component.text()
                     .append(Component.text("✓ ", NamedTextColor.GREEN))
                     .append(Component.text("Set rank for ", NamedTextColor.GRAY))
@@ -176,7 +178,9 @@ public class RankCommand {
             return 0;
         }
         
-        rankService.setPrimaryRank(target.getUniqueId(), rank).thenAccept(v -> {
+        RankChangeContext context = resolveContext(sender);
+        
+        rankService.setPrimaryRank(target.getUniqueId(), rank, context).thenAccept(v -> {
             sender.sendMessage(Component.text()
                 .append(Component.text("✓ ", NamedTextColor.GREEN))
                 .append(Component.text("Set rank for ", NamedTextColor.GRAY))
@@ -204,9 +208,11 @@ public class RankCommand {
             return 0;
         }
         
+        RankChangeContext context = resolveContext(sender);
+        
         int changed = 0;
         for (Player target : resolver.resolve(ctx.getSource())) {
-            rankService.addRank(target.getUniqueId(), rank).thenAccept(v -> {
+            rankService.addRank(target.getUniqueId(), rank, context).thenAccept(v -> {
                 sender.sendMessage(Component.text()
                     .append(Component.text("✓ ", NamedTextColor.GREEN))
                     .append(Component.text("Added rank ", NamedTextColor.GRAY))
@@ -254,7 +260,9 @@ public class RankCommand {
             return 0;
         }
         
-        rankService.addRank(target.getUniqueId(), rank).thenAccept(v -> {
+        RankChangeContext context = resolveContext(sender);
+        
+        rankService.addRank(target.getUniqueId(), rank, context).thenAccept(v -> {
             sender.sendMessage(Component.text()
                 .append(Component.text("✓ ", NamedTextColor.GREEN))
                 .append(Component.text("Added rank ", NamedTextColor.GRAY))
@@ -282,9 +290,11 @@ public class RankCommand {
             return 0;
         }
         
+        RankChangeContext context = resolveContext(sender);
+        
         int changed = 0;
         for (Player target : resolver.resolve(ctx.getSource())) {
-            rankService.removeRank(target.getUniqueId(), rank).thenAccept(v -> {
+            rankService.removeRank(target.getUniqueId(), rank, context).thenAccept(v -> {
                 sender.sendMessage(Component.text()
                     .append(Component.text("✓ ", NamedTextColor.GREEN))
                     .append(Component.text("Removed rank ", NamedTextColor.GRAY))
@@ -332,7 +342,9 @@ public class RankCommand {
             return 0;
         }
         
-        rankService.removeRank(target.getUniqueId(), rank).thenAccept(v -> {
+        RankChangeContext context = resolveContext(sender);
+        
+        rankService.removeRank(target.getUniqueId(), rank, context).thenAccept(v -> {
             sender.sendMessage(Component.text()
                 .append(Component.text("✓ ", NamedTextColor.GREEN))
                 .append(Component.text("Removed rank ", NamedTextColor.GRAY))
@@ -535,9 +547,11 @@ public class RankCommand {
         CommandSender sender = ctx.getSource().getSender();
         PlayerSelectorArgumentResolver resolver = ctx.getArgument("player", PlayerSelectorArgumentResolver.class);
         
+        RankChangeContext context = resolveContext(sender);
+        
         int changed = 0;
         for (Player target : resolver.resolve(ctx.getSource())) {
-            rankService.resetRanks(target.getUniqueId()).thenAccept(v -> {
+            rankService.resetRanks(target.getUniqueId(), context).thenAccept(v -> {
                 sender.sendMessage(Component.text()
                     .append(Component.text("✓ ", NamedTextColor.GREEN))
                     .append(Component.text("Cleared all ranks for ", NamedTextColor.GRAY))
@@ -573,7 +587,9 @@ public class RankCommand {
             return 0;
         }
         
-        rankService.resetRanks(target.getUniqueId()).thenAccept(v -> {
+        RankChangeContext context = resolveContext(sender);
+        
+        rankService.resetRanks(target.getUniqueId(), context).thenAccept(v -> {
             sender.sendMessage(Component.text()
                 .append(Component.text("✓ ", NamedTextColor.GREEN))
                 .append(Component.text("Cleared all ranks for ", NamedTextColor.GRAY))
@@ -647,6 +663,13 @@ public class RankCommand {
             .append(Component.text(PERMISSION_MANAGE, NamedTextColor.WHITE)));
         
         return 1;
+    }
+    
+    private RankChangeContext resolveContext(CommandSender sender) {
+        if (sender instanceof Player player) {
+            return RankChangeContext.ofPlayer(player.getName(), player.getUniqueId());
+        }
+        return RankChangeContext.ofConsole(sender.getName());
     }
     
     private Rank parseRank(String rankName) {
