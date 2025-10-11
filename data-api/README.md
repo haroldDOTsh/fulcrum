@@ -19,6 +19,20 @@ ConnectionAdapter adapter = new MongoConnectionAdapter(
 DataAPI dataAPI = DataAPI.create(adapter);
 ```
 
+### Ensuring PostgreSQL Schemas
+
+```java
+SchemaRegistry.ensureSchema(
+    postgresAdapter,
+    SchemaDefinition.fromResource(
+        "example-schema-001",
+        "Create tables for Example service",
+        getClass().getClassLoader(),
+        "migrations/example.sql"
+    )
+);
+```
+
 ## Basic Operations
 
 ```java
@@ -133,4 +147,3 @@ try {
 - `READ_COMMITTED` - Only read committed changes
 - `REPEATABLE_READ` - Same query returns same results
 - `SERIALIZABLE` - Transactions execute serially
-
