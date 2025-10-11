@@ -3,11 +3,14 @@ package sh.harold.fulcrum.api.data.impl;
 import sh.harold.fulcrum.api.data.Collection;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresStorageBackend;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageBackend;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 import sh.harold.fulcrum.api.data.impl.json.JsonStorageBackend;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoStorageBackend;
+import sh.harold.fulcrum.api.data.impl.InMemoryStorageBackend;
 import sh.harold.fulcrum.api.data.transaction.Transaction;
 import sh.harold.fulcrum.api.data.transaction.TransactionImpl;
 
@@ -56,6 +59,12 @@ public class DataAPIImpl implements DataAPI {
                     return new JsonStorageBackend(adapter.getJsonStoragePath());
                 }
                 throw new IllegalStateException("JSON storage path not available");
+            
+            case POSTGRES:
+                if (adapter instanceof PostgresConnectionAdapter) {
+                    return new PostgresStorageBackend((PostgresConnectionAdapter) adapter);
+                }
+                throw new IllegalStateException("Postgres connection adapter not available");
             
             case IN_MEMORY:
                 return new InMemoryStorageBackend();

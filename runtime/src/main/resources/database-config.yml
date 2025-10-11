@@ -56,12 +56,6 @@ postgres:
     enabled: false
     max-size: 1000
     
-  # Migration settings
-  migrations:
-    enabled: true
-    auto-migrate: false  # Set to true to automatically run migrations on startup
-    path: "migrations/"  # Path to SQL migration files
-
 # World System Database Schema
 # The following table is used:
 # - world_maps: Stores schematic binaries and map metadata
