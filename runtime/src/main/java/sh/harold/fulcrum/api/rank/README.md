@@ -6,26 +6,20 @@ Unified rank system with priority-based resolution and expiration support.
 
 ```java
 public enum Rank {
-    // Player ranks
-    DEFAULT(1, RankCategory.PLAYER, NamedTextColor.GRAY),
-    PLAYER(2, RankCategory.PLAYER, NamedTextColor.GRAY),
-    
-    // Subscription ranks
-    VIP(10, RankCategory.SUBSCRIPTION, NamedTextColor.GREEN),
-    VIP_PLUS(11, RankCategory.SUBSCRIPTION, NamedTextColor.GREEN),
-    MVP(20, RankCategory.SUBSCRIPTION, NamedTextColor.AQUA),
-    MVP_PLUS(21, RankCategory.SUBSCRIPTION, NamedTextColor.AQUA),
-    
+    // Base player rank
+    DEFAULT(0, RankCategory.PLAYER, NamedTextColor.GRAY),
+
+    // Donator ranks (permanent)
+    DONATOR_1(10, RankCategory.PLAYER, NamedTextColor.GREEN),
+    DONATOR_2(20, RankCategory.PLAYER, NamedTextColor.AQUA),
+    DONATOR_3(30, RankCategory.PLAYER, NamedTextColor.LIGHT_PURPLE),
+
+    // Subscription rank
+    DONATOR_4(40, RankCategory.SUBSCRIPTION, NamedTextColor.GOLD),
+
     // Staff ranks
-    HELPER(50, RankCategory.STAFF, NamedTextColor.DARK_AQUA),
-    MODERATOR(60, RankCategory.STAFF, NamedTextColor.DARK_GREEN),
-    ADMIN(70, RankCategory.STAFF, NamedTextColor.RED),
-    OWNER(100, RankCategory.STAFF, NamedTextColor.DARK_RED),
-    
-    // Special ranks
-    YOUTUBE(30, RankCategory.SPECIAL, NamedTextColor.RED),
-    TWITCH(31, RankCategory.SPECIAL, NamedTextColor.DARK_PURPLE),
-    PARTNER(32, RankCategory.SPECIAL, NamedTextColor.GOLD);
+    HELPER(100, RankCategory.STAFF, NamedTextColor.BLUE),
+    STAFF(200, RankCategory.STAFF, NamedTextColor.DARK_RED);
 }
 ```
 
@@ -38,19 +32,19 @@ RankService rankService = ServiceLocator.get(RankService.class);
 CompletableFuture<Rank> rank = rankService.getEffectiveRank(playerId);
 
 // Set rank
-rankService.setRank(playerId, Rank.VIP);
+rankService.setRank(playerId, Rank.DONATOR_1);
 
 // Set rank with expiration
-rankService.setRank(playerId, Rank.VIP, Instant.now().plus(30, ChronoUnit.DAYS));
+rankService.setRank(playerId, Rank.DONATOR_4, Instant.now().plus(30, ChronoUnit.DAYS));
 
 // Add additional rank
-rankService.addRank(playerId, Rank.YOUTUBE);
+rankService.addRank(playerId, Rank.DONATOR_4);
 
 // Remove rank
 rankService.removeRank(playerId, Rank.YOUTUBE);
 
 // Check if player has rank
-CompletableFuture<Boolean> hasRank = rankService.hasRank(playerId, Rank.VIP);
+CompletableFuture<Boolean> hasRank = rankService.hasRank(playerId, Rank.DONATOR_2);
 
 // Get all ranks
 CompletableFuture<Set<Rank>> allRanks = rankService.getRanks(playerId);
@@ -61,11 +55,11 @@ CompletableFuture<Set<Rank>> allRanks = rankService.getRanks(playerId);
 When a player has multiple ranks, the effective rank is determined by priority (highest wins):
 
 ```java
-// Player has VIP (priority 10) and MODERATOR (priority 60)
-// Effective rank: MODERATOR
+// Player has DONATOR_2 (priority 20) and STAFF (priority 200)
+// Effective rank: STAFF
 
 rankService.getEffectiveRank(playerId).thenAccept(rank -> {
-    // rank = Rank.MODERATOR
+    // rank = Rank.STAFF
 });
 ```
 
@@ -74,21 +68,20 @@ rankService.getEffectiveRank(playerId).thenAccept(rank -> {
 ```java
 // Check if player is admin
 if (RankUtils.isAdmin(player)) {
-    // Has ADMIN or OWNER rank
+    // Has STAFF rank
 }
 
 // Check if player is staff
 if (RankUtils.isStaff(player)) {
-    // Has any staff rank (HELPER, MODERATOR, ADMIN, OWNER)
+    // Has any staff rank (HELPER or STAFF)
 }
 ```
 
 ## Categories
 
-- `PLAYER` - Default player ranks
-- `SUBSCRIPTION` - Paid subscription ranks
-- `STAFF` - Staff member ranks
-- `SPECIAL` - Special/promotional ranks
+- `PLAYER` - Default player ranks (DEFAULT, DONATOR_1/2/3)
+- `SUBSCRIPTION` - Paid subscription ranks (DONATOR_4)
+- `STAFF` - Staff member ranks (HELPER, STAFF)
 
 ## Implementation Details
 
@@ -96,3 +89,9 @@ if (RankUtils.isStaff(player)) {
 - In-memory caching for performance
 - Async operations with CompletableFuture
 - Automatic expiration checking
+- Base rank state is embedded in the shared `players` document under `rank` and
+  `rankInfo.*`; this keeps the proxy and backend in sync without an extra
+  collection.
+- Every rank mutation emits an audit entry (when backed by PostgreSQL) into the
+  `player_rank_audit` table with executor, timestamps, and the resulting rank
+  snapshot.
