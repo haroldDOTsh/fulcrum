@@ -11,6 +11,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
+import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 import sh.harold.fulcrum.api.world.poi.POIRegistry;
@@ -156,6 +158,15 @@ public class WorldFeature implements PluginFeature {
                     return null;
                 }
             }
+            SchemaRegistry.ensureSchema(
+                adapter,
+                SchemaDefinition.fromResource(
+                    "world-maps-001",
+                    "Create world map storage table",
+                    plugin.getClass().getClassLoader(),
+                    "migrations/world_maps.sql"
+                )
+            );
             logger.info("Standalone PostgreSQL adapter initialized for world service (database: " + database + ").");
             return adapter;
         } catch (Exception ex) {
@@ -211,8 +222,6 @@ public class WorldFeature implements PluginFeature {
     }
 
 }
-
-
 
 
 
