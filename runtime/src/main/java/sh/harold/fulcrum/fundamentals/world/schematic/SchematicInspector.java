@@ -12,6 +12,7 @@ import com.sk89q.worldedit.extent.clipboard.BlockArrayClipboard;
 import com.sk89q.worldedit.extent.clipboard.Clipboard;
 import com.sk89q.worldedit.extent.clipboard.io.BuiltInClipboardFormat;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormat;
+import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormats;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardReader;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.Region;
@@ -26,9 +27,12 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -46,8 +50,45 @@ public class SchematicInspector {
     }
 
     private static ClipboardFormat resolveDefaultFormat() {
-        // Sponge .schem is the canonical format across modern editors.
-        return BuiltInClipboardFormat.SPONGE_SCHEMATIC;
+        ClipboardFormat detected = detectDefaultFormat();
+        return detected != null ? detected : BuiltInClipboardFormat.SPONGE_SCHEMATIC;
+    }
+
+    private static ClipboardFormat detectDefaultFormat() {
+        // Prefer FAWE's fast reader; fall back through other common aliases before we settle on Sponge V2.
+        ClipboardFormat format = tryFindFormat(() -> ClipboardFormats.findByAlias("fast"));
+        if (format != null) {
+            return format;
+        }
+        format = tryFindFormat(() -> ClipboardFormats.findByExtension("schem"));
+        if (format != null) {
+            return format;
+        }
+        format = tryFindFormat(() -> ClipboardFormats.findByAlias("schem"));
+        if (format != null) {
+            return format;
+        }
+        format = tryFindFormat(() -> ClipboardFormats.findByAlias("sponge"));
+        if (format != null) {
+            return format;
+        }
+        return tryFindFormat(() -> ClipboardFormats.findByAlias("sponge_v3"));
+    }
+
+    private static ClipboardFormat tryFindFormat(FormatSupplier supplier) {
+        if (supplier == null) {
+            return null;
+        }
+        try {
+            return supplier.get();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    @FunctionalInterface
+    private interface FormatSupplier {
+        ClipboardFormat get();
     }
 
     private final Logger logger;
@@ -60,13 +101,9 @@ public class SchematicInspector {
         if (DEFAULT_FORMAT == null) {
             throw new IllegalStateException("Unable to resolve .schem clipboard format");
         }
-
-        try (ByteArrayInputStream input = new ByteArrayInputStream(schematicBytes);
-             ClipboardReader reader = DEFAULT_FORMAT.getReader(input)) {
-            Clipboard clipboard = reader.read();
-            BlockArrayClipboard blockArrayClipboard = toBlockArrayClipboard(clipboard, debugName);
-            return analyseClipboard(blockArrayClipboard, debugName);
-        }
+        Clipboard clipboard = readClipboard(schematicBytes, debugName);
+        BlockArrayClipboard blockArrayClipboard = toBlockArrayClipboard(clipboard, debugName);
+        return analyseClipboard(blockArrayClipboard, debugName);
     }
 
     private BlockArrayClipboard toBlockArrayClipboard(Clipboard clipboard, String debugName) {
@@ -131,6 +168,60 @@ public class SchematicInspector {
 
         return copy;
 
+    }
+
+    private Clipboard readClipboard(byte[] schematicBytes, String debugName) throws IOException {
+        List<Throwable> errors = new ArrayList<>();
+        for (ClipboardFormat format : candidateFormats()) {
+            if (format == null) {
+                continue;
+            }
+            try (ByteArrayInputStream input = new ByteArrayInputStream(schematicBytes);
+                 ClipboardReader reader = format.getReader(input)) {
+                Clipboard clipboard = reader.read();
+                if (format != DEFAULT_FORMAT && logger != null && logger.isLoggable(Level.FINE)) {
+                    logger.fine("Loaded schematic " + debugName + " using fallback format " + format.getName());
+                }
+                return clipboard;
+            } catch (IOException | RuntimeException exception) {
+                if (logger != null && logger.isLoggable(Level.FINE)) {
+                    logger.fine("Failed to load schematic " + debugName + " with format "
+                        + format.getName() + ": " + exception.getMessage());
+                }
+                errors.add(exception);
+            }
+        }
+
+        IOException failure = new IOException("Unable to read schematic " + debugName + " using supported formats");
+        for (Throwable error : errors) {
+            failure.addSuppressed(error);
+        }
+        throw failure;
+    }
+
+    private List<ClipboardFormat> candidateFormats() {
+        Set<ClipboardFormat> formats = new LinkedHashSet<>();
+        formats.add(DEFAULT_FORMAT);
+        ClipboardFormat fastAlias = tryFindFormat(() -> ClipboardFormats.findByAlias("fast"));
+        if (fastAlias != null) {
+            formats.add(fastAlias);
+        }
+        ClipboardFormat schemExt = tryFindFormat(() -> ClipboardFormats.findByExtension("schem"));
+        if (schemExt != null) {
+            formats.add(schemExt);
+        }
+        ClipboardFormat schemAlias = tryFindFormat(() -> ClipboardFormats.findByAlias("schem"));
+        if (schemAlias != null) {
+            formats.add(schemAlias);
+        }
+        formats.add(BuiltInClipboardFormat.FAST_V3);
+        formats.add(BuiltInClipboardFormat.FAST_V2);
+        formats.add(BuiltInClipboardFormat.SPONGE_V3_SCHEMATIC);
+        formats.add(BuiltInClipboardFormat.SPONGE_V2_SCHEMATIC);
+        formats.add(BuiltInClipboardFormat.SPONGE_V1_SCHEMATIC);
+        formats.add(BuiltInClipboardFormat.MCEDIT_SCHEMATIC);
+        formats.add(BuiltInClipboardFormat.BROKENENTITY);
+        return List.copyOf(formats);
     }
 
 
@@ -418,12 +509,6 @@ public class SchematicInspector {
 
     public record InspectionResult(BlockArrayClipboard clipboard, List<PoiDefinition> pois, boolean originDetected) {}
 }
-
-
-
-
-
-
 
 
 
