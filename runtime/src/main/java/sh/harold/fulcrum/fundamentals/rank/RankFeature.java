@@ -44,8 +44,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     
     private static final String PLAYERS_COLLECTION = "players";
     private static final String LEGACY_RANKS_COLLECTION = "player_ranks";
-    private static final String AUDIT_COLLECTION = "player_rank_audit";
-    
     private final Map<UUID, Set<Rank>> rankCache = new ConcurrentHashMap<>();
     private final Map<UUID, Rank> primaryRankCache = new ConcurrentHashMap<>();
     
@@ -54,9 +52,8 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     private DataAPI dataAPI;
     private Collection playersCollection;
     private Collection legacyRanksCollection;
-    private Collection auditCollection;
     private DependencyContainer container;
-    private boolean auditEnabled;
+    private RankAuditLogRepository auditLogRepository;
     
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -74,22 +71,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             this.playersCollection = dataAPI.collection(PLAYERS_COLLECTION);
             this.legacyRanksCollection = dataAPI.from(LEGACY_RANKS_COLLECTION);
             
-            // Determine whether audit logging can be enabled
-            ConnectionAdapter adapter = container.getOptional(ConnectionAdapter.class).orElse(null);
-            if (adapter == null && ServiceLocatorImpl.getInstance() != null) {
-                adapter = ServiceLocatorImpl.getInstance()
-                    .findService(ConnectionAdapter.class)
-                    .orElse(null);
-            }
-            
-            if (adapter instanceof PostgresConnectionAdapter) {
-                this.auditEnabled = true;
-                this.auditCollection = dataAPI.from(AUDIT_COLLECTION);
-                logger.info("Rank audit logging enabled (PostgreSQL backend detected)");
-            } else {
-                this.auditEnabled = false;
-                logger.info("Rank audit logging disabled (requires PostgreSQL backend)");
-            }
+            initializeAuditLogging();
             
             container.register(RankService.class, this);
             if (ServiceLocatorImpl.getInstance() != null) {
@@ -116,6 +98,8 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().unregisterService(RankService.class);
         }
+        
+        auditLogRepository = null;
         
         logger.info("Rank system shut down");
     }
@@ -463,9 +447,9 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             
             playerDoc.set("rankInfo", rankInfo);
             
-            if (auditEnabled && allowLogging && changed && context != null &&
+            if (auditLogRepository != null && allowLogging && changed && context != null &&
                 context.executorType() != RankChangeContext.Executor.SYSTEM) {
-                logRankChange(playerId, playerName, previousPrimary, newPrimary, orderedRanks, context);
+                auditLogRepository.recordChange(playerId, playerName, previousPrimary, newPrimary, orderedRanks, context);
             }
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to persist rank data for " + playerId, e);
@@ -482,31 +466,26 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         return updatedBy;
     }
     
-    private void logRankChange(UUID playerId,
-                               String playerName,
-                               Rank previousPrimary,
-                               Rank newPrimary,
-                               List<String> allRanks,
-                               RankChangeContext context) {
-        if (!auditEnabled || auditCollection == null) {
-            return;
+    private void initializeAuditLogging() {
+        ConnectionAdapter adapter = container.getOptional(ConnectionAdapter.class).orElse(null);
+        if (adapter == null && ServiceLocatorImpl.getInstance() != null) {
+            adapter = ServiceLocatorImpl.getInstance()
+                .findService(ConnectionAdapter.class)
+                .orElse(null);
         }
-        
-        try {
-            Document entry = auditCollection.document(UUID.randomUUID().toString());
-            entry.set("timestamp", System.currentTimeMillis());
-            entry.set("executor", context.executorType().name());
-            entry.set("executorName", context.executorName());
-            if (context.executorUuid() != null) {
-                entry.set("executorUuid", context.executorUuid().toString());
+
+        if (adapter instanceof PostgresConnectionAdapter postgres) {
+            RankAuditLogRepository repository = new RankAuditLogRepository(postgres, logger);
+            try {
+                repository.initialize(plugin.getClass().getClassLoader());
+                this.auditLogRepository = repository;
+            } catch (Exception exception) {
+                logger.log(Level.WARNING, "Failed to initialize rank audit logging; disabling audit trail", exception);
+                this.auditLogRepository = null;
             }
-            entry.set("playerName", playerName);
-            entry.set("playerUuid", playerId.toString());
-            entry.set("mainRankFrom", previousPrimary != null ? previousPrimary.name() : null);
-            entry.set("mainRankTo", newPrimary != null ? newPrimary.name() : null);
-            entry.set("allRanks", allRanks);
-        } catch (Exception e) {
-            logger.log(Level.WARNING, "Failed to append rank audit log for " + playerId, e);
+        } else {
+            logger.warning("PostgreSQL connection adapter not available; rank audit logging disabled");
+            this.auditLogRepository = null;
         }
     }
     
