@@ -2,9 +2,6 @@ package sh.harold.fulcrum.fundamentals.data;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.DataAPI;
-import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
-import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
-import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -29,8 +26,6 @@ public class DataAPIFeature implements PluginFeature {
             // Create connection adapter
             connectionAdapter = new FulcrumConnectionAdapter(plugin);
             ConnectionAdapter adapter = connectionAdapter.createAdapter();
-
-            ensureSchemas(plugin, adapter);
             
             // Create DataAPI instance
             dataAPI = DataAPI.create(adapter);
@@ -54,20 +49,6 @@ public class DataAPIFeature implements PluginFeature {
         }
     }
 
-    private void ensureSchemas(JavaPlugin plugin, ConnectionAdapter adapter) {
-        if (adapter instanceof PostgresConnectionAdapter postgresAdapter) {
-            SchemaRegistry.ensureSchema(
-                postgresAdapter,
-                SchemaDefinition.fromResource(
-                    "world-maps-001",
-                    "Create world map storage table",
-                    plugin.getClass().getClassLoader(),
-                    "migrations/world_maps.sql"
-                )
-            );
-        }
-    }
-    
     @Override
     public void shutdown() {
         logger.info("Shutting down Data API feature...");

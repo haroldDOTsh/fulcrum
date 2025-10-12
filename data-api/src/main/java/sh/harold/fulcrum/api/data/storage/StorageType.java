@@ -10,12 +10,7 @@ public enum StorageType {
     MONGODB,
     
     /**
-     * PostgreSQL database storage backend
-     */
-    POSTGRES,
-    
-    /**
-     * JSON file-based storage backend
+     * JSON file-based storage backend (typically for local testing)
      */
     JSON,
     

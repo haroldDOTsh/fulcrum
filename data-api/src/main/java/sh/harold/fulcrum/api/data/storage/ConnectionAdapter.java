@@ -6,14 +6,14 @@ import java.util.Optional;
 
 /**
  * Adapter interface for different storage backends.
- * Provides connection details and configuration for MongoDB, PostgreSQL, or JSON storage.
+ * Provides connection details and configuration for MongoDB or JSON storage.
  */
 public interface ConnectionAdapter {
     
     /**
      * Get the storage type for this adapter.
      * 
-     * @return The storage type (MONGODB or JSON)
+     * @return The storage type (MONGODB, JSON, or IN_MEMORY)
      */
     StorageType getStorageType();
     

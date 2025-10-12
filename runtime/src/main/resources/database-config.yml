@@ -12,10 +12,10 @@ redis:
     max-idle: 8
     max-total: 8
     
-# Database configuration for Fulcrum Data API
+# Database configuration for Fulcrum Data API (document store)
 storage:
-  # Backend type: JSON, MONGODB, or POSTGRES
-  type: JSON
+  # Backend type: MONGODB (recommended) or JSON for local testing
+  type: MONGODB
   
 # JSON file storage settings (if type is JSON)
 json:
@@ -34,8 +34,7 @@ mongodb:
   username: ""
   password: ""
 
-# PostgreSQL settings (if type is POSTGRES)
-# REQUIRED for World Loading System - database is single source of truth
+# PostgreSQL settings (used by world storage, rank audit, and other relational modules)
 postgres:
   # JDBC URL for PostgreSQL connection
   jdbc-url: "jdbc:postgresql://localhost:5432/mydb"

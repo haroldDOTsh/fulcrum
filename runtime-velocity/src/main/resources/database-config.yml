@@ -1,7 +1,7 @@
 # Database configuration for Fulcrum Data API - Velocity
 storage:
-  # Backend type: JSON, MONGODB, or POSTGRES
-  type: JSON
+  # Backend type: MONGODB (recommended) or JSON for local testing
+  type: MONGODB
   
 # JSON file storage settings (if type is JSON)
 json:
@@ -20,7 +20,7 @@ mongodb:
   username: ""
   password: ""
 
-# PostgreSQL settings (if type is POSTGRES)
+# PostgreSQL settings (used by relational-sidecar features)
 postgres:
   jdbc-url: "jdbc:postgresql://localhost:5432/fulcrum"
   database: "fulcrum_velocity"

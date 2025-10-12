@@ -2,7 +2,6 @@ package sh.harold.fulcrum.velocity.fundamentals.data;
 
 import sh.harold.fulcrum.api.data.impl.json.JsonConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
-import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 import org.yaml.snakeyaml.Yaml;
@@ -45,14 +44,14 @@ public class VelocityConnectionAdapter {
         // Load configuration
         Map<String, Object> config = loadConfig(configFile);
         Map<String, Object> storage = (Map<String, Object>) config.getOrDefault("storage", Map.of());
-        String storageTypeStr = (String) storage.getOrDefault("type", "JSON");
+        String storageTypeStr = (String) storage.getOrDefault("type", "MONGODB");
         
         StorageType storageType;
         try {
             storageType = StorageType.valueOf(storageTypeStr.toUpperCase());
         } catch (IllegalArgumentException e) {
             logger.warn("Invalid storage type: {}. Using JSON as default.", storageTypeStr);
-            storageType = StorageType.JSON;
+            storageType = StorageType.MONGODB;
         }
         
         logger.info("Initializing data storage with backend: {}", storageType);
@@ -101,17 +100,6 @@ public class VelocityConnectionAdapter {
                 logger.info("Using MongoDB storage backend: {}", database);
                 break;
                 
-            case POSTGRES:
-                Map<String, Object> postgresConfig = (Map<String, Object>) config.getOrDefault("postgres", Map.of());
-                String jdbcUrl = (String) postgresConfig.getOrDefault("jdbc-url", "jdbc:postgresql://localhost:5432/fulcrum");
-                String postgresDatabase = (String) postgresConfig.getOrDefault("database", "fulcrum_velocity");
-                String postgresUsername = (String) postgresConfig.getOrDefault("username", "fulcrum_user");
-                String postgresPassword = (String) postgresConfig.getOrDefault("password", "");
-                
-                adapter = new PostgresConnectionAdapter(jdbcUrl, postgresUsername, postgresPassword, postgresDatabase);
-                logger.info("Using PostgreSQL storage backend: {}", postgresDatabase);
-                break;
-                
             default:
                 throw new IllegalStateException("Unsupported storage type: " + storageType);
         }
@@ -137,9 +125,6 @@ public class VelocityConnectionAdapter {
                 if (adapter instanceof MongoConnectionAdapter) {
                     ((MongoConnectionAdapter) adapter).close();
                     logger.info("MongoDB storage backend disconnected successfully");
-                } else if (adapter instanceof PostgresConnectionAdapter) {
-                    ((PostgresConnectionAdapter) adapter).close();
-                    logger.info("PostgreSQL storage backend disconnected successfully");
                 }
                 // JsonConnectionAdapter doesn't need explicit cleanup
             } catch (Exception e) {
