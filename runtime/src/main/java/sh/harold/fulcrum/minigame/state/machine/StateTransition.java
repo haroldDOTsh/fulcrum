@@ -1,8 +1,9 @@
 package sh.harold.fulcrum.minigame.state.machine;
 
+import sh.harold.fulcrum.minigame.state.context.StateContext;
+
 import java.util.Objects;
 import java.util.function.Predicate;
-import sh.harold.fulcrum.minigame.state.context.StateContext;
 
 /**
  * Conditional transition between two states.

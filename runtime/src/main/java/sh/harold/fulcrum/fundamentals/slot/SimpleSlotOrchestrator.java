@@ -1,19 +1,5 @@
 package sh.harold.fulcrum.fundamentals.slot;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Consumer;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Logger;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
@@ -22,6 +8,14 @@ import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand;
 import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.logging.Logger;
 
 /**
  * Pragmatic orchestration layer that advertises slot families and mints logical slots on demand.
@@ -43,6 +37,18 @@ public class SimpleSlotOrchestrator {
     public SimpleSlotOrchestrator(MessageBus messageBus, ServerIdentifier serverIdentifier) {
         this.messageBus = messageBus;
         this.serverIdentifier = serverIdentifier;
+    }
+
+    private static String generateSuffix(int index) {
+        List<Character> chars = new ArrayList<>();
+        int value = index;
+        do {
+            chars.add(0, (char) ('A' + (value % 26)));
+            value = value / 26 - 1;
+        } while (value >= 0);
+        StringBuilder builder = new StringBuilder();
+        chars.forEach(builder::append);
+        return builder.toString();
     }
 
     private double computeUsedPlayerBudget() {
@@ -103,14 +109,14 @@ public class SimpleSlotOrchestrator {
         int maxPlayers = resolveMaxPlayers(descriptor);
         if (hardCap > 0 && maxPlayers > hardCap) {
             LOGGER.warning(() -> "Family " + descriptor.getFamilyId() + " declares maxPlayers=" + maxPlayers
-                + " exceeding server hard cap " + hardCap + " (docs/slot-family-discovery-notes.md)");
+                    + " exceeding server hard cap " + hardCap + " (docs/slot-family-discovery-notes.md)");
         }
 
         double playerCost = resolvePlayerCost(descriptor);
         if (hardCap > 0 && playerCost > hardCap) {
             LOGGER.warning(() -> "Family " + descriptor.getFamilyId() + " consumes "
-                + String.format("%.1f", playerCost) + " player budget which exceeds hard cap " + hardCap
-                + " (docs/slot-family-discovery-notes.md)");
+                    + String.format("%.1f", playerCost) + " player budget which exceeds hard cap " + hardCap
+                    + " (docs/slot-family-discovery-notes.md)");
         }
     }
 
@@ -197,8 +203,8 @@ public class SimpleSlotOrchestrator {
         double availablePlayers = availablePlayerBudget();
         families.forEach((name, profile) -> payload.put(name, computeAvailableSlots(profile, availablePlayers)));
         SlotFamilyAdvertisementMessage message = new SlotFamilyAdvertisementMessage(
-            serverIdentifier.getServerId(),
-            payload
+                serverIdentifier.getServerId(),
+                payload
         );
         messageBus.broadcast(ChannelConstants.REGISTRY_SLOT_FAMILY_ADVERTISEMENT, message);
         LOGGER.fine(() -> "Advertised slot families for " + serverIdentifier.getServerId() + ": " + payload);
@@ -227,19 +233,19 @@ public class SimpleSlotOrchestrator {
 
         if (serverHardCap > 0 && projected > serverHardCap) {
             LOGGER.warning(() -> "Refusing provision for " + profile.name + " because projected budget "
-                + String.format("%.1f", projected) + " exceeds hard cap " + serverHardCap);
+                    + String.format("%.1f", projected) + " exceeds hard cap " + serverHardCap);
             return false;
         }
         if (serverSoftCap > 0 && projected > serverSoftCap) {
             LOGGER.warning(() -> "Provision for " + profile.name + " exceeds soft cap " + serverSoftCap
-                + " (projected=" + String.format("%.1f", projected) + ")");
+                    + " (projected=" + String.format("%.1f", projected) + ")");
         }
 
         double availablePlayers = Math.max(0.0, (serverSoftCap > 0 ? serverSoftCap : serverHardCap) - currentUsed);
         int availableSlots = computeAvailableSlots(profile, availablePlayers);
         if (availableSlots <= 0) {
             LOGGER.warning(() -> "Family " + profile.name + " has no remaining budget (availablePlayers="
-                + String.format("%.1f", availablePlayers) + ")");
+                    + String.format("%.1f", availablePlayers) + ")");
         }
 
         Map<String, String> metadata = new HashMap<>(command.getReadOnlyMetadata());
@@ -272,10 +278,10 @@ public class SimpleSlotOrchestrator {
         }
         Map<String, String> metadataSnapshot = new HashMap<>(slot.metadata);
         ProvisionedSlot snapshot = new ProvisionedSlot(
-            slot.slotId,
-            slot.family,
-            slot.variant,
-            Collections.unmodifiableMap(metadataSnapshot)
+                slot.slotId,
+                slot.family,
+                slot.variant,
+                Collections.unmodifiableMap(metadataSnapshot)
         );
         provisionListeners.forEach(listener -> {
             try {
@@ -420,14 +426,14 @@ public class SimpleSlotOrchestrator {
     public List<String> getActiveSlotSummaries() {
         List<String> summaries = new ArrayList<>();
         families.values().forEach(profile -> profile.slots.values().forEach(slot ->
-            summaries.add(slot.slotId + "[" + slot.family + ":" + slot.status + "]")));
+                summaries.add(slot.slotId + "[" + slot.family + ":" + slot.status + "]")));
         return Collections.unmodifiableList(summaries);
     }
 
     private void broadcastSlotUpdate(TrackedSlot slot) {
         SlotStatusUpdateMessage message = new SlotStatusUpdateMessage(
-            serverIdentifier.getServerId(),
-            slot.slotId
+                serverIdentifier.getServerId(),
+                slot.slotId
         );
         message.setSlotSuffix(slot.suffix);
         message.setStatus(slot.status);
@@ -442,18 +448,6 @@ public class SimpleSlotOrchestrator {
         }
         metadata.putAll(slot.metadata);
         messageBus.broadcast(ChannelConstants.REGISTRY_SLOT_STATUS, message);
-    }
-
-    private static String generateSuffix(int index) {
-        List<Character> chars = new ArrayList<>();
-        int value = index;
-        do {
-            chars.add(0, (char) ('A' + (value % 26)));
-            value = value / 26 - 1;
-        } while (value >= 0);
-        StringBuilder builder = new StringBuilder();
-        chars.forEach(builder::append);
-        return builder.toString();
     }
 
     private TrackedSlot createSlot(FamilyProfile profile,
@@ -496,9 +490,9 @@ public class SimpleSlotOrchestrator {
 
     private static class FamilyProfile {
         final String name;
-        volatile SlotFamilyDescriptor descriptor;
         final AtomicInteger counter = new AtomicInteger(0);
         final Map<String, TrackedSlot> slots = new ConcurrentHashMap<>();
+        volatile SlotFamilyDescriptor descriptor;
 
         FamilyProfile(SlotFamilyDescriptor descriptor) {
             this.name = descriptor.getFamilyId();
@@ -515,11 +509,11 @@ public class SimpleSlotOrchestrator {
         final String suffix;
         final String family;
         final SlotFamilyDescriptor descriptor;
+        final Map<String, String> metadata = new ConcurrentHashMap<>();
         String variant;
         SlotLifecycleStatus status = SlotLifecycleStatus.AVAILABLE;
         int maxPlayers;
         int onlinePlayers;
-        final Map<String, String> metadata = new ConcurrentHashMap<>();
 
         TrackedSlot(String slotId, String suffix, String family, SlotFamilyDescriptor descriptor) {
             this.slotId = slotId;

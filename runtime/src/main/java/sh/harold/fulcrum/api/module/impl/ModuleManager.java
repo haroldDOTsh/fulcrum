@@ -6,7 +6,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.module.FulcrumModule;
 import sh.harold.fulcrum.api.module.ModuleInfo;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.logging.Logger;
 
 /**
@@ -31,7 +32,7 @@ public class ModuleManager {
      */
     public void disableAll() {
         List<ModuleMetadata> modules = getLoadedModules();
-        
+
         // Disable in reverse order to respect dependencies
         for (int i = modules.size() - 1; i >= 0; i--) {
             ModuleMetadata meta = modules.get(i);
@@ -51,23 +52,23 @@ public class ModuleManager {
      */
     public List<ModuleMetadata> getLoadedModules() {
         List<ModuleMetadata> discoveredModules = new ArrayList<>();
-        
+
         for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
             if (!(plugin instanceof FulcrumModule module)) continue;
             if (!plugin.isEnabled()) continue; // Only include enabled plugins
-            
+
             ModuleInfo info = plugin.getClass().getAnnotation(ModuleInfo.class);
             if (info == null) continue;
-            
+
             discoveredModules.add(new ModuleMetadata(
-                info.name(),
-                List.of(info.dependsOn()),
-                info.description(),
-                (JavaPlugin) plugin,
-                module
+                    info.name(),
+                    List.of(info.dependsOn()),
+                    info.description(),
+                    (JavaPlugin) plugin,
+                    module
             ));
         }
-        
+
         return discoveredModules;
     }
 }

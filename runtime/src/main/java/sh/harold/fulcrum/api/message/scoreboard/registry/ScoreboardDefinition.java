@@ -3,7 +3,6 @@ package sh.harold.fulcrum.api.message.scoreboard.registry;
 import sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**

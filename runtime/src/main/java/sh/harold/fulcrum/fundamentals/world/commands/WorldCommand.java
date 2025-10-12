@@ -1,22 +1,17 @@
 package sh.harold.fulcrum.fundamentals.world.commands;
 
-import com.google.gson.JsonObject;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import com.sk89q.worldedit.EditSession;
-import com.sk89q.worldedit.function.operation.ForwardExtentCopy;
-import com.sk89q.worldedit.IncompleteRegionException;
-import com.sk89q.worldedit.LocalSession;
-import com.sk89q.worldedit.WorldEdit;
-import com.sk89q.worldedit.WorldEditException;
+import com.mojang.brigadier.tree.LiteralCommandNode;
+import com.sk89q.worldedit.*;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.extent.clipboard.BlockArrayClipboard;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardWriter;
+import com.sk89q.worldedit.function.operation.ForwardExtentCopy;
 import com.sk89q.worldedit.function.operation.Operations;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.Region;
@@ -24,25 +19,20 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import org.bukkit.command.CommandSender;
 import net.kyori.adventure.text.format.TextDecoration;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.Particle;
-import org.bukkit.World;
-import org.bukkit.WorldCreator;
-import org.bukkit.WorldType;
+import org.bukkit.*;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.message.Message;
-import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
+import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.world.generator.VoidChunkGenerator;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
-import sh.harold.fulcrum.fundamentals.world.WorldService;
 import sh.harold.fulcrum.fundamentals.world.WorldManager;
+import sh.harold.fulcrum.fundamentals.world.WorldService;
 import sh.harold.fulcrum.fundamentals.world.model.LoadedWorld;
 import sh.harold.fulcrum.fundamentals.world.model.PoiDefinition;
 import sh.harold.fulcrum.fundamentals.world.schematic.SchematicInspector;
@@ -53,12 +43,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
@@ -82,51 +67,50 @@ public class WorldCommand {
 
     public LiteralCommandNode<CommandSourceStack> build() {
         var root = Commands.literal("world")
-            .requires(this::canView)
-            .executes(this::handleHelp)
-            .then(Commands.literal("list").executes(this::handleList))
-            .then(Commands.literal("info")
-                .then(Commands.argument("name", StringArgumentType.string())
-                    .suggests(getWorldNameSuggestions())
-                    .executes(this::handleInfo)))
-            .then(Commands.literal("pois")
-                .then(Commands.argument("name", StringArgumentType.string())
-                    .suggests(getWorldNameSuggestions())
-                    .executes(this::handlePois)))
-            .then(Commands.literal("status").executes(this::handleStatus))
-            .then(Commands.literal("refresh")
-                .requires(this::canManage)
-                .executes(this::handleRefresh))
-            .then(Commands.literal("unload")
-                .requires(this::canManage)
-                .then(Commands.argument("name", StringArgumentType.string())
-                    .suggests(getLoadedDebugWorldSuggestions())
-                    .executes(this::handleUnload)))
-            .then(Commands.literal("save")
-                .requires(this::canManage)
-                .then(Commands.argument("mapId", StringArgumentType.word())
-                    .then(Commands.argument("gameId", StringArgumentType.word())
-                        .then(Commands.argument("author", StringArgumentType.word())
-                            .executes(ctx -> handleSave(ctx, false))
-                            .then(Commands.argument("displayName", StringArgumentType.greedyString())
-                                .executes(ctx -> handleSave(ctx, true)))))))
-            .then(Commands.literal("debug")
-                .requires(this::canManage)
-                .then(Commands.literal("load")
-                    .then(Commands.argument("world", StringArgumentType.string())
-                        .suggests(getWorldNameSuggestions())
-                        .executes(ctx -> handleDebugLoad(ctx, false))
-                        .then(Commands.argument("slot", StringArgumentType.word())
-                            .executes(ctx -> handleDebugLoad(ctx, true)))))
-                .then(Commands.literal("clear")
-                    .then(Commands.argument("world", StringArgumentType.string())
-                        .suggests(getLoadedDebugWorldSuggestions())
-                        .executes(this::handleDebugClear))))
-            .then(Commands.literal("help").executes(this::handleHelp));
+                .requires(this::canView)
+                .executes(this::handleHelp)
+                .then(Commands.literal("list").executes(this::handleList))
+                .then(Commands.literal("info")
+                        .then(Commands.argument("name", StringArgumentType.string())
+                                .suggests(getWorldNameSuggestions())
+                                .executes(this::handleInfo)))
+                .then(Commands.literal("pois")
+                        .then(Commands.argument("name", StringArgumentType.string())
+                                .suggests(getWorldNameSuggestions())
+                                .executes(this::handlePois)))
+                .then(Commands.literal("status").executes(this::handleStatus))
+                .then(Commands.literal("refresh")
+                        .requires(this::canManage)
+                        .executes(this::handleRefresh))
+                .then(Commands.literal("unload")
+                        .requires(this::canManage)
+                        .then(Commands.argument("name", StringArgumentType.string())
+                                .suggests(getLoadedDebugWorldSuggestions())
+                                .executes(this::handleUnload)))
+                .then(Commands.literal("save")
+                        .requires(this::canManage)
+                        .then(Commands.argument("mapId", StringArgumentType.word())
+                                .then(Commands.argument("gameId", StringArgumentType.word())
+                                        .then(Commands.argument("author", StringArgumentType.word())
+                                                .executes(ctx -> handleSave(ctx, false))
+                                                .then(Commands.argument("displayName", StringArgumentType.greedyString())
+                                                        .executes(ctx -> handleSave(ctx, true)))))))
+                .then(Commands.literal("debug")
+                        .requires(this::canManage)
+                        .then(Commands.literal("load")
+                                .then(Commands.argument("world", StringArgumentType.string())
+                                        .suggests(getWorldNameSuggestions())
+                                        .executes(ctx -> handleDebugLoad(ctx, false))
+                                        .then(Commands.argument("slot", StringArgumentType.word())
+                                                .executes(ctx -> handleDebugLoad(ctx, true)))))
+                        .then(Commands.literal("clear")
+                                .then(Commands.argument("world", StringArgumentType.string())
+                                        .suggests(getLoadedDebugWorldSuggestions())
+                                        .executes(this::handleDebugClear))))
+                .then(Commands.literal("help").executes(this::handleHelp));
 
         return root.build();
     }
-
 
 
     private boolean canView(CommandSourceStack source) {
@@ -166,14 +150,14 @@ public class WorldCommand {
 
     private Component line(String command, String description) {
         return Component.text(command, NamedTextColor.YELLOW)
-            .append(Component.text(" - " + description, NamedTextColor.GRAY));
+                .append(Component.text(" - " + description, NamedTextColor.GRAY));
     }
 
     private int handleList(CommandContext<CommandSourceStack> context) {
         CommandSender sender = context.getSource().getSender();
         List<LoadedWorld> worlds = worldService.getAllWorlds().stream()
-            .sorted(Comparator.comparing(LoadedWorld::getDisplayName, String.CASE_INSENSITIVE_ORDER))
-            .collect(Collectors.toList());
+                .sorted(Comparator.comparing(LoadedWorld::getDisplayName, String.CASE_INSENSITIVE_ORDER))
+                .collect(Collectors.toList());
 
         if (worlds.isEmpty()) {
             sender.sendMessage(Component.text("No maps cached from PostgreSQL", NamedTextColor.YELLOW));
@@ -186,12 +170,12 @@ public class WorldCommand {
 
         for (LoadedWorld world : worlds) {
             sender.sendMessage(Component.text("- ", NamedTextColor.DARK_GRAY)
-                .append(Component.text(world.getDisplayName(), NamedTextColor.AQUA))
-                .append(Component.text(" (" + world.getWorldName() + ")", NamedTextColor.GRAY))
-                .append(Component.text(" - game=", NamedTextColor.DARK_GRAY))
-                .append(Component.text(world.getGameId(), NamedTextColor.YELLOW))
-                .append(Component.text(", author=", NamedTextColor.DARK_GRAY))
-                .append(Component.text(world.getAuthor(), NamedTextColor.GREEN))
+                    .append(Component.text(world.getDisplayName(), NamedTextColor.AQUA))
+                    .append(Component.text(" (" + world.getWorldName() + ")", NamedTextColor.GRAY))
+                    .append(Component.text(" - game=", NamedTextColor.DARK_GRAY))
+                    .append(Component.text(world.getGameId(), NamedTextColor.YELLOW))
+                    .append(Component.text(", author=", NamedTextColor.DARK_GRAY))
+                    .append(Component.text(world.getAuthor(), NamedTextColor.GREEN))
             );
         }
         return Command.SINGLE_SUCCESS;
@@ -245,16 +229,16 @@ public class WorldCommand {
 
         for (PoiDefinition poi : pois) {
             Component identifier = poi.identifier() != null
-                ? Component.text(poi.identifier(), NamedTextColor.AQUA)
-                : Component.text("(unnamed)", NamedTextColor.DARK_AQUA);
+                    ? Component.text(poi.identifier(), NamedTextColor.AQUA)
+                    : Component.text("(unnamed)", NamedTextColor.DARK_AQUA);
             sender.sendMessage(Component.text("- ", NamedTextColor.DARK_GRAY)
-                .append(identifier)
-                .append(Component.text(" [" + poi.type() + "]", NamedTextColor.YELLOW))
-                .append(Component.text(" @ ", NamedTextColor.GRAY))
-                .append(Component.text(String.format(Locale.ROOT, "%d,%d,%d",
-                    poi.position().x(),
-                    poi.position().y(),
-                    poi.position().z()), NamedTextColor.WHITE))
+                    .append(identifier)
+                    .append(Component.text(" [" + poi.type() + "]", NamedTextColor.YELLOW))
+                    .append(Component.text(" @ ", NamedTextColor.GRAY))
+                    .append(Component.text(String.format(Locale.ROOT, "%d,%d,%d",
+                            poi.position().x(),
+                            poi.position().y(),
+                            poi.position().z()), NamedTextColor.WHITE))
             );
         }
         return Command.SINGLE_SUCCESS;
@@ -275,17 +259,17 @@ public class WorldCommand {
         CommandSender sender = context.getSource().getSender();
         Message.info("world.refresh.start").send(sender);
         worldService.refreshCache().whenComplete((ignored, throwable) ->
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (throwable != null) {
-                    Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null ? throwable.getCause() : throwable;
-                    plugin.getLogger().log(Level.SEVERE, "Failed to refresh world cache", cause);
-                    Message.error("world.refresh.failed", cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName()).send(sender);
-                    return;
-                }
-                int total = worldService.getAllWorlds().size();
-                plugin.getLogger().info("World cache refreshed via /world refresh (" + total + " worlds)");
-                Message.success("world.refresh.success", total).send(sender);
-            })
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (throwable != null) {
+                        Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null ? throwable.getCause() : throwable;
+                        plugin.getLogger().log(Level.SEVERE, "Failed to refresh world cache", cause);
+                        Message.error("world.refresh.failed", cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName()).send(sender);
+                        return;
+                    }
+                    int total = worldService.getAllWorlds().size();
+                    plugin.getLogger().info("World cache refreshed via /world refresh (" + total + " worlds)");
+                    Message.success("world.refresh.success", total).send(sender);
+                })
         );
         return Command.SINGLE_SUCCESS;
     }
@@ -342,68 +326,68 @@ public class WorldCommand {
         final String familyForSlot = familyToUse;
         final SimpleSlotOrchestrator orchestratorRef = orchestrator;
         worldManager.pasteWorld(loadedWorld.getId(), debugWorld, pasteLocation).whenComplete((result, throwable) ->
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (throwable != null) {
-                    plugin.getLogger().log(Level.SEVERE, "Failed to paste debug world", throwable);
-                    sender.sendMessage(Component.text("Failed to paste world: " + throwable.getMessage(), NamedTextColor.RED));
-                    Bukkit.unloadWorld(debugWorld, false);
-                    return;
-                }
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (throwable != null) {
+                        plugin.getLogger().log(Level.SEVERE, "Failed to paste debug world", throwable);
+                        sender.sendMessage(Component.text("Failed to paste world: " + throwable.getMessage(), NamedTextColor.RED));
+                        Bukkit.unloadWorld(debugWorld, false);
+                        return;
+                    }
 
-                if (result == null || !result.isSuccess()) {
-                    String message = result != null ? result.getMessage() : "Unknown paste failure";
-                    sender.sendMessage(Component.text("Failed to paste world: " + message, NamedTextColor.RED));
-                    Bukkit.unloadWorld(debugWorld, false);
-                    return;
-                }
+                    if (result == null || !result.isSuccess()) {
+                        String message = result != null ? result.getMessage() : "Unknown paste failure";
+                        sender.sendMessage(Component.text("Failed to paste world: " + message, NamedTextColor.RED));
+                        Bukkit.unloadWorld(debugWorld, false);
+                        return;
+                    }
 
-                debugWorld.setSpawnLocation(pasteLocation);
-                showPoiMarkers(debugWorld, pasteLocation, loadedWorld.getPois());
+                    debugWorld.setSpawnLocation(pasteLocation);
+                    showPoiMarkers(debugWorld, pasteLocation, loadedWorld.getPois());
 
-                if (sender instanceof Player player) {
-                    player.teleport(pasteLocation.clone().add(0.5, 1.5, 0.5));
-                }
+                    if (sender instanceof Player player) {
+                        player.teleport(pasteLocation.clone().add(0.5, 1.5, 0.5));
+                    }
 
-                sender.sendMessage(Component.text(
-                    "World pasted into " + debugWorldName + " (" + loadedWorld.getPois().size() + " POIs)",
-                    NamedTextColor.GREEN));
+                    sender.sendMessage(Component.text(
+                            "World pasted into " + debugWorldName + " (" + loadedWorld.getPois().size() + " POIs)",
+                            NamedTextColor.GREEN));
 
-                Map<String, String> metadata = new HashMap<>();
-                metadata.put("mapId", loadedWorld.getMapId());
-                metadata.put("worldName", debugWorldName);
-                metadata.put("worldDisplayName", loadedWorld.getDisplayName());
-                metadata.put("gameId", loadedWorld.getGameId());
-                metadata.put("author", loadedWorld.getAuthor());
-                metadata.put("poiCount", String.valueOf(loadedWorld.getPois().size()));
+                    Map<String, String> metadata = new HashMap<>();
+                    metadata.put("mapId", loadedWorld.getMapId());
+                    metadata.put("worldName", debugWorldName);
+                    metadata.put("worldDisplayName", loadedWorld.getDisplayName());
+                    metadata.put("gameId", loadedWorld.getGameId());
+                    metadata.put("author", loadedWorld.getAuthor());
+                    metadata.put("poiCount", String.valueOf(loadedWorld.getPois().size()));
 
-                String slotId = null;
-                if (orchestratorRef != null && familyForSlot != null) {
-                    slotId = orchestratorRef.registerDebugSlot(
-                        familyForSlot,
-                        loadedWorld.getGameId(),
-                        SlotLifecycleStatus.IN_GAME,
-                        0,
-                        metadata
-                    );
+                    String slotId = null;
+                    if (orchestratorRef != null && familyForSlot != null) {
+                        slotId = orchestratorRef.registerDebugSlot(
+                                familyForSlot,
+                                loadedWorld.getGameId(),
+                                SlotLifecycleStatus.IN_GAME,
+                                0,
+                                metadata
+                        );
 
-                    if (slotId != null) {
-                        sender.sendMessage(Component.text(
-                            "Registered debug slot " + slotId + " for family " + familyForSlot,
-                            NamedTextColor.AQUA));
+                        if (slotId != null) {
+                            sender.sendMessage(Component.text(
+                                    "Registered debug slot " + slotId + " for family " + familyForSlot,
+                                    NamedTextColor.AQUA));
+                        } else {
+                            sender.sendMessage(Component.text(
+                                    "Failed to register debug slot for family " + familyForSlot,
+                                    NamedTextColor.RED));
+                        }
                     } else {
                         sender.sendMessage(Component.text(
-                            "Failed to register debug slot for family " + familyForSlot,
-                            NamedTextColor.RED));
+                                "No slot orchestrator available; registry not updated.",
+                                NamedTextColor.GRAY));
                     }
-                } else {
-                    sender.sendMessage(Component.text(
-                        "No slot orchestrator available; registry not updated.",
-                        NamedTextColor.GRAY));
-                }
 
-                debugSessions.put(debugWorldName.toLowerCase(Locale.ROOT),
-                    new DebugSession(debugWorldName, slotId, familyForSlot));
-            })
+                    debugSessions.put(debugWorldName.toLowerCase(Locale.ROOT),
+                            new DebugSession(debugWorldName, slotId, familyForSlot));
+                })
         );
 
         return Command.SINGLE_SUCCESS;
@@ -580,43 +564,43 @@ public class WorldCommand {
         List<PoiDefinition> pois = List.copyOf(inspectionResult.pois());
         addPoisToMetadata(metadata, pois);
         String poiSummary = pois.isEmpty()
-            ? "none"
-            : pois.stream().map(this::formatPoiSummary).collect(Collectors.joining(", "));
+                ? "none"
+                : pois.stream().map(this::formatPoiSummary).collect(Collectors.joining(", "));
 
         Message.info("world.save.start", worldName).send(player);
         worldService.saveWorldDefinition(serverId, worldName, safeDisplayName, metadata, sanitizedBytes)
-            .whenComplete((result, throwable) ->
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    if (throwable != null) {
-                        Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null ? throwable.getCause() : throwable;
-                        plugin.getLogger().log(Level.SEVERE, "Failed to persist world map " + worldName, cause);
-                        Message.error("world.save.failed", worldName, cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName()).send(player);
-                        return;
-                    }
-                    Message.success("world.save.success", worldName, mapId).send(player);
-                    Message.info("world.save.size", width, height, length).send(player);
-                    Message.info("world.save.pois", pois.size(), poiSummary).send(player);
-                    Message.info("world.save.metadata", gameId, author, safeDisplayName).send(player);
-                    plugin.getLogger().info(String.format(Locale.ROOT,
-                        "Saved world map %s (mapId=%s, server=%s, pois=%d)",
-                        worldName, mapId, serverId, pois.size()));
-                })
-            );
+                .whenComplete((result, throwable) ->
+                        plugin.getServer().getScheduler().runTask(plugin, () -> {
+                            if (throwable != null) {
+                                Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null ? throwable.getCause() : throwable;
+                                plugin.getLogger().log(Level.SEVERE, "Failed to persist world map " + worldName, cause);
+                                Message.error("world.save.failed", worldName, cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName()).send(player);
+                                return;
+                            }
+                            Message.success("world.save.success", worldName, mapId).send(player);
+                            Message.info("world.save.size", width, height, length).send(player);
+                            Message.info("world.save.pois", pois.size(), poiSummary).send(player);
+                            Message.info("world.save.metadata", gameId, author, safeDisplayName).send(player);
+                            plugin.getLogger().info(String.format(Locale.ROOT,
+                                    "Saved world map %s (mapId=%s, server=%s, pois=%d)",
+                                    worldName, mapId, serverId, pois.size()));
+                        })
+                );
         return Command.SINGLE_SUCCESS;
     }
 
     private Component labelValue(String label, String value) {
         return Component.text(label + ": ", NamedTextColor.GRAY)
-            .append(Component.text(value, NamedTextColor.WHITE));
+                .append(Component.text(value, NamedTextColor.WHITE));
     }
 
     private SuggestionProvider<CommandSourceStack> getWorldNameSuggestions() {
         return (context, builder) -> {
             String input = builder.getRemaining().toLowerCase(Locale.ROOT);
             worldService.getAllWorlds().stream()
-                .map(LoadedWorld::getWorldName)
-                .filter(name -> name != null && name.toLowerCase(Locale.ROOT).startsWith(input))
-                .forEach(builder::suggest);
+                    .map(LoadedWorld::getWorldName)
+                    .filter(name -> name != null && name.toLowerCase(Locale.ROOT).startsWith(input))
+                    .forEach(builder::suggest);
             return builder.buildFuture();
         };
     }
@@ -625,9 +609,9 @@ public class WorldCommand {
         return (context, builder) -> {
             String input = builder.getRemaining().toLowerCase(Locale.ROOT);
             debugSessions.values().stream()
-                .map(DebugSession::worldName)
-                .filter(name -> name != null && name.toLowerCase(Locale.ROOT).startsWith(input))
-                .forEach(builder::suggest);
+                    .map(DebugSession::worldName)
+                    .filter(name -> name != null && name.toLowerCase(Locale.ROOT).startsWith(input))
+                    .forEach(builder::suggest);
             return builder.buildFuture();
         };
     }
@@ -674,8 +658,8 @@ public class WorldCommand {
 
     private String createDebugWorldName(String sourceWorldName) {
         String base = (sourceWorldName != null && !sourceWorldName.isBlank())
-            ? sourceWorldName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_")
-            : "world";
+                ? sourceWorldName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_")
+                : "world";
         if (base.length() > 20) {
             base = base.substring(0, 20);
         }
@@ -730,9 +714,9 @@ public class WorldCommand {
 
                 for (PoiDefinition poi : pois) {
                     Location location = origin.clone().add(
-                        poi.position().x() + 0.5,
-                        poi.position().y() + 0.5,
-                        poi.position().z() + 0.5
+                            poi.position().x() + 0.5,
+                            poi.position().y() + 0.5,
+                            poi.position().z() + 0.5
                     );
                     if (location.getWorld() != null) {
                         location.getWorld().spawnParticle(Particle.END_ROD, location, 12, 0.2, 0.4, 0.2, 0.01);
@@ -760,5 +744,6 @@ public class WorldCommand {
         }
     }
 
-    private record DebugSession(String worldName, String slotId, String family) {}
+    private record DebugSession(String worldName, String slotId, String family) {
+    }
 }

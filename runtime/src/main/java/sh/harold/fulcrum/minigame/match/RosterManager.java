@@ -10,6 +10,28 @@ import java.util.concurrent.ConcurrentHashMap;
  * Tracks match participants, elimination, and respawn status.
  */
 public final class RosterManager {
+    private final Map<UUID, Entry> entries = new ConcurrentHashMap<>();
+
+    public void addPlayer(UUID playerId, boolean respawnAllowed) {
+        entries.putIfAbsent(playerId, new Entry(playerId, respawnAllowed));
+    }
+
+    public void removePlayer(UUID playerId) {
+        entries.remove(playerId);
+    }
+
+    public Entry get(UUID playerId) {
+        return entries.get(playerId);
+    }
+
+    public Collection<Entry> all() {
+        return Collections.unmodifiableCollection(entries.values());
+    }
+
+    public long activeCount() {
+        return entries.values().stream().filter(entry -> entry.getState() == PlayerState.ACTIVE).count();
+    }
+
     public enum PlayerState {
         ACTIVE,
         ELIMINATED,
@@ -46,27 +68,5 @@ public final class RosterManager {
         public void setState(PlayerState state) {
             this.state = state;
         }
-    }
-
-    private final Map<UUID, Entry> entries = new ConcurrentHashMap<>();
-
-    public void addPlayer(UUID playerId, boolean respawnAllowed) {
-        entries.putIfAbsent(playerId, new Entry(playerId, respawnAllowed));
-    }
-
-    public void removePlayer(UUID playerId) {
-        entries.remove(playerId);
-    }
-
-    public Entry get(UUID playerId) {
-        return entries.get(playerId);
-    }
-
-    public Collection<Entry> all() {
-        return Collections.unmodifiableCollection(entries.values());
-    }
-
-    public long activeCount() {
-        return entries.values().stream().filter(entry -> entry.getState() == PlayerState.ACTIVE).count();
     }
 }

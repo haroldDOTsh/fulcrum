@@ -1,21 +1,15 @@
 package sh.harold.fulcrum.minigame.defaults;
 
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.scheduler.BukkitTask;
+import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.minigame.MinigameAttributes;
-import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.MinigameEngine;
+import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
 import sh.harold.fulcrum.minigame.pregame.PregameLobbyManager;
@@ -23,7 +17,14 @@ import sh.harold.fulcrum.minigame.pregame.PregameLobbyManager.PregameLobbyInstan
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.state.AbstractMinigameState;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
-import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
+
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Countdown-driven lobby before a match begins.
@@ -51,9 +52,9 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         AtomicInteger remainingSeconds = new AtomicInteger((int) countdown.getSeconds());
         AtomicBoolean accelerated = new AtomicBoolean(false);
         int maxPlayers = context.getRegistration()
-            .map(MinigameRegistration::getDescriptor)
-            .map(descriptor -> descriptor.getMaxPlayers())
-            .orElse(0);
+                .map(MinigameRegistration::getDescriptor)
+                .map(descriptor -> descriptor.getMaxPlayers())
+                .orElse(0);
 
         if (remainingSeconds.get() <= 0) {
             context.requestTransition(nextStateId);
@@ -116,25 +117,25 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         }
 
         MinigameEnvironmentService environmentService = locator.findService(MinigameEnvironmentService.class)
-            .orElse(null);
+                .orElse(null);
         if (environmentService == null) {
             context.getPlugin().getLogger().warning("Pre-lobby spawn skipped; environment service unavailable.");
             return;
         }
 
         String slotId = context.getAttributeOptional(MinigameAttributes.SLOT_ID, String.class)
-            .orElseGet(() -> resolveSlotId(context, locator).orElse(null));
+                .orElseGet(() -> resolveSlotId(context, locator).orElse(null));
         if (slotId == null) {
             context.getPlugin().getLogger().warning("Pre-lobby spawn skipped; slot id unavailable.");
             return;
         }
 
         Map<String, String> metadata = context.getAttributeOptional(MinigameAttributes.SLOT_METADATA, Map.class)
-            .map(value -> (Map<String, String>) value)
-            .orElse(Map.of());
+                .map(value -> (Map<String, String>) value)
+                .orElse(Map.of());
 
         MatchEnvironment environment = environmentService.getEnvironment(slotId)
-            .orElseGet(() -> environmentService.prepareEnvironment(slotId, metadata));
+                .orElseGet(() -> environmentService.prepareEnvironment(slotId, metadata));
         if (environment == null) {
             context.getPlugin().getLogger().warning("Pre-lobby spawn skipped; environment not prepared for slot " + slotId);
             return;
@@ -152,16 +153,16 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
             return;
         }
 
-        Location[] spawnHolder = new Location[] { lobbySpawn.clone() };
+        Location[] spawnHolder = new Location[]{lobbySpawn.clone()};
         context.setAttribute(MinigameAttributes.SLOT_ID, slotId);
 
         if (schematicIdOpt.isPresent()) {
             int offset = registrationOpt.map(MinigameRegistration::getPreLobbyHeightOffset).orElse(50);
             PregameLobbyManager.spawn(context.getPlugin(), world, lobbySpawn, schematicIdOpt.get(), offset)
-                .ifPresent(instance -> {
-                    context.setAttribute(LOBBY_ATTRIBUTE, instance);
-                    spawnHolder[0] = instance.getSpawnLocation();
-                });
+                    .ifPresent(instance -> {
+                        context.setAttribute(LOBBY_ATTRIBUTE, instance);
+                        spawnHolder[0] = instance.getSpawnLocation();
+                    });
         }
 
         context.setAttribute(SPAWN_ATTRIBUTE, spawnHolder[0]);

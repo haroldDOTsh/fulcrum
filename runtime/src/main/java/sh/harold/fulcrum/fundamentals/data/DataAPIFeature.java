@@ -17,27 +17,27 @@ public class DataAPIFeature implements PluginFeature {
     private DependencyContainer container;
     private PostgresConnectionAdapter postgresAdapter;
     private DataAPI dataAPI;
-    
+
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.container = container;
-        
+
         try {
             logger.info("Initializing Data API feature...");
-            
+
             // Create connection adapter
             connectionAdapter = new FulcrumConnectionAdapter(plugin);
             ConnectionAdapter adapter = connectionAdapter.createAdapter();
-            
+
             // Create DataAPI instance
             dataAPI = DataAPI.create(adapter);
-            
+
             // Register with both DependencyContainer and ServiceLocator
             container.register(DataAPI.class, dataAPI);
             container.register(ConnectionAdapter.class, adapter);
-            
+
             // Register Postgres adapter if available
             postgresAdapter = connectionAdapter.getPostgresAdapter();
             if (postgresAdapter != null) {
@@ -54,9 +54,9 @@ public class DataAPIFeature implements PluginFeature {
                 ServiceLocatorImpl.getInstance().registerService(DataAPI.class, dataAPI);
                 ServiceLocatorImpl.getInstance().registerService(ConnectionAdapter.class, adapter);
             }
-            
+
             logger.info("Data API initialized successfully");
-            
+
         } catch (Exception e) {
             logger.severe("Failed to initialize Data API: " + e.getMessage());
             e.printStackTrace();
@@ -67,7 +67,7 @@ public class DataAPIFeature implements PluginFeature {
     @Override
     public void shutdown() {
         logger.info("Shutting down Data API feature...");
-        
+
         if (connectionAdapter != null) {
             connectionAdapter.shutdown();
         }
@@ -84,23 +84,24 @@ public class DataAPIFeature implements PluginFeature {
             ServiceLocatorImpl.getInstance().unregisterService(ConnectionAdapter.class);
             ServiceLocatorImpl.getInstance().unregisterService(PostgresConnectionAdapter.class);
         }
-        
+
         logger.info("Data API shut down successfully");
     }
-    
+
     @Override
     public int getPriority() {
         return 10; // Initialize early as other features may depend on it
     }
-    
+
     /**
      * Get the DataAPI instance
+     *
      * @return the DataAPI instance
      */
     public DataAPI getDataAPI() {
         return dataAPI;
     }
-    
+
     public PostgresConnectionAdapter getPostgresAdapter() {
         return postgresAdapter;
     }

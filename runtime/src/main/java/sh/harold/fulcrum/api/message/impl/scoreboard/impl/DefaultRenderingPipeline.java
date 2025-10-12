@@ -105,7 +105,6 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         List<ScoreboardModule> modules = definition.getModules();
 
 
-
         // Process modules in insertion order, with flash replacements
         for (int i = 0; i < modules.size(); i++) {
             ScoreboardModule module = modules.get(i);
@@ -138,7 +137,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
         }
 
         List<String> processedContent = processModuleBlocks(playerId, moduleBlocks);
-        
+
         return processedContent;
     }
 

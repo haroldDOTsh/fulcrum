@@ -98,8 +98,8 @@ public class ScoreboardBuilder {
         // This method is deprecated - users should get ScoreboardService from their plugin
         // and call registerScoreboard directly
         throw new UnsupportedOperationException(
-            "Direct registration is no longer supported. " +
-            "Please use build() to create the definition and register it through ScoreboardService"
+                "Direct registration is no longer supported. " +
+                        "Please use build() to create the definition and register it through ScoreboardService"
         );
     }
 

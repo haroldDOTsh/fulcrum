@@ -13,7 +13,7 @@ public interface FulcrumModule {
      * Called when the module is disabled.
      */
     void onDisable();
-    
+
     /**
      * Checks if the module is currently enabled.
      *

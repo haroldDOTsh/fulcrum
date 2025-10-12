@@ -4,7 +4,7 @@ package sh.harold.fulcrum.api.world.paste;
  * Options for controlling schematic paste behavior.
  */
 public class PasteOptions {
-    
+
     private boolean ignoreAirBlocks = false;
     private boolean copyEntities = true;
     private boolean copyBiomes = false;
@@ -12,54 +12,55 @@ public class PasteOptions {
     private int ticksPerOperation = 1;
     private boolean replaceBlocks = true;
     private boolean trackProgress = true;
-    
-    private PasteOptions() {}
-    
+
+    private PasteOptions() {
+    }
+
     /**
      * Create a new PasteOptions builder.
      */
     public static Builder builder() {
         return new Builder();
     }
-    
+
     /**
      * Get default paste options.
      */
     public static PasteOptions defaults() {
         return new PasteOptions();
     }
-    
+
     public boolean isIgnoreAirBlocks() {
         return ignoreAirBlocks;
     }
-    
+
     public boolean isCopyEntities() {
         return copyEntities;
     }
-    
+
     public boolean isCopyBiomes() {
         return copyBiomes;
     }
-    
+
     public boolean isFastMode() {
         return fastMode;
     }
-    
+
     public int getTicksPerOperation() {
         return ticksPerOperation;
     }
-    
+
     public boolean isReplaceBlocks() {
         return replaceBlocks;
     }
-    
+
     public boolean isTrackProgress() {
         return trackProgress;
     }
-    
+
     public static class Builder {
         private final PasteOptions options = new PasteOptions();
-        
+
         /**
          * Set whether to ignore air blocks when pasting.
          */
@@ -67,7 +68,7 @@ public class PasteOptions {
             options.ignoreAirBlocks = ignore;
             return this;
         }
-        
+
         /**
          * Set whether to copy entities from the schematic.
          */
@@ -75,7 +76,7 @@ public class PasteOptions {
             options.copyEntities = copy;
             return this;
         }
-        
+
         /**
          * Set whether to copy biome data.
          */
@@ -83,7 +84,7 @@ public class PasteOptions {
             options.copyBiomes = copy;
             return this;
         }
-        
+
         /**
          * Enable fast mode (may cause more lag but completes faster).
          */
@@ -91,7 +92,7 @@ public class PasteOptions {
             options.fastMode = fast;
             return this;
         }
-        
+
         /**
          * Set how many ticks between paste operations (for spreading load).
          */
@@ -102,7 +103,7 @@ public class PasteOptions {
             options.ticksPerOperation = ticks;
             return this;
         }
-        
+
         /**
          * Set whether to replace existing blocks.
          */
@@ -110,7 +111,7 @@ public class PasteOptions {
             options.replaceBlocks = replace;
             return this;
         }
-        
+
         /**
          * Set whether to track progress of the operation.
          */
@@ -118,7 +119,7 @@ public class PasteOptions {
             options.trackProgress = track;
             return this;
         }
-        
+
         /**
          * Build the PasteOptions.
          */

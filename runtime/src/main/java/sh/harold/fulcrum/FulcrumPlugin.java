@@ -1,36 +1,35 @@
 package sh.harold.fulcrum;
 
 import org.bukkit.plugin.java.JavaPlugin;
-
 import sh.harold.fulcrum.api.chat.impl.ChatFormatFeature;
+import sh.harold.fulcrum.api.environment.EnvironmentConfig;
+import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
 import sh.harold.fulcrum.api.menu.impl.MenuFeature;
 import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.message.impl.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
-import sh.harold.fulcrum.api.environment.EnvironmentConfig;
-import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
+import sh.harold.fulcrum.api.module.impl.ModuleFeature;
+import sh.harold.fulcrum.api.module.impl.ModuleManager;
+import sh.harold.fulcrum.api.module.impl.ModuleVerificationManager;
 import sh.harold.fulcrum.fundamentals.data.DataAPIFeature;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
+import sh.harold.fulcrum.fundamentals.minigame.debug.DebugMinigameFeature;
 import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
+import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 import sh.harold.fulcrum.fundamentals.world.WorldFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.FeatureManager;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
-import sh.harold.fulcrum.api.module.impl.ModuleFeature;
-import sh.harold.fulcrum.api.module.impl.ModuleManager;
-import sh.harold.fulcrum.api.module.impl.ModuleVerificationManager;
-import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 import sh.harold.fulcrum.minigame.MinigameEngine;
-import sh.harold.fulcrum.minigame.MinigameModule;
 import sh.harold.fulcrum.minigame.MinigameEngineFeature;
+import sh.harold.fulcrum.minigame.MinigameModule;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.command.MinigameCommandFeature;
-import sh.harold.fulcrum.fundamentals.minigame.debug.DebugMinigameFeature;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
@@ -51,7 +50,7 @@ public final class FulcrumPlugin extends JavaPlugin {
 
         // Save default config if it doesn't exist
         saveDefaultConfig();
-        
+
         // Initialize dependency container
         container = new DependencyContainer();
         ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
@@ -84,11 +83,11 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.initializeAll(this, container);
 
         container.getOptional(MinigameEngine.class)
-            .ifPresent(this::registerMinigameModules);
+                .ifPresent(this::registerMinigameModules);
 
         // Environment detection was handled during bootstrap phase
         getLogger().info("Fulcrum starting with role-based module detection");
-        
+
         // Load environment configuration to verify modules later
         EnvironmentConfigParser configParser = new EnvironmentConfigParser();
         EnvironmentConfig environmentConfig = configParser.loadDefaultConfiguration();
@@ -101,11 +100,11 @@ public final class FulcrumPlugin extends JavaPlugin {
 
         // Note: Module loading is handled by each module's bootstrap phase
         // External modules use BootstrapContextHolder for identification
-        
+
         // Enable module verification to check that expected modules are loaded
         this.verificationManager = new ModuleVerificationManager(getLogger(), environmentConfig, this);
         verificationManager.register();
-        
+
         getLogger().info("Fulcrum started successfully");
     }
 
@@ -115,7 +114,7 @@ public final class FulcrumPlugin extends JavaPlugin {
                 for (MinigameRegistration registration : minigameModule.registerMinigames(engine)) {
                     engine.registerRegistration(registration);
                     getLogger().info(() -> "Registered minigame family " + registration.getFamilyId()
-                        + " from module " + metadata.name());
+                            + " from module " + metadata.name());
                 }
             }
         });
@@ -134,6 +133,6 @@ public final class FulcrumPlugin extends JavaPlugin {
         container = null;
         verificationManager = null;
     }
-    
+
 }
 

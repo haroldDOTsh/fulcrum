@@ -19,11 +19,7 @@ import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static io.papermc.paper.command.brigadier.Commands.argument;
@@ -59,14 +55,14 @@ public final class PlayCommand {
 
     public LiteralCommandNode<CommandSourceStack> build() {
         return literal("play")
-            .requires(this::canExecute)
-            .then(argument("variantId", StringArgumentType.word())
-                .executes(ctx -> handlePlay(ctx.getSource(), ctx.getArgument("variantId", String.class))))
-            .executes(ctx -> {
-                Message.info("play.usage").send(ctx.getSource().getSender());
-                return Command.SINGLE_SUCCESS;
-            })
-            .build();
+                .requires(this::canExecute)
+                .then(argument("variantId", StringArgumentType.word())
+                        .executes(ctx -> handlePlay(ctx.getSource(), ctx.getArgument("variantId", String.class))))
+                .executes(ctx -> {
+                    Message.info("play.usage").send(ctx.getSource().getSender());
+                    return Command.SINGLE_SUCCESS;
+                })
+                .build();
     }
 
     private boolean canExecute(CommandSourceStack source) {
@@ -128,9 +124,9 @@ public final class PlayCommand {
         }
 
         String proxyId = routeRegistry.get(player.getUniqueId())
-            .map(PlayerRouteRegistry.RouteAssignment::proxyId)
-            .filter(id -> id != null && !id.isBlank())
-            .orElse(null);
+                .map(PlayerRouteRegistry.RouteAssignment::proxyId)
+                .filter(id -> id != null && !id.isBlank())
+                .orElse(null);
         if ((proxyId == null || proxyId.isBlank()) && lifecycleFeature != null) {
             proxyId = lifecycleFeature.getCurrentProxyId().orElse(null);
         }
@@ -150,9 +146,9 @@ public final class PlayCommand {
         metadata.put("variant", variantValue);
 
         routeRegistry.get(player.getUniqueId())
-            .map(PlayerRouteRegistry.RouteAssignment::slotId)
-            .filter(id -> id != null && !id.isBlank())
-            .ifPresent(id -> metadata.put("currentSlotId", id));
+                .map(PlayerRouteRegistry.RouteAssignment::slotId)
+                .filter(id -> id != null && !id.isBlank())
+                .ifPresent(id -> metadata.put("currentSlotId", id));
 
         try {
             PlayerSlotRequest request = new PlayerSlotRequest();
@@ -208,10 +204,6 @@ public final class PlayCommand {
             return new VariantSelection(trimmed, family, variant, familyKey, variantKey);
         }
 
-        String display() {
-            return rawInput;
-        }
-
         private static int findSeparator(String value) {
             int colon = value.indexOf(':');
             if (colon > 0) {
@@ -227,6 +219,10 @@ public final class PlayCommand {
 
         private static String normalise(String value) {
             return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        }
+
+        String display() {
+            return rawInput;
         }
     }
 }

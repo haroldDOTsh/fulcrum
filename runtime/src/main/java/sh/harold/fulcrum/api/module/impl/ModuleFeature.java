@@ -1,10 +1,10 @@
 package sh.harold.fulcrum.api.module.impl;
 
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.module.impl.commands.ModuleListCommand;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
-import sh.harold.fulcrum.api.module.impl.commands.ModuleListCommand;
 
 /**
  * Registers module-related commands and logic as a Fulcrum feature.

@@ -3,11 +3,7 @@ package sh.harold.fulcrum.fundamentals.world.schematic;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.sk89q.jnbt.CompoundTag;
-import com.sk89q.jnbt.LinBusConverter;
-import com.sk89q.jnbt.ListTag;
-import com.sk89q.jnbt.StringTag;
-import com.sk89q.jnbt.Tag;
+import com.sk89q.jnbt.*;
 import com.sk89q.worldedit.extent.clipboard.BlockArrayClipboard;
 import com.sk89q.worldedit.extent.clipboard.Clipboard;
 import com.sk89q.worldedit.extent.clipboard.io.BuiltInClipboardFormat;
@@ -25,13 +21,7 @@ import sh.harold.fulcrum.fundamentals.world.model.PoiDefinition;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -41,6 +31,11 @@ import java.util.logging.Logger;
 public class SchematicInspector {
 
     private static final ClipboardFormat DEFAULT_FORMAT = resolveDefaultFormat();
+    private final Logger logger;
+
+    public SchematicInspector(Logger logger) {
+        this.logger = logger;
+    }
 
     public static ClipboardFormat defaultFormat() {
         if (DEFAULT_FORMAT == null) {
@@ -86,17 +81,6 @@ public class SchematicInspector {
         }
     }
 
-    @FunctionalInterface
-    private interface FormatSupplier {
-        ClipboardFormat get();
-    }
-
-    private final Logger logger;
-
-    public SchematicInspector(Logger logger) {
-        this.logger = logger;
-    }
-
     public InspectionResult inspect(byte[] schematicBytes, String debugName) throws IOException {
         if (DEFAULT_FORMAT == null) {
             throw new IllegalStateException("Unable to resolve .schem clipboard format");
@@ -115,7 +99,6 @@ public class SchematicInspector {
         }
 
 
-
         Region region = clipboard.getRegion();
 
         BlockVector3 minimum = region.getMinimumPoint();
@@ -123,25 +106,22 @@ public class SchematicInspector {
         BlockVector3 maximum = region.getMaximumPoint();
 
 
-
         BlockArrayClipboard copy = new BlockArrayClipboard(
 
-            new com.sk89q.worldedit.regions.CuboidRegion(
+                new com.sk89q.worldedit.regions.CuboidRegion(
 
-                BlockVector3.ZERO,
+                        BlockVector3.ZERO,
 
-                maximum.subtract(minimum)
+                        maximum.subtract(minimum)
 
-            )
+                )
 
         );
-
 
 
         BlockVector3 origin = clipboard.getOrigin();
 
         copy.setOrigin(origin != null ? origin.subtract(minimum) : BlockVector3.ZERO);
-
 
 
         for (BlockVector3 absolute : region) {
@@ -165,7 +145,6 @@ public class SchematicInspector {
         }
 
 
-
         return copy;
 
     }
@@ -186,7 +165,7 @@ public class SchematicInspector {
             } catch (IOException | RuntimeException exception) {
                 if (logger != null && logger.isLoggable(Level.FINE)) {
                     logger.fine("Failed to load schematic " + debugName + " with format "
-                        + format.getName() + ": " + exception.getMessage());
+                            + format.getName() + ": " + exception.getMessage());
                 }
                 errors.add(exception);
             }
@@ -224,14 +203,6 @@ public class SchematicInspector {
         return List.copyOf(formats);
     }
 
-
-
-
-
-
-
-
-
     private InspectionResult analyseClipboard(BlockArrayClipboard clipboard, String debugName) {
 
         Region region = clipboard.getRegion();
@@ -239,7 +210,6 @@ public class SchematicInspector {
         BlockVector3 detectedOrigin = null;
 
         List<RawPoi> rawPois = new ArrayList<>();
-
 
 
         for (BlockVector3 pos : region) {
@@ -255,7 +225,6 @@ public class SchematicInspector {
             }
 
 
-
             CompoundTag blockEntity = extractBlockEntity(block);
 
             List<String> lines = extractSignLines(blockEntity);
@@ -265,7 +234,6 @@ public class SchematicInspector {
                 continue;
 
             }
-
 
 
             String header = normalise(lines.get(0));
@@ -281,7 +249,6 @@ public class SchematicInspector {
                 continue;
 
             }
-
 
 
             if ("[PREORIGIN]".equalsIgnoreCase(header)) {
@@ -335,7 +302,6 @@ public class SchematicInspector {
         }
 
 
-
         BlockVector3 origin = detectedOrigin != null ? detectedOrigin : clipboard.getOrigin();
 
         if (origin == null) {
@@ -345,7 +311,6 @@ public class SchematicInspector {
         }
 
         clipboard.setOrigin(origin);
-
 
 
         List<PoiDefinition> pois = new ArrayList<>();
@@ -359,19 +324,9 @@ public class SchematicInspector {
         }
 
 
-
         return new InspectionResult(clipboard, pois, detectedOrigin != null);
 
     }
-
-
-
-
-
-
-
-
-
 
     private CompoundTag extractBlockEntity(BlockStateHolder<?> block) {
         if (block == null) {
@@ -506,9 +461,16 @@ public class SchematicInspector {
         return value == null ? "" : value.trim();
     }
 
-    private record RawPoi(String identifier, String type, BlockVector3 position, JsonObject metadata) {}
+    @FunctionalInterface
+    private interface FormatSupplier {
+        ClipboardFormat get();
+    }
 
-    public record InspectionResult(BlockArrayClipboard clipboard, List<PoiDefinition> pois, boolean originDetected) {}
+    private record RawPoi(String identifier, String type, BlockVector3 position, JsonObject metadata) {
+    }
+
+    public record InspectionResult(BlockArrayClipboard clipboard, List<PoiDefinition> pois, boolean originDetected) {
+    }
 }
 
 

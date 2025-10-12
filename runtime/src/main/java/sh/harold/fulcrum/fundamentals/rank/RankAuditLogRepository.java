@@ -1,5 +1,11 @@
 package sh.harold.fulcrum.fundamentals.rank;
 
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
+import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankChangeContext;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -9,11 +15,6 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
-import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
-import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
-import sh.harold.fulcrum.api.rank.Rank;
-import sh.harold.fulcrum.api.rank.RankChangeContext;
 
 /**
  * Dedicated repository for persisting rank audit events into PostgreSQL.
@@ -32,13 +33,13 @@ final class RankAuditLogRepository {
     void initialize(ClassLoader resourceLoader) {
         try {
             SchemaRegistry.ensureSchema(
-                connectionAdapter,
-                SchemaDefinition.fromResource(
-                    "player-rank-audit-001",
-                    "Audit log for player rank changes",
-                    resourceLoader,
-                    "migrations/player_rank_audit.sql"
-                )
+                    connectionAdapter,
+                    SchemaDefinition.fromResource(
+                            "player-rank-audit-001",
+                            "Audit log for player rank changes",
+                            resourceLoader,
+                            "migrations/player_rank_audit.sql"
+                    )
             );
             logger.info("Rank audit logging enabled (PostgreSQL backend detected)");
         } catch (Exception exception) {
@@ -53,9 +54,9 @@ final class RankAuditLogRepository {
                       List<String> allRanks,
                       RankChangeContext context) {
         String sql = "INSERT INTO " + AUDIT_TABLE + " (" +
-            "player_uuid, player_name, executor_type, executor_name, executor_uuid, " +
-            "main_rank_from, main_rank_to, all_ranks, created_at" +
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
+                "player_uuid, player_name, executor_type, executor_name, executor_uuid, " +
+                "main_rank_from, main_rank_to, all_ranks, created_at" +
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
 
         try (Connection connection = connectionAdapter.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {

@@ -1,14 +1,15 @@
 package sh.harold.fulcrum.minigame.state.machine;
 
+import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.minigame.state.MinigameState;
+import sh.harold.fulcrum.minigame.state.context.StateContext;
+import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
-import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.minigame.state.MinigameState;
-import sh.harold.fulcrum.minigame.state.context.StateContext;
-import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
 
 /**
  * Runtime state machine driving a single match.
@@ -35,7 +36,8 @@ public final class StateMachine {
         this.graph = graph;
         this.context = context;
         this.currentStateId = Objects.requireNonNull(startStateId, "startStateId");
-        this.stateListener = stateListener != null ? stateListener : s -> {};
+        this.stateListener = stateListener != null ? stateListener : s -> {
+        };
         enterState(startStateId);
     }
 
@@ -79,8 +81,8 @@ public final class StateMachine {
         }
 
         Optional<StateTransition> triggered = definition.getTransitions().stream()
-            .filter(transition -> transition.shouldTransition(context))
-            .findFirst();
+                .filter(transition -> transition.shouldTransition(context))
+                .findFirst();
 
         triggered.ifPresent(transition -> requestTransition(transition.getTargetStateId()));
     }

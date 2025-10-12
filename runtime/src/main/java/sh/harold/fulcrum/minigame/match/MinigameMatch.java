@@ -1,18 +1,19 @@
 package sh.harold.fulcrum.minigame.match;
 
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.minigame.MinigameBlueprint;
+import sh.harold.fulcrum.minigame.MinigameRegistration;
+import sh.harold.fulcrum.minigame.state.context.StateContext;
+import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
+import sh.harold.fulcrum.minigame.state.machine.StateMachine;
+
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
-import org.bukkit.entity.Player;
-import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.minigame.MinigameRegistration;
-import sh.harold.fulcrum.minigame.MinigameBlueprint;
-import sh.harold.fulcrum.minigame.state.context.StateContext;
-import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
-import sh.harold.fulcrum.minigame.state.machine.StateMachine;
 
 /**
  * Wraps the state machine and roster for a single match.

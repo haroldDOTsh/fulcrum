@@ -1,11 +1,9 @@
 package sh.harold.fulcrum.fundamentals.world;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.sk89q.worldedit.extent.clipboard.BlockArrayClipboard;
-import com.sk89q.worldedit.extent.clipboard.io.ClipboardWriter;
 import com.sk89q.worldedit.extent.clipboard.Clipboard;
 import com.sk89q.worldedit.math.BlockVector3;
 import org.bukkit.plugin.Plugin;
@@ -18,21 +16,9 @@ import sh.harold.fulcrum.fundamentals.world.schematic.SchematicInspector.Inspect
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
-import java.sql.Types;
+import java.sql.*;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -105,9 +91,9 @@ public class WorldService {
 
     public List<PoiDefinition> getWorldPois(String worldName) {
         return getWorldByName(worldName)
-            .map(LoadedWorld::getPois)
-            .map(Collections::unmodifiableList)
-            .orElseGet(List::of);
+                .map(LoadedWorld::getPois)
+                .map(Collections::unmodifiableList)
+                .orElseGet(List::of);
     }
 
     public CompletableFuture<MapSaveResult> saveWorldDefinition(String serverId,
@@ -127,13 +113,13 @@ public class WorldService {
         JsonObject safeMetadata = metadata != null ? metadata : new JsonObject();
         String metadataJson = safeMetadata.toString();
         String sql = "INSERT INTO world_maps (world_name, display_name, map_metadata, schematic_data) "
-            + "VALUES (?, ?, ?::jsonb, ?) "
-            + "ON CONFLICT (world_name) DO UPDATE "
-            + "SET display_name = EXCLUDED.display_name, "
-            + "map_metadata = EXCLUDED.map_metadata, "
-            + "schematic_data = EXCLUDED.schematic_data, "
-            + "updated_at = CURRENT_TIMESTAMP "
-            + "RETURNING id, updated_at;";
+                + "VALUES (?, ?, ?::jsonb, ?) "
+                + "ON CONFLICT (world_name) DO UPDATE "
+                + "SET display_name = EXCLUDED.display_name, "
+                + "map_metadata = EXCLUDED.map_metadata, "
+                + "schematic_data = EXCLUDED.schematic_data, "
+                + "updated_at = CURRENT_TIMESTAMP "
+                + "RETURNING id, updated_at;";
 
         return CompletableFuture.supplyAsync(() -> {
             try (Connection connection = connectionAdapter.getConnection();
@@ -201,13 +187,13 @@ public class WorldService {
                     List<PoiDefinition> parsedPois = parsePois(metadata);
                     List<PoiDefinition> pois = parsedPois != null ? parsedPois : result.pois();
                     LoadedWorld loadedWorld = new LoadedWorld(
-                        id,
-                        worldName,
-                        displayName,
-                        metadata,
-                        schemFile,
-                        List.copyOf(pois),
-                        updatedAt
+                            id,
+                            worldName,
+                            displayName,
+                            metadata,
+                            schemFile,
+                            List.copyOf(pois),
+                            updatedAt
                     );
 
                     byId.put(id, loadedWorld);
@@ -272,8 +258,8 @@ public class WorldService {
             int y = obj.has("y") ? obj.get("y").getAsInt() : 0;
             int z = obj.has("z") ? obj.get("z").getAsInt() : 0;
             JsonObject extra = obj.has("metadata") && obj.get("metadata").isJsonObject()
-                ? obj.getAsJsonObject("metadata").deepCopy()
-                : new JsonObject();
+                    ? obj.getAsJsonObject("metadata").deepCopy()
+                    : new JsonObject();
             pois.add(new PoiDefinition(id, type, BlockVector3.at(x, y, z), extra));
         }
         return pois;
@@ -289,7 +275,8 @@ public class WorldService {
         }
     }
 
-    public record MapSaveResult(UUID id, Instant updatedAt) {}
+    public record MapSaveResult(UUID id, Instant updatedAt) {
+    }
 }
 
 

@@ -8,20 +8,14 @@ import java.util.UUID;
  * Used for populating audit metadata alongside the rank mutation.
  */
 public record RankChangeContext(
-    Executor executorType,
-    String executorName,
-    UUID executorUuid
+        Executor executorType,
+        String executorName,
+        UUID executorUuid
 ) {
 
     public RankChangeContext {
         Objects.requireNonNull(executorType, "executorType");
         executorName = executorName != null ? executorName : executorType.name();
-    }
-
-    public enum Executor {
-        PLAYER,
-        CONSOLE,
-        SYSTEM
     }
 
     public static RankChangeContext ofPlayer(String executorName, UUID executorUuid) {
@@ -34,5 +28,11 @@ public record RankChangeContext(
 
     public static RankChangeContext system() {
         return new RankChangeContext(Executor.SYSTEM, "System", null);
+    }
+
+    public enum Executor {
+        PLAYER,
+        CONSOLE,
+        SYSTEM
     }
 }

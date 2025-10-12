@@ -30,6 +30,7 @@ public class YamlMessageService implements MessageService {
     private final Locale defaultLocale = Locale.US;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
     private TagFormatter tagFormatter = new DefaultTagFormatter();
+
     public YamlMessageService(Path pluginDataFolder) {
         // Avoid double-nesting /lang/lang
         if (pluginDataFolder.getFileName() != null && pluginDataFolder.getFileName().toString().equalsIgnoreCase("lang")) {

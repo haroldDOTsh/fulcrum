@@ -1,9 +1,10 @@
 package sh.harold.fulcrum.minigame;
 
+import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
+
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
-import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
 
 /**
  * Metadata binding a slot family to a blueprint and configuration.

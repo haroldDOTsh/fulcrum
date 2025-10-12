@@ -21,7 +21,7 @@ import java.util.Optional;
  * </pre>
  */
 public interface ServiceLocator {
-    
+
     /**
      * Find a service instance wrapped in an Optional.
      * This is the primary way for modules to access core functionality.

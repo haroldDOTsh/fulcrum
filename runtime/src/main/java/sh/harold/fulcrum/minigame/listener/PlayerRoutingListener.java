@@ -2,11 +2,6 @@ package sh.harold.fulcrum.minigame.listener;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -21,6 +16,12 @@ import org.bukkit.scheduler.BukkitScheduler;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
 import sh.harold.fulcrum.minigame.GameManager;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Receives routing metadata from the proxy and teleports players to the designated spawn.
@@ -41,7 +42,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         this.routeRegistry = routeRegistry;
         this.gameManager = gameManager;
         this.objectMapper = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
@@ -82,7 +83,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
 
     public void handleRouteCommand(PlayerRouteCommand command) {
         plugin.getLogger().info(() -> "Received route command for " + command.getPlayerName()
-            + " (slot=" + command.getSlotId() + ", world=" + command.getTargetWorld() + ")");
+                + " (slot=" + command.getSlotId() + ", world=" + command.getTargetWorld() + ")");
         UUID playerId = command.getPlayerId();
         Location target = resolveLocation(command);
         if (target == null) {
@@ -92,14 +93,14 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
 
         Map<String, String> metadata = command.getMetadata() != null ? command.getMetadata() : Map.of();
         PlayerRouteRegistry.RouteAssignment assignment = new PlayerRouteRegistry.RouteAssignment(
-            playerId,
-            command.getPlayerName(),
-            command.getSlotId(),
-            metadata.getOrDefault("family", ""),
-            metadata.getOrDefault("variant", ""),
-            command.getProxyId(),
-            target.getWorld() != null ? target.getWorld().getName() : "",
-            metadata
+                playerId,
+                command.getPlayerName(),
+                command.getSlotId(),
+                metadata.getOrDefault("family", ""),
+                metadata.getOrDefault("variant", ""),
+                command.getProxyId(),
+                target.getWorld() != null ? target.getWorld().getName() : "",
+                metadata
         );
         routeRegistry.register(assignment);
 
@@ -122,8 +123,8 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         Player target = Bukkit.getPlayer(playerId);
         if (target != null) {
             String reason = Optional.ofNullable(command.getMetadata())
-                .map(meta -> meta.getOrDefault("reason", "Disconnected"))
-                .orElse("Disconnected");
+                    .map(meta -> meta.getOrDefault("reason", "Disconnected"))
+                    .orElse("Disconnected");
             target.kickPlayer(reason);
         }
     }
@@ -148,14 +149,14 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             }
 
             plugin.getLogger().info(() -> "Routing " + player.getName() + " to world="
-                + location.getWorld().getName() + " x=" + location.getX()
-                + " y=" + location.getY() + " z=" + location.getZ()
-                + " yaw=" + location.getYaw() + " pitch=" + location.getPitch());
+                    + location.getWorld().getName() + " x=" + location.getX()
+                    + " y=" + location.getY() + " z=" + location.getZ()
+                    + " yaw=" + location.getYaw() + " pitch=" + location.getPitch());
 
             player.teleportAsync(location).whenComplete((result, error) -> {
                 if (error != null || Boolean.FALSE.equals(result)) {
                     plugin.getLogger().warning("Async teleport failed for " + player.getName()
-                        + "; falling back to synchronous teleport." + (error != null ? " Cause: " + error.getMessage() : ""));
+                            + "; falling back to synchronous teleport." + (error != null ? " Cause: " + error.getMessage() : ""));
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
                         boolean success = player.teleport(location);
                         if (success) {
@@ -189,7 +190,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         }
         if (gameManager != null) {
             routeRegistry.get(playerId).ifPresent(assignment ->
-                gameManager.handleRoutedPlayer(event.getPlayer(), assignment));
+                    gameManager.handleRoutedPlayer(event.getPlayer(), assignment));
         }
     }
 

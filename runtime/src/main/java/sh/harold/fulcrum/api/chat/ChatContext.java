@@ -1,7 +1,8 @@
 package sh.harold.fulcrum.api.chat;
 
-import org.bukkit.entity.Player;
 import net.kyori.adventure.text.Component;
+import org.bukkit.entity.Player;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -14,22 +15,22 @@ public class ChatContext {
     private final Player player;
     private final Component message;
     private final Map<String, Object> gameData;
-    
+
     /**
      * Creates a new chat context with player and message.
-     * 
-     * @param player The player sending the message
+     *
+     * @param player  The player sending the message
      * @param message The message being sent
      */
     public ChatContext(Player player, Component message) {
         this(player, message, new HashMap<>());
     }
-    
+
     /**
      * Creates a new chat context with player, message, and game data.
-     * 
-     * @param player The player sending the message
-     * @param message The message being sent
+     *
+     * @param player   The player sending the message
+     * @param message  The message being sent
      * @param gameData Optional game-specific data
      */
     public ChatContext(Player player, Component message, Map<String, Object> gameData) {
@@ -37,31 +38,31 @@ public class ChatContext {
         this.message = message;
         this.gameData = gameData != null ? gameData : new HashMap<>();
     }
-    
+
     /**
      * Gets the player sending the message.
-     * 
+     *
      * @return The player
      */
     public Player getPlayer() {
         return player;
     }
-    
+
     /**
      * Gets the message being sent.
-     * 
+     *
      * @return The message
      */
     public Component getMessage() {
         return message;
     }
-    
+
     /**
      * Gets game-specific data from the context.
-     * 
-     * @param key The data key
+     *
+     * @param key  The data key
      * @param type The expected type
-     * @param <T> The type parameter
+     * @param <T>  The type parameter
      * @return Optional containing the data if present and of correct type
      */
     @SuppressWarnings("unchecked")
@@ -72,20 +73,20 @@ public class ChatContext {
         }
         return Optional.empty();
     }
-    
+
     /**
      * Adds game-specific data to the context.
-     * 
-     * @param key The data key
+     *
+     * @param key   The data key
      * @param value The data value
      */
     public void setGameData(String key, Object value) {
         gameData.put(key, value);
     }
-    
+
     /**
      * Gets all game data.
-     * 
+     *
      * @return Map of all game data
      */
     public Map<String, Object> getAllGameData() {

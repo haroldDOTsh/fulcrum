@@ -12,12 +12,6 @@ import com.sk89q.worldedit.function.operation.Operations;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.CuboidRegion;
 import com.sk89q.worldedit.world.block.BlockTypes;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -25,6 +19,13 @@ import sh.harold.fulcrum.fundamentals.world.WorldService;
 import sh.harold.fulcrum.fundamentals.world.model.LoadedWorld;
 import sh.harold.fulcrum.fundamentals.world.model.PoiDefinition;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Utilities for spawning and cleaning up the floating pre-game lobby structure.
@@ -87,10 +88,10 @@ public final class PregameLobbyManager {
             com.sk89q.worldedit.world.World weWorld = BukkitAdapter.adapt(world);
             try (EditSession editSession = WorldEdit.getInstance().newEditSession(weWorld)) {
                 Operation operation = new com.sk89q.worldedit.session.ClipboardHolder(clipboard)
-                    .createPaste(editSession)
-                    .to(pasteBase)
-                    .ignoreAirBlocks(false)
-                    .build();
+                        .createPaste(editSession)
+                        .to(pasteBase)
+                        .ignoreAirBlocks(false)
+                        .build();
                 Operations.complete(operation);
                 editSession.flushQueue();
             }

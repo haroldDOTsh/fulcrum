@@ -1,10 +1,11 @@
 package sh.harold.fulcrum.minigame;
 
+import org.bukkit.entity.Player;
+import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
+
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
-import org.bukkit.entity.Player;
-import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 
 /**
  * Convenience facade over {@link MinigameEngine} exposing lifecycle operations for modules.

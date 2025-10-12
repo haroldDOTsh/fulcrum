@@ -1,22 +1,16 @@
 package sh.harold.fulcrum.fundamentals.slot.discovery;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Logger;
 import sh.harold.fulcrum.api.module.impl.ModuleManager;
 import sh.harold.fulcrum.api.module.impl.ModuleMetadata;
 import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
 import sh.harold.fulcrum.api.slot.SlotFamilyProvider;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
 
 /**
  * Coordinates module-provided slot family descriptors, applying host filters before
@@ -79,7 +73,7 @@ public class SlotFamilyService {
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
             locator.findService(SimpleSlotOrchestrator.class)
-                .ifPresent(orchestrator -> orchestrator.configureFamilies(snapshot));
+                    .ifPresent(orchestrator -> orchestrator.configureFamilies(snapshot));
         }
         return snapshot;
     }

@@ -75,8 +75,8 @@ public final class SlotFamilyFilter {
 
         public SlotFamilyFilter build() {
             return new SlotFamilyFilter(
-                Collections.unmodifiableSet(new HashSet<>(allow)),
-                Collections.unmodifiableSet(new HashSet<>(deny))
+                    Collections.unmodifiableSet(new HashSet<>(allow)),
+                    Collections.unmodifiableSet(new HashSet<>(deny))
             );
         }
     }

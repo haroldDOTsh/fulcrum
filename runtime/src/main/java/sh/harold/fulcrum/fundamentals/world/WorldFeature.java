@@ -7,10 +7,10 @@ import io.papermc.paper.command.brigadier.Commands;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
 import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
+import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.world.poi.POIRegistry;
 import sh.harold.fulcrum.fundamentals.world.commands.WorldCommand;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
@@ -104,8 +104,8 @@ public class WorldFeature implements PluginFeature {
         }
         if (connectionAdapter == null && ServiceLocatorImpl.getInstance() != null) {
             connectionAdapter = ServiceLocatorImpl.getInstance()
-                .findService(PostgresConnectionAdapter.class)
-                .orElse(null);
+                    .findService(PostgresConnectionAdapter.class)
+                    .orElse(null);
         }
 
         if (connectionAdapter != null && !ensureWorldSchema(connectionAdapter)) {
@@ -116,13 +116,13 @@ public class WorldFeature implements PluginFeature {
     private boolean ensureWorldSchema(PostgresConnectionAdapter adapter) {
         try {
             SchemaRegistry.ensureSchema(
-                adapter,
-                SchemaDefinition.fromResource(
-                    "world-maps-001",
-                    "Create world map storage table",
-                    plugin.getClass().getClassLoader(),
-                    "migrations/world_maps.sql"
-                )
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "world-maps-001",
+                            "Create world map storage table",
+                            plugin.getClass().getClassLoader(),
+                            "migrations/world_maps.sql"
+                    )
             );
             return true;
         } catch (Exception ex) {
@@ -133,15 +133,15 @@ public class WorldFeature implements PluginFeature {
 
     private void registerFallbackCommand(String message) {
         LiteralCommandNode<CommandSourceStack> node = Commands.literal("world")
-            .requires(source -> {
-            var sender = source.getSender();
-            return RankUtils.isAdmin(sender) || sender.hasPermission("fulcrum.world.manage") || sender.hasPermission("fulcrum.world.view") || sender.isOp();
-        })
-            .executes(ctx -> {
-                ctx.getSource().getSender().sendMessage(Component.text(message, NamedTextColor.RED));
-                return Command.SINGLE_SUCCESS;
-            })
-            .build();
+                .requires(source -> {
+                    var sender = source.getSender();
+                    return RankUtils.isAdmin(sender) || sender.hasPermission("fulcrum.world.manage") || sender.hasPermission("fulcrum.world.view") || sender.isOp();
+                })
+                .executes(ctx -> {
+                    ctx.getSource().getSender().sendMessage(Component.text(message, NamedTextColor.RED));
+                    return Command.SINGLE_SUCCESS;
+                })
+                .build();
         CommandRegistrar.register(node);
         CommandRegistrar.registerAlias(node, "worlds");
         plugin.getLogger().warning("[FUNDAMENTALS] World commands limited - " + message);

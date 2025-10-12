@@ -68,16 +68,16 @@ public final class SlotFamilyDescriptor {
 
     public Builder toBuilder() {
         return new Builder(familyId, minPlayers, maxPlayers)
-            .playerEquivalentFactor(playerEquivalentFactor)
-            .addAllMetadata(metadata);
+                .playerEquivalentFactor(playerEquivalentFactor)
+                .addAllMetadata(metadata);
     }
 
     public static final class Builder {
         private final String familyId;
         private final int minPlayers;
         private final int maxPlayers;
-        private int playerEquivalentFactor = DEFAULT_FACTOR;
         private final Map<String, String> metadata = new HashMap<>();
+        private int playerEquivalentFactor = DEFAULT_FACTOR;
 
         private Builder(String familyId, int minPlayers, int maxPlayers) {
             this.familyId = Objects.requireNonNull(familyId, "familyId");
@@ -113,11 +113,11 @@ public final class SlotFamilyDescriptor {
                 throw new IllegalArgumentException("playerEquivalentFactor must be >= " + DEFAULT_FACTOR);
             }
             return new SlotFamilyDescriptor(
-                familyId,
-                minPlayers,
-                maxPlayers,
-                playerEquivalentFactor,
-                metadata
+                    familyId,
+                    minPlayers,
+                    maxPlayers,
+                    playerEquivalentFactor,
+                    metadata
             );
         }
     }

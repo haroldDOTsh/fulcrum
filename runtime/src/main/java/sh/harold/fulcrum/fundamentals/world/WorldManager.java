@@ -45,9 +45,9 @@ public class WorldManager {
 
     public CompletableFuture<WorldPasteResult> pasteWorld(UUID databaseRowId, World targetWorld, Location pasteLocation) {
         return CompletableFuture.supplyAsync(() ->
-            worldService.getWorldById(databaseRowId)
-                .map(world -> pasteLoadedWorld(world, targetWorld, pasteLocation))
-                .orElseGet(() -> new WorldPasteResult(false, "World not found in database: " + databaseRowId))
+                worldService.getWorldById(databaseRowId)
+                        .map(world -> pasteLoadedWorld(world, targetWorld, pasteLocation))
+                        .orElseGet(() -> new WorldPasteResult(false, "World not found in database: " + databaseRowId))
         );
     }
 
@@ -67,19 +67,19 @@ public class WorldManager {
             com.sk89q.worldedit.world.World adaptedWorld = BukkitAdapter.adapt(targetWorld);
             try (EditSession editSession = WorldEdit.getInstance().newEditSession(adaptedWorld)) {
                 BlockVector3 pastePos = BlockVector3.at(
-                    pasteLocation.getBlockX(),
-                    pasteLocation.getBlockY(),
-                    pasteLocation.getBlockZ()
+                        pasteLocation.getBlockX(),
+                        pasteLocation.getBlockY(),
+                        pasteLocation.getBlockZ()
                 );
                 if (clipboard.getOrigin() == null) {
                     clipboard.setOrigin(BlockVector3.ZERO);
                 }
 
                 Operation operation = new ClipboardHolder(clipboard)
-                    .createPaste(editSession)
-                    .to(pastePos)
-                    .ignoreAirBlocks(false)
-                    .build();
+                        .createPaste(editSession)
+                        .to(pastePos)
+                        .ignoreAirBlocks(false)
+                        .build();
 
                 Operations.complete(operation);
                 applyPOIs(world, targetWorld, pasteLocation);
@@ -97,13 +97,13 @@ public class WorldManager {
         List<PoiDefinition> pois = world.getPois();
         for (PoiDefinition poi : pois) {
             Location absolute = baseLocation.clone().add(
-                poi.position().x(),
-                poi.position().y(),
-                poi.position().z()
+                    poi.position().x(),
+                    poi.position().y(),
+                    poi.position().z()
             );
             poiRegistry.registerPOI(targetWorld, absolute, poi.toConfigJson());
             logger.fine(() -> String.format(Locale.ROOT,
-                "Registered POI %s[%s] at %s", poi.identifier(), poi.type(), absolute));
+                    "Registered POI %s[%s] at %s", poi.identifier(), poi.type(), absolute));
         }
     }
 

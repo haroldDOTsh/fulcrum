@@ -2,17 +2,18 @@ package sh.harold.fulcrum.minigame;
 
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
+import sh.harold.fulcrum.fundamentals.world.WorldManager;
+import sh.harold.fulcrum.fundamentals.world.WorldService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
-import java.util.logging.Logger;
-import sh.harold.fulcrum.fundamentals.world.WorldManager;
-import sh.harold.fulcrum.fundamentals.world.WorldService;
-import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
 import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
-import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.listener.SpectatorListener;
+import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
+
+import java.util.logging.Logger;
 
 /**
  * Bootstraps the minigame engine and registers it in the service locator.
@@ -35,9 +36,9 @@ public class MinigameEngineFeature implements PluginFeature {
         container.register(PlayerRouteRegistry.class, routeRegistry);
         environmentService = createEnvironmentService(plugin, container);
         SimpleSlotOrchestrator orchestrator = container.getOptional(SimpleSlotOrchestrator.class)
-            .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
-                ? ServiceLocatorImpl.getInstance().findService(SimpleSlotOrchestrator.class).orElse(null)
-                : null);
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(SimpleSlotOrchestrator.class).orElse(null)
+                        : null);
         if (orchestrator == null) {
             plugin.getLogger().warning("SimpleSlotOrchestrator unavailable; provisioning events will be deferred.");
         }
@@ -86,13 +87,13 @@ public class MinigameEngineFeature implements PluginFeature {
 
     private MinigameEnvironmentService createEnvironmentService(JavaPlugin plugin, DependencyContainer container) {
         WorldService worldService = container.getOptional(WorldService.class)
-            .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
-                ? ServiceLocatorImpl.getInstance().findService(WorldService.class).orElse(null)
-                : null);
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(WorldService.class).orElse(null)
+                        : null);
         WorldManager worldManager = container.getOptional(WorldManager.class)
-            .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
-                ? ServiceLocatorImpl.getInstance().findService(WorldManager.class).orElse(null)
-                : null);
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(WorldManager.class).orElse(null)
+                        : null);
         if (worldService == null || worldManager == null) {
             plugin.getLogger().warning("Minigame environment service unavailable (world services missing)");
             return null;

@@ -8,7 +8,6 @@ import sh.harold.fulcrum.api.message.scoreboard.player.PlayerScoreboardState;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
 
 /**
  * Default implementation of PlayerScoreboardManager.

@@ -1,8 +1,9 @@
 package sh.harold.fulcrum.minigame;
 
-import java.util.Collection;
 import sh.harold.fulcrum.api.module.FulcrumModule;
 import sh.harold.fulcrum.api.slot.SlotFamilyProvider;
+
+import java.util.Collection;
 
 /**
  * Marker for Fulcrum modules that expose minigame blueprints.

@@ -6,11 +6,11 @@ package sh.harold.fulcrum.api.module;
  */
 public final class FulcrumPlatformHolder {
     private static FulcrumPlatform platform;
-    
+
     private FulcrumPlatformHolder() {
         // Private constructor to prevent instantiation
     }
-    
+
     /**
      * Initialize the FulcrumPlatform instance.
      * This should only be called once during plugin initialization.
@@ -27,7 +27,7 @@ public final class FulcrumPlatformHolder {
         }
         FulcrumPlatformHolder.platform = platform;
     }
-    
+
     /**
      * Get the FulcrumPlatform instance.
      *
@@ -37,11 +37,11 @@ public final class FulcrumPlatformHolder {
     public static FulcrumPlatform getPlatform() {
         if (platform == null) {
             throw new IllegalStateException("FulcrumPlatform has not been initialized. " +
-                "This usually means you're trying to access it before the Fulcrum plugin has loaded.");
+                    "This usually means you're trying to access it before the Fulcrum plugin has loaded.");
         }
         return platform;
     }
-    
+
     /**
      * Check if the FulcrumPlatform has been initialized.
      *
@@ -50,7 +50,7 @@ public final class FulcrumPlatformHolder {
     public static boolean isInitialized() {
         return platform != null;
     }
-    
+
     /**
      * Clear the stored instance. This should only be used for testing purposes.
      */

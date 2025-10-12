@@ -19,8 +19,8 @@ public final class SpectatorListener implements Listener {
             return;
         }
         if (item.hasItemMeta()
-            && item.getItemMeta().hasDisplayName()
-            && ChatColor.stripColor(item.getItemMeta().getDisplayName()).equalsIgnoreCase("Return to Lobby")) {
+                && item.getItemMeta().hasDisplayName()
+                && ChatColor.stripColor(item.getItemMeta().getDisplayName()).equalsIgnoreCase("Return to Lobby")) {
             event.getPlayer().sendMessage(ChatColor.GRAY + "Lobby warp coming soon; hang tight!");
             event.setCancelled(true);
         }

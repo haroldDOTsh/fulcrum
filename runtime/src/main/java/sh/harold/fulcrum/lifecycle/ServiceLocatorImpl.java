@@ -10,8 +10,8 @@ import java.util.Optional;
  * separation between API and runtime modules.
  */
 public class ServiceLocatorImpl implements ServiceLocator {
-    private final DependencyContainer container;
     private static ServiceLocatorImpl instance;
+    private final DependencyContainer container;
 
     /**
      * Creates a new ServiceLocator implementation with the given container.
@@ -34,6 +34,10 @@ public class ServiceLocatorImpl implements ServiceLocator {
      */
     public static ServiceLocatorImpl getInstance() {
         return instance;
+    }
+
+    public static void reset() {
+        instance = null;
     }
 
     @Override
@@ -62,9 +66,5 @@ public class ServiceLocatorImpl implements ServiceLocator {
      */
     public <T> void unregisterService(Class<T> serviceClass) {
         container.unregister(serviceClass);
-    }
-
-    public static void reset() {
-        instance = null;
     }
 }

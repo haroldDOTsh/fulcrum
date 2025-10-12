@@ -1,12 +1,5 @@
 package sh.harold.fulcrum.minigame.state.context;
 
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
@@ -18,9 +11,17 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitScheduler;
 import sh.harold.fulcrum.minigame.MinigameAttributes;
-import sh.harold.fulcrum.minigame.match.RosterManager;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
+import sh.harold.fulcrum.minigame.match.RosterManager;
 import sh.harold.fulcrum.minigame.state.machine.StateMachine;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Runtime context passed to states. Provides access to players, scheduler, and shared attributes.
@@ -29,10 +30,10 @@ public final class StateContext {
     private final JavaPlugin plugin;
     private final UUID matchId;
     private final Set<UUID> activePlayers;
-    private StateMachine stateMachine;
     private final Map<String, Object> attributes = new ConcurrentHashMap<>();
     private final RosterManager roster;
     private final MinigameRegistration registration;
+    private StateMachine stateMachine;
 
     public StateContext(JavaPlugin plugin,
                         UUID matchId,
@@ -75,6 +76,7 @@ public final class StateContext {
     public RosterManager roster() {
         return roster;
     }
+
     public Optional<MinigameRegistration> getRegistration() {
         return Optional.ofNullable(registration);
     }

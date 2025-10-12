@@ -1,30 +1,22 @@
 package sh.harold.fulcrum.minigame.environment;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Stream;
-import org.bukkit.Bukkit;
-import org.bukkit.GameRule;
-import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.WorldCreator;
-import org.bukkit.WorldType;
+import org.bukkit.*;
 import org.bukkit.entity.Player;
 import sh.harold.fulcrum.api.world.generator.VoidChunkGenerator;
 import sh.harold.fulcrum.fundamentals.world.WorldManager;
 import sh.harold.fulcrum.fundamentals.world.WorldManager.WorldPasteResult;
 import sh.harold.fulcrum.fundamentals.world.WorldService;
 import sh.harold.fulcrum.fundamentals.world.model.LoadedWorld;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 /**
  * Shared helper that prepares per-slot match worlds by pasting cached schematics.
@@ -58,7 +50,7 @@ public class MinigameEnvironmentService {
         }
 
         String mapId = metadata != null && metadata.containsKey("mapId")
-            ? metadata.get("mapId") : DEFAULT_MAP_ID;
+                ? metadata.get("mapId") : DEFAULT_MAP_ID;
 
         Optional<LoadedWorld> mapOptional = resolveMap(mapId);
         if (mapOptional.isEmpty()) {
@@ -89,7 +81,7 @@ public class MinigameEnvironmentService {
 
         if (pasteResult == null || !pasteResult.isSuccess()) {
             logger.warning("Unable to prepare map '" + mapId + "' for slot " + slotId + ": "
-                + (pasteResult != null ? pasteResult.getMessage() : "unknown"));
+                    + (pasteResult != null ? pasteResult.getMessage() : "unknown"));
             cleanupWorld(worldName);
             return null;
         }
@@ -99,10 +91,10 @@ public class MinigameEnvironmentService {
         world.setSpawnLocation(lobbySpawn);
 
         MatchEnvironment environment = new MatchEnvironment(slotId, worldName, mapId,
-            lobbySpawn, matchSpawn);
+                lobbySpawn, matchSpawn);
         environments.put(slotId, environment);
         logger.info(() -> "Prepared match environment '" + worldName + "' for slot " + slotId
-            + " (mapId=" + mapId + ")");
+                + " (mapId=" + mapId + ")");
         return environment;
     }
 
@@ -159,31 +151,31 @@ public class MinigameEnvironmentService {
 
     private Location resolveMatchSpawn(LoadedWorld map, Location pasteLocation) {
         return map.getPois().stream()
-            .filter(poi -> "origin".equalsIgnoreCase(poi.type()))
-            .findFirst()
-            .map(poi -> pasteLocation.clone().add(
-                poi.position().x() + 0.5D,
-                poi.position().y(),
-                poi.position().z() + 0.5D))
-            .orElseGet(() -> pasteLocation.clone().add(0.5D, 1.0D, 0.5D));
+                .filter(poi -> "origin".equalsIgnoreCase(poi.type()))
+                .findFirst()
+                .map(poi -> pasteLocation.clone().add(
+                        poi.position().x() + 0.5D,
+                        poi.position().y(),
+                        poi.position().z() + 0.5D))
+                .orElseGet(() -> pasteLocation.clone().add(0.5D, 1.0D, 0.5D));
     }
 
     private Location resolvePreLobbySpawn(LoadedWorld map, Location pasteLocation, Location matchSpawn) {
         return map.getPois().stream()
-            .filter(poi -> "preorigin".equalsIgnoreCase(poi.type()))
-            .findFirst()
-            .map(poi -> pasteLocation.clone().add(
-                poi.position().x() + 0.5D,
-                poi.position().y(),
-                poi.position().z() + 0.5D))
-            .orElse(matchSpawn.clone());
+                .filter(poi -> "preorigin".equalsIgnoreCase(poi.type()))
+                .findFirst()
+                .map(poi -> pasteLocation.clone().add(
+                        poi.position().x() + 0.5D,
+                        poi.position().y(),
+                        poi.position().z() + 0.5D))
+                .orElse(matchSpawn.clone());
     }
 
     private void cleanupWorld(String worldName) {
         World world = Bukkit.getWorld(worldName);
         if (world != null) {
             Location fallback = !Bukkit.getWorlds().isEmpty()
-                ? Bukkit.getWorlds().get(0).getSpawnLocation() : null;
+                    ? Bukkit.getWorlds().get(0).getSpawnLocation() : null;
             for (Player player : List.copyOf(world.getPlayers())) {
                 if (fallback != null) {
                     player.teleport(fallback);

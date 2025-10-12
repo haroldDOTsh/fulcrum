@@ -20,15 +20,7 @@ import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -40,12 +32,12 @@ import java.util.stream.Collectors;
  * Handles rank persistence, retrieval, caching, and audit logging.
  */
 public class RankFeature implements PluginFeature, RankService, Listener {
-    
+
     private static final String PLAYERS_COLLECTION = "players";
     private static final String LEGACY_RANKS_COLLECTION = "player_ranks";
     private final Map<UUID, Set<Rank>> rankCache = new ConcurrentHashMap<>();
     private final Map<UUID, Rank> primaryRankCache = new ConcurrentHashMap<>();
-    
+
     private JavaPlugin plugin;
     private Logger logger;
     private DataAPI dataAPI;
@@ -53,72 +45,72 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     private Collection legacyRanksCollection;
     private DependencyContainer container;
     private RankAuditLogRepository auditLogRepository;
-    
+
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.container = container;
-        
+
         try {
             this.dataAPI = container.get(DataAPI.class);
             if (dataAPI == null) {
                 logger.warning("DataAPI not available, rank persistence will not work!");
                 return;
             }
-            
+
             this.playersCollection = dataAPI.collection(PLAYERS_COLLECTION);
             this.legacyRanksCollection = dataAPI.from(LEGACY_RANKS_COLLECTION);
-            
+
             initializeAuditLogging();
-            
+
             container.register(RankService.class, this);
             if (ServiceLocatorImpl.getInstance() != null) {
                 ServiceLocatorImpl.getInstance().registerService(RankService.class, this);
             }
-            
+
             plugin.getServer().getPluginManager().registerEvents(this, plugin);
             registerCommand();
-            
+
             logger.info("Rank system initialized");
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Failed to initialize rank system", e);
         }
     }
-    
+
     @Override
     public void shutdown() {
         logger.info("Shutting down rank system...");
-        
+
         saveAllCachedData();
         rankCache.clear();
         primaryRankCache.clear();
-        
+
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().unregisterService(RankService.class);
         }
-        
+
         auditLogRepository = null;
-        
+
         logger.info("Rank system shut down");
     }
-    
+
     @Override
     public int getPriority() {
         return 50; // Normal priority
     }
-    
+
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         UUID playerId = player.getUniqueId();
-        
+
         loadPlayerRanks(playerId).thenAccept(ranks -> {
             if (ranks.isEmpty()) {
                 // Ensure new players have a default rank recorded but avoid audit noise
                 setPrimaryRank(playerId, Rank.DEFAULT, RankChangeContext.system());
             }
-            
+
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
                 player.updateCommands();
                 logger.fine("Updated command tree for " + player.getName() + " on join");
@@ -128,44 +120,44 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             return null;
         });
     }
-    
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         UUID playerId = event.getPlayer().getUniqueId();
-        
+
         CompletableFuture.runAsync(() -> persistRankState(
-            playerId,
-            primaryRankCache.get(playerId),
-            primaryRankCache.get(playerId),
-            rankCache.getOrDefault(playerId, Set.of()),
-            RankChangeContext.system(),
-            false,
-            false
+                playerId,
+                primaryRankCache.get(playerId),
+                primaryRankCache.get(playerId),
+                rankCache.getOrDefault(playerId, Set.of()),
+                RankChangeContext.system(),
+                false,
+                false
         )).whenComplete((ignored, throwable) -> {
             rankCache.remove(playerId);
             primaryRankCache.remove(playerId);
         });
     }
-    
+
     @Override
     public CompletableFuture<Rank> getPrimaryRank(UUID playerId) {
         Rank cached = primaryRankCache.get(playerId);
         if (cached != null) {
             return CompletableFuture.completedFuture(cached);
         }
-        
+
         return loadPlayerRanks(playerId).thenApply(ranks -> {
             Rank primary = getEffectiveRankFromSet(ranks);
             primaryRankCache.put(playerId, primary);
             return primary;
         });
     }
-    
+
     @Override
     public Rank getPrimaryRankSync(UUID playerId) {
         return primaryRankCache.getOrDefault(playerId, Rank.DEFAULT);
     }
-    
+
     @Override
     public CompletableFuture<Set<Rank>> getAllRanks(UUID playerId) {
         Set<Rank> cached = rankCache.get(playerId);
@@ -174,45 +166,45 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         }
         return loadPlayerRanks(playerId).thenApply(HashSet::new);
     }
-    
+
     @Override
     public CompletableFuture<Void> setPrimaryRank(UUID playerId, Rank rank, RankChangeContext context) {
         return CompletableFuture.runAsync(() -> {
             Set<Rank> ranks = ensureRanksLoaded(playerId);
             Set<Rank> before = new HashSet<>(ranks);
             Rank previousPrimary = primaryRankCache.getOrDefault(playerId, getEffectiveRankFromSet(ranks));
-            
+
             ranks.add(rank);
             Rank newPrimary = getEffectiveRankFromSet(ranks);
             primaryRankCache.put(playerId, newPrimary);
-            
+
             boolean changed = !before.equals(ranks) || !Objects.equals(previousPrimary, newPrimary);
             persistRankState(playerId, previousPrimary, newPrimary, ranks, context, changed, true);
             updateOnlinePlayerCommands(playerId);
         });
     }
-    
+
     @Override
     public CompletableFuture<Void> addRank(UUID playerId, Rank rank, RankChangeContext context) {
         return CompletableFuture.runAsync(() -> {
             Set<Rank> ranks = ensureRanksLoaded(playerId);
             Set<Rank> before = new HashSet<>(ranks);
             Rank previousPrimary = primaryRankCache.getOrDefault(playerId, getEffectiveRankFromSet(ranks));
-            
+
             boolean added = ranks.add(rank);
             if (!added) {
                 return;
             }
-            
+
             Rank newPrimary = getEffectiveRankFromSet(ranks);
             primaryRankCache.put(playerId, newPrimary);
-            
+
             boolean changed = true;
             persistRankState(playerId, previousPrimary, newPrimary, ranks, context, changed, true);
             updateOnlinePlayerCommands(playerId);
         });
     }
-    
+
     @Override
     public CompletableFuture<Void> removeRank(UUID playerId, Rank rank, RankChangeContext context) {
         return CompletableFuture.runAsync(() -> {
@@ -220,25 +212,25 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             if (!ranks.contains(rank)) {
                 return;
             }
-            
+
             Set<Rank> before = new HashSet<>(ranks);
             Rank previousPrimary = primaryRankCache.getOrDefault(playerId, getEffectiveRankFromSet(ranks));
-            
+
             ranks.remove(rank);
             Rank newPrimary = getEffectiveRankFromSet(ranks);
             primaryRankCache.put(playerId, newPrimary);
-            
+
             boolean changed = true;
             persistRankState(playerId, previousPrimary, newPrimary, ranks, context, changed, true);
             updateOnlinePlayerCommands(playerId);
         });
     }
-    
+
     @Override
     public CompletableFuture<Rank> getEffectiveRank(UUID playerId) {
         return getAllRanks(playerId).thenApply(this::getEffectiveRankFromSet);
     }
-    
+
     @Override
     public Rank getEffectiveRankSync(UUID playerId) {
         Set<Rank> ranks = rankCache.get(playerId);
@@ -247,38 +239,38 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         }
         return getEffectiveRankFromSet(ranks);
     }
-    
+
     @Override
     public CompletableFuture<Boolean> hasRank(UUID playerId, Rank rank) {
         return getAllRanks(playerId).thenApply(ranks -> ranks.contains(rank));
     }
-    
+
     @Override
     public CompletableFuture<Boolean> isStaff(UUID playerId) {
         return getAllRanks(playerId).thenApply(ranks ->
-            ranks.stream().anyMatch(Rank::isStaff)
+                ranks.stream().anyMatch(Rank::isStaff)
         );
     }
-    
+
     @Override
     public CompletableFuture<Void> resetRanks(UUID playerId, RankChangeContext context) {
         return CompletableFuture.runAsync(() -> {
             Set<Rank> ranks = ensureRanksLoaded(playerId);
             Set<Rank> before = new HashSet<>(ranks);
             Rank previousPrimary = primaryRankCache.getOrDefault(playerId, getEffectiveRankFromSet(ranks));
-            
+
             ranks.clear();
             ranks.add(Rank.DEFAULT);
-            
+
             Rank newPrimary = Rank.DEFAULT;
             primaryRankCache.put(playerId, newPrimary);
-            
+
             boolean changed = !before.equals(ranks) || !Objects.equals(previousPrimary, newPrimary);
             persistRankState(playerId, previousPrimary, newPrimary, ranks, context, changed, true);
             updateOnlinePlayerCommands(playerId);
         });
     }
-    
+
     private void updateOnlinePlayerCommands(UUID playerId) {
         Player player = plugin.getServer().getPlayer(playerId);
         if (player != null && player.isOnline()) {
@@ -288,7 +280,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             });
         }
     }
-    
+
     private Set<Rank> ensureRanksLoaded(UUID playerId) {
         Set<Rank> ranks = rankCache.get(playerId);
         if (ranks != null) {
@@ -296,11 +288,11 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         }
         return loadPlayerRanks(playerId).join();
     }
-    
+
     private CompletableFuture<Set<Rank>> loadPlayerRanks(UUID playerId) {
         return CompletableFuture.supplyAsync(() -> {
             Set<Rank> ranks = readRanksFromPlayerDocument(playerId);
-            
+
             if (ranks.isEmpty()) {
                 Set<Rank> legacy = readLegacyRanks(playerId);
                 if (!legacy.isEmpty()) {
@@ -309,18 +301,18 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                     persistRankState(playerId, null, effective, ranks, RankChangeContext.system(), true, false);
                 }
             }
-            
+
             rankCache.put(playerId, ranks);
             primaryRankCache.put(playerId, getEffectiveRankFromSet(ranks));
             return ranks;
         });
     }
-    
+
     private Set<Rank> readRanksFromPlayerDocument(UUID playerId) {
         try {
             Document doc = playersCollection.document(playerId.toString());
             Set<Rank> ranks = new HashSet<>();
-            
+
             Object storedRanks = doc.get("rankInfo.all");
             if (storedRanks instanceof List<?> list) {
                 for (Object value : list) {
@@ -330,7 +322,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                     }
                 }
             }
-            
+
             String primaryName = doc.get("rankInfo.primary", null);
             if (primaryName == null) {
                 primaryName = doc.get("rank", null); // legacy fallback
@@ -339,26 +331,26 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             if (primary != null) {
                 ranks.add(primary);
             }
-            
+
             return ranks;
-            
+
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to read rank data for " + playerId, e);
             return new HashSet<>();
         }
     }
-    
+
     private Set<Rank> readLegacyRanks(UUID playerId) {
         if (legacyRanksCollection == null) {
             return new HashSet<>();
         }
-        
+
         try {
             Document doc = legacyRanksCollection.document(playerId.toString());
             if (!doc.exists()) {
                 return new HashSet<>();
             }
-            
+
             Set<Rank> ranks = new HashSet<>();
             Object list = doc.get("ranks");
             if (list instanceof List<?> rawRanks) {
@@ -369,30 +361,30 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                     }
                 }
             }
-            
+
             String primaryName = doc.get("primary_rank", null);
             Rank primary = parseRank(primaryName);
             if (primary != null) {
                 ranks.add(primary);
             }
-            
+
             return ranks;
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to load legacy rank data for " + playerId, e);
             return new HashSet<>();
         }
     }
-    
+
     private Rank parseRank(Object value) {
         if (value == null) {
             return null;
         }
-        
+
         String name = value.toString().trim();
         if (name.isEmpty()) {
             return null;
         }
-        
+
         try {
             return Rank.valueOf(name.toUpperCase());
         } catch (IllegalArgumentException ex) {
@@ -400,7 +392,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             return null;
         }
     }
-    
+
     private void persistRankState(UUID playerId,
                                   Rank previousPrimary,
                                   Rank newPrimary,
@@ -411,20 +403,20 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         try {
             Document playerDoc = playersCollection.document(playerId.toString());
             String playerName = playerDoc.get("username", "Unknown");
-            
+
             List<String> orderedRanks = ranks.stream()
-                .filter(Objects::nonNull)
-                .sorted(Comparator.comparingInt(Rank::getPriority).reversed())
-                .map(Enum::name)
-                .collect(Collectors.toCollection(ArrayList::new));
-            
+                    .filter(Objects::nonNull)
+                    .sorted(Comparator.comparingInt(Rank::getPriority).reversed())
+                    .map(Enum::name)
+                    .collect(Collectors.toCollection(ArrayList::new));
+
             String primaryName = newPrimary != null ? newPrimary.name() : Rank.DEFAULT.name();
             playerDoc.set("rank", primaryName);
-            
+
             Map<String, Object> rankInfo = new HashMap<>();
             rankInfo.put("primary", primaryName);
             rankInfo.put("all", orderedRanks);
-            
+
             if (changed && context != null) {
                 rankInfo.put("updatedAt", System.currentTimeMillis());
                 rankInfo.put("updatedBy", buildUpdatedBy(context));
@@ -438,18 +430,18 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                     rankInfo.put("updatedBy", updatedBy);
                 }
             }
-            
+
             playerDoc.set("rankInfo", rankInfo);
-            
+
             if (auditLogRepository != null && allowLogging && changed && context != null &&
-                context.executorType() != RankChangeContext.Executor.SYSTEM) {
+                    context.executorType() != RankChangeContext.Executor.SYSTEM) {
                 auditLogRepository.recordChange(playerId, playerName, previousPrimary, newPrimary, orderedRanks, context);
             }
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to persist rank data for " + playerId, e);
         }
     }
-    
+
     private Map<String, Object> buildUpdatedBy(RankChangeContext context) {
         Map<String, Object> updatedBy = new HashMap<>();
         updatedBy.put("type", context.executorType().name());
@@ -459,7 +451,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         }
         return updatedBy;
     }
-    
+
     private void initializeAuditLogging() {
         PostgresConnectionAdapter postgresAdapter = null;
         if (container != null) {
@@ -467,8 +459,8 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         }
         if (postgresAdapter == null && ServiceLocatorImpl.getInstance() != null) {
             postgresAdapter = ServiceLocatorImpl.getInstance()
-                .findService(PostgresConnectionAdapter.class)
-                .orElse(null);
+                    .findService(PostgresConnectionAdapter.class)
+                    .orElse(null);
         }
 
         if (postgresAdapter == null) {
@@ -486,14 +478,14 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             this.auditLogRepository = null;
         }
     }
-    
+
     private void saveAllCachedData() {
         rankCache.forEach((playerId, ranks) -> {
             Rank primary = primaryRankCache.getOrDefault(playerId, getEffectiveRankFromSet(ranks));
             persistRankState(playerId, primary, primary, ranks, RankChangeContext.system(), false, false);
         });
     }
-    
+
     private void registerCommand() {
         try {
             RankCommand rankCommand = new RankCommand(this, logger);
@@ -503,15 +495,15 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             logger.log(Level.SEVERE, "Failed to register rank command", e);
         }
     }
-    
+
     private Rank getEffectiveRankFromSet(Set<Rank> ranks) {
         if (ranks == null || ranks.isEmpty()) {
             return Rank.DEFAULT;
         }
-        
+
         return ranks.stream()
-            .filter(Objects::nonNull)
-            .max(Comparator.comparingInt(Rank::getPriority))
-            .orElse(Rank.DEFAULT);
+                .filter(Objects::nonNull)
+                .max(Comparator.comparingInt(Rank::getPriority))
+                .orElse(Rank.DEFAULT);
     }
 }

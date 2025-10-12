@@ -4,14 +4,14 @@ package sh.harold.fulcrum.api.world.paste;
  * Represents a transformation to apply when pasting.
  */
 public class Transform {
-    
+
     private final int rotationY;
     private final boolean flipX;
     private final boolean flipZ;
     private final double scaleX;
     private final double scaleY;
     private final double scaleZ;
-    
+
     private Transform(Builder builder) {
         this.rotationY = builder.rotationY;
         this.flipX = builder.flipX;
@@ -20,70 +20,70 @@ public class Transform {
         this.scaleY = builder.scaleY;
         this.scaleZ = builder.scaleZ;
     }
-    
-    /**
-     * Get the Y-axis rotation in degrees (0, 90, 180, 270).
-     */
-    public int getRotationY() {
-        return rotationY;
-    }
-    
-    /**
-     * Check if the transformation flips on the X axis.
-     */
-    public boolean isFlipX() {
-        return flipX;
-    }
-    
-    /**
-     * Check if the transformation flips on the Z axis.
-     */
-    public boolean isFlipZ() {
-        return flipZ;
-    }
-    
-    /**
-     * Get the X-axis scale factor.
-     */
-    public double getScaleX() {
-        return scaleX;
-    }
-    
-    /**
-     * Get the Y-axis scale factor.
-     */
-    public double getScaleY() {
-        return scaleY;
-    }
-    
-    /**
-     * Get the Z-axis scale factor.
-     */
-    public double getScaleZ() {
-        return scaleZ;
-    }
-    
+
     /**
      * Create a new transform builder.
      */
     public static Builder builder() {
         return new Builder();
     }
-    
+
     /**
      * Get an identity transform (no changes).
      */
     public static Transform identity() {
         return new Builder().build();
     }
-    
+
     /**
      * Create a rotation-only transform.
      */
     public static Transform rotate(int degrees) {
         return new Builder().rotateY(degrees).build();
     }
-    
+
+    /**
+     * Get the Y-axis rotation in degrees (0, 90, 180, 270).
+     */
+    public int getRotationY() {
+        return rotationY;
+    }
+
+    /**
+     * Check if the transformation flips on the X axis.
+     */
+    public boolean isFlipX() {
+        return flipX;
+    }
+
+    /**
+     * Check if the transformation flips on the Z axis.
+     */
+    public boolean isFlipZ() {
+        return flipZ;
+    }
+
+    /**
+     * Get the X-axis scale factor.
+     */
+    public double getScaleX() {
+        return scaleX;
+    }
+
+    /**
+     * Get the Y-axis scale factor.
+     */
+    public double getScaleY() {
+        return scaleY;
+    }
+
+    /**
+     * Get the Z-axis scale factor.
+     */
+    public double getScaleZ() {
+        return scaleZ;
+    }
+
     public static class Builder {
         private int rotationY = 0;
         private boolean flipX = false;
@@ -91,7 +91,7 @@ public class Transform {
         private double scaleX = 1.0;
         private double scaleY = 1.0;
         private double scaleZ = 1.0;
-        
+
         /**
          * Set Y-axis rotation in degrees.
          * Must be 0, 90, 180, or 270.
@@ -103,7 +103,7 @@ public class Transform {
             this.rotationY = degrees;
             return this;
         }
-        
+
         /**
          * Flip on the X axis.
          */
@@ -111,7 +111,7 @@ public class Transform {
             this.flipX = flip;
             return this;
         }
-        
+
         /**
          * Flip on the Z axis.
          */
@@ -119,7 +119,7 @@ public class Transform {
             this.flipZ = flip;
             return this;
         }
-        
+
         /**
          * Set scale factor for all axes.
          */
@@ -132,7 +132,7 @@ public class Transform {
             this.scaleZ = scale;
             return this;
         }
-        
+
         /**
          * Set individual scale factors.
          */
@@ -145,7 +145,7 @@ public class Transform {
             this.scaleZ = scaleZ;
             return this;
         }
-        
+
         /**
          * Build the transform.
          */

@@ -1,21 +1,16 @@
 package sh.harold.fulcrum.minigame;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import sh.harold.fulcrum.minigame.defaults.DefaultEndGameState;
-import sh.harold.fulcrum.minigame.defaults.DefaultInGameState;
-import sh.harold.fulcrum.minigame.defaults.DefaultPreLobbyState;
-import sh.harold.fulcrum.minigame.defaults.DefaultStates;
-import sh.harold.fulcrum.minigame.defaults.InGameHandler;
-import sh.harold.fulcrum.minigame.defaults.PreLobbyOptions;
+import sh.harold.fulcrum.minigame.defaults.*;
 import sh.harold.fulcrum.minigame.state.MinigameState;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
 import sh.harold.fulcrum.minigame.state.machine.StateDefinition;
 import sh.harold.fulcrum.minigame.state.machine.StateTransition;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * Declarative blueprint that describes the lifecycle of a minigame match.
@@ -33,14 +28,6 @@ public final class MinigameBlueprint {
         this.startStateId = startStateId;
     }
 
-    public Map<String, StateDefinition> getStateGraph() {
-        return stateGraph;
-    }
-
-    public String getStartStateId() {
-        return startStateId;
-    }
-
     /**
      * Create a standard blueprint (Pre-Lobby → In-Game → End-Game).
      */
@@ -55,6 +42,14 @@ public final class MinigameBlueprint {
         return new CustomBuilder();
     }
 
+    public Map<String, StateDefinition> getStateGraph() {
+        return stateGraph;
+    }
+
+    public String getStartStateId() {
+        return startStateId;
+    }
+
     /**
      * Builder for standard three-phase match.
      */
@@ -63,7 +58,7 @@ public final class MinigameBlueprint {
         private InGameHandler inGameHandler = DefaultStates.inGame().build();
         private Supplier<DefaultEndGameState> endGameFactory = DefaultStates::endGame;
         private Predicate<StateContext> inGameCompletionPredicate =
-            context -> Boolean.TRUE.equals(context.getAttributeOptional(MinigameAttributes.MATCH_COMPLETE, Boolean.class).orElse(Boolean.FALSE));
+                context -> Boolean.TRUE.equals(context.getAttributeOptional(MinigameAttributes.MATCH_COMPLETE, Boolean.class).orElse(Boolean.FALSE));
 
         public StandardBuilder preLobby(java.util.function.Consumer<DefaultStates.PreLobbyBuilder> customizer) {
             DefaultStates.PreLobbyBuilder builder = DefaultStates.preLobby();

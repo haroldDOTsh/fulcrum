@@ -23,7 +23,7 @@ public record PoiDefinition(String identifier, String type, BlockVector3 positio
         }
         if (metadata != null) {
             metadata.entrySet()
-                .forEach(entry -> json.add(entry.getKey(), entry.getValue().deepCopy()));
+                    .forEach(entry -> json.add(entry.getKey(), entry.getValue().deepCopy()));
         }
         return json;
     }

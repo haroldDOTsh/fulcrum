@@ -42,12 +42,12 @@ public final class MinigameCommandFeature implements PluginFeature {
         ServerLifecycleFeature lifecycleFeature = container.getOptional(ServerLifecycleFeature.class).orElse(null);
 
         playCommand = new PlayCommand(
-            messageBus,
-            routeRegistry,
-            orchestrator,
-            serverIdentifier,
-            lifecycleFeature,
-            engine
+                messageBus,
+                routeRegistry,
+                orchestrator,
+                serverIdentifier,
+                lifecycleFeature,
+                engine
         );
 
         CommandRegistrar.register(playCommand.build());

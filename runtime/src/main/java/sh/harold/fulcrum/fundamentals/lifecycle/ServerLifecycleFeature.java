@@ -1,62 +1,38 @@
 package sh.harold.fulcrum.fundamentals.lifecycle;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
-import sh.harold.fulcrum.api.messagebus.MessageHandler;
-import sh.harold.fulcrum.api.messagebus.messages.ProxyAnnouncementMessage;
-import sh.harold.fulcrum.api.messagebus.messages.ProxyDiscoveryRequest;
-import sh.harold.fulcrum.api.messagebus.messages.ProxyDiscoveryResponse;
-import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest;
-import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationResponse;
-import sh.harold.fulcrum.api.messagebus.messages.ServerHeartbeatMessage;
-import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationRequest;
-import sh.harold.fulcrum.api.messagebus.messages.ServerEvacuationResponse;
-import sh.harold.fulcrum.api.messagebus.messages.ServerAnnouncementMessage;
-import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
-import sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand;
+import sh.harold.fulcrum.api.messagebus.messages.*;
 import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
-import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyFilter;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.Collections;
 import java.util.logging.Logger;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import org.bukkit.entity.Player;
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
 import java.util.stream.Collectors;
-import java.util.Optional;
 
 /**
  * Server lifecycle feature that manages server registration and heartbeat.
@@ -64,14 +40,23 @@ import java.util.Optional;
  */
 public class ServerLifecycleFeature implements PluginFeature {
     private static final Logger LOGGER = Logger.getLogger(ServerLifecycleFeature.class.getName());
-    
+    // Configuration constants
+    private static final int MAX_REGISTRATION_ATTEMPTS = 5;
+    private static final Duration PROXY_TIMEOUT = Duration.ofSeconds(10);
+    private final AtomicInteger registrationAttempts = new AtomicInteger(0);
+    private final Map<String, ServerInfo> availableServers = new ConcurrentHashMap<>();
+    private final Set<String> slotProvisionSubscriptions = ConcurrentHashMap.newKeySet();
+    private final Set<String> playerRouteSubscriptions = ConcurrentHashMap.newKeySet();
+    private final ObjectMapper playerRouteMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    // Proxy discovery and tracking
+    private final Map<String, ProxyAnnouncementMessage> knownProxies = new ConcurrentHashMap<>();
+    private final AtomicReference<String> registeredProxyId = new AtomicReference<>();
     private JavaPlugin plugin;
     private MessageBus messageBus;
     private DependencyContainer container;
     private DefaultServerIdentifier serverIdentifier;
     private BukkitRunnable heartbeatTask;
     private AtomicBoolean registered = new AtomicBoolean(false);
-    private final AtomicInteger registrationAttempts = new AtomicInteger(0);
     private String serverType = "MINI";  // Default type
     private int maxCapacity = 100;
     private long startTime;
@@ -79,30 +64,17 @@ public class ServerLifecycleFeature implements PluginFeature {
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> registrationTimeoutTask;
     private ScheduledFuture<?> registrationRetryTask;
-    private final Map<String, ServerInfo> availableServers = new ConcurrentHashMap<>();
-
     private SimpleSlotOrchestrator slotOrchestrator;
     private SlotFamilyService slotFamilyService;
     private SlotFamilyFilter slotFamilyFilter = SlotFamilyFilter.allowAll();
     private volatile List<SlotFamilyDescriptor> activeSlotFamilies = Collections.emptyList();
-    private final Set<String> slotProvisionSubscriptions = ConcurrentHashMap.newKeySet();
-    private final Set<String> playerRouteSubscriptions = ConcurrentHashMap.newKeySet();
-    private final ObjectMapper playerRouteMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    
-    // Proxy discovery and tracking
-    private final Map<String, ProxyAnnouncementMessage> knownProxies = new ConcurrentHashMap<>();
-    private final AtomicReference<String> registeredProxyId = new AtomicReference<>();
-    
-    // Configuration constants
-    private static final int MAX_REGISTRATION_ATTEMPTS = 5;
-    private static final Duration PROXY_TIMEOUT = Duration.ofSeconds(10);
-    
+
     @Override
     public int getPriority() {
         // Service layer - loads after infrastructure (MessageBus)
         return 30;
     }
-    
+
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
@@ -111,48 +83,48 @@ public class ServerLifecycleFeature implements PluginFeature {
         if (container != null) {
             container.register(ServerLifecycleFeature.class, this);
         }
-        
+
         // Check development mode from config
         boolean developmentMode = plugin.getConfig().getBoolean("development-mode", false);
-        
+
         // Get MessageBus from container (needed even in dev mode for local operations)
         this.messageBus = container.get(MessageBus.class);
         if (messageBus == null && !developmentMode) {
             throw new IllegalStateException("MessageBus not available - MessageBusFeature must initialize first");
         }
-        
+
         // In development mode, create a minimal server identifier and skip network operations
         if (developmentMode) {
             LOGGER.warning("Development mode is enabled - server registration and heartbeats are disabled");
-            
+
             // Create a dummy server identifier for development
             String tempId = "dev-" + UUID.randomUUID().toString().substring(0, 8);
             UUID instanceUuid = UUID.randomUUID();
             this.serverIdentifier = new DefaultServerIdentifier(
-                tempId,
-                "development",
-                "DEV",
-                instanceUuid,
-                "localhost",
-                plugin.getServer().getPort(),
-                100,
-                100
+                    tempId,
+                    "development",
+                    "DEV",
+                    instanceUuid,
+                    "localhost",
+                    plugin.getServer().getPort(),
+                    100,
+                    100
             );
             container.register(ServerIdentifier.class, serverIdentifier);
-            
+
             LOGGER.info("Development server initialized with ID: " + tempId);
             return; // Skip all network operations in development mode
         }
-        
+
         // Register BungeeCord channel for player transfers
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
-        
+
         // Determine server type based on RAM (MINI ≤8GB, MEGA >8GB)
         long maxMemoryMB = Runtime.getRuntime().maxMemory() / (1024 * 1024);
         long maxMemoryGB = maxMemoryMB / 1024;
         this.serverType = maxMemoryGB <= 8 ? "MINI" : "MEGA";
         LOGGER.info("Server type detected based on RAM: " + serverType + " (" + maxMemoryGB + "GB)");
-        
+
         // Set capacity based on server type
         if (serverType.equals("MEGA")) {
             // MEGA servers: soft cap 60, hard cap 70
@@ -163,24 +135,24 @@ public class ServerLifecycleFeature implements PluginFeature {
             this.maxCapacity = 15;  // Using hard cap for max capacity
             LOGGER.info("MINI server capacity set: 15 players (hard cap)");
         }
-        
+
         // Server type and capacity are determined by RAM, not config
         // This ensures consistent behavior across the fleet
-        
+
         // Load environment from ENVIRONMENT file
         String role = loadEnvironmentRole();
-        
+
         // Create temporary server identifier
         String tempId = "temp-" + UUID.randomUUID().toString().substring(0, 8);
         UUID instanceUuid = UUID.randomUUID();
         String address = plugin.getServer().getIp().isEmpty() ? "localhost" : plugin.getServer().getIp();
         int port = plugin.getServer().getPort();
-        
+
         // Set soft cap and hard cap based on server type
         int softCap = serverType.equals("MEGA") ? 60 : 10;
         int hardCap = serverType.equals("MEGA") ? 70 : 15;
-        
-            this.serverIdentifier = new DefaultServerIdentifier(
+
+        this.serverIdentifier = new DefaultServerIdentifier(
                 tempId,
                 role,
                 serverType,
@@ -189,7 +161,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                 port,
                 softCap,
                 hardCap
-            );
+        );
 
         // Register services
         container.register(ServerIdentifier.class, serverIdentifier);
@@ -234,14 +206,14 @@ public class ServerLifecycleFeature implements PluginFeature {
                 this.environment = "game";
                 return "game";
             }
-            
+
             String env = Files.readString(envFile.toPath()).trim();
             if (env.isEmpty()) {
                 LOGGER.warning("ENVIRONMENT file is empty, defaulting to 'game'");
                 this.environment = "game";
                 return "game";
             }
-            
+
             // Store the role for use in heartbeats and announcements
             this.environment = env;
             LOGGER.info("Server role loaded from ENVIRONMENT file: " + env);
@@ -288,8 +260,8 @@ public class ServerLifecycleFeature implements PluginFeature {
             LOGGER.warning("No slot families discovered; registry will treat this server as idle.");
         } else {
             String summary = descriptors.stream()
-                .map(SlotFamilyDescriptor::getFamilyId)
-                .collect(Collectors.joining(", "));
+                    .map(SlotFamilyDescriptor::getFamilyId)
+                    .collect(Collectors.joining(", "));
             LOGGER.info("Configured slot families: " + summary);
         }
     }
@@ -313,7 +285,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                     ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
                     if (locator != null) {
                         locator.findService(PlayerRoutingListener.class)
-                            .ifPresent(listener -> listener.handleRouteCommand(command));
+                                .ifPresent(listener -> listener.handleRouteCommand(command));
                     }
                 });
             } catch (Exception ex) {
@@ -356,121 +328,121 @@ public class ServerLifecycleFeature implements PluginFeature {
             LOGGER.info("Development mode - skipping server registration");
             return;
         }
-        
+
         // Create registration request with all required data
         ServerRegistrationRequest request = new ServerRegistrationRequest(
-            serverIdentifier.getServerId(),
-            serverType,  // MINI or MEGA based on RAM
-            maxCapacity   // Calculated from RAM
+                serverIdentifier.getServerId(),
+                serverType,  // MINI or MEGA based on RAM
+                maxCapacity   // Calculated from RAM
         );
-        
+
         // Set role from the ENVIRONMENT file (which selects from environment.yml roles)
         request.setRole(serverIdentifier.getRole());
-        
+
         // Set server address and port - CRITICAL for proxies to connect
         request.setAddress(serverIdentifier.getAddress());
         request.setPort(serverIdentifier.getPort());
-        
+
         LOGGER.info("Sending registration request to Registry Service:");
         LOGGER.info("  Server ID: " + serverIdentifier.getServerId() +
-                   (registered.get() ? " (permanent)" : " (temporary)"));
+                (registered.get() ? " (permanent)" : " (temporary)"));
         LOGGER.info("  Type: " + serverType);
         LOGGER.info("  Role: " + request.getRole());
         LOGGER.info("  Address: " + request.getAddress() + ":" + request.getPort());
         LOGGER.info("  Capacity: " + maxCapacity);
-        
+
         // Send registration request to Registry Service
         // CRITICAL FIX: Use server:heartbeat channel which we KNOW works
         // Use the standardized registration channel
         messageBus.broadcast(ChannelConstants.REGISTRY_REGISTRATION_REQUEST, request);
         LOGGER.info("Sent registration request to central Registry Service");
-        
+
         // Schedule timeout warning if no response received
         scheduleRegistrationTimeout();
-        
+
         // Schedule retry if no response received
         scheduleRegistrationRetry();
     }
-    
+
     private void scheduleRegistrationTimeout() {
         // Cancel any existing timeout task
         if (registrationTimeoutTask != null && !registrationTimeoutTask.isDone()) {
             registrationTimeoutTask.cancel(false);
         }
-        
+
         // Schedule new timeout task
         registrationTimeoutTask = scheduler.schedule(() -> {
             if (!registered.get()) {
                 LOGGER.warning("No confirmation from Registry Service after 10 seconds. " +
-                    "Registry Service may be down or there's a connection issue. " +
-                    "[Server: " + serverIdentifier.getServerId() + ", Type: " + serverType + "]");
+                        "Registry Service may be down or there's a connection issue. " +
+                        "[Server: " + serverIdentifier.getServerId() + ", Type: " + serverType + "]");
             }
         }, 10, TimeUnit.SECONDS);
     }
-    
+
     private void scheduleRegistrationRetry() {
         // Cancel any existing retry task
         if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
             registrationRetryTask.cancel(false);
         }
-        
+
         // Schedule retry attempts if registration fails
         registrationRetryTask = scheduler.schedule(() -> {
             if (!registered.get()) {
                 // Increment BEFORE checking to fix off-by-one error
                 int attempt = registrationAttempts.incrementAndGet();
-                
+
                 if (attempt <= MAX_REGISTRATION_ATTEMPTS) {
                     LOGGER.warning("Retrying registration with Registry Service (attempt " + attempt + "/" + MAX_REGISTRATION_ATTEMPTS + ")");
                     sendInitialRegistration();
                 } else {
                     LOGGER.severe("Failed to register with Registry Service after " + MAX_REGISTRATION_ATTEMPTS + " attempts. " +
-                        "Server will continue with temporary ID: " + serverIdentifier.getServerId());
+                            "Server will continue with temporary ID: " + serverIdentifier.getServerId());
                     // Continue with temporary ID but still start heartbeat
                     startHeartbeat();
                 }
             }
         }, 15, TimeUnit.SECONDS);
     }
-    
+
     private void handleRegistrationResponse(ServerRegistrationResponse response) {
         // Cancel timeout task if it exists
         if (registrationTimeoutTask != null && !registrationTimeoutTask.isDone()) {
             registrationTimeoutTask.cancel(false);
         }
-        
+
         // Cancel retry task if it exists
         if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
             registrationRetryTask.cancel(false);
         }
-        
+
         if (response.isSuccess()) {
             String permanentId = response.getAssignedServerId();
             String oldId = serverIdentifier.getServerId();
             LOGGER.info("Successfully registered with central Registry Service! Permanent ID: " + permanentId);
-            
+
             // CRITICAL: Update server identifier BEFORE starting heartbeat
             // This ensures heartbeats use the correct permanent ID
             serverIdentifier.updateServerId(permanentId);
-            
+
             registered.set(true);
-            
+
             // CRITICAL: Cancel any existing heartbeat task before starting new one
             if (heartbeatTask != null) {
                 heartbeatTask.cancel();
                 heartbeatTask = null;
                 LOGGER.info("Cancelled existing heartbeat task to restart with permanent ID");
             }
-            
+
             // Start heartbeat with the permanent ID
             startHeartbeat();
 
             if (slotOrchestrator != null) {
                 slotOrchestrator.onServerRegistered(
-                    null,
-                    environment,
-                    serverIdentifier.getSoftCap(),
-                    serverIdentifier.getHardCap()
+                        null,
+                        environment,
+                        serverIdentifier.getSoftCap(),
+                        serverIdentifier.getHardCap()
                 );
             }
 
@@ -485,10 +457,10 @@ public class ServerLifecycleFeature implements PluginFeature {
             // Send immediate heartbeat to confirm server is alive with new ID
             sendHeartbeat();
             LOGGER.info("Sent immediate heartbeat with permanent ID: " + permanentId);
-            
+
             // Send server announcement after successful registration
             sendServerAnnouncement();
-            
+
             // Re-subscribe to new server-specific channels with permanent ID
             // The Redis subscriptions are now async by default, but we still wrap in CompletableFuture
             // to ensure the registration response handler doesn't block
@@ -513,7 +485,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                     } catch (Exception e) {
                         LOGGER.warning("Failed to subscribe to direct channel (will retry): " + e.getMessage());
                     }
-                    
+
                     try {
                         // Also subscribe to response channel for this server
                         messageBus.subscribe(ChannelConstants.getResponseChannel(permanentId), envelope -> {
@@ -524,7 +496,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                     } catch (Exception e) {
                         LOGGER.warning("Failed to subscribe to response channel (will retry): " + e.getMessage());
                     }
-                    
+
                     LOGGER.info("Re-subscribed to channels with permanent ID: " + permanentId);
                 }).exceptionally(throwable -> {
                     LOGGER.warning("Error during async channel subscription: " + throwable.getMessage());
@@ -537,53 +509,53 @@ public class ServerLifecycleFeature implements PluginFeature {
             startHeartbeat();
         }
     }
-    
+
     private void sendServerAnnouncement() {
         // Broadcast server announcement for proxy discovery
         ServerAnnouncementMessage announcement = new ServerAnnouncementMessage(
-            serverIdentifier.getServerId(),
-            serverType,
-            environment,  // Use the loaded environment
-            serverIdentifier.getRole(),
-            maxCapacity,
-            serverIdentifier.getAddress(),
-            serverIdentifier.getPort()
+                serverIdentifier.getServerId(),
+                serverType,
+                environment,  // Use the loaded environment
+                serverIdentifier.getRole(),
+                maxCapacity,
+                serverIdentifier.getAddress(),
+                serverIdentifier.getPort()
         );
-        
+
         messageBus.broadcast(ChannelConstants.SERVER_ANNOUNCEMENT, announcement);
         LOGGER.info("Broadcast server announcement for proxy discovery");
     }
-    
+
     private void startHeartbeat() {
         if (heartbeatTask != null) {
             return; // Already started
         }
-        
+
         LOGGER.info("Starting heartbeat task for server: " + serverIdentifier.getServerId());
-        
+
         heartbeatTask = new BukkitRunnable() {
             @Override
             public void run() {
                 LOGGER.fine("Sending backend server heartbeat for ID: " + serverIdentifier.getServerId() +
-                           " at " + System.currentTimeMillis());
+                        " at " + System.currentTimeMillis());
                 sendHeartbeat();
             }
         };
-        
+
         // Send heartbeat every 2 seconds (40 ticks) - must be less than registry timeout (5s)
         heartbeatTask.runTaskTimer(plugin, 0L, 40L);
     }
-    
+
     private void sendHeartbeat() {
         // Skip heartbeat in development mode
         if (plugin.getConfig().getBoolean("development-mode", false)) {
             LOGGER.fine("Development mode - skipping heartbeat");
             return;
         }
-        
+
         ServerHeartbeatMessage heartbeat = new ServerHeartbeatMessage(
-            serverIdentifier.getServerId(),
-            serverType
+                serverIdentifier.getServerId(),
+                serverType
         );
 
         // Set server metrics
@@ -594,41 +566,41 @@ public class ServerLifecycleFeature implements PluginFeature {
         heartbeat.setPlayerCount(onlinePlayers);
         heartbeat.setMaxCapacity(maxCapacity);  // This is the hard cap
         heartbeat.setUptime(System.currentTimeMillis() - startTime);
-        
+
         // Set role from the environment
         heartbeat.setRole(serverIdentifier.getRole());
-        
+
         // Add pool information if this is a pool server
         if (environment != null && environment.contains("pool")) {
             heartbeat.getAvailablePools().add(environment);
         }
-        
+
         // Broadcast heartbeat
         messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, heartbeat);
 
         LOGGER.fine("Sent heartbeat - Players: " + heartbeat.getPlayerCount() +
-                   "/" + heartbeat.getMaxCapacity() +
-                   ", TPS: " + String.format("%.1f", heartbeat.getTps()));
+                "/" + heartbeat.getMaxCapacity() +
+                ", TPS: " + String.format("%.1f", heartbeat.getTps()));
 
         if (slotOrchestrator != null) {
             slotOrchestrator.publishSnapshots();
         }
     }
-    
+
     @Override
     public void shutdown() {
         if (heartbeatTask != null) {
             heartbeatTask.cancel();
         }
-        
+
         if (registrationTimeoutTask != null && !registrationTimeoutTask.isDone()) {
             registrationTimeoutTask.cancel(false);
         }
-        
+
         if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
             registrationRetryTask.cancel(false);
         }
-        
+
         scheduler.shutdown();
 
         if (ServiceLocatorImpl.getInstance() != null) {
@@ -640,48 +612,48 @@ public class ServerLifecycleFeature implements PluginFeature {
             try {
                 // Send ServerRemovalNotification to registry
                 ServerRemovalNotification removalNotification = new ServerRemovalNotification(
-                    serverIdentifier.getServerId(),
-                    serverType,
-                    "SHUTDOWN"
+                        serverIdentifier.getServerId(),
+                        serverType,
+                        "SHUTDOWN"
                 );
                 messageBus.broadcast(ChannelConstants.REGISTRY_SERVER_REMOVED, removalNotification);
                 LOGGER.info("Sent server removal notification to registry for server: " + serverIdentifier.getServerId());
-                
+
                 // Send shutdown status via heartbeat channel (same pattern as proxy)
                 Map<String, Object> shutdownMessage = new HashMap<>();
                 shutdownMessage.put("serverId", serverIdentifier.getServerId());
                 shutdownMessage.put("status", "SHUTDOWN");
                 shutdownMessage.put("timestamp", System.currentTimeMillis());
-                
+
                 messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, shutdownMessage);
                 LOGGER.info("Sent shutdown status heartbeat for server: " + serverIdentifier.getServerId());
             } catch (Exception e) {
                 LOGGER.warning("Failed to send shutdown notifications: " + e.getMessage());
             }
         }
-        
+
         // Send deregistration message if we have a proxy
         String proxyId = registeredProxyId.get();
         if (proxyId != null && messageBus != null) {
             ServerRegistrationRequest deregister = new ServerRegistrationRequest(
-                serverIdentifier.getServerId(),
-                serverType,
-                maxCapacity
+                    serverIdentifier.getServerId(),
+                    serverType,
+                    maxCapacity
             );
             deregister.setRole(serverIdentifier.getRole());
-            
+
             messageBus.send(ChannelConstants.getProxyDirectChannel(proxyId), "server.deregistration", deregister);
         }
 
         if (container != null) {
             container.unregister(ServerLifecycleFeature.class);
         }
-        
+
         LOGGER.info("Server lifecycle shutting down");
     }
-    
+
     // Message handlers
-    
+
     private void setupMessageHandlers() {
         subscribeToSlotProvisionChannel(serverIdentifier.getServerId());
         subscribeToPlayerRouteChannel(serverIdentifier.getServerId());
@@ -696,7 +668,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                 LOGGER.warning("Failed to deserialize proxy announcement: " + e.getMessage());
             }
         });
-        
+
         // Handle proxy request for registrations (when new proxy comes online)
         messageBus.subscribe(ChannelConstants.PROXY_REQUEST_REGISTRATIONS, envelope -> {
             try {
@@ -707,14 +679,14 @@ public class ServerLifecycleFeature implements PluginFeature {
                 LOGGER.warning("Failed to handle registration request: " + e.getMessage());
             }
         });
-        
+
         // Handle registry re-registration requests (when registry restarts)
         messageBus.subscribe(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, envelope -> {
             try {
                 LOGGER.info("Registry Service requested re-registration - sending our current registration");
                 // Re-send our registration with current ID
                 sendInitialRegistration();
-                
+
                 // If we're already registered, also send an immediate heartbeat
                 if (registered.get()) {
                     sendHeartbeat();
@@ -724,14 +696,14 @@ public class ServerLifecycleFeature implements PluginFeature {
                 LOGGER.warning("Failed to handle re-registration request: " + e.getMessage());
             }
         });
-        
+
         // Handle targeted re-registration request for this specific server
         String reregisterChannel = ChannelConstants.getServerReregisterChannel(serverIdentifier.getServerId());
         messageBus.subscribe(reregisterChannel, envelope -> {
             try {
                 LOGGER.info("Registry requested targeted re-registration for this server");
                 sendInitialRegistration();
-                
+
                 // Send immediate heartbeat
                 if (registered.get()) {
                     sendHeartbeat();
@@ -740,30 +712,30 @@ public class ServerLifecycleFeature implements PluginFeature {
                 LOGGER.warning("Failed to handle targeted re-registration request: " + e.getMessage());
             }
         });
-        
+
         // Handle registration responses from Registry Service
         messageBus.subscribe(ChannelConstants.SERVER_REGISTRATION_RESPONSE, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
-                
+
                 // Check if this response is for us by checking tempId
                 String tempId = null;
                 if (payload.has("tempId")) {
                     tempId = payload.get("tempId").asText();
                 }
-                
+
                 // Only process if it's our temp ID or we haven't registered yet
                 if (tempId != null && tempId.equals(serverIdentifier.getServerId())) {
                     LOGGER.info("Received registration response from Registry Service for our tempId: " + tempId);
-                    
+
                     // Parse the response from Registry Service
                     ServerRegistrationResponse response = new ServerRegistrationResponse();
                     response.setSuccess(payload.has("success") ? payload.get("success").asBoolean() : false);
                     response.setAssignedServerId(payload.has("assignedServerId") ? payload.get("assignedServerId").asText() : null);
                     response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
                     response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
-                    
+
                     handleRegistrationResponse(response);
                 } else if (tempId != null) {
                     // Response for another server, ignore
@@ -774,7 +746,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                 e.printStackTrace();
             }
         });
-        
+
         // Also subscribe to server-specific channel for targeted responses (using tempId)
         String serverSpecificChannel = ChannelConstants.getServerRegistrationResponseChannel(serverIdentifier.getServerId());
         messageBus.subscribe(serverSpecificChannel, envelope -> {
@@ -782,14 +754,14 @@ public class ServerLifecycleFeature implements PluginFeature {
                 LOGGER.info("Received registration response on server-specific channel: " + serverSpecificChannel);
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
-                
+
                 // Parse the response
                 ServerRegistrationResponse response = new ServerRegistrationResponse();
                 response.setSuccess(payload.has("success") ? payload.get("success").asBoolean() : false);
                 response.setAssignedServerId(payload.has("assignedServerId") ? payload.get("assignedServerId").asText() : null);
                 response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
                 response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
-                
+
                 handleRegistrationResponse(response);
             } catch (Exception e) {
                 LOGGER.warning("Failed to deserialize registration response on server-specific channel: " + e.getMessage());
@@ -797,7 +769,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
         });
         LOGGER.info("Subscribed to registration response channels: 'server:registration:response' and '" + serverSpecificChannel + "'");
-        
+
         // Subscribe to evacuation requests
         messageBus.subscribe(ChannelConstants.SERVER_EVACUATION_REQUEST, envelope -> {
             try {
@@ -808,7 +780,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                 LOGGER.warning("Failed to deserialize evacuation request: " + e.getMessage());
             }
         });
-        
+
         // Subscribe to server announcements to track available servers
         messageBus.subscribe(ChannelConstants.SERVER_ANNOUNCEMENT, envelope -> {
             try {
@@ -820,8 +792,8 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
         });
     }
-    
-    
+
+
     private void handleProxyAnnouncement(ProxyAnnouncementMessage announcement) {
         String proxyId = announcement.getProxyId();
         knownProxies.put(proxyId, announcement);
@@ -829,30 +801,30 @@ public class ServerLifecycleFeature implements PluginFeature {
         LOGGER.info("Proxy ID: " + proxyId);
         LOGGER.info("Current Load: " + announcement.getCurrentPlayerCount() + "/" + announcement.getHardCap());
         LOGGER.info("===================================");
-        
+
         // If we haven't registered yet, send our registration
         if (!registered.get()) {
             LOGGER.info("New proxy detected, sending registration");
             sendInitialRegistration();
         }
     }
-    
-    
+
+
     private void handleProxyRegistrationResponse(ServerRegistrationResponse response) {
         if (response.isSuccess()) {
             String proxyId = response.getProxyId();
             LOGGER.info("Successfully registered with proxy: " + proxyId);
-            
+
             registeredProxyId.set(proxyId);
-            
+
             // Cancel timeout task if it exists
             if (registrationTimeoutTask != null && !registrationTimeoutTask.isDone()) {
                 registrationTimeoutTask.cancel(false);
             }
-            
+
             // Update server identifier if new ID was assigned (only if we had temporary ID)
             if (response.getAssignedServerId() != null &&
-                serverIdentifier.getServerId().startsWith("temp-")) {
+                    serverIdentifier.getServerId().startsWith("temp-")) {
                 String oldId = serverIdentifier.getServerId();
                 serverIdentifier.updateServerId(response.getAssignedServerId());
                 LOGGER.info("Server ID updated: " + oldId + " -> " + response.getAssignedServerId());
@@ -865,7 +837,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             } else {
                 // Already registered, just adding to new proxy
                 LOGGER.info("Added to new proxy's server list (keeping existing ID: " +
-                           serverIdentifier.getServerId() + ")");
+                        serverIdentifier.getServerId() + ")");
             }
         } else {
             LOGGER.warning("Registration rejected by proxy: " + response.getMessage());
@@ -876,27 +848,27 @@ public class ServerLifecycleFeature implements PluginFeature {
     public Optional<String> getCurrentProxyId() {
         return Optional.ofNullable(registeredProxyId.get());
     }
-    
+
     private void handleEvacuationRequest(ServerEvacuationRequest request) {
         if (!request.getServerId().equals(serverIdentifier.getServerId())) {
             return; // Not for this server
         }
-        
+
         LOGGER.warning("Received evacuation request: " + request.getReason());
-        
+
         // Perform evacuation asynchronously
         CompletableFuture.runAsync(() -> {
             evacuateAllPlayers(request);
         });
     }
-    
+
     private void evacuateAllPlayers(ServerEvacuationRequest request) {
         var players = Bukkit.getOnlinePlayers();
         int evacuatedCount = 0;
         int failedCount = 0;
-        
+
         LOGGER.info("Starting evacuation of " + players.size() + " players...");
-        
+
         for (Player player : players) {
             try {
                 // Find target server
@@ -904,13 +876,13 @@ public class ServerLifecycleFeature implements PluginFeature {
                 if (targetServer == null) {
                     targetServer = findAnyAvailableServer();
                 }
-                
+
                 if (targetServer != null) {
                     player.sendMessage("§c§lServer is shutting down! Moving you to another server...");
-                    
+
                     // Transfer player using BungeeCord messaging
                     transferPlayer(player, targetServer);
-                    
+
                     evacuatedCount++;
                     LOGGER.info("Evacuated player " + player.getName() + " to " + targetServer);
                 } else {
@@ -925,20 +897,20 @@ public class ServerLifecycleFeature implements PluginFeature {
                 player.kickPlayer("§c§lServer is shutting down!\n§7Failed to transfer you to another server.\n§7Please reconnect in a moment.");
             }
         }
-        
+
         // Send evacuation response
         ServerEvacuationResponse response = new ServerEvacuationResponse(
-            serverIdentifier.getServerId(),
-            failedCount == 0,
-            evacuatedCount,
-            failedCount,
-            "Evacuation completed: " + evacuatedCount + " succeeded, " + failedCount + " failed"
+                serverIdentifier.getServerId(),
+                failedCount == 0,
+                evacuatedCount,
+                failedCount,
+                "Evacuation completed: " + evacuatedCount + " succeeded, " + failedCount + " failed"
         );
-        
+
         messageBus.broadcast(ChannelConstants.SERVER_EVACUATION_RESPONSE, response);
         LOGGER.info("Evacuation completed: " + evacuatedCount + " players evacuated, " + failedCount + " failed");
     }
-    
+
     private String findAvailableLobbyServer() {
         // Find available lobby servers from cached server announcements
         for (Map.Entry<String, ServerInfo> entry : availableServers.entrySet()) {
@@ -949,7 +921,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
         return null;
     }
-    
+
     private String findAnyAvailableServer() {
         // Find any available server from cached server announcements
         for (Map.Entry<String, ServerInfo> entry : availableServers.entrySet()) {
@@ -960,7 +932,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
         return null;
     }
-    
+
     private void transferPlayer(Player player, String targetServer) {
         // Using BungeeCord messaging channel for compatibility
         Bukkit.getScheduler().runTask(plugin, () -> {
@@ -975,28 +947,28 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
         });
     }
-    
+
     private void handleServerAnnouncement(ServerAnnouncementMessage announcement) {
         // Cache server information for evacuation purposes
         String serverId = announcement.getServerId();
         if (!serverId.equals(serverIdentifier.getServerId())) {
             availableServers.put(serverId, new ServerInfo(
-                announcement.getServerType(),
-                "AVAILABLE",  // Server announcements imply the server is available
-                announcement.getAddress(),
-                announcement.getPort(),
-                announcement.getRole()
+                    announcement.getServerType(),
+                    "AVAILABLE",  // Server announcements imply the server is available
+                    announcement.getAddress(),
+                    announcement.getPort(),
+                    announcement.getRole()
             ));
         }
     }
-    
+
     private static class ServerInfo {
         final String serverType;
         final String status;
         final String host;
         final int port;
         final String role;
-        
+
         ServerInfo(String serverType, String status, String host, int port, String role) {
             this.serverType = serverType;
             this.status = status;

@@ -1,7 +1,7 @@
 package sh.harold.fulcrum.api.chat;
 
-import org.bukkit.entity.Player;
 import net.kyori.adventure.text.Component;
+import org.bukkit.entity.Player;
 
 /**
  * Simple interface for chat formatting logic.
@@ -11,8 +11,8 @@ public interface ChatFormatter {
     /**
      * Formats a chat message for the given player.
      * Called asynchronously from Paper's AsyncChatEvent.
-     * 
-     * @param player The player sending the message
+     *
+     * @param player  The player sending the message
      * @param message The raw message content as Component
      * @return Formatted message as Adventure Component
      */

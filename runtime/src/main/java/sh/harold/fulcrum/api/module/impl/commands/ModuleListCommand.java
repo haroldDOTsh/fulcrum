@@ -36,18 +36,18 @@ public final class ModuleListCommand {
 
     public LiteralCommandNode<CommandSourceStack> build() {
         return literal("runtimeinfo")
-            .requires(source -> RankUtils.isAdmin(source.getSender())
-                || source.getSender().hasPermission("fulcrum.runtime.info"))
-            .executes(ctx -> showRuntimeOverview(ctx.getSource()))
-            .then(literal("list")
-                .executes(ctx -> showModuleList(ctx.getSource())))
-            .then(literal("environment")
-                .executes(ctx -> showEnvironment(ctx.getSource())))
-            .then(literal("reload")
                 .requires(source -> RankUtils.isAdmin(source.getSender())
-                    || source.getSender().hasPermission("fulcrum.runtime.info"))
-                .executes(ctx -> handleEnvironmentReload(ctx.getSource())))
-            .build();
+                        || source.getSender().hasPermission("fulcrum.runtime.info"))
+                .executes(ctx -> showRuntimeOverview(ctx.getSource()))
+                .then(literal("list")
+                        .executes(ctx -> showModuleList(ctx.getSource())))
+                .then(literal("environment")
+                        .executes(ctx -> showEnvironment(ctx.getSource())))
+                .then(literal("reload")
+                        .requires(source -> RankUtils.isAdmin(source.getSender())
+                                || source.getSender().hasPermission("fulcrum.runtime.info"))
+                        .executes(ctx -> handleEnvironmentReload(ctx.getSource())))
+                .build();
     }
 
     private int showRuntimeOverview(CommandSourceStack source) {
@@ -73,14 +73,14 @@ public final class ModuleListCommand {
 
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         ServerIdentifier identifier = locator != null
-            ? locator.findService(ServerIdentifier.class).orElse(null)
-            : null;
+                ? locator.findService(ServerIdentifier.class).orElse(null)
+                : null;
         MessageBus messageBus = locator != null
-            ? locator.findService(MessageBus.class).orElse(null)
-            : null;
+                ? locator.findService(MessageBus.class).orElse(null)
+                : null;
         SimpleSlotOrchestrator orchestrator = locator != null
-            ? locator.findService(SimpleSlotOrchestrator.class).orElse(null)
-            : null;
+                ? locator.findService(SimpleSlotOrchestrator.class).orElse(null)
+                : null;
 
         if (identifier != null) {
             sender.sendMessage(line("Server ID", identifier.getServerId()));
@@ -107,8 +107,8 @@ public final class ModuleListCommand {
             Map<String, Integer> capacities = orchestrator.getFamilyCapacities();
             Map<String, Integer> active = orchestrator.getActiveSlotsByFamily();
             String families = capacities.isEmpty()
-                ? "none"
-                : capacities.entrySet().stream()
+                    ? "none"
+                    : capacities.entrySet().stream()
                     .map(entry -> entry.getKey() + "(" + active.getOrDefault(entry.getKey(), 0) + "/" + entry.getValue() + ")")
                     .collect(Collectors.joining(", "));
             sender.sendMessage(line("Slot Families", families));
@@ -150,9 +150,9 @@ public final class ModuleListCommand {
             String description = metadata.description() != null ? metadata.description() : "No description available";
 
             Component line = Component.text("- ", NamedTextColor.GRAY)
-                .append(Component.text(name, NamedTextColor.GREEN))
-                .append(Component.text(" - ", NamedTextColor.DARK_GRAY))
-                .append(Component.text(description, NamedTextColor.WHITE));
+                    .append(Component.text(name, NamedTextColor.GREEN))
+                    .append(Component.text(" - ", NamedTextColor.DARK_GRAY))
+                    .append(Component.text(description, NamedTextColor.WHITE));
             sender.sendMessage(line);
         }
 
@@ -180,7 +180,7 @@ public final class ModuleListCommand {
     private Component line(String label, String value) {
         String safeValue = value != null ? value : "unknown";
         return Component.text(label + ": ", NamedTextColor.GRAY)
-            .append(Component.text(safeValue, NamedTextColor.WHITE));
+                .append(Component.text(safeValue, NamedTextColor.WHITE));
     }
 }
 

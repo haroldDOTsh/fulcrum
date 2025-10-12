@@ -1,16 +1,5 @@
 package sh.harold.fulcrum.minigame;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -23,10 +12,16 @@ import sh.harold.fulcrum.minigame.match.MinigameMatch;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
 
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
+
 /**
  * Runtime engine that manages active minigame matches.
  */
 public final class MinigameEngine {
+    private static final long MATCH_TEARDOWN_DELAY_TICKS = 100L;
     private final JavaPlugin plugin;
     private final PlayerRouteRegistry routeRegistry;
     private final MinigameEnvironmentService environmentService;
@@ -41,8 +36,6 @@ public final class MinigameEngine {
     private final Map<UUID, BukkitTask> teardownTasks = new ConcurrentHashMap<>();
     private final AtomicBoolean ticking = new AtomicBoolean(false);
     private BukkitTask tickTask;
-
-    private static final long MATCH_TEARDOWN_DELAY_TICKS = 100L;
 
     public MinigameEngine(JavaPlugin plugin,
                           PlayerRouteRegistry routeRegistry,
@@ -143,7 +136,7 @@ public final class MinigameEngine {
         String slotId = assignment.slotId();
         if (slotId == null || slotId.isBlank()) {
             plugin.getLogger().warning("Routed player " + player.getName()
-                + " missing slot id; ignoring match registration.");
+                    + " missing slot id; ignoring match registration.");
             return;
         }
 
@@ -156,13 +149,13 @@ public final class MinigameEngine {
         String familyId = assignment.familyId();
         if (familyId == null || familyId.isBlank()) {
             plugin.getLogger().warning("Routed player " + player.getName()
-                + " missing family id; cannot start match for slot " + slotId);
+                    + " missing family id; cannot start match for slot " + slotId);
             return;
         }
 
         if (startMatchForFamily(familyId, List.of(player)).isEmpty()) {
             plugin.getLogger().warning("Failed to start match for family " + familyId
-                + " (slot=" + slotId + ", player=" + player.getName() + ")");
+                    + " (slot=" + slotId + ", player=" + player.getName() + ")");
         }
     }
 
@@ -197,7 +190,7 @@ public final class MinigameEngine {
             Optional<MinigameRegistration> registrationOpt = getRegistration(slot.familyId());
             if (registrationOpt.isEmpty()) {
                 plugin.getLogger().warning("Provisioned slot " + slot.slotId()
-                    + " has no registered family " + slot.familyId());
+                        + " has no registered family " + slot.familyId());
                 markSlotFault(slot.slotId(), "unknown-family");
                 return;
             }
@@ -217,7 +210,7 @@ public final class MinigameEngine {
             MatchEnvironment environment = environmentService.prepareEnvironment(slot.slotId(), metadata);
             if (environment == null) {
                 plugin.getLogger().warning("Failed to prepare environment for slot " + slot.slotId()
-                    + " (family=" + slot.familyId() + ", map=" + metadata.getOrDefault("mapId", "unknown") + ")");
+                        + " (family=" + slot.familyId() + ", map=" + metadata.getOrDefault("mapId", "unknown") + ")");
                 markSlotFault(slot.slotId(), "environment-unavailable");
                 return;
             }
@@ -240,7 +233,7 @@ public final class MinigameEngine {
 
             slotOrchestrator.updateSlotStatus(slot.slotId(), SlotLifecycleStatus.AVAILABLE, 0, metadata);
             plugin.getLogger().info("Provisioned slot " + slot.slotId() + " for family " + slot.familyId()
-                + " (world=" + worldName + ")");
+                    + " (world=" + worldName + ")");
         } catch (Exception exception) {
             plugin.getLogger().log(Level.WARNING, "Failed to finalize provisioning for slot " + slot.slotId(), exception);
             markSlotFault(slot.slotId(), "provisioning-error");
@@ -303,22 +296,22 @@ public final class MinigameEngine {
         }
         matchSlotMetadata.compute(matchId, (id, existing) -> {
             Map<String, String> updated = existing != null && !existing.isEmpty()
-                ? new ConcurrentHashMap<>(existing)
-                : new ConcurrentHashMap<>();
+                    ? new ConcurrentHashMap<>(existing)
+                    : new ConcurrentHashMap<>();
             updated.putAll(metadata);
             return updated;
         });
     }
 
     private UUID startMatchInternal(String familyId,
-                                   MinigameBlueprint blueprint,
-                                   MinigameRegistration registration,
-                                   Collection<Player> players) {
+                                    MinigameBlueprint blueprint,
+                                    MinigameRegistration registration,
+                                    Collection<Player> players) {
         Objects.requireNonNull(players, "players");
         UUID matchId = UUID.randomUUID();
         SlotContext slotContext = resolveSlotContext(players);
         MinigameMatch match = new MinigameMatch(plugin, matchId, blueprint, registration, players,
-            stateId -> onStateChange(matchId, familyId, stateId));
+                stateId -> onStateChange(matchId, familyId, stateId));
         activeMatches.put(matchId, match);
         matchStates.put(matchId, blueprint.getStartStateId());
         if (slotContext != null) {
@@ -339,9 +332,9 @@ public final class MinigameEngine {
                 Map<String, String> statusMetadata = new HashMap<>(metadataSnapshot);
                 statusMetadata.putIfAbsent("phase", "pre_lobby");
                 slotOrchestrator.updateSlotStatus(slotContext.slotId,
-                    SlotLifecycleStatus.ALLOCATED,
-                    players != null ? players.size() : 0,
-                    statusMetadata);
+                        SlotLifecycleStatus.ALLOCATED,
+                        players != null ? players.size() : 0,
+                        statusMetadata);
                 matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(statusMetadata));
             } else {
                 matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(metadataSnapshot));
@@ -364,8 +357,8 @@ public final class MinigameEngine {
                     continue;
                 }
                 Map<String, String> metadata = data.metadata() != null
-                    ? data.metadata()
-                    : Map.of();
+                        ? data.metadata()
+                        : Map.of();
                 return new SlotContext(slotId, metadata);
             }
         }
@@ -412,7 +405,8 @@ public final class MinigameEngine {
         }
     }
 
-    private record SlotContext(String slotId, Map<String, String> metadata) {}
+    private record SlotContext(String slotId, Map<String, String> metadata) {
+    }
 }
 
 

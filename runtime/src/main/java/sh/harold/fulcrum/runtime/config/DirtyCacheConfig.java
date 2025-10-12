@@ -22,6 +22,7 @@ public class DirtyCacheConfig {
     private final Duration entryTtl;
     private final Duration healthCheckInterval;
     private final RedisSettings redisSettings;
+
     private DirtyCacheConfig(Builder builder) {
         this.cacheType = builder.cacheType;
         this.fallbackToMemory = builder.fallbackToMemory;

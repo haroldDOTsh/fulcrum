@@ -17,17 +17,17 @@ public final class PlayerRouteRegistry {
             return;
         }
         Map<String, String> metadata = assignment.metadata() != null
-            ? Map.copyOf(assignment.metadata())
-            : Map.of();
+                ? Map.copyOf(assignment.metadata())
+                : Map.of();
         RouteAssignment copy = new RouteAssignment(
-            assignment.playerId(),
-            assignment.playerName(),
-            assignment.slotId(),
-            assignment.familyId(),
-            assignment.variant(),
-            assignment.proxyId(),
-            assignment.targetWorld(),
-            metadata
+                assignment.playerId(),
+                assignment.playerName(),
+                assignment.slotId(),
+                assignment.familyId(),
+                assignment.variant(),
+                assignment.proxyId(),
+                assignment.targetWorld(),
+                metadata
         );
         assignments.put(copy.playerId(), copy);
     }

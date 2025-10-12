@@ -6,11 +6,14 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.plugin.Plugin;
-import sh.harold.fulcrum.api.module.FulcrumModule;
 import sh.harold.fulcrum.api.environment.EnvironmentConfig;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
+import sh.harold.fulcrum.api.module.FulcrumModule;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
@@ -22,19 +25,19 @@ public class ModuleVerificationManager implements Listener {
     private final EnvironmentConfig environmentConfig;
     private final Plugin plugin;
     private boolean verified = false;
-    
+
     public ModuleVerificationManager(Logger logger, EnvironmentConfig environmentConfig, Plugin plugin) {
         this.logger = logger;
         this.environmentConfig = environmentConfig;
         this.plugin = plugin;
     }
-    
+
     /**
      * Register this manager to listen for server load events
      */
     public void register() {
         Bukkit.getPluginManager().registerEvents(this, plugin);
-        
+
         // Also schedule a fallback verification for servers without ServerLoadEvent
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!verified) {
@@ -43,7 +46,7 @@ public class ModuleVerificationManager implements Listener {
             }
         }, 40L); // 2 seconds after registration
     }
-    
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onServerLoad(ServerLoadEvent event) {
         try {
@@ -57,7 +60,7 @@ public class ModuleVerificationManager implements Listener {
             verifyModules();
         }
     }
-    
+
     /**
      * Verify that all configured modules are loaded
      */
@@ -66,27 +69,27 @@ public class ModuleVerificationManager implements Listener {
             return;
         }
         verified = true;
-        
+
         String currentEnvironment = FulcrumEnvironment.getCurrent();
         Set<String> expectedModules = new HashSet<>();
-        
+
         // Collect all modules that should be loaded
         expectedModules.addAll(environmentConfig.getGlobalModules());
         expectedModules.addAll(environmentConfig.getModulesForEnvironment(currentEnvironment));
-        
+
         if (expectedModules.isEmpty()) {
             logger.info("No modules configured for environment '" + currentEnvironment + "'");
             return;
         }
-        
+
         // Check which modules are actually loaded
         List<String> loadedModuleIds = new ArrayList<>();
         List<String> missingModules = new ArrayList<>();
         List<String> invalidModules = new ArrayList<>();
-        
+
         for (String moduleId : expectedModules) {
             Plugin plugin = Bukkit.getPluginManager().getPlugin(moduleId);
-            
+
             if (plugin == null) {
                 missingModules.add(moduleId);
             } else if (plugin instanceof FulcrumModule) {
@@ -99,26 +102,26 @@ public class ModuleVerificationManager implements Listener {
                 invalidModules.add(moduleId);
             }
         }
-        
+
         // Log results
         if (!loadedModuleIds.isEmpty()) {
-            logger.info("Successfully verified " + loadedModuleIds.size() + " module(s): " + 
-                String.join(", ", loadedModuleIds));
+            logger.info("Successfully verified " + loadedModuleIds.size() + " module(s): " +
+                    String.join(", ", loadedModuleIds));
         }
-        
+
         if (!missingModules.isEmpty()) {
-            logger.warning("Missing " + missingModules.size() + " module(s): " + 
-                String.join(", ", missingModules));
+            logger.warning("Missing " + missingModules.size() + " module(s): " +
+                    String.join(", ", missingModules));
             logger.warning("Ensure these modules are installed and have Fulcrum as a dependency in their plugin.yml");
         }
-        
+
         if (!invalidModules.isEmpty()) {
-            logger.warning("Found " + invalidModules.size() + " plugin(s) that are not Fulcrum modules: " + 
-                String.join(", ", invalidModules));
+            logger.warning("Found " + invalidModules.size() + " plugin(s) that are not Fulcrum modules: " +
+                    String.join(", ", invalidModules));
             logger.warning("These plugins exist but don't implement FulcrumModule interface");
         }
     }
-    
+
     /**
      * Get a list of all expected modules for the current environment
      */

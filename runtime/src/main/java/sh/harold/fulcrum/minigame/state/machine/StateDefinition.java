@@ -1,11 +1,12 @@
 package sh.harold.fulcrum.minigame.state.machine;
 
+import sh.harold.fulcrum.minigame.state.MinigameState;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
-import sh.harold.fulcrum.minigame.state.MinigameState;
 
 /**
  * Factory wrapper for states and their transitions.

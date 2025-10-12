@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.world.poi.handlers;
 
+import com.google.gson.JsonObject;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -7,8 +8,8 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
-import com.google.gson.JsonObject;
 import sh.harold.fulcrum.api.world.poi.POIHandler;
+
 import java.util.logging.Logger;
 
 /**
@@ -17,24 +18,24 @@ import java.util.logging.Logger;
  * Handles player respawning and initial spawn.
  */
 public class SpawnpointHandler implements POIHandler, Listener {
-    
+
     private static final String IDENTIFIER = "global_spawnpoint";
     private final Logger logger;
-    
+
     public SpawnpointHandler(Logger logger) {
         this.logger = logger;
     }
-    
+
     @Override
     public String getIdentifier() {
         return IDENTIFIER;
     }
-    
+
     @Override
     public int getPriority() {
         return 1; // Default priority, can be overridden by configuration
     }
-    
+
     @Override
     public void handleInteraction(Player player, Location location, JsonObject config) {
         // Apply yaw and pitch from configuration
@@ -44,25 +45,25 @@ public class SpawnpointHandler implements POIHandler, Listener {
         if (config.has("pitch")) {
             location.setPitch(config.get("pitch").getAsFloat());
         }
-        
+
         // Teleport the player to the spawn point
         player.teleport(location);
     }
-    
+
     @Override
     public boolean canHandle(JsonObject config) {
         // This handler specifically handles global_spawnpoint type POIs
-        return config.has("type") && 
-               IDENTIFIER.equals(config.get("type").getAsString());
+        return config.has("type") &&
+                IDENTIFIER.equals(config.get("type").getAsString());
     }
-    
+
     @Override
     public boolean validateConfiguration(JsonObject config) {
         // Validate required and optional fields
         if (!config.has("priority")) {
             return false;
         }
-        
+
         // Check optional fields have correct types if present
         if (config.has("yaw")) {
             try {
@@ -71,7 +72,7 @@ public class SpawnpointHandler implements POIHandler, Listener {
                 return false;
             }
         }
-        
+
         if (config.has("pitch")) {
             try {
                 config.get("pitch").getAsFloat();
@@ -79,10 +80,10 @@ public class SpawnpointHandler implements POIHandler, Listener {
                 return false;
             }
         }
-        
+
         return true;
     }
-    
+
     @Override
     public JsonObject getDefaultConfiguration() {
         JsonObject config = new JsonObject();
@@ -92,7 +93,7 @@ public class SpawnpointHandler implements POIHandler, Listener {
         config.addProperty("pitch", 0.0f);
         return config;
     }
-    
+
     /**
      * Handle player first join - teleport to global spawn
      */
@@ -109,7 +110,7 @@ public class SpawnpointHandler implements POIHandler, Listener {
             }
         }
     }
-    
+
     /**
      * Handle player respawn - set respawn location to global spawn
      */
@@ -131,7 +132,7 @@ public class SpawnpointHandler implements POIHandler, Listener {
             }
         }
     }
-    
+
     /**
      * Find the global spawn location for a player.
      * This will be extended to check POI registry in the world.
