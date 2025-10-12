@@ -26,8 +26,6 @@ public final class RankUtils {
      * @return true if the player has the required rank or higher, false otherwise
      */
     public static boolean hasRankOrHigher(Player player, Rank requiredRank) {
-        logger.info("[DEBUG] Checking rank for player " + player.getName() + ", requires " + requiredRank.name());
-        
         RankService rankService = ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null);
         if (rankService == null) {
             logger.warning("[DEBUG] RankService not available! Denying access for " + player.getName());
@@ -37,11 +35,6 @@ public final class RankUtils {
         try {
             Rank playerRank = rankService.getEffectiveRankSync(player.getUniqueId());
             boolean hasPermission = playerRank.getPriority() >= requiredRank.getPriority();
-            
-            logger.info("[DEBUG] Player " + player.getName() +
-                       " has rank " + playerRank.name() + " (priority " + playerRank.getPriority() +
-                       "), needs " + requiredRank.name() + " (priority " + requiredRank.getPriority() +
-                       ") -> " + (hasPermission ? "ALLOWED" : "DENIED"));
             
             return hasPermission;
         } catch (Exception e) {
@@ -62,7 +55,6 @@ public final class RankUtils {
     public static boolean hasRankOrHigher(CommandSender sender, Rank requiredRank) {
         // Console always has admin privileges
         if (sender instanceof ConsoleCommandSender) {
-            logger.info("[DEBUG] Permission check for console - always allowed");
             return true;
         }
         
@@ -71,7 +63,6 @@ public final class RankUtils {
         }
         
         // Non-player, non-console senders (e.g., command blocks) are treated as admin
-        logger.info("[DEBUG] Permission check for command block - always allowed");
         return true;
     }
     
@@ -83,8 +74,6 @@ public final class RankUtils {
      * @return true if the player is staff, false otherwise
      */
     public static boolean isStaff(Player player) {
-        logger.info("[DEBUG] isStaff check for player " + player.getName());
-        
         RankService rankService = ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null);
         if (rankService == null) {
             logger.warning("[DEBUG] RankService not available! Denying staff access for " + player.getName());
@@ -97,12 +86,6 @@ public final class RankUtils {
             // Check if rank is in STAFF category or has staff-level priority
             boolean isStaff = playerRank.getCategory() == RankCategory.STAFF ||
                               playerRank.getPriority() >= Rank.HELPER.getPriority();
-            
-            logger.info("[DEBUG] Player " + player.getName() +
-                       " has rank " + playerRank.name() +
-                       " (category: " + playerRank.getCategory() +
-                       ", priority: " + playerRank.getPriority() +
-                       ") -> isStaff: " + isStaff);
             
             return isStaff;
         } catch (Exception e) {
@@ -125,8 +108,6 @@ public final class RankUtils {
             return false;
         }
         
-        logger.info("[DEBUG] isRank check for player " + player.getName() + ", rank: " + rankId);
-        
         RankService rankService = ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null);
         if (rankService == null) {
             logger.warning("[DEBUG] RankService not available! Denying rank check for " + player.getName());
@@ -147,11 +128,6 @@ public final class RankUtils {
             
             // Check exact match
             boolean hasRank = playerRank == targetRank;
-            
-            logger.info("[DEBUG] Player " + player.getName() +
-                       " has rank " + playerRank.name() +
-                       ", checking for " + targetRank.name() +
-                       " -> " + hasRank);
             
             return hasRank;
         } catch (Exception e) {
@@ -188,7 +164,6 @@ public final class RankUtils {
      * @return true if the player is admin, false otherwise
      */
     public static boolean isAdmin(Player player) {
-        logger.info("[DEBUG] isAdmin check for player " + player.getName() + " (requires STAFF)");
         return hasRankOrHigher(player, Rank.STAFF);
     }
     
@@ -201,18 +176,15 @@ public final class RankUtils {
      */
     public static boolean isAdmin(CommandSender sender) {
         if (sender instanceof ConsoleCommandSender) {
-            logger.info("[DEBUG] isAdmin check for console - always true");
             return true;
         }
         
         if (sender instanceof Player player) {
             boolean isAdmin = isAdmin(player);
-            logger.info("[DEBUG] isAdmin check for " + player.getName() + " -> " + isAdmin);
             return isAdmin;
         }
         
         // Command blocks are treated as staff-equivalent
-        logger.info("[DEBUG] isAdmin check for command block - treated as STAFF");
         return true;
     }
     
@@ -225,19 +197,15 @@ public final class RankUtils {
      */
     public static boolean canManageRanks(CommandSender sender) {
         if (sender instanceof ConsoleCommandSender) {
-            logger.info("[DEBUG] canManageRanks check for console - always true");
             return true;
         }
         
         if (sender instanceof Player player) {
-            logger.info("[DEBUG] canManageRanks check for " + player.getName() + " (requires STAFF)");
             boolean canManage = hasRankOrHigher(player, Rank.STAFF);
-            logger.info("[DEBUG] canManageRanks result for " + player.getName() + " -> " + canManage);
             return canManage;
         }
         
         // Command blocks cannot manage ranks
-        logger.info("[DEBUG] canManageRanks check for command block - false");
         return false;
     }
     
