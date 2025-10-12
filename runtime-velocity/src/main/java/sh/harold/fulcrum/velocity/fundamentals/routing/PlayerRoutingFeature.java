@@ -75,11 +75,6 @@ public class PlayerRoutingFeature implements VelocityFeature {
     }
 
     @Override
-    public String[] getDependencies() {
-        return new String[] { "VelocityMessageBus", "VelocityServerLifecycle" };
-    }
-
-    @Override
     public void initialize(ServiceLocator locator, Logger logger) {
         this.logger = logger;
         this.proxy = locator.getRequiredService(ProxyServer.class);

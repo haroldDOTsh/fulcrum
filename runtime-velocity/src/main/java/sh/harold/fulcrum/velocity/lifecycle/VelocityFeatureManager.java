@@ -12,10 +12,14 @@ import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.stream.Collectors;
 
 public class VelocityFeatureManager {
     
@@ -79,9 +83,10 @@ public class VelocityFeatureManager {
     }
     
     public void initializeFeatures() throws Exception {
-        // Sort features by priority and dependencies
+        // Sort features by priority (lower priority value loads first)
         orderedFeatures.clear();
-        orderedFeatures.addAll(sortFeaturesByDependencies());
+        orderedFeatures.addAll(features.values());
+        orderedFeatures.sort((a, b) -> Integer.compare(a.getPriority(), b.getPriority()));
         
         for (VelocityFeature feature : orderedFeatures) {
             if (!feature.isEnabled()) {
@@ -116,52 +121,6 @@ public class VelocityFeatureManager {
                 logger.error("Error shutting down feature: {}", feature.getName(), e);
             }
         }
-    }
-    
-    private List<VelocityFeature> sortFeaturesByDependencies() {
-        List<VelocityFeature> sorted = new ArrayList<>();
-        Set<String> visited = new HashSet<>();
-        Set<String> visiting = new HashSet<>();
-        
-        // First sort by priority (lower priority value loads first)
-        List<VelocityFeature> prioritySorted = features.values().stream()
-            .sorted((a, b) -> Integer.compare(a.getPriority(), b.getPriority()))
-            .collect(Collectors.toList());
-        
-        // Then topological sort for dependencies
-        for (VelocityFeature feature : prioritySorted) {
-            visitFeature(feature, sorted, visited, visiting);
-        }
-        
-        return sorted;
-    }
-    
-    private void visitFeature(VelocityFeature feature, List<VelocityFeature> sorted,
-                              Set<String> visited, Set<String> visiting) {
-        String name = feature.getName();
-        
-        if (visited.contains(name)) {
-            return;
-        }
-        
-        if (visiting.contains(name)) {
-            throw new IllegalStateException("Circular dependency detected for feature: " + name);
-        }
-        
-        visiting.add(name);
-        
-        for (String dependency : feature.getDependencies()) {
-            VelocityFeature depFeature = features.get(dependency);
-            if (depFeature != null) {
-                visitFeature(depFeature, sorted, visited, visiting);
-            } else {
-                logger.warn("Feature {} depends on missing feature: {}", name, dependency);
-            }
-        }
-        
-        visiting.remove(name);
-        visited.add(name);
-        sorted.add(feature);
     }
     
     public Optional<VelocityFeature> getFeature(String name) {

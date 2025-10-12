@@ -34,11 +34,6 @@ public class VelocityCommandFeature implements VelocityFeature {
     }
     
     @Override
-    public String[] getDependencies() {
-        return new String[] { "DataAPI" }; // Depend on DataAPI for rank checking
-    }
-    
-    @Override
     public void initialize(ServiceLocator serviceLocator, Logger logger) throws Exception {
         this.logger = logger;
         this.serviceLocator = serviceLocator;
@@ -71,4 +66,3 @@ public class VelocityCommandFeature implements VelocityFeature {
         commandManager.register(meta, new LocatePlayerCommand(proxy, messageBus, playerRoutingFeature, plugin, logger));
     }
 }
-

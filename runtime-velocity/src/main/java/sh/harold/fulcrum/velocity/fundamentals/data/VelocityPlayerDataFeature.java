@@ -198,8 +198,4 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         return 50; // After DataAPI (20)
     }
     
-    @Override
-    public String[] getDependencies() {
-        return new String[] { "DataAPI" };
-    }
 }

@@ -38,12 +38,4 @@ public interface VelocityFeature {
     default boolean isEnabled() {
         return true;
     }
-    
-    /**
-     * Get dependencies required by this feature
-     * @return array of feature names this depends on
-     */
-    default String[] getDependencies() {
-        return new String[0];
-    }
 }
