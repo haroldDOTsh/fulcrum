@@ -2,18 +2,23 @@ package sh.harold.fulcrum.fundamentals.data;
 
 import sh.harold.fulcrum.api.data.impl.json.JsonConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class FulcrumConnectionAdapter {
     private final JavaPlugin plugin;
     private final Logger logger;
     private ConnectionAdapter adapter;
+    private PostgresConnectionAdapter postgresAdapter;
     
     public FulcrumConnectionAdapter(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -52,11 +57,11 @@ public class FulcrumConnectionAdapter {
         
         String storageTypeStr = config.getString("storage.type", "MONGODB");
         StorageType storageType;
-        
+
         try {
             storageType = StorageType.valueOf(storageTypeStr.toUpperCase());
         } catch (IllegalArgumentException e) {
-            logger.warning("Invalid storage type: " + storageTypeStr + ". Using JSON as default.");
+            logger.warning("Invalid storage type: " + storageTypeStr + ". Using MONGODB as default.");
             storageType = StorageType.MONGODB;
         }
         
@@ -75,6 +80,7 @@ public class FulcrumConnectionAdapter {
                 
                 adapter = new JsonConnectionAdapter(dataDir.toPath());
                 logger.info("Using JSON storage backend at: " + dataDir.getAbsolutePath());
+                logger.info("JSON cache configuration: enabled=" + cacheEnabled + ", max-size=" + maxCacheSize);
                 break;
                 
             case MONGODB:
@@ -91,9 +97,10 @@ public class FulcrumConnectionAdapter {
                 throw new IllegalStateException("Unsupported storage type: " + storageType);
         }
         
+        initializePostgresAdapter(config);
         return adapter;
     }
-    
+
     public void shutdown() {
         if (adapter != null) {
             try {
@@ -105,6 +112,62 @@ public class FulcrumConnectionAdapter {
             } catch (Exception e) {
                 logger.warning("Error disconnecting data storage: " + e.getMessage());
             }
+        }
+
+        if (postgresAdapter != null) {
+            try {
+                postgresAdapter.close();
+                logger.info("PostgreSQL adapter disconnected successfully");
+            } catch (Exception e) {
+                logger.warning("Error disconnecting PostgreSQL adapter: " + e.getMessage());
+            } finally {
+                postgresAdapter = null;
+            }
+        }
+    }
+
+    public PostgresConnectionAdapter getPostgresAdapter() {
+        return postgresAdapter;
+    }
+
+    private void initializePostgresAdapter(YamlConfiguration config) {
+        if (!config.isConfigurationSection("postgres")) {
+            logger.warning("database-config.yml missing 'postgres' section; relational features will be unavailable.");
+            postgresAdapter = null;
+            return;
+        }
+
+        boolean enabled = config.getBoolean("postgres.enabled", true);
+        if (!enabled) {
+            logger.warning("PostgreSQL configuration disabled; relational features will be unavailable.");
+            postgresAdapter = null;
+            return;
+        }
+
+        String jdbcUrl = config.getString("postgres.jdbc-url", "jdbc:postgresql://localhost:5432/fulcrum");
+        String database = config.getString("postgres.database", "fulcrum");
+        String username = config.getString("postgres.username", "fulcrum_user");
+        String password = config.getString("postgres.password", "");
+
+        try {
+            PostgresConnectionAdapter adapter = new PostgresConnectionAdapter(jdbcUrl, username, password, database);
+            try (Connection connection = adapter.getConnection()) {
+                if (!connection.isValid(5)) {
+                    throw new SQLException("PostgreSQL connection validation failed for database '" + database + "'");
+                }
+            }
+
+            postgresAdapter = adapter;
+            logger.info("PostgreSQL adapter initialized for database '" + database + "'.");
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, "Failed to initialize PostgreSQL adapter", ex);
+            if (postgresAdapter != null) {
+                try {
+                    postgresAdapter.close();
+                } catch (Exception ignored) {
+                }
+            }
+            postgresAdapter = null;
         }
     }
 }

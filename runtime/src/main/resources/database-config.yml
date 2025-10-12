@@ -36,6 +36,7 @@ mongodb:
 
 # PostgreSQL settings (used by world storage, rank audit, and other relational modules)
 postgres:
+  enabled: true
   # JDBC URL for PostgreSQL connection
   jdbc-url: "jdbc:postgresql://localhost:5432/mydb"
   database: "mydb"

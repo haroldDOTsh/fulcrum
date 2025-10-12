@@ -2,26 +2,18 @@ package sh.harold.fulcrum.api.data.impl.postgres;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import sh.harold.fulcrum.api.data.storage.CacheProvider;
-import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
-import sh.harold.fulcrum.api.data.storage.StorageType;
-import com.mongodb.client.MongoDatabase;
-
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.Optional;
 import java.util.Properties;
 
 /**
- * PostgreSQL implementation of ConnectionAdapter.
- * Manages PostgreSQL connections with HikariCP connection pooling.
+ * Lightweight PostgreSQL connection helper backed by HikariCP.
+ * Used by features that require relational storage outside the document DataAPI.
  */
-public class PostgresConnectionAdapter implements ConnectionAdapter {
+public class PostgresConnectionAdapter {
     
     private final HikariDataSource dataSource;
     private final String databaseName;
-    private final CacheProvider cacheProvider;
     
     /**
      * Create a new PostgreSQL connection adapter with default configuration.
@@ -32,21 +24,7 @@ public class PostgresConnectionAdapter implements ConnectionAdapter {
      * @param databaseName The database name
      */
     public PostgresConnectionAdapter(String jdbcUrl, String username, String password, String databaseName) {
-        this(jdbcUrl, username, password, databaseName, null, new Properties());
-    }
-    
-    /**
-     * Create a new PostgreSQL connection adapter with cache provider.
-     * 
-     * @param jdbcUrl The JDBC URL for PostgreSQL connection
-     * @param username The database username
-     * @param password The database password
-     * @param databaseName The database name
-     * @param cacheProvider Optional cache provider
-     */
-    public PostgresConnectionAdapter(String jdbcUrl, String username, String password, String databaseName, 
-                                    CacheProvider cacheProvider) {
-        this(jdbcUrl, username, password, databaseName, cacheProvider, new Properties());
+        this(jdbcUrl, username, password, databaseName, new Properties());
     }
     
     /**
@@ -56,13 +34,11 @@ public class PostgresConnectionAdapter implements ConnectionAdapter {
      * @param username The database username
      * @param password The database password
      * @param databaseName The database name
-     * @param cacheProvider Optional cache provider
      * @param additionalProperties Additional HikariCP properties
      */
     public PostgresConnectionAdapter(String jdbcUrl, String username, String password, String databaseName,
-                                    CacheProvider cacheProvider, Properties additionalProperties) {
+                                    Properties additionalProperties) {
         this.databaseName = databaseName;
-        this.cacheProvider = cacheProvider;
         
         // Configure HikariCP
         HikariConfig config = new HikariConfig();
@@ -102,28 +78,6 @@ public class PostgresConnectionAdapter implements ConnectionAdapter {
         }
         
         this.dataSource = new HikariDataSource(config);
-    }
-    
-    @Override
-    public StorageType getStorageType() {
-        return StorageType.POSTGRES;
-    }
-    
-    @Override
-    public MongoDatabase getMongoDatabase() {
-        // Not applicable for PostgreSQL storage
-        return null;
-    }
-    
-    @Override
-    public Path getJsonStoragePath() {
-        // Not applicable for PostgreSQL storage
-        return null;
-    }
-    
-    @Override
-    public Optional<CacheProvider> getCacheProvider() {
-        return Optional.ofNullable(cacheProvider);
     }
     
     /**

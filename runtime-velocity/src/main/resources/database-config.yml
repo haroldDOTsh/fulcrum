@@ -22,6 +22,7 @@ mongodb:
 
 # PostgreSQL settings (used by relational-sidecar features)
 postgres:
+  enabled: true
   jdbc-url: "jdbc:postgresql://localhost:5432/fulcrum"
   database: "fulcrum_velocity"
   username: "fulcrum_user"

@@ -11,7 +11,6 @@ import sh.harold.fulcrum.api.data.Collection;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
-import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankChangeContext;
 import sh.harold.fulcrum.api.rank.RankService;
@@ -467,24 +466,28 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     }
     
     private void initializeAuditLogging() {
-        ConnectionAdapter adapter = container.getOptional(ConnectionAdapter.class).orElse(null);
-        if (adapter == null && ServiceLocatorImpl.getInstance() != null) {
-            adapter = ServiceLocatorImpl.getInstance()
-                .findService(ConnectionAdapter.class)
+        PostgresConnectionAdapter postgresAdapter = null;
+        if (container != null) {
+            postgresAdapter = container.getOptional(PostgresConnectionAdapter.class).orElse(null);
+        }
+        if (postgresAdapter == null && ServiceLocatorImpl.getInstance() != null) {
+            postgresAdapter = ServiceLocatorImpl.getInstance()
+                .findService(PostgresConnectionAdapter.class)
                 .orElse(null);
         }
 
-        if (adapter instanceof PostgresConnectionAdapter postgres) {
-            RankAuditLogRepository repository = new RankAuditLogRepository(postgres, logger);
-            try {
-                repository.initialize(plugin.getClass().getClassLoader());
-                this.auditLogRepository = repository;
-            } catch (Exception exception) {
-                logger.log(Level.WARNING, "Failed to initialize rank audit logging; disabling audit trail", exception);
-                this.auditLogRepository = null;
-            }
-        } else {
-            logger.warning("PostgreSQL connection adapter not available; rank audit logging disabled");
+        if (postgresAdapter == null) {
+            logger.warning("PostgreSQL adapter not available; rank audit logging disabled");
+            auditLogRepository = null;
+            return;
+        }
+
+        RankAuditLogRepository repository = new RankAuditLogRepository(postgresAdapter, logger);
+        try {
+            repository.initialize(plugin.getClass().getClassLoader());
+            this.auditLogRepository = repository;
+        } catch (Exception exception) {
+            logger.log(Level.WARNING, "Failed to initialize rank audit logging; disabling audit trail", exception);
             this.auditLogRepository = null;
         }
     }
