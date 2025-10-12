@@ -254,6 +254,7 @@ public class RegistryService {
         commandRegistry.register("debug", new DebugCommand(this));
         commandRegistry.register("reload", new ReloadCommand(this));
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
+        commandRegistry.register("locateplayer", new LocatePlayerCommand(messageBus));
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
             commandRegistry.register("provisionminigame", new ProvisionMinigameCommand(slotProvisionService));

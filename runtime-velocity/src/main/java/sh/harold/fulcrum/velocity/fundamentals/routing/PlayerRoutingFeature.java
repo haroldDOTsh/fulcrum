@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.command.SimpleCommand;
+import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.connection.DisconnectEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
@@ -18,6 +21,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
@@ -57,6 +62,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
     private String subscribedChannel;
     private MessageHandler routeHandler;
     private MessageHandler locateHandler;
+    private final ConcurrentMap<UUID, PlayerLocationRecord> playerLocations = new ConcurrentHashMap<>();
 
     @Override
     public String getName() {
@@ -84,6 +90,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
         this.scheduler = proxy.getScheduler();
 
         proxy.getChannelRegistrar().register(ROUTE_CHANNEL);
+        proxy.getEventManager().register(plugin, this);
 
         routeHandler = this::handleRouteEnvelope;
         locateHandler = this::handleLocateEnvelope;
@@ -104,6 +111,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
             messageBus.unsubscribe(ChannelConstants.REGISTRY_PLAYER_LOCATE_REQUEST, locateHandler);
         }
         proxy.getChannelRegistrar().unregister(ROUTE_CHANNEL);
+        proxy.getEventManager().unregisterListener(plugin, this);
         logger.info("PlayerRoutingFeature shut down");
     }
 
@@ -161,7 +169,16 @@ public class PlayerRoutingFeature implements VelocityFeature {
             response.setProxyId(currentProxyId());
             response.setPlayerId(player.getUniqueId());
             response.setPlayerName(player.getUsername());
-            response.setFound(true);
+            PlayerLocationSnapshot snapshot = getPlayerLocation(player.getUniqueId()).orElse(null);
+            if (snapshot != null) {
+                response.setServerId(snapshot.getServerId());
+                response.setSlotId(snapshot.getSlotId());
+                response.setSlotSuffix(snapshot.getSlotSuffix());
+                response.setFamilyId(snapshot.getFamilyId());
+            } else {
+                player.getCurrentServer().ifPresent(server -> response.setServerId(server.getServerInfo().getName()));
+            }
+            response.setFound(response.getServerId() != null && !response.getServerId().isBlank());
             messageBus.broadcast(ChannelConstants.REGISTRY_PLAYER_LOCATE_RESPONSE, response);
         } catch (Exception exception) {
             logger.warn("Failed to handle player locate request", exception);
@@ -214,6 +231,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
                 sendRoutePluginMessage(player, command);
             }).delay(Duration.ofMillis(50))
                 .schedule();
+            recordPlayerLocation(command, player);
             sendSuccessAck(command);
             return;
         }
@@ -238,6 +256,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
                 sendRoutePluginMessage(player, command);
             }).delay(Duration.ofMillis(50))
                 .schedule();
+            recordPlayerLocation(command, player);
             sendSuccessAck(command);
         });
     }
@@ -249,6 +268,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
                 .orElse("Disconnected by registry");
             player.disconnect(Component.text(reason, TextColor.color(0xFF5555)));
         });
+        forgetPlayerLocation(command.getPlayerId());
     }
 
     private void sendRoutePluginMessage(Player player, PlayerRouteCommand command) {
@@ -341,5 +361,119 @@ public class PlayerRoutingFeature implements VelocityFeature {
         }
         return objectMapper.convertValue(payload, type);
     }
-}
 
+    private void recordPlayerLocation(PlayerRouteCommand command, Player player) {
+        Map<String, String> metadata = command.getMetadata();
+        String familyId = metadata != null ? metadata.getOrDefault("family", metadata.get("familyId")) : null;
+        PlayerLocationRecord record = new PlayerLocationRecord(
+            command.getServerId(),
+            command.getSlotId(),
+            command.getSlotSuffix(),
+            familyId,
+            metadata
+        );
+        playerLocations.put(command.getPlayerId(), record);
+        logger.debug("Updated location for {} -> {}{}", player.getUsername(), command.getServerId(),
+            command.getSlotSuffix() != null ? command.getSlotSuffix() : "");
+    }
+
+    private void forgetPlayerLocation(UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        playerLocations.remove(playerId);
+    }
+
+    public Optional<PlayerLocationSnapshot> getPlayerLocation(UUID playerId) {
+        PlayerLocationRecord record = playerLocations.get(playerId);
+        if (record == null) {
+            return Optional.empty();
+        }
+        return Optional.of(record.snapshot());
+    }
+
+    @Subscribe
+    public void onPlayerDisconnect(DisconnectEvent event) {
+        forgetPlayerLocation(event.getPlayer().getUniqueId());
+    }
+
+    @Subscribe
+    public void onServerPostConnect(ServerPostConnectEvent event) {
+        Player player = event.getPlayer();
+        if (player == null) {
+            return;
+        }
+        player.getCurrentServer().ifPresent(server -> playerLocations.compute(player.getUniqueId(), (id, existing) -> {
+            if (existing == null) {
+                return new PlayerLocationRecord(server.getServerInfo().getName(), null, null, null, Map.of());
+            }
+            return existing.withServer(server.getServerInfo().getName());
+        }));
+    }
+
+    private record PlayerLocationRecord(
+        String serverId,
+        String slotId,
+        String slotSuffix,
+        String familyId,
+        Map<String, String> metadataSnapshot,
+        long updatedAt
+    ) {
+        private PlayerLocationRecord(String serverId,
+                                     String slotId,
+                                     String slotSuffix,
+                                     String familyId,
+                                     Map<String, String> metadata) {
+            this(serverId, slotId, slotSuffix, familyId, metadata, System.currentTimeMillis());
+        }
+
+        private PlayerLocationRecord {
+            metadataSnapshot = metadataSnapshot != null ? Map.copyOf(metadataSnapshot) : Map.of();
+        }
+
+        private PlayerLocationRecord withServer(String newServerId) {
+            return new PlayerLocationRecord(newServerId, slotId, slotSuffix, familyId, metadataSnapshot, System.currentTimeMillis());
+        }
+
+        private PlayerLocationSnapshot snapshot() {
+            return new PlayerLocationSnapshot(serverId, slotId, slotSuffix, familyId, metadataSnapshot, updatedAt);
+        }
+    }
+
+    public record PlayerLocationSnapshot(
+        String serverId,
+        String slotId,
+        String slotSuffix,
+        String familyId,
+        Map<String, String> metadata,
+        long updatedAt
+    ) {
+        public PlayerLocationSnapshot {
+            metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
+        }
+
+        public String getServerId() {
+            return serverId;
+        }
+
+        public String getSlotId() {
+            return slotId;
+        }
+
+        public String getSlotSuffix() {
+            return slotSuffix;
+        }
+
+        public String getFamilyId() {
+            return familyId;
+        }
+
+        public Map<String, String> getMetadata() {
+            return metadata;
+        }
+
+        public long getUpdatedAt() {
+            return updatedAt;
+        }
+    }
+}

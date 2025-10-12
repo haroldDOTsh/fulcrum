@@ -143,12 +143,19 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
                 System.out.println("Proxy '" + requestedProxyId + "' is not registered.");
                 return null;
             }
-            return new LocateResult(requestedProxyId, suppliedId, playerName);
+            return new LocateResult(requestedProxyId, suppliedId, playerName, null, null, null);
         }
 
         LocateResult located = locateProxyForPlayer(suppliedId, playerName);
         if (located != null && located.proxyId() != null) {
-            System.out.println("Located player on proxy " + located.proxyId() + ".");
+            String serverDisplay = located.slotSuffix() != null && !located.slotSuffix().isBlank()
+                ? located.serverId() + located.slotSuffix()
+                : located.serverId() != null ? located.serverId() : "unknown";
+            String familyDisplay = located.familyId() != null && !located.familyId().isBlank()
+                ? located.familyId()
+                : "unknown";
+            System.out.println("Located player on proxy " + located.proxyId()
+                + " => " + serverDisplay + " (" + familyDisplay + ")");
             return located;
         }
 
@@ -156,7 +163,7 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
         if (proxies.size() == 1) {
             String fallback = proxies.iterator().next().getProxyIdString();
             System.out.println("Player not located; defaulting to proxy " + fallback + " (single proxy environment).");
-            return new LocateResult(fallback, suppliedId, playerName);
+            return new LocateResult(fallback, suppliedId, playerName, null, null, null);
         }
 
         System.out.println("Player " + playerName + " is not currently online on any known proxy.");
@@ -179,9 +186,13 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
                 if (response == null || !requestId.equals(response.getRequestId()) || !response.isFound()) {
                     return;
                 }
-                LocateResult located = new LocateResult(response.getProxyId(),
+                LocateResult located = new LocateResult(
+                    response.getProxyId(),
                     response.getPlayerId() != null ? response.getPlayerId() : playerId,
-                    response.getPlayerName() != null ? response.getPlayerName() : playerName);
+                    response.getPlayerName() != null ? response.getPlayerName() : playerName,
+                    response.getServerId(),
+                    response.getSlotSuffix(),
+                    response.getFamilyId());
                 if (resultRef.compareAndSet(null, located)) {
                     latch.countDown();
                 }
@@ -226,5 +237,10 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
         boolean invalid;
     }
 
-    private record LocateResult(String proxyId, UUID playerId, String playerName) {}
+    private record LocateResult(String proxyId,
+                                UUID playerId,
+                                String playerName,
+                                String serverId,
+                                String slotSuffix,
+                                String familyId) {}
 }
