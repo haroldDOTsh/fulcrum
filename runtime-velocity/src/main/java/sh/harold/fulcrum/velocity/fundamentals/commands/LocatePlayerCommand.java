@@ -7,11 +7,6 @@ import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
-import java.time.Duration;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
@@ -23,6 +18,12 @@ import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
+
+import java.time.Duration;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Velocity command that locates a player anywhere on the network.
@@ -36,7 +37,7 @@ final class LocatePlayerCommand implements SimpleCommand {
     private final FulcrumVelocityPlugin plugin;
     private final Logger logger;
     private final ObjectMapper objectMapper = new ObjectMapper()
-        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     LocatePlayerCommand(ProxyServer proxy,
                         MessageBus messageBus,
@@ -93,8 +94,8 @@ final class LocatePlayerCommand implements SimpleCommand {
         messageBus.subscribe(ChannelConstants.REGISTRY_PLAYER_LOCATE_RESPONSE, handler);
 
         ScheduledTask timeoutTask = proxy.getScheduler().buildTask(plugin, () -> future.complete(null))
-            .delay(RESPONSE_TIMEOUT)
-            .schedule();
+                .delay(RESPONSE_TIMEOUT)
+                .schedule();
 
         future.whenComplete((response, throwable) -> {
             timeoutTask.cancel();
@@ -119,7 +120,7 @@ final class LocatePlayerCommand implements SimpleCommand {
 
     private void sendLocalLocation(CommandSource source, Player player) {
         PlayerRoutingFeature.PlayerLocationSnapshot snapshot = routingFeature.getPlayerLocation(player.getUniqueId())
-            .orElse(null);
+                .orElse(null);
 
         String serverId = null;
         String slotSuffix = null;
@@ -132,8 +133,8 @@ final class LocatePlayerCommand implements SimpleCommand {
 
         if (serverId == null) {
             serverId = player.getCurrentServer()
-                .map(current -> current.getServerInfo().getName())
-                .orElse("unknown");
+                    .map(current -> current.getServerInfo().getName())
+                    .orElse("unknown");
         }
 
         if (familyId == null && snapshot != null) {
@@ -144,13 +145,13 @@ final class LocatePlayerCommand implements SimpleCommand {
         String displayServer = formatServerId(serverId, slotSuffix);
         String displayFamily = familyId != null && !familyId.isBlank() ? familyId : "unknown";
         source.sendMessage(Component.text(
-            "Player " + player.getUsername() + " spotted on " + displayServer + " (" + displayFamily + ")",
-            NamedTextColor.GREEN));
+                "Player " + player.getUsername() + " spotted on " + displayServer + " (" + displayFamily + ")",
+                NamedTextColor.GREEN));
     }
 
     private void sendRemoteLocation(CommandSource source, PlayerLocateResponse response) {
         String resolvedName = response.getPlayerName() != null ? response.getPlayerName()
-            : (response.getPlayerId() != null ? response.getPlayerId().toString() : "unknown");
+                : (response.getPlayerId() != null ? response.getPlayerId().toString() : "unknown");
         String serverId = Optional.ofNullable(response.getServerId()).orElse("unknown");
         String slotSuffix = response.getSlotSuffix();
         String familyId = response.getFamilyId();
@@ -158,8 +159,8 @@ final class LocatePlayerCommand implements SimpleCommand {
         String displayFamily = familyId != null && !familyId.isBlank() ? familyId : "unknown";
 
         Component message = Component.text(
-            "Player " + resolvedName + " spotted on " + displayServer + " (" + displayFamily + ")",
-            NamedTextColor.GREEN);
+                "Player " + resolvedName + " spotted on " + displayServer + " (" + displayFamily + ")",
+                NamedTextColor.GREEN);
         source.sendMessage(message);
     }
 

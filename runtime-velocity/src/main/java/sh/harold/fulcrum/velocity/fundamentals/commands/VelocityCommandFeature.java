@@ -14,7 +14,7 @@ import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
  * Feature that registers and manages Velocity proxy commands.
  */
 public class VelocityCommandFeature implements VelocityFeature {
-    
+
     private ProxyServer proxy;
     private Logger logger;
     private CommandManager commandManager;
@@ -22,36 +22,36 @@ public class VelocityCommandFeature implements VelocityFeature {
     private MessageBus messageBus;
     private PlayerRoutingFeature playerRoutingFeature;
     private FulcrumVelocityPlugin plugin;
-    
+
     @Override
     public String getName() {
         return "VelocityCommands";
     }
-    
+
     @Override
     public int getPriority() {
         return 100; // After most other features are loaded
     }
-    
+
     @Override
     public void initialize(ServiceLocator serviceLocator, Logger logger) throws Exception {
         this.logger = logger;
         this.serviceLocator = serviceLocator;
-        
+
         // Get required services
         this.proxy = serviceLocator.getRequiredService(ProxyServer.class);
         this.commandManager = proxy.getCommandManager();
         this.messageBus = serviceLocator.getRequiredService(MessageBus.class);
         this.playerRoutingFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature.class);
         this.plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
-        
+
         // Register proxy commands when they are introduced
         registerLocatePlayerCommand();
-        
+
         logger.info("VelocityCommandFeature initialized");
     }
-    
-    
+
+
     @Override
     public void shutdown() {
         // No commands to unregister currently
@@ -60,8 +60,8 @@ public class VelocityCommandFeature implements VelocityFeature {
 
     private void registerLocatePlayerCommand() {
         CommandMeta meta = commandManager.metaBuilder("locateplayer")
-            .plugin(plugin)
-            .build();
+                .plugin(plugin)
+                .build();
 
         commandManager.register(meta, new LocatePlayerCommand(proxy, messageBus, playerRoutingFeature, plugin, logger));
     }

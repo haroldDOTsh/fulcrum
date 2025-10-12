@@ -10,10 +10,24 @@ import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
-import com.velocitypowered.api.proxy.server.RegisteredServer;
-import com.velocitypowered.api.scheduler.Scheduler;
 import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
+import com.velocitypowered.api.scheduler.Scheduler;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextColor;
+import org.slf4j.Logger;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
+import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
+import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.messages.*;
+import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
+import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
+import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
+import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
@@ -23,23 +37,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import org.slf4j.Logger;
-import sh.harold.fulcrum.api.messagebus.ChannelConstants;
-import sh.harold.fulcrum.api.messagebus.MessageBus;
-import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
-import sh.harold.fulcrum.api.messagebus.MessageHandler;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteAck;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerSlotRequest;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse;
-import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
-import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
-import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
-import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
-import net.kyori.adventure.text.format.TextColor;
 
 /**
  * Handles matchmaking requests, route commands, and acknowledgements on the Velocity proxy.
@@ -48,8 +45,8 @@ public class PlayerRoutingFeature implements VelocityFeature {
     private static final ChannelIdentifier ROUTE_CHANNEL = MinecraftChannelIdentifier.from("fulcrum:route");
 
     private final ObjectMapper objectMapper = new ObjectMapper()
-        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    private final ConcurrentMap<UUID, PlayerLocationRecord> playerLocations = new ConcurrentHashMap<>();
     private ProxyServer proxy;
     private Logger logger;
     private MessageBus messageBus;
@@ -57,12 +54,10 @@ public class PlayerRoutingFeature implements VelocityFeature {
     private FulcrumVelocityPlugin plugin;
     private CommandManager commandManager;
     private Scheduler scheduler;
-
     private String subscribedProxyId;
     private String subscribedChannel;
     private MessageHandler routeHandler;
     private MessageHandler locateHandler;
-    private final ConcurrentMap<UUID, PlayerLocationRecord> playerLocations = new ConcurrentHashMap<>();
 
     @Override
     public String getName() {
@@ -185,8 +180,8 @@ public class PlayerRoutingFeature implements VelocityFeature {
             try {
                 PlayerRouteCommand command = convert(envelope.getPayload(), PlayerRouteCommand.class);
                 logger.info("Proxy received route command: requestId={} player={} targetServer={} slot={} world={}",
-                    command.getRequestId(), command.getPlayerName(), command.getServerId(),
-                    command.getSlotId(), command.getTargetWorld());
+                        command.getRequestId(), command.getPlayerName(), command.getServerId(),
+                        command.getSlotId(), command.getTargetWorld());
                 command.validate();
                 if (command.getAction() == PlayerRouteCommand.Action.ROUTE) {
                     handleRouteCommand(command);
@@ -216,16 +211,16 @@ public class PlayerRoutingFeature implements VelocityFeature {
         player.sendMessage(Component.text("Routing you to " + command.getSlotId() + "...", NamedTextColor.GRAY));
 
         if (player.getCurrentServer()
-            .map(current -> current.getServerInfo().getName().equalsIgnoreCase(command.getServerId()))
-            .orElse(false)) {
+                .map(current -> current.getServerInfo().getName().equalsIgnoreCase(command.getServerId()))
+                .orElse(false)) {
             logger.info("Player {} already connected to {}; delivering route payload directly",
-                player.getUsername(), command.getServerId());
+                    player.getUsername(), command.getServerId());
             scheduler.buildTask(plugin, () -> {
-                logger.info("Sending route payload to backend for {} (slotId={}, world={})",
-                    player.getUsername(), command.getSlotId(), command.getTargetWorld());
-                sendRoutePluginMessage(player, command);
-            }).delay(Duration.ofMillis(50))
-                .schedule();
+                        logger.info("Sending route payload to backend for {} (slotId={}, world={})",
+                                player.getUsername(), command.getSlotId(), command.getTargetWorld());
+                        sendRoutePluginMessage(player, command);
+                    }).delay(Duration.ofMillis(50))
+                    .schedule();
             recordPlayerLocation(command, player);
             sendSuccessAck(command);
             return;
@@ -240,17 +235,17 @@ public class PlayerRoutingFeature implements VelocityFeature {
 
             if (!result.isSuccessful()) {
                 logger.warn("Connection attempt for {} to {} was unsuccessful",
-                    player.getUsername(), command.getServerId());
+                        player.getUsername(), command.getServerId());
                 sendFailureAck(command, "connection-failed");
                 return;
             }
 
             scheduler.buildTask(plugin, () -> {
-                logger.info("Sending route payload to backend for {} (slotId={}, world={})",
-                    player.getUsername(), command.getSlotId(), command.getTargetWorld());
-                sendRoutePluginMessage(player, command);
-            }).delay(Duration.ofMillis(50))
-                .schedule();
+                        logger.info("Sending route payload to backend for {} (slotId={}, world={})",
+                                player.getUsername(), command.getSlotId(), command.getTargetWorld());
+                        sendRoutePluginMessage(player, command);
+                    }).delay(Duration.ofMillis(50))
+                    .schedule();
             recordPlayerLocation(command, player);
             sendSuccessAck(command);
         });
@@ -259,8 +254,8 @@ public class PlayerRoutingFeature implements VelocityFeature {
     private void handleDisconnectCommand(PlayerRouteCommand command) {
         proxy.getPlayer(command.getPlayerId()).ifPresent(player -> {
             String reason = Optional.ofNullable(command.getMetadata())
-                .map(meta -> meta.getOrDefault("reason", "Disconnected by registry"))
-                .orElse("Disconnected by registry");
+                    .map(meta -> meta.getOrDefault("reason", "Disconnected by registry"))
+                    .orElse("Disconnected by registry");
             player.disconnect(Component.text(reason, TextColor.color(0xFF5555)));
         });
         forgetPlayerLocation(command.getPlayerId());
@@ -276,7 +271,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
             }, () -> logger.warn("Unable to deliver route payload for {}; player has no active server connection", player.getUsername()));
         } catch (Exception exception) {
             logger.warn("Failed to send route payload to backend for {}: {}",
-                player.getUsername(), exception.getMessage());
+                    player.getUsername(), exception.getMessage());
         }
     }
 
@@ -309,8 +304,8 @@ public class PlayerRoutingFeature implements VelocityFeature {
 
     private void registerRouteCommand() {
         CommandMeta meta = commandManager.metaBuilder("route")
-            .plugin(plugin)
-            .build();
+                .plugin(plugin)
+                .build();
 
         commandManager.register(meta, new SimpleCommand() {
             @Override
@@ -330,8 +325,8 @@ public class PlayerRoutingFeature implements VelocityFeature {
                 }
 
                 sendSlotRequest(playerOpt.get(), familyId, Map.of("source", "command"))
-                    .thenAccept(requestId -> invocation.source().sendMessage(Component.text(
-                        "Requested slot for " + targetName + " (family=" + familyId + ")", NamedTextColor.GREEN)));
+                        .thenAccept(requestId -> invocation.source().sendMessage(Component.text(
+                                "Requested slot for " + targetName + " (family=" + familyId + ")", NamedTextColor.GREEN)));
             }
         });
     }
@@ -361,15 +356,15 @@ public class PlayerRoutingFeature implements VelocityFeature {
         Map<String, String> metadata = command.getMetadata();
         String familyId = metadata != null ? metadata.getOrDefault("family", metadata.get("familyId")) : null;
         PlayerLocationRecord record = new PlayerLocationRecord(
-            command.getServerId(),
-            command.getSlotId(),
-            command.getSlotSuffix(),
-            familyId,
-            metadata
+                command.getServerId(),
+                command.getSlotId(),
+                command.getSlotSuffix(),
+                familyId,
+                metadata
         );
         playerLocations.put(command.getPlayerId(), record);
         logger.debug("Updated location for {} -> {}{}", player.getUsername(), command.getServerId(),
-            command.getSlotSuffix() != null ? command.getSlotSuffix() : "");
+                command.getSlotSuffix() != null ? command.getSlotSuffix() : "");
     }
 
     private void forgetPlayerLocation(UUID playerId) {
@@ -407,12 +402,12 @@ public class PlayerRoutingFeature implements VelocityFeature {
     }
 
     private record PlayerLocationRecord(
-        String serverId,
-        String slotId,
-        String slotSuffix,
-        String familyId,
-        Map<String, String> metadataSnapshot,
-        long updatedAt
+            String serverId,
+            String slotId,
+            String slotSuffix,
+            String familyId,
+            Map<String, String> metadataSnapshot,
+            long updatedAt
     ) {
         private PlayerLocationRecord(String serverId,
                                      String slotId,
@@ -436,12 +431,12 @@ public class PlayerRoutingFeature implements VelocityFeature {
     }
 
     public record PlayerLocationSnapshot(
-        String serverId,
-        String slotId,
-        String slotSuffix,
-        String familyId,
-        Map<String, String> metadata,
-        long updatedAt
+            String serverId,
+            String slotId,
+            String slotSuffix,
+            String familyId,
+            Map<String, String> metadata,
+            long updatedAt
     ) {
         public PlayerLocationSnapshot {
             metadata = metadata != null ? Map.copyOf(metadata) : Map.of();

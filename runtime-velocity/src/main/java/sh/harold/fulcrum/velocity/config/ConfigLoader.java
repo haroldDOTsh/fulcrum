@@ -2,9 +2,9 @@ package sh.harold.fulcrum.velocity.config;
 
 import org.slf4j.Logger;
 import org.yaml.snakeyaml.Yaml;
-import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -15,7 +15,7 @@ public class ConfigLoader {
     private final Logger logger;
     private final Map<String, Object> configuration;
     private final Map<Object, Object> configCache; // Changed to support both Class<?> and String keys
-    
+
     public ConfigLoader(Path dataDirectory, Logger logger) {
         this.dataDirectory = dataDirectory;
         this.logger = logger;
@@ -23,15 +23,15 @@ public class ConfigLoader {
         this.configCache = new HashMap<>();
         loadConfiguration();
     }
-    
+
     private void loadConfiguration() {
         Path configFile = dataDirectory.resolve("config.yml");
-        
+
         // Create default config if it doesn't exist
         if (!Files.exists(configFile)) {
             createDefaultConfig(configFile);
         }
-        
+
         // Load configuration
         try (InputStream input = Files.newInputStream(configFile)) {
             Yaml yaml = new Yaml();
@@ -43,11 +43,11 @@ public class ConfigLoader {
         } catch (IOException e) {
             logger.error("Failed to load configuration", e);
         }
-        
+
         // Parse specific configurations
         parseConfigurations();
     }
-    
+
     private void createDefaultConfig(Path configFile) {
         try {
             Files.createDirectories(configFile.getParent());
@@ -61,7 +61,7 @@ public class ConfigLoader {
             logger.error("Failed to create default configuration", e);
         }
     }
-    
+
     @SuppressWarnings("unchecked")
     private void parseConfigurations() {
         // Parse Message Bus configuration
@@ -70,46 +70,46 @@ public class ConfigLoader {
         if (messageBusSection != null) {
             messageBusMode = (String) messageBusSection.getOrDefault("mode", "redis");
         }
-        
+
         // Store the mode directly as a String
         configCache.put("message-bus-mode", messageBusMode);
-        
+
         // Parse Redis configuration
         Map<String, Object> redisSection = (Map<String, Object>) configuration.get("redis");
         if (redisSection != null) {
             RedisConfig.Builder builder = RedisConfig.builder()
-                .host((String) redisSection.getOrDefault("host", "localhost"))
-                .port((Integer) redisSection.getOrDefault("port", 6379))
-                .password((String) redisSection.getOrDefault("password", ""))
-                .database((Integer) redisSection.getOrDefault("database", 0));
-            
+                    .host((String) redisSection.getOrDefault("host", "localhost"))
+                    .port((Integer) redisSection.getOrDefault("port", 6379))
+                    .password((String) redisSection.getOrDefault("password", ""))
+                    .database((Integer) redisSection.getOrDefault("database", 0));
+
             // Timeout is stored as milliseconds in config but RedisConfig expects Duration
             Integer timeoutMs = (Integer) redisSection.getOrDefault("timeout", 2000);
             builder.connectionTimeout(java.time.Duration.ofMillis(timeoutMs));
-            
+
             Map<String, Object> poolSection = (Map<String, Object>) redisSection.get("pool");
             if (poolSection != null) {
                 builder.maxConnections((Integer) poolSection.getOrDefault("maxTotal", 8))
-                       .maxIdleConnections((Integer) poolSection.getOrDefault("maxIdle", 8))
-                       .minIdleConnections((Integer) poolSection.getOrDefault("minIdle", 0));
+                        .maxIdleConnections((Integer) poolSection.getOrDefault("maxIdle", 8))
+                        .minIdleConnections((Integer) poolSection.getOrDefault("minIdle", 0));
             }
-            
+
             configCache.put(RedisConfig.class, builder.build());
         }
-        
+
         // Parse Server Lifecycle configuration
         Map<String, Object> lifecycleSection = (Map<String, Object>) configuration.get("server-lifecycle");
         if (lifecycleSection != null) {
             ServerLifecycleConfig lifecycleConfig = new ServerLifecycleConfig();
-            
+
             // Don't read heartbeat interval from config - always use hardcoded value of 2 seconds
             lifecycleConfig.setHeartbeatInterval(2);  // Always 2 seconds, not configurable
             lifecycleConfig.setTimeoutSeconds((Integer) lifecycleSection.getOrDefault("timeout", 90));
-            
+
             // Set capacity values (hard and soft caps)
             lifecycleConfig.setHardCap((Integer) lifecycleSection.getOrDefault("hard-cap", 1000));
             lifecycleConfig.setSoftCap((Integer) lifecycleSection.getOrDefault("soft-cap", 500));
-            
+
             configCache.put(ServerLifecycleConfig.class, lifecycleConfig);
         } else {
             // Create default config if not specified
@@ -121,25 +121,25 @@ public class ConfigLoader {
             configCache.put(ServerLifecycleConfig.class, lifecycleConfig);
         }
     }
-    
+
     @SuppressWarnings("unchecked")
     public <T> T getConfig(Class<T> configClass) {
         return (T) configCache.get(configClass);
     }
-    
+
     @SuppressWarnings("unchecked")
     public <T> T getConfig(String key) {
         return (T) configCache.get(key);
     }
-    
+
     public Map<String, Object> getConfiguration() {
         return new HashMap<>(configuration);
     }
-    
+
     public Object get(String key) {
         return configuration.get(key);
     }
-    
+
     @SuppressWarnings("unchecked")
     public <T> T get(String key, T defaultValue) {
         Object value = configuration.get(key);

@@ -15,81 +15,81 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class VelocityIdentityFeature implements VelocityFeature {
-    
+
+    private final Map<UUID, PlayerIdentity> identities;
     private Logger logger;
     private ProxyServer server;
-    private final Map<UUID, PlayerIdentity> identities;
-    
+
     public VelocityIdentityFeature() {
         this.identities = new ConcurrentHashMap<>();
     }
-    
+
     @Override
     public String getName() {
         return "Identity";
     }
-    
+
     @Override
     public int getPriority() {
         return 5; // Very high priority - loads early as other features depend on this
     }
-    
+
     @Override
     public void initialize(ServiceLocator serviceLocator, Logger logger) throws Exception {
         this.logger = logger;
         this.server = serviceLocator.getRequiredService(ProxyServer.class);
-        
+
         // Get the main plugin instance to register events
         Object plugin = serviceLocator.getRequiredService(
-            Class.forName("sh.harold.fulcrum.velocity.FulcrumVelocityPlugin")
+                Class.forName("sh.harold.fulcrum.velocity.FulcrumVelocityPlugin")
         );
-        
+
         // Register event listeners using the main plugin instance
         server.getEventManager().register(plugin, this);
-        
+
         logger.info("Identity feature initialized");
     }
-    
+
     @Override
     public void shutdown() {
         // Note: Velocity will automatically unregister listeners when the plugin shuts down
         identities.clear();
     }
-    
+
     @Subscribe
     public void onPlayerLogin(PostLoginEvent event) {
         Player player = event.getPlayer();
         PlayerIdentity identity = new PlayerIdentity(
-            player.getUniqueId(),
-            player.getUsername(),
-            System.currentTimeMillis()
+                player.getUniqueId(),
+                player.getUsername(),
+                System.currentTimeMillis()
         );
         identities.put(player.getUniqueId(), identity);
         logger.debug("Player {} logged in", player.getUsername());
     }
-    
+
     @Subscribe
     public void onPlayerDisconnect(DisconnectEvent event) {
         Player player = event.getPlayer();
         identities.remove(player.getUniqueId());
         logger.debug("Player {} disconnected", player.getUsername());
     }
-    
+
     @Subscribe
     public void onServerSwitch(ServerConnectedEvent event) {
         Player player = event.getPlayer();
         PlayerIdentity identity = identities.get(player.getUniqueId());
         if (identity != null && event.getServer() != null) {
             identity.setCurrentServer(event.getServer().getServerInfo().getName());
-            logger.debug("Player {} switched to server {}", 
-                       player.getUsername(), event.getServer().getServerInfo().getName());
+            logger.debug("Player {} switched to server {}",
+                    player.getUsername(), event.getServer().getServerInfo().getName());
         }
     }
-    
+
     public PlayerIdentity getIdentity(UUID playerId) {
         return identities.get(playerId);
     }
-    
+
     public Map<UUID, PlayerIdentity> getAllIdentities() {
         return new ConcurrentHashMap<>(identities);
     }

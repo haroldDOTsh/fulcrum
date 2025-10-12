@@ -16,36 +16,36 @@ import sh.harold.fulcrum.velocity.lifecycle.VelocityFeatureManager;
 import java.nio.file.Path;
 
 @Plugin(
-    id = "fulcrum",
-    name = "Fulcrum Velocity",
-    version = "1.5.0",
-    description = "Fulcrum framework for Velocity proxy",
-    authors = {"Harold"}
+        id = "fulcrum",
+        name = "Fulcrum Velocity",
+        version = "1.5.0",
+        description = "Fulcrum framework for Velocity proxy",
+        authors = {"Harold"}
 )
 public class FulcrumVelocityPlugin {
-    
+
     private final ProxyServer server;
     private final Logger logger;
     private final Path dataDirectory;
     private VelocityFeatureManager featureManager;
     private ServiceLocator serviceLocator;
     private ConfigLoader configLoader;
-    
+
     @Inject
     public FulcrumVelocityPlugin(ProxyServer server, Logger logger, @DataDirectory Path dataDirectory) {
         this.server = server;
         this.logger = logger;
         this.dataDirectory = dataDirectory;
     }
-    
+
     @Subscribe
     public void onProxyInitialization(ProxyInitializeEvent event) {
         logger.info("Initializing Fulcrum Velocity...");
-        
+
         try {
             // Initialize configuration
             this.configLoader = new ConfigLoader(dataDirectory, logger);
-            
+
             // Initialize service locator
             this.serviceLocator = new ServiceLocator();
             serviceLocator.register(ProxyServer.class, server);
@@ -53,61 +53,61 @@ public class FulcrumVelocityPlugin {
             serviceLocator.register(ConfigLoader.class, configLoader);
             serviceLocator.register(Path.class, dataDirectory);
             serviceLocator.register(FulcrumVelocityPlugin.class, this);
-            
+
             // Initialize feature manager
             this.featureManager = new VelocityFeatureManager(serviceLocator, logger);
-            
+
             // Load fundamental features
             featureManager.loadFundamentalFeatures();
-            
+
             // Initialize all features
             featureManager.initializeFeatures();
-            
+
             logger.info("Fulcrum Velocity initialized successfully");
         } catch (Exception e) {
             logger.error("Failed to initialize Fulcrum Velocity", e);
             logger.error("Critical failure: A fundamental feature failed to initialize. Shutting down proxy...");
-            
+
             // Schedule proxy shutdown after a short delay to allow error messages to be logged
             server.getScheduler()
-                .buildTask(this, () -> {
-                    logger.error("Shutting down Velocity due to initialization failure");
-                    server.shutdown(Component.text("Critical initialization failure: " + e.getMessage()));
-                })
-                .delay(java.time.Duration.ofSeconds(2))
-                .schedule();
-            
+                    .buildTask(this, () -> {
+                        logger.error("Shutting down Velocity due to initialization failure");
+                        server.shutdown(Component.text("Critical initialization failure: " + e.getMessage()));
+                    })
+                    .delay(java.time.Duration.ofSeconds(2))
+                    .schedule();
+
             throw new RuntimeException("Failed to initialize Fulcrum Velocity", e);
         }
     }
-    
+
     @Subscribe
     public void onProxyShutdown(ProxyShutdownEvent event) {
         logger.info("Shutting down Fulcrum Velocity...");
-        
+
         if (featureManager != null) {
             featureManager.shutdownFeatures();
         }
-        
+
         logger.info("Fulcrum Velocity shut down successfully");
     }
-    
+
     public ProxyServer getServer() {
         return server;
     }
-    
+
     public Logger getLogger() {
         return logger;
     }
-    
+
     public Path getDataDirectory() {
         return dataDirectory;
     }
-    
+
     public ServiceLocator getServiceLocator() {
         return serviceLocator;
     }
-    
+
     public ConfigLoader getConfigLoader() {
         return configLoader;
     }
