@@ -1,13 +1,14 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
+
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import sh.harold.fulcrum.api.messagebus.BaseMessage;
-import sh.harold.fulcrum.api.messagebus.MessageType;
 
 /**
  * Command issued by the registry requesting that a backend provision a logical slot for a family.

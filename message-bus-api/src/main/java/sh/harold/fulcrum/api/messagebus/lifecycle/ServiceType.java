@@ -33,20 +33,6 @@ public enum ServiceType {
     }
 
     /**
-     * Get the type name used in messages.
-     */
-    public String getTypeName() {
-        return typeName;
-    }
-
-    /**
-     * Get the ID prefix for this service type.
-     */
-    public String getIdPrefix() {
-        return idPrefix;
-    }
-
-    /**
      * Parse a service type from a string.
      *
      * @param value The string value
@@ -58,7 +44,7 @@ public enum ServiceType {
         String lower = value.toLowerCase();
         for (ServiceType type : values()) {
             if (type.typeName.equals(lower) ||
-                type.name().equalsIgnoreCase(value)) {
+                    type.name().equalsIgnoreCase(value)) {
                 return type;
             }
         }
@@ -69,6 +55,20 @@ public enum ServiceType {
         }
 
         return UNKNOWN;
+    }
+
+    /**
+     * Get the type name used in messages.
+     */
+    public String getTypeName() {
+        return typeName;
+    }
+
+    /**
+     * Get the ID prefix for this service type.
+     */
+    public String getIdPrefix() {
+        return idPrefix;
     }
 
     @Override

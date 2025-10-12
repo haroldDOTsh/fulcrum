@@ -1,13 +1,14 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
+
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import sh.harold.fulcrum.api.messagebus.BaseMessage;
-import sh.harold.fulcrum.api.messagebus.MessageType;
 
 /**
  * Broadcast by backend servers to describe the current state of a logical slot.

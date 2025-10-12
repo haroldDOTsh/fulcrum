@@ -5,16 +5,28 @@ package sh.harold.fulcrum.api.messagebus.messages;
  * These align with the slot orchestration terminology used across services.
  */
 public enum SlotLifecycleStatus {
-    /** Slot is being prepared and not ready for players. */
+    /**
+     * Slot is being prepared and not ready for players.
+     */
     PROVISIONING,
-    /** Slot can accept players immediately. */
+    /**
+     * Slot can accept players immediately.
+     */
     AVAILABLE,
-    /** Slot is reserved for an incoming roster. */
+    /**
+     * Slot is reserved for an incoming roster.
+     */
     ALLOCATED,
-    /** Slot is actively running gameplay. */
+    /**
+     * Slot is actively running gameplay.
+     */
     IN_GAME,
-    /** Slot is cooling down or resetting resources. */
+    /**
+     * Slot is cooling down or resetting resources.
+     */
     COOLDOWN,
-    /** Slot experienced a failure and requires intervention. */
+    /**
+     * Slot experienced a failure and requires intervention.
+     */
     FAULTED
 }

@@ -6,10 +6,10 @@ package sh.harold.fulcrum.api.messagebus;
  */
 @FunctionalInterface
 public interface MessageHandler {
-    
+
     /**
      * Handles an incoming message envelope.
-     * 
+     *
      * @param envelope the message envelope containing metadata and payload
      */
     void handle(MessageEnvelope envelope);

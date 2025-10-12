@@ -14,13 +14,13 @@ import java.util.logging.Logger;
  * Uses Lettuce client library directly for cleaner, type-safe code.
  */
 public class RedisConnectionManager {
-    
+
     private static final Logger LOGGER = Logger.getLogger(RedisConnectionManager.class.getName());
-    
+
     private final RedisClient redisClient;
     private final StatefulRedisConnection<String, String> connection;
     private final StatefulRedisPubSubConnection<String, String> pubSubConnection;
-    
+
     /**
      * Creates a new Redis connection manager.
      *
@@ -31,29 +31,29 @@ public class RedisConnectionManager {
         try {
             // Build Redis URI
             RedisURI.Builder uriBuilder = RedisURI.builder()
-                .withHost(config.getHost())
-                .withPort(config.getPort())
-                .withDatabase(config.getDatabase())
-                .withTimeout(config.getConnectionTimeout());
-            
+                    .withHost(config.getHost())
+                    .withPort(config.getPort())
+                    .withDatabase(config.getDatabase())
+                    .withTimeout(config.getConnectionTimeout());
+
             if (config.getPassword() != null && !config.getPassword().isEmpty()) {
                 uriBuilder.withPassword(config.getPassword().toCharArray());
             }
-            
+
             RedisURI redisUri = uriBuilder.build();
-            
+
             // Create Redis client and connections
             this.redisClient = RedisClient.create(redisUri);
             this.connection = redisClient.connect();
             this.pubSubConnection = redisClient.connectPubSub();
-            
+
             LOGGER.info("Redis connections established to " + config.getHost() + ":" + config.getPort());
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to establish Redis connections", e);
             throw new RuntimeException("Failed to establish Redis connections", e);
         }
     }
-    
+
     /**
      * Gets the main Redis connection for commands.
      *
@@ -62,7 +62,7 @@ public class RedisConnectionManager {
     public StatefulRedisConnection<String, String> getConnection() {
         return connection;
     }
-    
+
     /**
      * Gets the Redis PubSub connection for messaging.
      *
@@ -71,7 +71,7 @@ public class RedisConnectionManager {
     public StatefulRedisPubSubConnection<String, String> getPubSubConnection() {
         return pubSubConnection;
     }
-    
+
     /**
      * Checks if the connections are still open.
      *
@@ -79,9 +79,9 @@ public class RedisConnectionManager {
      */
     public boolean isConnected() {
         return connection != null && connection.isOpen() &&
-               pubSubConnection != null && pubSubConnection.isOpen();
+                pubSubConnection != null && pubSubConnection.isOpen();
     }
-    
+
     /**
      * Closes all Redis connections and shuts down the client.
      */
@@ -91,17 +91,17 @@ public class RedisConnectionManager {
             if (pubSubConnection != null && pubSubConnection.isOpen()) {
                 pubSubConnection.close();
             }
-            
+
             // Close main connection
             if (connection != null && connection.isOpen()) {
                 connection.close();
             }
-            
+
             // Shutdown client
             if (redisClient != null) {
                 redisClient.shutdown();
             }
-            
+
             LOGGER.info("Redis connections closed");
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Error closing Redis connections", e);

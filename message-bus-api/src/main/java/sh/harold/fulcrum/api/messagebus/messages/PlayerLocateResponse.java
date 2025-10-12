@@ -1,9 +1,10 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
-import java.io.Serializable;
-import java.util.UUID;
 import sh.harold.fulcrum.api.messagebus.BaseMessage;
 import sh.harold.fulcrum.api.messagebus.MessageType;
+
+import java.io.Serializable;
+import java.util.UUID;
 
 /**
  * Response emitted by proxies indicating whether they host a specific player.

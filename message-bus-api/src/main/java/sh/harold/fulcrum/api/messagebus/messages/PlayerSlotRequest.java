@@ -1,14 +1,14 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
+
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import sh.harold.fulcrum.api.messagebus.BaseMessage;
-import sh.harold.fulcrum.api.messagebus.MessageType;
 
 /**
  * Emitted by proxies when a player requests a slot in a minigame family.

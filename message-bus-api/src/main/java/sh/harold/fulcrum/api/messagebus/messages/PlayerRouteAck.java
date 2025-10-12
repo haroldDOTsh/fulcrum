@@ -1,9 +1,10 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
-import java.io.Serializable;
-import java.util.UUID;
 import sh.harold.fulcrum.api.messagebus.BaseMessage;
 import sh.harold.fulcrum.api.messagebus.MessageType;
+
+import java.io.Serializable;
+import java.util.UUID;
 
 /**
  * Sent by proxies to acknowledge the outcome of a player routing command.
@@ -11,12 +12,6 @@ import sh.harold.fulcrum.api.messagebus.MessageType;
 @MessageType("player.route.ack")
 public class PlayerRouteAck implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
-
-    public enum Status {
-        SUCCESS,
-        FAILED
-    }
-
     private UUID requestId;
     private UUID playerId;
     private String proxyId;
@@ -24,7 +19,6 @@ public class PlayerRouteAck implements BaseMessage, Serializable {
     private String slotId;
     private Status status = Status.SUCCESS;
     private String reason;
-
     public PlayerRouteAck() {
         // for jackson
     }
@@ -105,5 +99,10 @@ public class PlayerRouteAck implements BaseMessage, Serializable {
         if (status == Status.SUCCESS && (slotId == null || slotId.isBlank())) {
             throw new IllegalStateException("slotId is required for successful PlayerRouteAck");
         }
+    }
+
+    public enum Status {
+        SUCCESS,
+        FAILED
     }
 }

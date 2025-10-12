@@ -1,9 +1,10 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
-import sh.harold.fulcrum.api.messagebus.BaseMessage;
-import sh.harold.fulcrum.api.messagebus.MessageType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
+
 import java.io.Serializable;
 
 /**
@@ -13,12 +14,12 @@ import java.io.Serializable;
 @MessageType("server.removal")
 public class ServerRemovalNotification implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
-    
+
     private final String serverId;
     private final String serverType;
     private final String reason;
     private final long timestamp;
-    
+
     @JsonCreator
     public ServerRemovalNotification(
             @JsonProperty("serverId") String serverId,
@@ -30,31 +31,31 @@ public class ServerRemovalNotification implements BaseMessage, Serializable {
         this.reason = reason;
         this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
     }
-    
+
     public ServerRemovalNotification(String serverId, String serverType, String reason) {
         this(serverId, serverType, reason, null);
     }
-    
+
     @JsonProperty("serverId")
     public String getServerId() {
         return serverId;
     }
-    
+
     @JsonProperty("serverType")
     public String getServerType() {
         return serverType;
     }
-    
+
     @JsonProperty("reason")
     public String getReason() {
         return reason;
     }
-    
+
     @JsonProperty("timestamp")
     public long getTimestamp() {
         return timestamp;
     }
-    
+
     @Override
     public String toString() {
         return "ServerRemovalNotification{" +

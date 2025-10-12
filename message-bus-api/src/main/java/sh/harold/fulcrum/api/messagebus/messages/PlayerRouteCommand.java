@@ -1,26 +1,21 @@
 package sh.harold.fulcrum.api.messagebus.messages;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
+
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import sh.harold.fulcrum.api.messagebus.BaseMessage;
-import sh.harold.fulcrum.api.messagebus.MessageType;
 
 /**
  * Sent by the registry to a proxy to instruct it to route a player to a specific slot.
  */
 @MessageType("player.route.command")
 public class PlayerRouteCommand implements BaseMessage, Serializable {
-    public enum Action {
-        ROUTE,
-        DISCONNECT
-    }
-
     private static final long serialVersionUID = 1L;
-
     private UUID requestId;
     private UUID playerId;
     private Action action = Action.ROUTE;
@@ -36,7 +31,6 @@ public class PlayerRouteCommand implements BaseMessage, Serializable {
     private float spawnYaw;
     private float spawnPitch;
     private Map<String, String> metadata = new HashMap<>();
-
     public PlayerRouteCommand() {
         // for jackson
     }
@@ -188,6 +182,11 @@ public class PlayerRouteCommand implements BaseMessage, Serializable {
                 throw new IllegalStateException("slotId is required for routing PlayerRouteCommand");
             }
         }
+    }
+
+    public enum Action {
+        ROUTE,
+        DISCONNECT
     }
 }
 

@@ -2,13 +2,13 @@ package sh.harold.fulcrum.api.messagebus.messages;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
+import sh.harold.fulcrum.api.messagebus.BaseMessage;
+import sh.harold.fulcrum.api.messagebus.MessageType;
 
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import sh.harold.fulcrum.api.messagebus.BaseMessage;
-import sh.harold.fulcrum.api.messagebus.MessageType;
 
 /**
  * Broadcast by backends to declare which slot families they can host and how many concurrent instances.
@@ -16,9 +16,8 @@ import sh.harold.fulcrum.api.messagebus.MessageType;
 @MessageType("slot.family.advertisement")
 public class SlotFamilyAdvertisementMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
-
-    private String serverId;
     private final Map<String, Integer> familyCapacities = new HashMap<>();
+    private String serverId;
 
     public SlotFamilyAdvertisementMessage() {
         // jackson

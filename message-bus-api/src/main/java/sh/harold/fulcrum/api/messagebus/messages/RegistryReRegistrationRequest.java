@@ -11,11 +11,12 @@ public class RegistryReRegistrationRequest {
     private final long timestamp;
     private final String reason;
     private final boolean forceReregistration;
-    
+
     /**
      * Create a re-registration request
-     * @param timestamp The timestamp of the request
-     * @param reason The reason for requesting re-registration (e.g., "Registry restarted")
+     *
+     * @param timestamp           The timestamp of the request
+     * @param reason              The reason for requesting re-registration (e.g., "Registry restarted")
      * @param forceReregistration Whether to force re-registration even if already registered
      */
     @JsonCreator
@@ -27,29 +28,29 @@ public class RegistryReRegistrationRequest {
         this.reason = reason;
         this.forceReregistration = forceReregistration;
     }
-    
+
     /**
      * Default constructor for Registry restart scenario
      */
     public RegistryReRegistrationRequest() {
         this(System.currentTimeMillis(), "Registry Service restarted", true);
     }
-    
+
     @JsonProperty("timestamp")
     public long getTimestamp() {
         return timestamp;
     }
-    
+
     @JsonProperty("reason")
     public String getReason() {
         return reason;
     }
-    
+
     @JsonProperty("forceReregistration")
     public boolean isForceReregistration() {
         return forceReregistration;
     }
-    
+
     @Override
     public String toString() {
         return "RegistryReRegistrationRequest{" +
