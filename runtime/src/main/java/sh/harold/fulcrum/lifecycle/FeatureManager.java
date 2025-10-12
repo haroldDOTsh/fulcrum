@@ -22,7 +22,7 @@ public final class FeatureManager {
 
     /**
      * Initialize all features with dependency injection support.
-     * Features are initialized in priority order, with dependency checking.
+     * Features are initialized in priority order.
      */
     public static void initializeAll(JavaPlugin plugin, DependencyContainer container) {
         FeatureManager.plugin = plugin;
@@ -31,11 +31,6 @@ public final class FeatureManager {
         // Sort features by priority
         List<PluginFeature> sortedFeatures = new ArrayList<>(features);
         sortedFeatures.sort(Comparator.comparingInt(PluginFeature::getPriority));
-
-        // Validate dependencies before initialization
-        for (PluginFeature feature : sortedFeatures) {
-            validateDependencies(feature);
-        }
 
         // Initialize features in priority order
         plugin.getLogger().info("=== FEATURE INITIALIZATION ORDER ===");
@@ -62,19 +57,6 @@ public final class FeatureManager {
     @Deprecated
     public static void initializeAll(JavaPlugin plugin) {
         initializeAll(plugin, new DependencyContainer());
-    }
-
-    /**
-     * Validate that all dependencies for a feature are available.
-     */
-    private static void validateDependencies(PluginFeature feature) {
-        Class<?>[] dependencies = feature.getDependencies();
-        for (Class<?> dependency : dependencies) {
-            if (!container.isAvailable(dependency)) {
-                plugin.getLogger().warning("Feature " + feature.getClass().getSimpleName()
-                        + " has unmet dependency: " + dependency.getSimpleName());
-            }
-        }
     }
 
     public static void shutdownAll() {

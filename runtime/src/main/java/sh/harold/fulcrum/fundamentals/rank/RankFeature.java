@@ -108,11 +108,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         return 50; // Normal priority
     }
     
-    @Override
-    public Class<?>[] getDependencies() {
-        return new Class<?>[] { DataAPI.class };
-    }
-    
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();

@@ -78,11 +78,6 @@ public class ChatFormatFeature implements PluginFeature, Listener {
         return 60; // After rank system (50)
     }
     
-    @Override
-    public Class<?>[] getDependencies() {
-        return new Class<?>[] { RankService.class };
-    }
-    
     /**
      * Handles async chat events to format messages.
      * Uses HIGH priority to format after other plugins have processed.

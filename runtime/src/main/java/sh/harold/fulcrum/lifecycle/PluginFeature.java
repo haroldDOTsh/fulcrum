@@ -43,12 +43,4 @@ public interface PluginFeature {
         return 100;
     }
 
-    /**
-     * Get the dependencies required by this feature.
-     *
-     * @return Array of service classes this feature depends on
-     */
-    default Class<?>[] getDependencies() {
-        return new Class<?>[0];
-    }
 }

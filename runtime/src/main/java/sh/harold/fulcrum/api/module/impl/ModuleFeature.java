@@ -74,12 +74,6 @@ public class ModuleFeature implements PluginFeature {
         return 150;
     }
 
-    @Override
-    public Class<?>[] getDependencies() {
-        // ModuleFeature depends on ModuleManager being available
-        return new Class<?>[]{ModuleManager.class};
-    }
-
     public boolean areCommandsRegistered() {
         return commandsRegistered;
     }

@@ -211,11 +211,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         return 50; // After DataAPI (priority 10)
     }
     
-    @Override
-    public Class<?>[] getDependencies() {
-        return new Class<?>[] { DataAPI.class };
-    }
-    
     /**
      * Safely converts a numeric value to Long, handling different numeric types
      * that may be returned from different storage backends (e.g., JSON returns Double)
