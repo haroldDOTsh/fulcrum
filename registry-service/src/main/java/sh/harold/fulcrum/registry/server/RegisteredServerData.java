@@ -1,35 +1,27 @@
 package sh.harold.fulcrum.registry.server;
 
+import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
+import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
-import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 
 /**
  * Data class for registered backend servers.
  */
 public class RegisteredServerData {
-    
-    public enum Status {
-        STARTING,
-        AVAILABLE,
-        UNAVAILABLE,
-        RUNNING,
-        STOPPING,
-        EVACUATING,
-        DEAD
-    }
-    
+
     private final String serverId;
     private final String tempId;
     private final String serverType;
     private final String address;
     private final int port;
     private final int maxCapacity;
-    
+    private final Map<String, LogicalSlotRecord> slots = new ConcurrentHashMap<>();
+    private final Map<String, Integer> slotFamilyCapacities = new ConcurrentHashMap<>();
     private String role = "default";
     private Status status = Status.STARTING;
     private long lastHeartbeat;
@@ -37,11 +29,7 @@ public class RegisteredServerData {
     private double tps = 20.0;
     private double memoryUsage = 0.0;
     private double cpuUsage = 0.0;
-
-    private final Map<String, LogicalSlotRecord> slots = new ConcurrentHashMap<>();
-    private final Map<String, Integer> slotFamilyCapacities = new ConcurrentHashMap<>();
-    
-    public RegisteredServerData(String serverId, String tempId, String serverType, 
+    public RegisteredServerData(String serverId, String tempId, String serverType,
                                 String address, int port, int maxCapacity) {
         this.serverId = serverId;
         this.tempId = tempId;
@@ -51,59 +39,86 @@ public class RegisteredServerData {
         this.maxCapacity = maxCapacity;
         this.lastHeartbeat = System.currentTimeMillis();
     }
-    
+
     // Getters
     public String getServerId() {
         return serverId;
     }
-    
+
     public String getTempId() {
         return tempId;
     }
-    
+
     public String getServerType() {
         return serverType;
     }
-    
+
     public String getAddress() {
         return address;
     }
-    
+
     public int getPort() {
         return port;
     }
-    
+
     public int getMaxCapacity() {
         return maxCapacity;
     }
-    
-    
+
     public String getRole() {
         return role;
     }
-    
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
     public Status getStatus() {
         return status;
     }
-    
+
+    public void setStatus(Status status) {
+        this.status = status;
+    }
+
     public long getLastHeartbeat() {
         return lastHeartbeat;
     }
-    
+
+    public void setLastHeartbeat(long lastHeartbeat) {
+        this.lastHeartbeat = lastHeartbeat;
+    }
+
     public int getPlayerCount() {
         return playerCount;
     }
-    
+
+    public void setPlayerCount(int playerCount) {
+        this.playerCount = playerCount;
+    }
+
     public double getTps() {
         return tps;
     }
-    
+
+    public void setTps(double tps) {
+        this.tps = tps;
+    }
+
     public double getMemoryUsage() {
         return memoryUsage;
     }
-    
+
+    public void setMemoryUsage(double memoryUsage) {
+        this.memoryUsage = memoryUsage;
+    }
+
     public double getCpuUsage() {
         return cpuUsage;
+    }
+
+    public void setCpuUsage(double cpuUsage) {
+        this.cpuUsage = cpuUsage;
     }
 
     public Collection<LogicalSlotRecord> getSlots() {
@@ -116,7 +131,7 @@ public class RegisteredServerData {
 
     public LogicalSlotRecord applySlotUpdate(SlotStatusUpdateMessage update) {
         LogicalSlotRecord slot = slots.computeIfAbsent(update.getSlotSuffix(), suffix ->
-            new LogicalSlotRecord(update.getSlotId(), suffix, serverId));
+                new LogicalSlotRecord(update.getSlotId(), suffix, serverId));
         slot.applyUpdate(update);
         return slot;
     }
@@ -128,6 +143,8 @@ public class RegisteredServerData {
     public Map<String, Integer> getSlotFamilyCapacities() {
         return Collections.unmodifiableMap(slotFamilyCapacities);
     }
+
+    // Setters
 
     public void updateSlotFamilyCapacities(Map<String, Integer> capacities) {
         slotFamilyCapacities.clear();
@@ -164,53 +181,33 @@ public class RegisteredServerData {
         slotFamilyCapacities.computeIfPresent(familyId, (key, value) -> value + 1);
     }
 
-    // Setters
-    
-    public void setRole(String role) {
-        this.role = role;
-    }
-    
-    public void setStatus(Status status) {
-        this.status = status;
-    }
-    
-    public void setLastHeartbeat(long lastHeartbeat) {
-        this.lastHeartbeat = lastHeartbeat;
-    }
-    
-    public void setPlayerCount(int playerCount) {
-        this.playerCount = playerCount;
-    }
-    
-    public void setTps(double tps) {
-        this.tps = tps;
-    }
-    
-    public void setMemoryUsage(double memoryUsage) {
-        this.memoryUsage = memoryUsage;
-    }
-    
-    public void setCpuUsage(double cpuUsage) {
-        this.cpuUsage = cpuUsage;
-    }
-    
     /**
      * Check if server is available (running and has capacity)
      */
     public boolean isAvailable() {
         return status == Status.RUNNING && playerCount < maxCapacity;
     }
-    
+
     /**
      * Get time since last heartbeat in milliseconds
      */
     public long getTimeSinceLastHeartbeat() {
         return System.currentTimeMillis() - lastHeartbeat;
     }
-    
+
     @Override
     public String toString() {
         return String.format("Server[id=%s, type=%s, status=%s, players=%d/%d, tps=%.1f]",
-            serverId, serverType, status, playerCount, maxCapacity, tps);
+                serverId, serverType, status, playerCount, maxCapacity, tps);
+    }
+
+    public enum Status {
+        STARTING,
+        AVAILABLE,
+        UNAVAILABLE,
+        RUNNING,
+        STOPPING,
+        EVACUATING,
+        DEAD
     }
 }

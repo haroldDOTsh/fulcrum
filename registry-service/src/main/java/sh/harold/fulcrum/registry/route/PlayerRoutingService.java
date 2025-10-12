@@ -2,34 +2,13 @@ package sh.harold.fulcrum.registry.route;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteAck;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerSlotRequest;
-import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
-import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
+import sh.harold.fulcrum.api.messagebus.messages.*;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
@@ -37,6 +16,10 @@ import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService.ProvisionResult;
+
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
 
 /**
  * Coordinates player matchmaking between proxies and backend slots.
@@ -49,11 +32,11 @@ public class PlayerRoutingService {
     private static final int MAX_ROUTE_RETRIES = 3;
 
     private static final Set<String> RETRYABLE_FAILURES = Set.of(
-        "backend-not-found",
-        "backend-offline",
-        "connection-failed",
-        "slot-not-ready",
-        "route-transient"
+            "backend-not-found",
+            "backend-offline",
+            "connection-failed",
+            "slot-not-ready",
+            "route-transient"
     );
 
     private final MessageBus messageBus;
@@ -164,8 +147,8 @@ public class PlayerRoutingService {
             }
 
             if (status == SlotLifecycleStatus.FAULTED
-                || status == SlotLifecycleStatus.PROVISIONING
-                || status == SlotLifecycleStatus.COOLDOWN) {
+                    || status == SlotLifecycleStatus.PROVISIONING
+                    || status == SlotLifecycleStatus.COOLDOWN) {
                 handleSlotUnavailable(slot, "slot-unavailable");
             }
         } catch (Exception exception) {
@@ -186,10 +169,10 @@ public class PlayerRoutingService {
                 adjustPendingOccupancy(route.slotId, -1);
             }
 
-        if (ack.getStatus() == PlayerRouteAck.Status.SUCCESS) {
-            LOGGER.debug("Player {} successfully routed to slot {}", ack.getPlayerId(), ack.getSlotId());
-            return;
-        }
+            if (ack.getStatus() == PlayerRouteAck.Status.SUCCESS) {
+                LOGGER.debug("Player {} successfully routed to slot {}", ack.getPlayerId(), ack.getSlotId());
+                return;
+            }
 
             LOGGER.warn("Player routing failed for request {} (reason: {})", ack.getRequestId(), ack.getReason());
 
@@ -232,7 +215,7 @@ public class PlayerRoutingService {
 
             Optional<ProvisionResult> result = slotProvisionService.requestProvision(familyId, metadata);
             result.ifPresent(provision -> LOGGER.info(
-                "Triggered slot provision for family {} on server {}", familyId, provision.serverId()));
+                    "Triggered slot provision for family {} on server {}", familyId, provision.serverId()));
             return result.isPresent() ? Boolean.TRUE : null;
         });
     }
@@ -329,7 +312,7 @@ public class PlayerRoutingService {
 
         adjustPendingOccupancy(slot.getSlotId(), 1);
         ScheduledFuture<?> timeout = scheduler.schedule(() -> handleRouteTimeout(context, slot),
-            ROUTE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+                ROUTE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
 
         inFlightRoutes.put(request.getRequestId(), new InFlightRoute(context, slot.getSlotId(), timeout));
     }

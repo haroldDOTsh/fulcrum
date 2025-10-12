@@ -2,11 +2,6 @@ package sh.harold.fulcrum.registry.console.commands;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.charset.StandardCharsets;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
@@ -14,6 +9,11 @@ import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse;
 import sh.harold.fulcrum.registry.console.CommandHandler;
+
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Console command that locates a player across all proxies.
@@ -23,7 +23,7 @@ public class LocatePlayerCommand implements CommandHandler {
 
     private final MessageBus messageBus;
     private final ObjectMapper objectMapper = new ObjectMapper()
-        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     public LocatePlayerCommand(MessageBus messageBus) {
         this.messageBus = messageBus;
@@ -91,12 +91,12 @@ public class LocatePlayerCommand implements CommandHandler {
         }
 
         String resolvedName = response.getPlayerName() != null ? response.getPlayerName()
-            : (response.getPlayerId() != null ? response.getPlayerId().toString() : "unknown");
+                : (response.getPlayerId() != null ? response.getPlayerId().toString() : "unknown");
         String serverId = response.getServerId() != null ? response.getServerId() : "unknown";
         String slotSuffix = response.getSlotSuffix();
         String family = response.getFamilyId() != null && !response.getFamilyId().isBlank()
-            ? response.getFamilyId()
-            : "unknown";
+                ? response.getFamilyId()
+                : "unknown";
 
         String serverDisplay = slotSuffix != null && !slotSuffix.isBlank() ? serverId + slotSuffix : serverId;
         System.out.println("Player " + resolvedName + " spotted on " + serverDisplay + " (" + family + ")");
@@ -110,7 +110,7 @@ public class LocatePlayerCommand implements CommandHandler {
 
     @Override
     public String[] getAliases() {
-        return new String[] { "whereis" };
+        return new String[]{"whereis"};
     }
 
     @Override

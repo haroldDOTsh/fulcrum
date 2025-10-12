@@ -29,7 +29,7 @@ public class ProvisionSlotCommand implements CommandHandler {
         Map<String, String> metadata = parseMetadata(args);
 
         Optional<SlotProvisionService.ProvisionResult> result =
-            slotProvisionService.requestProvision(familyId, metadata);
+                slotProvisionService.requestProvision(familyId, metadata);
 
         if (result.isEmpty()) {
             System.out.println("No suitable server found for family '" + familyId + "'.");
@@ -38,7 +38,7 @@ public class ProvisionSlotCommand implements CommandHandler {
 
         SlotProvisionService.ProvisionResult decision = result.get();
         System.out.println("Provision command dispatched to " + decision.serverId()
-            + " (slots remaining: " + decision.remainingSlots() + ")");
+                + " (slots remaining: " + decision.remainingSlots() + ")");
         return true;
     }
 
@@ -65,7 +65,7 @@ public class ProvisionSlotCommand implements CommandHandler {
 
     @Override
     public String[] getAliases() {
-        return new String[] {"pslot"};
+        return new String[]{"pslot"};
     }
 
     @Override

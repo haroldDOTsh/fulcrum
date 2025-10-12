@@ -1,5 +1,17 @@
 package sh.harold.fulcrum.registry.console.commands;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
+import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest;
+import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse;
+import sh.harold.fulcrum.api.messagebus.messages.PlayerSlotRequest;
+import sh.harold.fulcrum.registry.console.CommandHandler;
+import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
+import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -8,18 +20,6 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import sh.harold.fulcrum.api.messagebus.ChannelConstants;
-import sh.harold.fulcrum.api.messagebus.MessageBus;
-import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
-import sh.harold.fulcrum.api.messagebus.MessageHandler;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse;
-import sh.harold.fulcrum.api.messagebus.messages.PlayerSlotRequest;
-import sh.harold.fulcrum.registry.console.CommandHandler;
-import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
-import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 
 public class DebugMinigamePipelineCommand implements CommandHandler {
     private static final String FAMILY_ID = "debug_pipeline";
@@ -33,7 +33,7 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
         this.messageBus = messageBus;
         this.proxyRegistry = proxyRegistry;
         this.objectMapper = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
     @Override
@@ -65,7 +65,7 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
         }
 
         UUID playerId = target.playerId() != null ? target.playerId() :
-            (suppliedId != null ? suppliedId : offlineUuid(playerName));
+                (suppliedId != null ? suppliedId : offlineUuid(playerName));
         String effectiveName = target.playerName() != null ? target.playerName() : playerName;
         String proxyId = target.proxyId();
 
@@ -87,8 +87,8 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
         messageBus.broadcast(ChannelConstants.REGISTRY_PLAYER_REQUEST, request);
 
         System.out.println("Enqueued player slot request for " + effectiveName
-            + " (uuid=" + request.getPlayerId() + ", proxy=" + proxyId
-            + ", map=" + parsed.mapId + ", requestId=" + request.getRequestId() + ")");
+                + " (uuid=" + request.getPlayerId() + ", proxy=" + proxyId
+                + ", map=" + parsed.mapId + ", requestId=" + request.getRequestId() + ")");
         System.out.println("Await backend logs for provisioning confirmation and routing outcome.");
         return true;
     }
@@ -100,7 +100,7 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
 
     @Override
     public String[] getAliases() {
-        return new String[] {"dminipipeline", "dmpipeline"};
+        return new String[]{"dminipipeline", "dmpipeline"};
     }
 
     @Override
@@ -149,13 +149,13 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
         LocateResult located = locateProxyForPlayer(suppliedId, playerName);
         if (located != null && located.proxyId() != null) {
             String serverDisplay = located.slotSuffix() != null && !located.slotSuffix().isBlank()
-                ? located.serverId() + located.slotSuffix()
-                : located.serverId() != null ? located.serverId() : "unknown";
+                    ? located.serverId() + located.slotSuffix()
+                    : located.serverId() != null ? located.serverId() : "unknown";
             String familyDisplay = located.familyId() != null && !located.familyId().isBlank()
-                ? located.familyId()
-                : "unknown";
+                    ? located.familyId()
+                    : "unknown";
             System.out.println("Located player on proxy " + located.proxyId()
-                + " => " + serverDisplay + " (" + familyDisplay + ")");
+                    + " => " + serverDisplay + " (" + familyDisplay + ")");
             return located;
         }
 
@@ -187,12 +187,12 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
                     return;
                 }
                 LocateResult located = new LocateResult(
-                    response.getProxyId(),
-                    response.getPlayerId() != null ? response.getPlayerId() : playerId,
-                    response.getPlayerName() != null ? response.getPlayerName() : playerName,
-                    response.getServerId(),
-                    response.getSlotSuffix(),
-                    response.getFamilyId());
+                        response.getProxyId(),
+                        response.getPlayerId() != null ? response.getPlayerId() : playerId,
+                        response.getPlayerName() != null ? response.getPlayerName() : playerName,
+                        response.getServerId(),
+                        response.getSlotSuffix(),
+                        response.getFamilyId());
                 if (resultRef.compareAndSet(null, located)) {
                     latch.countDown();
                 }
@@ -229,11 +229,11 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
     }
 
     private static final class ParsedArguments {
+        final Map<String, String> extraMetadata = new LinkedHashMap<>();
         String uuid;
         String proxyId;
         String reason = "manual-request";
         String mapId = "test";
-        final Map<String, String> extraMetadata = new LinkedHashMap<>();
         boolean invalid;
     }
 
@@ -242,5 +242,6 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
                                 String playerName,
                                 String serverId,
                                 String slotSuffix,
-                                String familyId) {}
+                                String familyId) {
+    }
 }

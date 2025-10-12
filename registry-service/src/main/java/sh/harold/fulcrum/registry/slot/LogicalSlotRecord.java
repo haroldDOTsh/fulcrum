@@ -1,10 +1,11 @@
 package sh.harold.fulcrum.registry.slot;
 
+import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
+import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
+
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
-import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 
 /**
  * Runtime representation of a logical slot hosted on a registered server.
@@ -13,12 +14,12 @@ public class LogicalSlotRecord {
     private final String slotId;
     private final String slotSuffix;
     private final String serverId;
+    private final Map<String, String> metadata = new ConcurrentHashMap<>();
     private volatile String gameType;
     private volatile SlotLifecycleStatus status;
     private volatile int maxPlayers;
     private volatile int onlinePlayers;
     private volatile long lastUpdated;
-    private final Map<String, String> metadata = new ConcurrentHashMap<>();
 
     public LogicalSlotRecord(String slotId, String slotSuffix, String serverId) {
         this.slotId = slotId;
@@ -103,6 +104,6 @@ public class LogicalSlotRecord {
     @Override
     public String toString() {
         return String.format("LogicalSlotRecord[id=%s, status=%s, players=%d/%d]",
-            slotId, status, onlinePlayers, maxPlayers);
+                slotId, status, onlinePlayers, maxPlayers);
     }
 }

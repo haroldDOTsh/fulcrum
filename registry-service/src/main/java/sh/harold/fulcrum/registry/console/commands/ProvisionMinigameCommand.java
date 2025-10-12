@@ -47,7 +47,7 @@ public final class ProvisionMinigameCommand implements CommandHandler {
         mergeAdditionalMetadata(metadata, args);
 
         Optional<SlotProvisionService.ProvisionResult> result =
-            slotProvisionService.requestProvision(familyId, metadata);
+                slotProvisionService.requestProvision(familyId, metadata);
 
         if (result.isEmpty()) {
             System.out.println("No backend available to provision family '" + familyId + "'.");
@@ -56,8 +56,8 @@ public final class ProvisionMinigameCommand implements CommandHandler {
 
         SlotProvisionService.ProvisionResult provision = result.get();
         System.out.println("Provisioned " + selection.display()
-            + " on server " + provision.serverId()
-            + " (remaining slots: " + provision.remainingSlots() + ")");
+                + " on server " + provision.serverId()
+                + " (remaining slots: " + provision.remainingSlots() + ")");
         return true;
     }
 
@@ -84,7 +84,7 @@ public final class ProvisionMinigameCommand implements CommandHandler {
 
     @Override
     public String[] getAliases() {
-        return new String[] {"pminigame"};
+        return new String[]{"pminigame"};
     }
 
     @Override
@@ -122,10 +122,6 @@ public final class ProvisionMinigameCommand implements CommandHandler {
             return new VariantSelection(trimmed, family, variant, familyKey, variantKey);
         }
 
-        String display() {
-            return rawInput;
-        }
-
         private static int findSeparator(String value) {
             int colon = value.indexOf(':');
             if (colon > 0) {
@@ -141,6 +137,10 @@ public final class ProvisionMinigameCommand implements CommandHandler {
 
         private static String normalise(String value) {
             return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        }
+
+        String display() {
+            return rawInput;
         }
     }
 }

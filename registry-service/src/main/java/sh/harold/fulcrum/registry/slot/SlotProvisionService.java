@@ -45,7 +45,7 @@ public class SlotProvisionService {
         for (RegisteredServerData candidate : candidates) {
             if (!candidate.reserveFamilySlot(familyId)) {
                 LOGGER.debug("Failed to reserve budget on server {} for family {} (race)",
-                    candidate.getServerId(), familyId);
+                        candidate.getServerId(), familyId);
                 continue;
             }
 
@@ -58,7 +58,7 @@ public class SlotProvisionService {
                 messageBus.broadcast(ChannelConstants.getSlotProvisionChannel(candidate.getServerId()), command);
                 int remaining = candidate.getAvailableFamilySlots(familyId);
                 LOGGER.info("Provisioning {} on {} ({} slots remaining)",
-                    familyId, candidate.getServerId(), remaining);
+                        familyId, candidate.getServerId(), remaining);
                 return Optional.of(new ProvisionResult(candidate.getServerId(), familyId, remaining, command));
             } catch (Exception ex) {
                 candidate.releaseFamilySlot(familyId);
@@ -72,13 +72,13 @@ public class SlotProvisionService {
 
     private List<RegisteredServerData> selectCandidates(String familyId) {
         return serverRegistry.getAllServers().stream()
-            .filter(server -> isProvisionable(server, familyId))
-            .sorted(Comparator
-                .comparingInt((RegisteredServerData server) -> server.getAvailableFamilySlots(familyId))
-                .thenComparing((a, b) -> Integer.compare(b.getPlayerCount(), a.getPlayerCount()))
-                .thenComparing(RegisteredServerData::getServerId)
-                .reversed())
-            .toList();
+                .filter(server -> isProvisionable(server, familyId))
+                .sorted(Comparator
+                        .comparingInt((RegisteredServerData server) -> server.getAvailableFamilySlots(familyId))
+                        .thenComparing((a, b) -> Integer.compare(b.getPlayerCount(), a.getPlayerCount()))
+                        .thenComparing(RegisteredServerData::getServerId)
+                        .reversed())
+                .toList();
     }
 
     private boolean isProvisionable(RegisteredServerData server, String familyId) {
@@ -91,5 +91,6 @@ public class SlotProvisionService {
         }
     }
 
-    public record ProvisionResult(String serverId, String familyId, int remainingSlots, SlotProvisionCommand command) {}
+    public record ProvisionResult(String serverId, String familyId, int remainingSlots, SlotProvisionCommand command) {
+    }
 }

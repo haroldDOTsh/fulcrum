@@ -7,17 +7,17 @@ import sh.harold.fulcrum.registry.console.CommandHandler;
  * Command to reload configuration
  */
 public class ReloadCommand implements CommandHandler {
-    
+
     private final RegistryService registryService;
-    
+
     public ReloadCommand(RegistryService registryService) {
         this.registryService = registryService;
     }
-    
+
     @Override
     public boolean execute(String[] args) {
         System.out.println("Reloading configuration...");
-        
+
         try {
             registryService.reloadConfiguration();
             System.out.println("Configuration reloaded successfully.");
@@ -28,22 +28,22 @@ public class ReloadCommand implements CommandHandler {
             return false;
         }
     }
-    
+
     @Override
     public String getName() {
         return "reload";
     }
-    
+
     @Override
     public String[] getAliases() {
-        return new String[] {"refresh"};
+        return new String[]{"refresh"};
     }
-    
+
     @Override
     public String getDescription() {
         return "Reload configuration without restart";
     }
-    
+
     @Override
     public String getUsage() {
         return "reload";

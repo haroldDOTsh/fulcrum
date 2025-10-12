@@ -13,15 +13,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class InteractiveConsole implements Runnable {
     private static final Logger LOGGER = LoggerFactory.getLogger(InteractiveConsole.class);
-    
+
     private final CommandRegistry commandRegistry;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Thread consoleThread;
-    
+
     public InteractiveConsole(CommandRegistry commandRegistry) {
         this.commandRegistry = commandRegistry;
     }
-    
+
     /**
      * Start the interactive console
      */
@@ -33,7 +33,7 @@ public class InteractiveConsole implements Runnable {
             LOGGER.info("Interactive console started");
         }
     }
-    
+
     /**
      * Stop the interactive console
      */
@@ -45,35 +45,35 @@ public class InteractiveConsole implements Runnable {
             LOGGER.info("Interactive console stopped");
         }
     }
-    
+
     @Override
     public void run() {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        
+
         System.out.println("Registry Service Interactive Console");
         System.out.println("Type 'help' for available commands");
         System.out.println();
-        
+
         while (running.get()) {
             try {
                 System.out.print("registry> ");
                 System.out.flush();
-                
+
                 String input = reader.readLine();
                 if (input == null) {
                     // EOF reached (Ctrl+D on Unix, Ctrl+Z on Windows)
                     break;
                 }
-                
+
                 input = input.trim();
                 if (input.isEmpty()) {
                     continue;
                 }
-                
+
                 // Execute command
                 commandRegistry.executeCommand(input);
                 System.out.println();
-                
+
             } catch (IOException e) {
                 if (running.get()) {
                     LOGGER.error("Error reading console input", e);
@@ -84,7 +84,7 @@ public class InteractiveConsole implements Runnable {
             }
         }
     }
-    
+
     public boolean isRunning() {
         return running.get();
     }
