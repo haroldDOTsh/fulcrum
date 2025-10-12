@@ -386,6 +386,7 @@ public class SchematicInspector {
         if (linCompound == null) {
             return null;
         }
+        // TODO: replace LinBusConverter bridge before upgrading past FAWE/WE 2.11.x
         Tag tag = LinBusConverter.fromLinBus(linCompound);
         if (tag instanceof CompoundTag compoundTag) {
             return compoundTag;
@@ -509,7 +510,6 @@ public class SchematicInspector {
 
     public record InspectionResult(BlockArrayClipboard clipboard, List<PoiDefinition> pois, boolean originDetected) {}
 }
-
 
 
 

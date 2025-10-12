@@ -8,12 +8,12 @@ public enum StorageType {
      * MongoDB database storage backend
      */
     MONGODB,
-    
+
     /**
      * JSON file-based storage backend (typically for local testing)
      */
     JSON,
-    
+
     /**
      * In-memory storage backend (for testing)
      */

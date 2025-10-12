@@ -15,22 +15,21 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * Provides ACID guarantees for database operations.
  */
 public class TransactionImpl implements Transaction {
-    
+
     private final String transactionId;
     private final StorageBackend backend;
     private final List<TransactionOperation> operations;
     private final Map<String, Savepoint> savepoints;
     private final ReadWriteLock lock;
-    private boolean active;
-    private IsolationLevel isolationLevel;
-    
     // For optimistic locking
     private final Map<String, Long> versionMap;
-    
+    private boolean active;
+    private IsolationLevel isolationLevel;
+
     public TransactionImpl(StorageBackend backend) {
         this(backend, IsolationLevel.READ_COMMITTED);
     }
-    
+
     public TransactionImpl(StorageBackend backend, IsolationLevel isolationLevel) {
         this.transactionId = UUID.randomUUID().toString();
         this.backend = backend;
@@ -41,7 +40,7 @@ public class TransactionImpl implements Transaction {
         this.isolationLevel = isolationLevel;
         this.versionMap = new ConcurrentHashMap<>();
     }
-    
+
     @Override
     public Transaction begin() {
         lock.writeLock().lock();
@@ -58,7 +57,7 @@ public class TransactionImpl implements Transaction {
             lock.writeLock().unlock();
         }
     }
-    
+
     @Override
     public void commit() {
         lock.writeLock().lock();
@@ -66,18 +65,18 @@ public class TransactionImpl implements Transaction {
             if (!active) {
                 throw new IllegalStateException("Transaction already completed");
             }
-            
+
             // Execute all operations atomically
             try {
                 for (TransactionOperation op : operations) {
                     executeOperation(op);
                 }
-                
+
                 // Commit in backend if supported
                 if (backend instanceof TransactionalBackend) {
                     ((TransactionalBackend) backend).commitTransaction(transactionId);
                 }
-                
+
                 active = false;
             } catch (Exception e) {
                 // Rollback on any error
@@ -88,7 +87,7 @@ public class TransactionImpl implements Transaction {
             lock.writeLock().unlock();
         }
     }
-    
+
     @Override
     public void rollback() {
         lock.writeLock().lock();
@@ -96,12 +95,12 @@ public class TransactionImpl implements Transaction {
             if (!active) {
                 return; // Already rolled back or committed
             }
-            
+
             // Rollback in backend if supported
             if (backend instanceof TransactionalBackend) {
                 ((TransactionalBackend) backend).rollbackTransaction(transactionId);
             }
-            
+
             // Clear all pending operations
             operations.clear();
             savepoints.clear();
@@ -110,7 +109,7 @@ public class TransactionImpl implements Transaction {
             lock.writeLock().unlock();
         }
     }
-    
+
     @Override
     public void savepoint(String name) {
         lock.writeLock().lock();
@@ -123,7 +122,7 @@ public class TransactionImpl implements Transaction {
             lock.writeLock().unlock();
         }
     }
-    
+
     @Override
     public void rollbackTo(String savepointName) {
         lock.writeLock().lock();
@@ -131,25 +130,25 @@ public class TransactionImpl implements Transaction {
             if (!active) {
                 throw new IllegalStateException("Transaction not active");
             }
-            
+
             Savepoint savepoint = savepoints.get(savepointName);
             if (savepoint == null) {
                 throw new IllegalArgumentException("Savepoint not found: " + savepointName);
             }
-            
+
             // Remove operations after savepoint
             while (operations.size() > savepoint.operationIndex) {
                 operations.remove(operations.size() - 1);
             }
-            
+
             // Remove savepoints created after this one
-            savepoints.entrySet().removeIf(entry -> 
-                entry.getValue().operationIndex > savepoint.operationIndex);
+            savepoints.entrySet().removeIf(entry ->
+                    entry.getValue().operationIndex > savepoint.operationIndex);
         } finally {
             lock.writeLock().unlock();
         }
     }
-    
+
     @Override
     public boolean isActive() {
         lock.readLock().lock();
@@ -159,22 +158,12 @@ public class TransactionImpl implements Transaction {
             lock.readLock().unlock();
         }
     }
-    
+
     @Override
     public Collection from(String collection) {
         return new TransactionalCollection(collection, this);
     }
-    
-    @Override
-    public void setIsolationLevel(IsolationLevel level) {
-        lock.writeLock().lock();
-        try {
-            this.isolationLevel = level;
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-    
+
     @Override
     public IsolationLevel getIsolationLevel() {
         lock.readLock().lock();
@@ -184,7 +173,17 @@ public class TransactionImpl implements Transaction {
             lock.readLock().unlock();
         }
     }
-    
+
+    @Override
+    public void setIsolationLevel(IsolationLevel level) {
+        lock.writeLock().lock();
+        try {
+            this.isolationLevel = level;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     /**
      * Add an operation to the transaction queue.
      */
@@ -199,7 +198,7 @@ public class TransactionImpl implements Transaction {
             lock.writeLock().unlock();
         }
     }
-    
+
     /**
      * Execute a single operation.
      */
@@ -222,7 +221,7 @@ public class TransactionImpl implements Transaction {
                         Object current = updatedData.get(entry.getKey());
                         if (current instanceof Number && entry.getValue() instanceof Number) {
                             double newValue = ((Number) current).doubleValue() +
-                                            ((Number) entry.getValue()).doubleValue();
+                                    ((Number) entry.getValue()).doubleValue();
                             updatedData.put(entry.getKey(), newValue);
                         }
                     }
@@ -231,7 +230,7 @@ public class TransactionImpl implements Transaction {
                 break;
         }
     }
-    
+
     /**
      * Check for deadlock with other transactions.
      */
@@ -240,123 +239,105 @@ public class TransactionImpl implements Transaction {
         // In production, use wait-for graph or timeout-based detection
         return false;
     }
-    
+
     /**
      * Transaction operation types.
      */
     enum OperationType {
         CREATE, UPDATE, DELETE, INCREMENT
     }
-    
+
     /**
-     * Represents a single operation in the transaction.
-     */
-    static class TransactionOperation {
-        final OperationType type;
-        final String collection;
-        final String documentId;
-        final Map<String, Object> data;
-        
-        TransactionOperation(OperationType type, String collection, String documentId, Map<String, Object> data) {
-            this.type = type;
-            this.collection = collection;
-            this.documentId = documentId;
-            this.data = data;
-        }
+         * Represents a single operation in the transaction.
+         */
+        record TransactionOperation(OperationType type, String collection, String documentId, Map<String, Object> data) {
     }
-    
+
     /**
-     * Represents a savepoint in the transaction.
-     */
-    static class Savepoint {
-        final String name;
-        final int operationIndex;
-        
-        Savepoint(String name, int operationIndex) {
-            this.name = name;
-            this.operationIndex = operationIndex;
-        }
+         * Represents a savepoint in the transaction.
+         */
+        record Savepoint(String name, int operationIndex) {
     }
-    
+
     /**
      * Transactional wrapper for Collection operations.
      */
     class TransactionalCollection implements Collection {
         private final String collectionName;
         private final TransactionImpl transaction;
-        
+
         TransactionalCollection(String collectionName, TransactionImpl transaction) {
             this.collectionName = collectionName;
             this.transaction = transaction;
         }
-        
+
         @Override
         public CompletableFuture<Document> selectAsync(String id) {
             return CompletableFuture.completedFuture(select(id));
         }
-        
+
         @Override
         public Document select(String id) {
             return new TransactionalDocument(collectionName, id, transaction);
         }
-        
+
         @Override
         public CompletableFuture<Document> createAsync(String id, Map<String, Object> data) {
             return CompletableFuture.completedFuture(create(id, data));
         }
-        
+
         @Override
         public Document create(String id, Map<String, Object> data) {
             transaction.addOperation(new TransactionOperation(
-                OperationType.CREATE, collectionName, id, data));
+                    OperationType.CREATE, collectionName, id, data));
             return new TransactionalDocument(collectionName, id, transaction);
         }
-        
+
         @Override
         public CompletableFuture<Boolean> deleteAsync(String id) {
             return CompletableFuture.completedFuture(delete(id));
         }
-        
+
         @Override
         public boolean delete(String id) {
             transaction.addOperation(new TransactionOperation(
-                OperationType.DELETE, collectionName, id, null));
+                    OperationType.DELETE, collectionName, id, null));
             return true;
         }
-        
+
         @Override
         public sh.harold.fulcrum.api.data.query.Query find() {
             throw new UnsupportedOperationException("Queries not supported in transactions");
         }
-        
+
         @Override
         public sh.harold.fulcrum.api.data.query.Query where(String path) {
             throw new UnsupportedOperationException("Queries not supported in transactions");
         }
-        
+
         @Override
         public CompletableFuture<List<Document>> allAsync() {
             return CompletableFuture.failedFuture(
-                new UnsupportedOperationException("Batch reads not supported in transactions"));
+                    new UnsupportedOperationException("Batch reads not supported in transactions"));
         }
-        
+
         @Override
         public List<Document> all() {
             throw new UnsupportedOperationException("Batch reads not supported in transactions");
         }
-        
+
         @Override
         public CompletableFuture<Long> countAsync() {
             return CompletableFuture.failedFuture(
-                new UnsupportedOperationException("Count not supported in transactions"));
+                    new UnsupportedOperationException("Count not supported in transactions"));
         }
-        
+
         @Override
         public long count() {
             throw new UnsupportedOperationException("Count not supported in transactions");
         }
     }
-    
+
     /**
      * Transactional wrapper for Document operations.
      */
@@ -364,26 +345,27 @@ public class TransactionImpl implements Transaction {
         private final String collection;
         private final String id;
         private final TransactionImpl transaction;
-        private Map<String, Object> pendingChanges;
-        
+        private final Map<String, Object> pendingChanges;
+
         TransactionalDocument(String collection, String id, TransactionImpl transaction) {
             this.collection = collection;
             this.id = id;
             this.transaction = transaction;
             this.pendingChanges = new HashMap<>();
         }
-        
+
         @Override
         public String getId() {
             return id;
         }
+
         @Override
         public Object get(String path) {
             // First check pending changes
             if (pendingChanges.containsKey(path)) {
                 return pendingChanges.get(path);
             }
-            
+
             // Then check the actual document in backend
             try {
                 Document doc = backend.getDocument(collection, id).get();
@@ -393,10 +375,10 @@ public class TransactionImpl implements Transaction {
             } catch (Exception e) {
                 // Ignore exceptions
             }
-            
+
             return null;
         }
-        
+
         @Override
         public <T> T get(String path, T defaultValue) {
             Object value = pendingChanges.get(path);
@@ -407,7 +389,7 @@ public class TransactionImpl implements Transaction {
             T result = (T) value;
             return result;
         }
-        
+
         @Override
         public Document set(String path, Object value) {
             pendingChanges.put(path, value);
@@ -421,20 +403,20 @@ public class TransactionImpl implements Transaction {
             set(path, value);
             return CompletableFuture.completedFuture(this);
         }
-        
+
         public Document increment(String path, Number delta) {
             Map<String, Object> incData = new HashMap<>();
             incData.put(path, delta);
             transaction.addOperation(new TransactionOperation(
-                OperationType.INCREMENT, collection, id, incData));
+                    OperationType.INCREMENT, collection, id, incData));
             return this;
         }
-        
+
         public Document remove(String path) {
             pendingChanges.put(path, null);
             return this;
         }
-        
+
         @Override
         public boolean exists() {
             // Check if document exists in pending operations first
@@ -448,7 +430,7 @@ public class TransactionImpl implements Transaction {
                     }
                 }
             }
-            
+
             // Then check backend
             try {
                 Document doc = backend.getDocument(collection, id).get();
@@ -457,12 +439,12 @@ public class TransactionImpl implements Transaction {
                 return false;
             }
         }
-        
+
         @Override
         public Map<String, Object> toMap() {
             return new HashMap<>(pendingChanges);
         }
-        
+
         @Override
         public String toJson() {
             // Simple JSON serialization
@@ -484,7 +466,7 @@ public class TransactionImpl implements Transaction {
             json.append("}");
             return json.toString();
         }
-        
+
         public void save() {
             if (!pendingChanges.isEmpty()) {
                 // Load existing document data first
@@ -497,21 +479,21 @@ public class TransactionImpl implements Transaction {
                 } catch (Exception e) {
                     // Ignore - start with empty map
                 }
-                
+
                 // Apply pending changes on top
                 fullData.putAll(pendingChanges);
-                
+
                 transaction.addOperation(new TransactionOperation(
-                    OperationType.UPDATE, collection, id, new HashMap<>(fullData)));
-                
+                        OperationType.UPDATE, collection, id, new HashMap<>(fullData)));
+
                 // Clear pending changes after queuing the operation
                 pendingChanges.clear();
             }
         }
-        
+
         public void delete() {
             transaction.addOperation(new TransactionOperation(
-                OperationType.DELETE, collection, id, null));
+                    OperationType.DELETE, collection, id, null));
         }
     }
 }

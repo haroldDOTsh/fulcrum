@@ -2,11 +2,7 @@ package sh.harold.fulcrum.api.data.schema;
 
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -39,7 +35,7 @@ public final class SchemaRegistry {
             if (record != null) {
                 if (!record.checksum().equals(checksum)) {
                     LOGGER.severe(() -> "Schema '" + definition.id() + "' has changed since it was applied on "
-                        + record.appliedAt() + ". Please run manual migration before updating the checksum.");
+                            + record.appliedAt() + ". Please run manual migration before updating the checksum.");
                 }
                 connection.rollback();
                 return;
@@ -58,11 +54,11 @@ public final class SchemaRegistry {
     private static void ensureMetadataTable(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("""
-                CREATE TABLE IF NOT EXISTS %s (
-                    schema_id VARCHAR(200) PRIMARY KEY,
-                    checksum VARCHAR(128) NOT NULL,
-                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )""".formatted(METADATA_TABLE));
+                    CREATE TABLE IF NOT EXISTS %s (
+                        schema_id VARCHAR(200) PRIMARY KEY,
+                        checksum VARCHAR(128) NOT NULL,
+                        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )""".formatted(METADATA_TABLE));
         }
     }
 
@@ -73,9 +69,9 @@ public final class SchemaRegistry {
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (resultSet.next()) {
                     return new SchemaRecord(
-                        resultSet.getString("schema_id"),
-                        resultSet.getString("checksum"),
-                        resultSet.getTimestamp("applied_at").toInstant()
+                            resultSet.getString("schema_id"),
+                            resultSet.getString("checksum"),
+                            resultSet.getTimestamp("applied_at").toInstant()
                     );
                 }
                 return null;
@@ -94,7 +90,7 @@ public final class SchemaRegistry {
 
     private static void insertRecord(Connection connection, String schemaId, String checksum) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-            "INSERT INTO " + METADATA_TABLE + " (schema_id, checksum) VALUES (?, ?)")) {
+                "INSERT INTO " + METADATA_TABLE + " (schema_id, checksum) VALUES (?, ?)")) {
             statement.setString(1, schemaId);
             statement.setString(2, checksum);
             statement.executeUpdate();

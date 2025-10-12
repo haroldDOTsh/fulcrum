@@ -30,51 +30,6 @@ public final class SchemaDefinition {
         this.sqlSupplier = Objects.requireNonNull(sqlSupplier, "sqlSupplier");
     }
 
-    public String id() {
-        return id;
-    }
-
-    public String description() {
-        return description;
-    }
-
-    /**
-     * Loads the SQL script backing this definition.
-     */
-    public String loadSql() {
-        String sql = cachedSql;
-        if (sql == null) {
-            synchronized (this) {
-                sql = cachedSql;
-                if (sql == null) {
-                    sql = sqlSupplier.get();
-                    if (sql == null) {
-                        throw new IllegalStateException("Schema definition '" + id + "' produced null SQL");
-                    }
-                    cachedSql = sql;
-                }
-            }
-        }
-        return sql;
-    }
-
-    /**
-     * Computes a stable checksum of the SQL script so we can detect changes between releases.
-     */
-    public String checksum() {
-        String checksum = cachedChecksum;
-        if (checksum == null) {
-            synchronized (this) {
-                checksum = cachedChecksum;
-                if (checksum == null) {
-                    checksum = computeSha256(loadSql());
-                    cachedChecksum = checksum;
-                }
-            }
-        }
-        return checksum;
-    }
-
     public static SchemaDefinition fromResource(String id,
                                                 String description,
                                                 ClassLoader classLoader,
@@ -129,5 +84,50 @@ public final class SchemaDefinition {
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 algorithm unavailable", ex);
         }
+    }
+
+    public String id() {
+        return id;
+    }
+
+    public String description() {
+        return description;
+    }
+
+    /**
+     * Loads the SQL script backing this definition.
+     */
+    public String loadSql() {
+        String sql = cachedSql;
+        if (sql == null) {
+            synchronized (this) {
+                sql = cachedSql;
+                if (sql == null) {
+                    sql = sqlSupplier.get();
+                    if (sql == null) {
+                        throw new IllegalStateException("Schema definition '" + id + "' produced null SQL");
+                    }
+                    cachedSql = sql;
+                }
+            }
+        }
+        return sql;
+    }
+
+    /**
+     * Computes a stable checksum of the SQL script so we can detect changes between releases.
+     */
+    public String checksum() {
+        String checksum = cachedChecksum;
+        if (checksum == null) {
+            synchronized (this) {
+                checksum = cachedChecksum;
+                if (checksum == null) {
+                    checksum = computeSha256(loadSql());
+                    cachedChecksum = checksum;
+                }
+            }
+        }
+        return checksum;
     }
 }
