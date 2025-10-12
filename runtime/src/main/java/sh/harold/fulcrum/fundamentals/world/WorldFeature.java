@@ -6,15 +6,11 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
 import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
-import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
-import sh.harold.fulcrum.api.data.storage.StorageType;
 import sh.harold.fulcrum.api.world.poi.POIRegistry;
 import sh.harold.fulcrum.fundamentals.world.commands.WorldCommand;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
@@ -22,9 +18,9 @@ import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 
-import java.io.File;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -40,7 +36,6 @@ public class WorldFeature implements PluginFeature {
     private POIRegistry poiRegistry;
     private WorldCommand worldCommand;
     private Logger logger;
-    private boolean ownsConnectionAdapter;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -62,13 +57,11 @@ public class WorldFeature implements PluginFeature {
             logger.severe("Failed to initialize WorldService: " + cause.getMessage());
             cause.printStackTrace();
             registerFallbackCommand("World cache failed to initialize. See console for details.");
-            closeOwnedAdapter();
             return;
         } catch (Exception ex) {
             logger.severe("Unexpected error initializing WorldService: " + ex.getMessage());
             ex.printStackTrace();
             registerFallbackCommand("World service crashed during startup.");
-            closeOwnedAdapter();
             return;
         }
 
@@ -102,62 +95,26 @@ public class WorldFeature implements PluginFeature {
             ServiceLocatorImpl.getInstance().unregisterService(POIRegistry.class);
         }
 
-        closeOwnedAdapter();
     }
 
     private void resolveConnectionAdapter(DependencyContainer container) {
-        ownsConnectionAdapter = false;
-        ConnectionAdapter adapter = null;
+        connectionAdapter = null;
         if (container != null) {
-            adapter = container.getOptional(ConnectionAdapter.class).orElse(null);
+            connectionAdapter = container.getOptional(PostgresConnectionAdapter.class).orElse(null);
         }
-        if (adapter == null && ServiceLocatorImpl.getInstance() != null) {
-            adapter = ServiceLocatorImpl.getInstance().findService(ConnectionAdapter.class).orElse(null);
-        }
-
-        if (adapter instanceof PostgresConnectionAdapter postgresAdapter) {
-            connectionAdapter = postgresAdapter;
-            return;
+        if (connectionAdapter == null && ServiceLocatorImpl.getInstance() != null) {
+            connectionAdapter = ServiceLocatorImpl.getInstance()
+                .findService(PostgresConnectionAdapter.class)
+                .orElse(null);
         }
 
-        if (adapter != null && adapter.getStorageType() == StorageType.POSTGRES) {
-            logger.warning("ConnectionAdapter reported POSTGRES but is not PostgresConnectionAdapter. Creating dedicated adapter.");
-        }
-
-        PostgresConnectionAdapter standalone = createStandalonePostgresAdapter();
-        if (standalone != null) {
-            connectionAdapter = standalone;
-            ownsConnectionAdapter = true;
-        } else {
+        if (connectionAdapter != null && !ensureWorldSchema(connectionAdapter)) {
             connectionAdapter = null;
         }
     }
 
-    private PostgresConnectionAdapter createStandalonePostgresAdapter() {
+    private boolean ensureWorldSchema(PostgresConnectionAdapter adapter) {
         try {
-            File configFile = new File(plugin.getDataFolder(), "database-config.yml");
-            if (!configFile.exists()) {
-                plugin.saveResource("database-config.yml", false);
-            }
-            FileConfiguration yaml = YamlConfiguration.loadConfiguration(configFile);
-            if (!yaml.contains("postgres")) {
-                logger.warning("database-config.yml missing 'postgres' section.");
-                return null;
-            }
-
-            String jdbcUrl = yaml.getString("postgres.jdbc-url", "jdbc:postgresql://localhost:5432/fulcrum");
-            String database = yaml.getString("postgres.database", "fulcrum");
-            String username = yaml.getString("postgres.username", "fulcrum_user");
-            String password = yaml.getString("postgres.password", "");
-
-            PostgresConnectionAdapter adapter = new PostgresConnectionAdapter(jdbcUrl, username, password, database);
-            try (var connection = adapter.getConnection()) {
-                if (!connection.isValid(5)) {
-                    logger.severe("Standalone PostgreSQL connection reported invalid for database '" + database + "'.");
-                    adapter.close();
-                    return null;
-                }
-            }
             SchemaRegistry.ensureSchema(
                 adapter,
                 SchemaDefinition.fromResource(
@@ -167,11 +124,10 @@ public class WorldFeature implements PluginFeature {
                     "migrations/world_maps.sql"
                 )
             );
-            logger.info("Standalone PostgreSQL adapter initialized for world service (database: " + database + ").");
-            return adapter;
+            return true;
         } catch (Exception ex) {
-            logger.warning("Failed to create standalone PostgreSQL adapter: " + ex.getMessage());
-            return null;
+            logger.log(Level.SEVERE, "Failed to ensure world map schema", ex);
+            return false;
         }
     }
 
@@ -189,16 +145,6 @@ public class WorldFeature implements PluginFeature {
         CommandRegistrar.register(node);
         CommandRegistrar.registerAlias(node, "worlds");
         plugin.getLogger().warning("[FUNDAMENTALS] World commands limited - " + message);
-    }
-
-    private void closeOwnedAdapter() {
-        if (ownsConnectionAdapter && connectionAdapter != null) {
-            try {
-                connectionAdapter.close();
-            } catch (Exception ex) {
-                logger.warning("Failed to close world Postgres adapter: " + ex.getMessage());
-            }
-        }
     }
 
     public CompletableFuture<Void> refreshWorldCache() {
@@ -222,13 +168,6 @@ public class WorldFeature implements PluginFeature {
     }
 
 }
-
-
-
-
-
-
-
 
 
 
