@@ -6,10 +6,13 @@ import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.fundamentals.world.WorldManager;
 import sh.harold.fulcrum.fundamentals.world.WorldService;
+import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.minigame.command.StateMachineCommand;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
+import sh.harold.fulcrum.minigame.listener.MatchDamageListener;
 import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
 import sh.harold.fulcrum.minigame.listener.SpectatorListener;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
@@ -69,11 +72,13 @@ public class MinigameEngineFeature implements PluginFeature {
             }
         }
         Bukkit.getPluginManager().registerEvents(new SpectatorListener(), plugin);
+        Bukkit.getPluginManager().registerEvents(new MatchDamageListener(engine), plugin);
         routingListener = new PlayerRoutingListener(plugin, routeRegistry, gameManager);
         Bukkit.getPluginManager().registerEvents(routingListener, plugin);
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(PlayerRoutingListener.class, routingListener);
         }
+        CommandRegistrar.register(new StateMachineCommand(engine).build());
         plugin.getLogger().info("MinigameEngine initialized");
     }
 

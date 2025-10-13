@@ -46,10 +46,13 @@ public final class StateMachine {
             return;
         }
 
-        // Evaluate transitions prior to ticking
-        evaluateTransitions();
+        if (!context.isStateMachineFrozen()) {
+            evaluateTransitions();
+        } else {
+            context.checkFrozenTransitions();
+        }
 
-        if (currentState != null) {
+        if (currentState != null && !context.isStateMachineFrozen()) {
             currentState.onTick(context);
         }
 
@@ -72,6 +75,10 @@ public final class StateMachine {
 
     public String getCurrentStateId() {
         return currentStateId;
+    }
+
+    public StateDefinition getDefinition(String stateId) {
+        return graph.get(stateId);
     }
 
     private void evaluateTransitions() {

@@ -1,6 +1,9 @@
 package sh.harold.fulcrum.minigame.state.context;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
@@ -16,13 +19,12 @@ import sh.harold.fulcrum.minigame.MinigameAttributes;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
 import sh.harold.fulcrum.minigame.match.RosterManager;
+import sh.harold.fulcrum.minigame.state.machine.StateDefinition;
 import sh.harold.fulcrum.minigame.state.machine.StateMachine;
 
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -39,8 +41,12 @@ public final class StateContext {
     private final ActionFlagService actionFlags;
     private final Map<UUID, OverrideScopeHandle> spectatorOverrides = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> respawnTasks = new ConcurrentHashMap<>();
+    private final Set<UUID> registeredPlayers = ConcurrentHashMap.newKeySet();
+    private final Queue<Runnable> pendingTasks = new ConcurrentLinkedQueue<>();
     private volatile String currentFlagContext;
     private StateMachine stateMachine;
+    private volatile boolean frozen;
+    private String queuedTransition;
 
     public StateContext(JavaPlugin plugin,
                         UUID matchId,
@@ -57,10 +63,15 @@ public final class StateContext {
         this.registration = registration;
         this.actionFlags = actionFlags;
         this.currentFlagContext = null;
+        this.registeredPlayers.addAll(activePlayers);
     }
 
     public void bind(StateMachine stateMachine) {
         this.stateMachine = stateMachine;
+    }
+
+    public StateMachine getStateMachine() {
+        return stateMachine;
     }
 
     public UUID getMatchId() {
@@ -77,10 +88,12 @@ public final class StateContext {
 
     public void addPlayer(Player player) {
         activePlayers.add(player.getUniqueId());
+        registeredPlayers.add(player.getUniqueId());
     }
 
     public void removePlayer(UUID playerId) {
         activePlayers.remove(playerId);
+        registeredPlayers.remove(playerId);
     }
 
     public RosterManager roster() {
@@ -109,18 +122,28 @@ public final class StateContext {
     }
 
     public void requestTransition(String stateId) {
-        if (stateMachine != null) {
-            stateMachine.requestTransition(stateId);
+        if (stateMachine == null) {
+            return;
         }
+        if (frozen) {
+            queuedTransition = stateId;
+            broadcast("[SM] Transition '" + stateId + "' queued (frozen).");
+            return;
+        }
+        stateMachine.requestTransition(stateId);
     }
 
     public void scheduleTask(Runnable task, long delayTicks) {
         BukkitScheduler scheduler = Bukkit.getScheduler();
-        scheduler.runTaskLater(plugin, task, delayTicks);
+        scheduler.runTaskLater(plugin, () -> executeScheduled(task), delayTicks);
     }
 
     public org.bukkit.scheduler.BukkitTask scheduleRepeatingTask(Runnable task, long delayTicks, long intervalTicks) {
-        return Bukkit.getScheduler().runTaskTimer(plugin, task, delayTicks, intervalTicks);
+        return Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!frozen) {
+                task.run();
+            }
+        }, delayTicks, intervalTicks);
     }
 
     public <T> void setAttribute(String key, T value) {
@@ -208,6 +231,8 @@ public final class StateContext {
         }
         spectatorOverrides.clear();
         respawnTasks.clear();
+        registeredPlayers.clear();
+        pendingTasks.clear();
         this.currentFlagContext = null;
     }
 
@@ -297,12 +322,12 @@ public final class StateContext {
 
     private void scheduleRespawn(UUID playerId, long delayTicks) {
         if (delayTicks <= 0L) {
-            performRespawn(playerId);
+            executeScheduled(() -> performRespawn(playerId));
             return;
         }
         BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             respawnTasks.remove(playerId);
-            performRespawn(playerId);
+            executeScheduled(() -> performRespawn(playerId));
         }, delayTicks);
         respawnTasks.put(playerId, task);
     }
@@ -329,6 +354,7 @@ public final class StateContext {
         Location respawnLocation = resolveRespawnLocation(playerId);
         if (respawnLocation != null) {
             player.teleportAsync(respawnLocation);
+            player.setRespawnLocation(respawnLocation, true);
         }
 
         if (currentFlagContext != null && !currentFlagContext.isBlank()) {
@@ -341,7 +367,11 @@ public final class StateContext {
         if (origin == null) {
             return;
         }
-        findPlayer(playerId).ifPresent(player -> player.teleportAsync(origin.clone()));
+        findPlayer(playerId).ifPresent(player -> {
+            Location target = origin.clone();
+            player.teleportAsync(target);
+            player.setRespawnLocation(target, true);
+        });
     }
 
     private Location resolveMatchOrigin() {
@@ -374,6 +404,93 @@ public final class StateContext {
         BukkitTask task = respawnTasks.remove(playerId);
         if (task != null) {
             task.cancel();
+        }
+    }
+
+    public void registerPlayer(UUID playerId) {
+        registeredPlayers.add(playerId);
+    }
+
+    public void unregisterPlayer(UUID playerId) {
+        registeredPlayers.remove(playerId);
+    }
+
+    public boolean isPlayerRegistered(UUID playerId) {
+        return registeredPlayers.contains(playerId);
+    }
+
+    public boolean isStateMachineFrozen() {
+        return frozen;
+    }
+
+    public Optional<String> getQueuedTransition() {
+        return Optional.ofNullable(queuedTransition);
+    }
+
+    public void freezeStateMachine(CommandSender sender) {
+        if (frozen) {
+            sender.sendMessage(Component.text("State machine already frozen.", NamedTextColor.YELLOW));
+            return;
+        }
+        frozen = true;
+        sender.sendMessage(Component.text("State machine frozen.", NamedTextColor.GREEN));
+    }
+
+    public void resumeStateMachine(CommandSender sender) {
+        if (!frozen) {
+            sender.sendMessage(Component.text("State machine is not frozen.", NamedTextColor.YELLOW));
+            return;
+        }
+        frozen = false;
+        sender.sendMessage(Component.text("State machine resumed.", NamedTextColor.GREEN));
+        runPendingTasks();
+        if (queuedTransition != null) {
+            String state = queuedTransition;
+            queuedTransition = null;
+            broadcast("[SM] Applying queued transition to '" + state + "'.");
+            requestTransition(state);
+        }
+    }
+
+    public void checkFrozenTransitions() {
+        if (!frozen || stateMachine == null) {
+            return;
+        }
+        StateDefinition definition = stateMachine.getDefinition(stateMachine.getCurrentStateId());
+        if (definition == null) {
+            return;
+        }
+        definition.getTransitions().stream()
+                .filter(transition -> transition.shouldTransition(this))
+                .findFirst()
+                .ifPresent(transition -> {
+                    String target = transition.getTargetStateId();
+                    if (!target.equals(queuedTransition)) {
+                        queuedTransition = target;
+                        broadcast("[SM] Transition '" + target + "' satisfied while frozen; queued for resume.");
+                    }
+                });
+    }
+
+    private void executeScheduled(Runnable task) {
+        if (task == null) {
+            return;
+        }
+        if (frozen) {
+            pendingTasks.add(task);
+        } else {
+            task.run();
+        }
+    }
+
+    private void runPendingTasks() {
+        Runnable runnable;
+        while ((runnable = pendingTasks.poll()) != null) {
+            try {
+                runnable.run();
+            } catch (Exception ex) {
+                plugin.getLogger().warning("Error executing resumed task: " + ex.getMessage());
+            }
         }
     }
 }

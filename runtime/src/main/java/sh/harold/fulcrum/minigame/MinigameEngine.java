@@ -37,6 +37,7 @@ public final class MinigameEngine {
     private final Map<String, UUID> slotMatches = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> teardownTasks = new ConcurrentHashMap<>();
     private final AtomicBoolean ticking = new AtomicBoolean(false);
+    private final Map<UUID, UUID> playerMatchIndex = new ConcurrentHashMap<>();
     private BukkitTask tickTask;
 
     public MinigameEngine(JavaPlugin plugin,
@@ -134,6 +135,12 @@ public final class MinigameEngine {
         }
     }
 
+    public Optional<MinigameMatch> findMatchByPlayer(UUID playerId) {
+        return activeMatches.values().stream()
+                .filter(match -> match.getContext().isPlayerRegistered(playerId))
+                .findFirst();
+    }
+
     public void handleRoutedPlayer(Player player, PlayerRouteRegistry.RouteAssignment assignment) {
         if (player == null || assignment == null) {
             return;
@@ -148,7 +155,7 @@ public final class MinigameEngine {
 
         UUID existingMatch = slotMatches.get(slotId);
         if (existingMatch != null) {
-            addPlayer(existingMatch, player, true);
+            addPlayer(existingMatch, player, false);
             return;
         }
 
