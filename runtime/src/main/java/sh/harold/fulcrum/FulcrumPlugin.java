@@ -30,7 +30,6 @@ import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.MinigameEngineFeature;
 import sh.harold.fulcrum.minigame.MinigameModule;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
-import sh.harold.fulcrum.minigame.command.MinigameCommandFeature;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
@@ -78,7 +77,6 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ActionFlagFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
         FeatureManager.register(new MinigameEngineFeature());
-        FeatureManager.register(new MinigameCommandFeature());
         FeatureManager.register(new DebugMinigameFeature());
 
         // Initialize all features with dependency injection
