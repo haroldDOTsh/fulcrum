@@ -338,32 +338,36 @@ public class JsonStorageBackend implements StorageBackend {
     }
 
     /**
-         * Simple LRU cache implementation
-         */
-        private record LRUCache<K, V>(Map<K, V> cache) {
-            private LRUCache(int cache) {
-                this.cache = Collections.synchronizedMap(new LinkedHashMap<K, V>(16, 0.75f, true) {
-                    @Override
-                    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-                        return size() > cache;
-                    }
-                });
-            }
+     * Simple LRU cache implementation
+     */
+    private static final class LRUCache<K, V> {
+        private final Map<K, V> cache;
+        private final int capacity;
 
-            public V get(K key) {
-                return cache.get(key);
-            }
-
-            public void put(K key, V value) {
-                cache.put(key, value);
-            }
-
-            public void remove(K key) {
-                cache.remove(key);
-            }
-
-            public void clear() {
-                cache.clear();
-            }
+        private LRUCache(int capacity) {
+            this.capacity = capacity;
+            this.cache = Collections.synchronizedMap(new LinkedHashMap<K, V>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+                    return size() > LRUCache.this.capacity;
+                }
+            });
         }
+
+        public V get(K key) {
+            return cache.get(key);
+        }
+
+        public void put(K key, V value) {
+            cache.put(key, value);
+        }
+
+        public void remove(K key) {
+            cache.remove(key);
+        }
+
+        public void clear() {
+            cache.clear();
+        }
+    }
 }
