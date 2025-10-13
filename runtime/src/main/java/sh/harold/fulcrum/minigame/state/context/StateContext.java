@@ -11,11 +11,9 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitScheduler;
 import org.bukkit.scheduler.BukkitTask;
-import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagPresets;
-import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
-import sh.harold.fulcrum.fundamentals.actionflag.OverrideRequest;
-import sh.harold.fulcrum.fundamentals.actionflag.OverrideScopeHandle;
+import sh.harold.fulcrum.fundamentals.actionflag.*;
 import sh.harold.fulcrum.minigame.MinigameAttributes;
+import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
 import sh.harold.fulcrum.minigame.match.RosterManager;
@@ -72,6 +70,10 @@ public final class StateContext {
 
     public StateMachine getStateMachine() {
         return stateMachine;
+    }
+
+    public String currentStateId() {
+        return stateMachine != null ? stateMachine.getCurrentStateId() : "";
     }
 
     public UUID getMatchId() {
@@ -363,12 +365,11 @@ public final class StateContext {
     }
 
     private void teleportToOrigin(UUID playerId) {
-        Location origin = resolveMatchOrigin();
-        if (origin == null) {
+        Location target = resolveDefaultSpawn();
+        if (target == null) {
             return;
         }
         findPlayer(playerId).ifPresent(player -> {
-            Location target = origin.clone();
             player.teleportAsync(target);
             player.setRespawnLocation(target, true);
         });
@@ -382,8 +383,23 @@ public final class StateContext {
     }
 
     private Location resolveRespawnLocation(UUID playerId) {
-        // Team spawn support can be added later; fall back to match origin for now.
-        return resolveMatchOrigin();
+        // TODO: hook team-specific spawns once implemented
+        return resolveDefaultSpawn();
+    }
+
+    private Location resolveDefaultSpawn() {
+        Optional<MatchEnvironment> environment = getAttributeOptional(MinigameAttributes.MATCH_ENVIRONMENT, MatchEnvironment.class);
+        if (environment.isEmpty()) {
+            return resolveWorldSpawnFallback();
+        }
+        MatchEnvironment env = environment.get();
+        boolean isPreLobby = MinigameBlueprint.STATE_PRE_LOBBY.equals(currentStateId())
+                || ActionFlagContexts.MATCH_PREGAME_DEFAULT.equals(getCurrentFlagContext());
+        Location spawn = isPreLobby ? env.lobbySpawn() : env.matchSpawn();
+        if (spawn == null) {
+            spawn = env.matchSpawn();
+        }
+        return spawn != null ? spawn.clone() : resolveWorldSpawnFallback();
     }
 
     private Location resolveWorldSpawnFallback() {

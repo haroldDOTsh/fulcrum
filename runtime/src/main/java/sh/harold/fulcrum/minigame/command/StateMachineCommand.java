@@ -14,7 +14,6 @@ import sh.harold.fulcrum.minigame.match.MinigameMatch;
 import sh.harold.fulcrum.minigame.state.machine.StateMachine;
 
 import java.util.Optional;
-import java.util.UUID;
 
 import static com.mojang.brigadier.arguments.StringArgumentType.getString;
 import static com.mojang.brigadier.arguments.StringArgumentType.string;
@@ -46,39 +45,31 @@ public final class StateMachineCommand {
     }
 
     private int executeQuery(CommandContext<CommandSourceStack> ctx, CommandSourceStack source) {
-        Optional<MinigameStateDebug> debug = locateDebug(ctx);
-        if (debug.isEmpty()) {
-            return 0;
-        }
-        debug.get().describe(source.getSender());
-        return 1;
+        return locateDebug(ctx).map(debug -> {
+            debug.describe(source.getSender());
+            return 1;
+        }).orElse(0);
     }
 
     private int executeFreeze(CommandContext<CommandSourceStack> ctx, CommandSourceStack source) {
-        Optional<MinigameStateDebug> debug = locateDebug(ctx);
-        if (debug.isEmpty()) {
-            return 0;
-        }
-        debug.get().freeze(source.getSender());
-        return 1;
+        return locateDebug(ctx).map(debug -> {
+            debug.freeze(source.getSender());
+            return 1;
+        }).orElse(0);
     }
 
     private int executeResume(CommandContext<CommandSourceStack> ctx, CommandSourceStack source) {
-        Optional<MinigameStateDebug> debug = locateDebug(ctx);
-        if (debug.isEmpty()) {
-            return 0;
-        }
-        debug.get().resume(source.getSender());
-        return 1;
+        return locateDebug(ctx).map(debug -> {
+            debug.resume(source.getSender());
+            return 1;
+        }).orElse(0);
     }
 
     private int executeSkip(CommandContext<CommandSourceStack> ctx, CommandSourceStack source, String targetState) {
-        Optional<MinigameStateDebug> debug = locateDebug(ctx);
-        if (debug.isEmpty()) {
-            return 0;
-        }
-        debug.get().requestTransition(source.getSender(), targetState);
-        return 1;
+        return locateDebug(ctx).map(debug -> {
+            debug.requestTransition(source.getSender(), targetState);
+            return 1;
+        }).orElse(0);
     }
 
     private Optional<MinigameStateDebug> locateDebug(CommandContext<CommandSourceStack> ctx) {
@@ -86,8 +77,7 @@ public final class StateMachineCommand {
             ctx.getSource().getSender().sendMessage(Component.text("Only players can use /statemachine.", NamedTextColor.RED));
             return Optional.empty();
         }
-        UUID playerId = player.getUniqueId();
-        return engine.findMatchByPlayer(playerId)
+        return engine.findMatchByPlayer(player.getUniqueId())
                 .map(MinigameStateDebug::new)
                 .or(() -> {
                     ctx.getSource().getSender().sendMessage(Component.text("You are not currently in a minigame.", NamedTextColor.RED));
