@@ -105,8 +105,7 @@ public class RegistryService {
         for (Map.Entry<String, Object> entry : config.entrySet()) {
             if (entry.getValue() instanceof Map) {
                 processEnvironmentVariables((Map<String, Object>) entry.getValue());
-            } else if (entry.getValue() instanceof String) {
-                String value = (String) entry.getValue();
+            } else if (entry.getValue() instanceof String value) {
                 if (value.startsWith("${") && value.endsWith("}")) {
                     String envVarWithDefault = value.substring(2, value.length() - 1);
                     String[] parts = envVarWithDefault.split(":", 2);
@@ -147,9 +146,6 @@ public class RegistryService {
         displayBanner();
         LOGGER.info("Starting Fulcrum Registry Service...");
         LOGGER.info("Debug mode: {}", debugMode ? "ENABLED" : "DISABLED");
-
-        // Diagnostic logging for Netty classloading issues
-        diagnosNettyClassLoading();
 
         try {
             // Create MessageBus configuration from application.yml
@@ -448,109 +444,6 @@ public class RegistryService {
             LOGGER.info("Registry Service shut down successfully");
         } catch (Exception e) {
             LOGGER.error("Error during shutdown", e);
-        }
-    }
-
-    /**
-     * Diagnose Netty classloading issues
-     */
-    private void diagnosNettyClassLoading() {
-        LOGGER.info("==================================================");
-        LOGGER.info("NETTY CLASSLOADING DIAGNOSTICS");
-        LOGGER.info("==================================================");
-
-        try {
-            // Check for DefaultPromise class
-            Class<?> promiseClass = Class.forName("io.netty.util.concurrent.DefaultPromise");
-            LOGGER.info("✓ DefaultPromise class loaded from: {}",
-                    promiseClass.getProtectionDomain().getCodeSource().getLocation());
-
-            // Check for DefaultPromise$1 (anonymous inner class) - THE PROBLEMATIC CLASS
-            try {
-                Class<?> promise1Class = Class.forName("io.netty.util.concurrent.DefaultPromise$1");
-                LOGGER.info("✓ DefaultPromise$1 class loaded from: {}",
-                        promise1Class.getProtectionDomain().getCodeSource().getLocation());
-            } catch (ClassNotFoundException e) {
-                LOGGER.error("✗ DefaultPromise$1 (anonymous inner class) NOT FOUND!");
-                LOGGER.error("  This is the EXACT error causing the service crash!");
-                LOGGER.error("  This indicates Shadow JAR is not including inner classes properly");
-            }
-
-            // Check for inner classes
-            Class<?>[] innerClasses = promiseClass.getDeclaredClasses();
-            LOGGER.info("DefaultPromise inner classes found: {}", innerClasses.length);
-            for (Class<?> inner : innerClasses) {
-                LOGGER.info("  - {} from: {}",
-                        inner.getName(),
-                        inner.getProtectionDomain().getCodeSource().getLocation());
-            }
-
-            // Check for multiple Netty versions on classpath
-            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-            java.util.Enumeration<java.net.URL> resources =
-                    classLoader.getResources("io/netty/util/concurrent/DefaultPromise.class");
-
-            int count = 0;
-            while (resources.hasMoreElements()) {
-                java.net.URL url = resources.nextElement();
-                LOGGER.info("Netty DefaultPromise found at: {}", url);
-                count++;
-            }
-
-            if (count > 1) {
-                LOGGER.warn("⚠ MULTIPLE Netty versions detected on classpath!");
-                LOGGER.warn("  This can cause NoClassDefFoundError for inner classes");
-                LOGGER.warn("  Common cause: netty-all (uber JAR) mixed with individual modules");
-            }
-
-            // Check which Netty JARs are on the classpath
-            checkNettyJars();
-
-        } catch (Exception e) {
-            LOGGER.error("Failed to perform Netty diagnostics", e);
-        }
-
-        LOGGER.info("==================================================");
-    }
-
-    /**
-     * Check which Netty JARs are on the classpath
-     */
-    private void checkNettyJars() {
-        try {
-            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-
-            // Check for netty-all (the uber JAR)
-            java.util.Enumeration<java.net.URL> nettyAll =
-                    classLoader.getResources("META-INF/maven/io.netty/netty-all/pom.properties");
-            if (nettyAll.hasMoreElements()) {
-                LOGGER.warn("⚠ netty-all (uber JAR) detected on classpath!");
-                LOGGER.warn("  This conflicts with individual Netty modules from Lettuce");
-                while (nettyAll.hasMoreElements()) {
-                    LOGGER.warn("  Location: {}", nettyAll.nextElement());
-                }
-            }
-
-            // Check for individual Netty modules
-            String[] modules = {"netty-buffer", "netty-common", "netty-transport", "netty-handler", "netty-codec"};
-            LOGGER.info("Individual Netty modules found:");
-            for (String module : modules) {
-                java.util.Enumeration<java.net.URL> moduleUrls =
-                        classLoader.getResources("META-INF/maven/io.netty/" + module + "/pom.properties");
-                while (moduleUrls.hasMoreElements()) {
-                    LOGGER.info("  ✓ {}: {}", module, moduleUrls.nextElement());
-                }
-            }
-
-            // Final diagnosis
-            LOGGER.info("");
-            LOGGER.info("DIAGNOSIS SUMMARY:");
-            LOGGER.info("If both netty-all and individual modules are present,");
-            LOGGER.info("this causes classloading conflicts, especially for anonymous inner classes.");
-            LOGGER.info("Solution: Remove netty-all dependency and use only individual modules.");
-
-        } catch (Exception e) {
-            LOGGER.error("Failed to check Netty JARs", e);
         }
     }
 
