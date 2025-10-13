@@ -10,6 +10,7 @@ import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
@@ -17,9 +18,12 @@ import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
+import sh.harold.fulcrum.velocity.api.rank.Rank;
+import sh.harold.fulcrum.velocity.api.rank.VelocityRankUtils;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,6 +40,7 @@ final class LocatePlayerCommand implements SimpleCommand {
     private final PlayerRoutingFeature routingFeature;
     private final FulcrumVelocityPlugin plugin;
     private final Logger logger;
+    private final DataAPI dataAPI;
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
@@ -43,26 +48,56 @@ final class LocatePlayerCommand implements SimpleCommand {
                         MessageBus messageBus,
                         PlayerRoutingFeature routingFeature,
                         FulcrumVelocityPlugin plugin,
-                        Logger logger) {
+                        Logger logger,
+                        DataAPI dataAPI) {
         this.proxy = proxy;
         this.messageBus = messageBus;
         this.routingFeature = routingFeature;
         this.plugin = plugin;
         this.logger = logger;
+        this.dataAPI = dataAPI;
     }
 
     @Override
     public void execute(Invocation invocation) {
-        String[] arguments = invocation.arguments();
+        CommandSource source = invocation.source();
+        String[] arguments = Arrays.copyOf(invocation.arguments(), invocation.arguments().length);
+
+        VelocityRankUtils.hasRankOrHigher(source, Rank.HELPER, dataAPI, logger)
+                .whenComplete((allowed, throwable) -> {
+                    if (throwable != null) {
+                        logger.warn("Failed to verify rank for /locateplayer", throwable);
+                        proxy.getScheduler().buildTask(plugin, () ->
+                                        source.sendMessage(Component.text(
+                                                "Unable to verify your permissions right now.",
+                                                NamedTextColor.RED)))
+                                .schedule();
+                        return;
+                    }
+
+                    if (!Boolean.TRUE.equals(allowed)) {
+                        proxy.getScheduler().buildTask(plugin, () ->
+                                        source.sendMessage(Component.text(
+                                                "You must be Helper rank or higher to use /locateplayer.",
+                                                NamedTextColor.RED)))
+                                .schedule();
+                        return;
+                    }
+
+                    proxy.getScheduler().buildTask(plugin, () ->
+                            executeAuthorized(source, arguments)).schedule();
+                });
+    }
+
+    private void executeAuthorized(CommandSource source, String[] arguments) {
         if (arguments.length < 1) {
-            invocation.source().sendMessage(Component.text("Usage: /locateplayer <player>", NamedTextColor.RED));
+            source.sendMessage(Component.text("Usage: /locateplayer <player>", NamedTextColor.RED));
             return;
         }
 
         String query = arguments[0];
         UUID queryId = parseUuid(query);
         String queryName = queryId == null ? query : null;
-        CommandSource source = invocation.source();
 
         Optional<Player> local = queryId != null ? proxy.getPlayer(queryId) : proxy.getPlayer(query);
         if (local.isPresent()) {
