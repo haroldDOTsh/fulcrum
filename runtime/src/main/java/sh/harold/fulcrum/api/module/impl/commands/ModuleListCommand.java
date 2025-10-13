@@ -36,16 +36,14 @@ public final class ModuleListCommand {
 
     public LiteralCommandNode<CommandSourceStack> build() {
         return literal("runtimeinfo")
-                .requires(source -> RankUtils.isAdmin(source.getSender())
-                        || source.getSender().hasPermission("fulcrum.runtime.info"))
+                .requires(source -> RankUtils.isAdmin(source.getSender()))
                 .executes(ctx -> showRuntimeOverview(ctx.getSource()))
                 .then(literal("list")
                         .executes(ctx -> showModuleList(ctx.getSource())))
                 .then(literal("environment")
                         .executes(ctx -> showEnvironment(ctx.getSource())))
                 .then(literal("reload")
-                        .requires(source -> RankUtils.isAdmin(source.getSender())
-                                || source.getSender().hasPermission("fulcrum.runtime.info"))
+                        .requires(source -> RankUtils.isAdmin(source.getSender()))
                         .executes(ctx -> handleEnvironmentReload(ctx.getSource())))
                 .build();
     }
@@ -183,4 +181,3 @@ public final class ModuleListCommand {
                 .append(Component.text(safeValue, NamedTextColor.WHITE));
     }
 }
-

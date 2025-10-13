@@ -133,10 +133,7 @@ public class WorldFeature implements PluginFeature {
 
     private void registerFallbackCommand(String message) {
         LiteralCommandNode<CommandSourceStack> node = Commands.literal("world")
-                .requires(source -> {
-                    var sender = source.getSender();
-                    return RankUtils.isAdmin(sender) || sender.hasPermission("fulcrum.world.manage") || sender.hasPermission("fulcrum.world.view") || sender.isOp();
-                })
+                .requires(source -> RankUtils.isAdmin(source.getSender()))
                 .executes(ctx -> {
                     ctx.getSource().getSender().sendMessage(Component.text(message, NamedTextColor.RED));
                     return Command.SINGLE_SUCCESS;
@@ -168,7 +165,6 @@ public class WorldFeature implements PluginFeature {
     }
 
 }
-
 
 
 

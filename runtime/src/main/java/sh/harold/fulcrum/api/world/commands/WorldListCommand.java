@@ -9,6 +9,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
+import sh.harold.fulcrum.api.rank.RankUtils;
 
 /**
  * Command to list all loaded worlds.
@@ -19,7 +20,7 @@ public class WorldListCommand {
 
     public static LiteralArgumentBuilder<CommandSourceStack> create() {
         return Commands.literal("list")
-                .requires(source -> source.getSender().hasPermission("fulcrum.world.admin"))
+                .requires(source -> RankUtils.isAdmin(source.getSender()))
                 .executes(context -> {
                     var sender = context.getSource().getSender();
 

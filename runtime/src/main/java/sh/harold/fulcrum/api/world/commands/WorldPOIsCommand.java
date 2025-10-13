@@ -14,6 +14,7 @@ import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.world.poi.POIRegistry;
 
 import java.util.Map;
@@ -33,7 +34,7 @@ public class WorldPOIsCommand {
 
     public LiteralArgumentBuilder<CommandSourceStack> create() {
         return Commands.literal("pois")
-                .requires(source -> source.getSender().hasPermission("fulcrum.world.admin"))
+                .requires(source -> RankUtils.isAdmin(source.getSender()))
                 .then(
                         RequiredArgumentBuilder.<CommandSourceStack, String>argument("world", StringArgumentType.word())
                                 .suggests((context, builder) -> {

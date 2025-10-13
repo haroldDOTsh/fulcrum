@@ -12,6 +12,7 @@ import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
+import sh.harold.fulcrum.api.rank.RankUtils;
 
 /**
  * Command to show detailed world information including metadata.
@@ -22,7 +23,7 @@ public class WorldInfoCommand {
 
     public static LiteralArgumentBuilder<CommandSourceStack> create() {
         return Commands.literal("info")
-                .requires(source -> source.getSender().hasPermission("fulcrum.world.admin"))
+                .requires(source -> RankUtils.isAdmin(source.getSender()))
                 .then(
                         RequiredArgumentBuilder.<CommandSourceStack, String>argument("world", StringArgumentType.word())
                                 .suggests((context, builder) -> {
