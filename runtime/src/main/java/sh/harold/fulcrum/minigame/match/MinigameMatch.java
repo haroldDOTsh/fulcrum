@@ -43,13 +43,14 @@ public final class MinigameMatch {
 
         for (Player player : initialPlayers) {
             UUID playerId = player.getUniqueId();
-            roster.addPlayer(playerId, true);
+            roster.addPlayer(playerId, false);
             connectedPlayers.add(playerId);
         }
 
         this.context = new StateContext(plugin, matchId, connectedPlayers, null, roster, registration, actionFlags);
         this.machine = new StateMachine(plugin, matchId, blueprint.getStateGraph(), context, blueprint.getStartStateId(), stateListener);
         this.context.bind(machine);
+        connectedPlayers.forEach(context::registerPlayer);
         this.context.applyFlagContext(ActionFlagContexts.MATCH_PREGAME_DEFAULT);
     }
 
@@ -68,6 +69,7 @@ public final class MinigameMatch {
     public void addPlayer(Player player, boolean respawnAllowed) {
         roster.addPlayer(player.getUniqueId(), respawnAllowed);
         connectedPlayers.add(player.getUniqueId());
+        context.registerPlayer(player.getUniqueId());
         UUID playerId = player.getUniqueId();
         String currentContext = context.getCurrentFlagContext();
         if (currentContext != null && !currentContext.isBlank()) {
@@ -81,6 +83,7 @@ public final class MinigameMatch {
         connectedPlayers.remove(playerId);
         roster.removePlayer(playerId);
         context.clearFlags(playerId);
+        context.unregisterPlayer(playerId);
     }
 
     public StateContext getContext() {
