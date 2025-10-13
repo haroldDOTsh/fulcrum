@@ -58,8 +58,8 @@ public final class FlagDebugCommand {
 
     private static boolean parseState(String state) throws CommandSyntaxException {
         return switch (state.toLowerCase(Locale.ROOT)) {
-            case "1", "true", "allow", "on", "enable" -> true;
-            case "0", "false", "deny", "off", "disable" -> false;
+            case "allow", "true" -> true;
+            case "deny", "false" -> false;
             default -> throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
         };
     }
@@ -194,13 +194,6 @@ public final class FlagDebugCommand {
 
     private SuggestionProvider<CommandSourceStack> playerSuggestions() {
         return (context, builder) -> {
-            String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
-            if ("self".startsWith(remaining)) {
-                builder.suggest("self");
-            }
-            if ("~".startsWith(remaining)) {
-                builder.suggest("~");
-            }
             Bukkit.getOnlinePlayers().stream()
                     .map(Player::getName)
                     .forEach(builder::suggest);
@@ -224,7 +217,7 @@ public final class FlagDebugCommand {
     private SuggestionProvider<CommandSourceStack> stateSuggestions() {
         return (context, builder) -> {
             String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
-            for (String option : List.of("allow", "deny", "true", "false", "on", "off")) {
+            for (String option : List.of("allow", "deny")) {
                 if (option.startsWith(remaining)) {
                     builder.suggest(option);
                 }
