@@ -5,6 +5,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
+import sh.harold.fulcrum.minigame.MinigameAttributes;
+import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.match.MinigameMatch;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
@@ -41,13 +43,25 @@ public final class MatchDamageListener implements Listener {
         }
 
         event.setCancelled(true);
-        player.setFallDistance(0.0F);
-        player.setHealth(Math.max(1.0D, player.getMaxHealth()));
-        player.setFoodLevel(20);
-        player.setSaturation(20f);
 
         MinigameMatch match = matchOpt.get();
         StateContext context = match.getContext();
+
+        String stateId = context.currentStateId();
+        boolean matchComplete = context.getAttributeOptional(MinigameAttributes.MATCH_COMPLETE, Boolean.class).orElse(Boolean.FALSE);
+        boolean inPreLobby = MinigameBlueprint.STATE_PRE_LOBBY.equals(stateId);
+        boolean inPostGame = MinigameBlueprint.STATE_END_GAME.equals(stateId) || matchComplete;
+
+        player.setFallDistance(0.0F);
+        player.setFoodLevel(20);
+        player.setSaturation(20f);
+        player.setHealth(player.getMaxHealth());
+
+        if (inPreLobby || inPostGame) {
+            context.teleportPlayerToDefaultSpawn(playerId);
+            return;
+        }
+
         boolean allowRespawn = context.isRespawnAllowed(playerId);
         context.eliminatePlayer(playerId, allowRespawn, 0L);
     }

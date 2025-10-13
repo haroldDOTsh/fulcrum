@@ -174,12 +174,14 @@ public final class StateContext {
             actionFlags.applyContext(activePlayers, contextId);
         }
         this.currentFlagContext = contextId;
+        applyGamemodeForActive(contextId);
     }
 
     public void applyFlagContext(UUID playerId, String contextId) {
         if (actionFlags != null) {
             actionFlags.applyContext(playerId, contextId);
         }
+        applyGamemode(playerId, contextId);
     }
 
     public OverrideScopeHandle pushOverride(UUID playerId, OverrideRequest request) {
@@ -206,7 +208,7 @@ public final class StateContext {
         cancelRespawnTask(playerId);
 
         transitionPlayerToSpectator(playerId);
-        teleportToOrigin(playerId);
+        teleportToDefaultSpawn(playerId);
 
         if (allowRespawn) {
             scheduleRespawn(playerId, Math.max(0L, respawnDelayTicks));
@@ -364,7 +366,11 @@ public final class StateContext {
         }
     }
 
-    private void teleportToOrigin(UUID playerId) {
+    public void teleportPlayerToDefaultSpawn(UUID playerId) {
+        teleportToDefaultSpawn(playerId);
+    }
+
+    private void teleportToDefaultSpawn(UUID playerId) {
         Location target = resolveDefaultSpawn();
         if (target == null) {
             return;
@@ -425,6 +431,7 @@ public final class StateContext {
 
     public void registerPlayer(UUID playerId) {
         registeredPlayers.add(playerId);
+        applyGamemode(playerId, currentFlagContext);
     }
 
     public void unregisterPlayer(UUID playerId) {
@@ -509,4 +516,28 @@ public final class StateContext {
             }
         }
     }
+
+    private void applyGamemodeForActive(String contextId) {
+        for (UUID playerId : activePlayers) {
+            applyGamemode(playerId, contextId);
+        }
+    }
+
+    private void applyGamemode(UUID playerId, String contextId) {
+        if (contextId == null) {
+            return;
+        }
+        RosterManager.Entry entry = roster.get(playerId);
+        if (entry != null && entry.getState() == RosterManager.PlayerState.SPECTATOR) {
+            return;
+        }
+        findPlayer(playerId).ifPresent(player -> {
+            if (ActionFlagContexts.MATCH_PREGAME_DEFAULT.equals(contextId)) {
+                player.setGameMode(GameMode.ADVENTURE);
+            } else {
+                player.setGameMode(GameMode.SURVIVAL);
+            }
+        });
+    }
+
 }
