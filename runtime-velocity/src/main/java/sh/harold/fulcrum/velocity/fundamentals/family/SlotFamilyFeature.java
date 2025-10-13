@@ -10,6 +10,7 @@ import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
 import sh.harold.fulcrum.api.messagebus.messages.SlotFamilyAdvertisementMessage;
+import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 
@@ -30,6 +31,7 @@ public final class SlotFamilyFeature implements VelocityFeature {
     private Logger logger;
     private MessageHandler advertisementHandler;
     private MessageHandler removalHandler;
+    private MessageHandler statusHandler;
 
     @Override
     public String getName() {
@@ -48,9 +50,11 @@ public final class SlotFamilyFeature implements VelocityFeature {
 
         advertisementHandler = this::handleAdvertisement;
         removalHandler = this::handleRemoval;
+        statusHandler = this::handleSlotStatus;
 
         messageBus.subscribe(ChannelConstants.REGISTRY_SLOT_FAMILY_ADVERTISEMENT, advertisementHandler);
         messageBus.subscribe(ChannelConstants.SERVER_REMOVAL_NOTIFICATION, removalHandler);
+        messageBus.subscribe(ChannelConstants.REGISTRY_SLOT_STATUS, statusHandler);
 
         serviceLocator.register(SlotFamilyCache.class, cache);
         running.set(true);
@@ -70,6 +74,9 @@ public final class SlotFamilyFeature implements VelocityFeature {
             if (removalHandler != null) {
                 messageBus.unsubscribe(ChannelConstants.SERVER_REMOVAL_NOTIFICATION, removalHandler);
             }
+            if (statusHandler != null) {
+                messageBus.unsubscribe(ChannelConstants.REGISTRY_SLOT_STATUS, statusHandler);
+            }
         }
         cache.clear();
         logger.info("SlotFamilyFeature shut down");
@@ -88,7 +95,7 @@ public final class SlotFamilyFeature implements VelocityFeature {
 
         String serverId = message.getServerId();
         Map<String, Integer> capacities = message.getFamilyCapacities();
-        cache.update(serverId, capacities);
+        cache.updateCapacities(serverId, capacities);
 
         if (logger.isDebugEnabled()) {
             logger.debug("Updated slot family cache for {} => {}", serverId, capacities);
@@ -109,6 +116,46 @@ public final class SlotFamilyFeature implements VelocityFeature {
         cache.remove(serverId);
         if (logger.isDebugEnabled()) {
             logger.debug("Removed slot family data for {}", serverId);
+        }
+    }
+
+    private void handleSlotStatus(MessageEnvelope envelope) {
+        if (envelope == null) {
+            return;
+        }
+        SlotStatusUpdateMessage status = convert(envelope.getPayload(), SlotStatusUpdateMessage.class);
+        if (status == null) {
+            return;
+        }
+
+        String serverId = status.getServerId();
+        Map<String, String> metadata = status.getMetadata();
+        String familyId = null;
+        if (metadata != null) {
+            familyId = firstNonBlank(metadata.get("family"), metadata.get("familyId"));
+        }
+        familyId = normalize(familyId);
+        if (familyId == null) {
+            return;
+        }
+
+        String variantId = null;
+        if (metadata != null) {
+            variantId = firstNonBlank(metadata.get("variant"), metadata.get("variantId"));
+        }
+        if (variantId == null || variantId.isBlank()) {
+            String gameType = status.getGameType();
+            if (gameType != null && !gameType.isBlank() && !gameType.equalsIgnoreCase(familyId)) {
+                variantId = gameType;
+            }
+        }
+
+        variantId = normalize(variantId);
+        if (variantId != null) {
+            cache.recordVariant(serverId, familyId, variantId);
+            if (logger.isTraceEnabled()) {
+                logger.trace("Recorded variant {} for family {} on {}", variantId, familyId, serverId);
+            }
         }
     }
 
@@ -138,6 +185,27 @@ public final class SlotFamilyFeature implements VelocityFeature {
 
         ServerRemovalNotification notification = convert(payload, ServerRemovalNotification.class);
         return notification != null ? notification.getServerId() : null;
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        if (primary != null && !primary.isBlank()) {
+            return primary;
+        }
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+        return null;
+    }
+
+    private String normalize(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.toLowerCase(java.util.Locale.ROOT);
     }
 
     private <T> T convert(Object payload, Class<T> type) {
