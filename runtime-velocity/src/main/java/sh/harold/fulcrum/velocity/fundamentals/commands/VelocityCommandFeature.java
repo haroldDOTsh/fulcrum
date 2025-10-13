@@ -4,6 +4,7 @@ import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
@@ -22,6 +23,7 @@ public class VelocityCommandFeature implements VelocityFeature {
     private MessageBus messageBus;
     private PlayerRoutingFeature playerRoutingFeature;
     private FulcrumVelocityPlugin plugin;
+    private DataAPI dataAPI;
 
     @Override
     public String getName() {
@@ -44,6 +46,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         this.messageBus = serviceLocator.getRequiredService(MessageBus.class);
         this.playerRoutingFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature.class);
         this.plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
+        this.dataAPI = serviceLocator.getRequiredService(DataAPI.class);
 
         // Register proxy commands when they are introduced
         registerLocatePlayerCommand();
@@ -63,6 +66,6 @@ public class VelocityCommandFeature implements VelocityFeature {
                 .plugin(plugin)
                 .build();
 
-        commandManager.register(meta, new LocatePlayerCommand(proxy, messageBus, playerRoutingFeature, plugin, logger));
+        commandManager.register(meta, new LocatePlayerCommand(proxy, messageBus, playerRoutingFeature, plugin, logger, dataAPI));
     }
 }
