@@ -2,6 +2,8 @@ package sh.harold.fulcrum.minigame.match;
 
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagContexts;
+import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
@@ -32,7 +34,8 @@ public final class MinigameMatch {
                          MinigameBlueprint blueprint,
                          MinigameRegistration registration,
                          Collection<Player> initialPlayers,
-                         Consumer<String> stateListener) {
+                         Consumer<String> stateListener,
+                         ActionFlagService actionFlags) {
         this.matchId = Objects.requireNonNull(matchId, "matchId");
         this.blueprint = Objects.requireNonNull(blueprint, "blueprint");
         this.registration = registration;
@@ -44,9 +47,10 @@ public final class MinigameMatch {
             connectedPlayers.add(playerId);
         }
 
-        this.context = new StateContext(plugin, matchId, connectedPlayers, null, roster, registration);
+        this.context = new StateContext(plugin, matchId, connectedPlayers, null, roster, registration, actionFlags);
         this.machine = new StateMachine(plugin, matchId, blueprint.getStateGraph(), context, blueprint.getStartStateId(), stateListener);
         this.context.bind(machine);
+        this.context.applyFlagContext(ActionFlagContexts.MATCH_PREGAME_DEFAULT);
     }
 
     public UUID getMatchId() {
@@ -64,11 +68,19 @@ public final class MinigameMatch {
     public void addPlayer(Player player, boolean respawnAllowed) {
         roster.addPlayer(player.getUniqueId(), respawnAllowed);
         connectedPlayers.add(player.getUniqueId());
+        UUID playerId = player.getUniqueId();
+        String currentContext = context.getCurrentFlagContext();
+        if (currentContext != null && !currentContext.isBlank()) {
+            context.applyFlagContext(playerId, currentContext);
+        } else {
+            context.applyFlagContext(playerId, ActionFlagContexts.MATCH_PREGAME_DEFAULT);
+        }
     }
 
     public void removePlayer(UUID playerId) {
         connectedPlayers.remove(playerId);
         roster.removePlayer(playerId);
+        context.clearFlags(playerId);
     }
 
     public StateContext getContext() {
@@ -83,4 +95,3 @@ public final class MinigameMatch {
         return blueprint;
     }
 }
-

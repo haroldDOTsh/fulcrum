@@ -5,6 +5,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
+import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
@@ -26,6 +27,7 @@ public final class MinigameEngine {
     private final PlayerRouteRegistry routeRegistry;
     private final MinigameEnvironmentService environmentService;
     private final SimpleSlotOrchestrator slotOrchestrator;
+    private final ActionFlagService actionFlags;
     private final Set<String> provisioningSlots = ConcurrentHashMap.newKeySet();
     private final Map<String, MinigameRegistration> registrations = new ConcurrentHashMap<>();
     private final Map<UUID, MinigameMatch> activeMatches = new ConcurrentHashMap<>();
@@ -40,11 +42,13 @@ public final class MinigameEngine {
     public MinigameEngine(JavaPlugin plugin,
                           PlayerRouteRegistry routeRegistry,
                           MinigameEnvironmentService environmentService,
-                          SimpleSlotOrchestrator slotOrchestrator) {
+                          SimpleSlotOrchestrator slotOrchestrator,
+                          ActionFlagService actionFlags) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.routeRegistry = routeRegistry;
         this.environmentService = environmentService;
         this.slotOrchestrator = slotOrchestrator;
+        this.actionFlags = actionFlags;
     }
 
     public void registerRegistration(MinigameRegistration registration) {
@@ -104,6 +108,8 @@ public final class MinigameEngine {
         if (removedMatch != null) {
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_ID);
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_METADATA);
+            removedMatch.getContext().removeAttribute(MinigameAttributes.MATCH_ENVIRONMENT);
+            removedMatch.getContext().clearFlagsForRoster();
         }
     }
 
@@ -311,7 +317,8 @@ public final class MinigameEngine {
         UUID matchId = UUID.randomUUID();
         SlotContext slotContext = resolveSlotContext(players);
         MinigameMatch match = new MinigameMatch(plugin, matchId, blueprint, registration, players,
-                stateId -> onStateChange(matchId, familyId, stateId));
+                stateId -> onStateChange(matchId, familyId, stateId),
+                actionFlags);
         activeMatches.put(matchId, match);
         matchStates.put(matchId, blueprint.getStartStateId());
         if (slotContext != null) {
@@ -327,6 +334,11 @@ public final class MinigameEngine {
 
             matchSlotIds.put(matchId, slotContext.slotId);
             slotMatches.put(slotContext.slotId, matchId);
+
+            if (environmentService != null) {
+                environmentService.getEnvironment(slotContext.slotId)
+                        .ifPresent(env -> match.getContext().setAttribute(MinigameAttributes.MATCH_ENVIRONMENT, env));
+            }
 
             if (slotOrchestrator != null) {
                 Map<String, String> statusMetadata = new HashMap<>(metadataSnapshot);
@@ -408,5 +420,3 @@ public final class MinigameEngine {
     private record SlotContext(String slotId, Map<String, String> metadata) {
     }
 }
-
-

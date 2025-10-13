@@ -2,6 +2,7 @@ package sh.harold.fulcrum.minigame;
 
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.fundamentals.world.WorldManager;
 import sh.harold.fulcrum.fundamentals.world.WorldService;
@@ -42,7 +43,14 @@ public class MinigameEngineFeature implements PluginFeature {
         if (orchestrator == null) {
             plugin.getLogger().warning("SimpleSlotOrchestrator unavailable; provisioning events will be deferred.");
         }
-        engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator);
+        ActionFlagService actionFlagService = container.getOptional(ActionFlagService.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(ActionFlagService.class).orElse(null)
+                        : null);
+        if (actionFlagService == null) {
+            plugin.getLogger().warning("ActionFlagService unavailable; matches will start without flag enforcement.");
+        }
+        engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, actionFlagService);
         if (orchestrator != null) {
             orchestrator.addProvisionListener(engine::handleProvisionedSlot);
         }

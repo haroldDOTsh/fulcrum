@@ -1,17 +1,20 @@
 package sh.harold.fulcrum.minigame.state.context;
 
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.GameMode;
-import org.bukkit.Material;
+import org.bukkit.*;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitScheduler;
+import org.bukkit.scheduler.BukkitTask;
+import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagPresets;
+import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
+import sh.harold.fulcrum.fundamentals.actionflag.OverrideRequest;
+import sh.harold.fulcrum.fundamentals.actionflag.OverrideScopeHandle;
 import sh.harold.fulcrum.minigame.MinigameAttributes;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
+import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
 import sh.harold.fulcrum.minigame.match.RosterManager;
 import sh.harold.fulcrum.minigame.state.machine.StateMachine;
 
@@ -33,6 +36,10 @@ public final class StateContext {
     private final Map<String, Object> attributes = new ConcurrentHashMap<>();
     private final RosterManager roster;
     private final MinigameRegistration registration;
+    private final ActionFlagService actionFlags;
+    private final Map<UUID, OverrideScopeHandle> spectatorOverrides = new ConcurrentHashMap<>();
+    private final Map<UUID, BukkitTask> respawnTasks = new ConcurrentHashMap<>();
+    private volatile String currentFlagContext;
     private StateMachine stateMachine;
 
     public StateContext(JavaPlugin plugin,
@@ -40,13 +47,16 @@ public final class StateContext {
                         Set<UUID> activePlayers,
                         StateMachine stateMachine,
                         RosterManager roster,
-                        MinigameRegistration registration) {
+                        MinigameRegistration registration,
+                        ActionFlagService actionFlags) {
         this.plugin = plugin;
         this.matchId = matchId;
         this.activePlayers = activePlayers;
         this.stateMachine = stateMachine;
         this.roster = roster;
         this.registration = registration;
+        this.actionFlags = actionFlags;
+        this.currentFlagContext = null;
     }
 
     public void bind(StateMachine stateMachine) {
@@ -75,6 +85,10 @@ public final class StateContext {
 
     public RosterManager roster() {
         return roster;
+    }
+
+    public ActionFlagService actionFlags() {
+        return actionFlags;
     }
 
     public Optional<MinigameRegistration> getRegistration() {
@@ -130,6 +144,92 @@ public final class StateContext {
         attributes.remove(key);
     }
 
+    public void applyFlagContext(String contextId) {
+        if (actionFlags != null) {
+            actionFlags.applyContext(activePlayers, contextId);
+        }
+        this.currentFlagContext = contextId;
+    }
+
+    public void applyFlagContext(UUID playerId, String contextId) {
+        if (actionFlags != null) {
+            actionFlags.applyContext(playerId, contextId);
+        }
+    }
+
+    public OverrideScopeHandle pushOverride(UUID playerId, OverrideRequest request) {
+        if (actionFlags == null) {
+            return null;
+        }
+        return actionFlags.pushOverride(playerId, request);
+    }
+
+    public void popOverride(OverrideScopeHandle handle) {
+        if (actionFlags == null || handle == null) {
+            return;
+        }
+        actionFlags.popOverride(handle);
+    }
+
+    public void eliminatePlayer(UUID playerId, boolean allowRespawn, long respawnDelayTicks) {
+        RosterManager.Entry entry = roster.get(playerId);
+        if (entry == null) {
+            return;
+        }
+
+        entry.setRespawnAllowed(allowRespawn);
+        cancelRespawnTask(playerId);
+
+        transitionPlayerToSpectator(playerId);
+        teleportToOrigin(playerId);
+
+        if (allowRespawn) {
+            scheduleRespawn(playerId, Math.max(0L, respawnDelayTicks));
+        }
+    }
+
+    public void clearFlags(UUID playerId) {
+        if (actionFlags != null) {
+            actionFlags.clear(playerId);
+        }
+        clearSpectatorOverride(playerId);
+        cancelRespawnTask(playerId);
+    }
+
+    public void clearFlagsForRoster() {
+        if (actionFlags != null) {
+            for (UUID playerId : activePlayers) {
+                actionFlags.clear(playerId);
+            }
+        }
+        for (UUID playerId : activePlayers) {
+            clearSpectatorOverride(playerId);
+            cancelRespawnTask(playerId);
+        }
+        spectatorOverrides.clear();
+        respawnTasks.clear();
+        this.currentFlagContext = null;
+    }
+
+    public String getCurrentFlagContext() {
+        return currentFlagContext;
+    }
+
+    public void clearSpectatorOverride(UUID playerId) {
+        OverrideScopeHandle handle = spectatorOverrides.remove(playerId);
+        if (handle != null && actionFlags != null) {
+            actionFlags.popOverride(handle);
+        }
+    }
+
+    private void applySpectatorOverride(UUID playerId) {
+        if (actionFlags == null) {
+            return;
+        }
+        spectatorOverrides.computeIfAbsent(playerId, id ->
+                actionFlags.pushOverride(id, ActionFlagPresets.spectatorOverride()));
+    }
+
     public void forEachPlayer(Consumer<Player> consumer) {
         for (UUID playerId : activePlayers) {
             Player player = Bukkit.getPlayer(playerId);
@@ -168,6 +268,7 @@ public final class StateContext {
             entry.setState(RosterManager.PlayerState.SPECTATOR);
         }
         findPlayer(playerId).ifPresent(this::configureSpectator);
+        applySpectatorOverride(playerId);
     }
 
     public void markEliminated(UUID playerId, boolean spectatorMode) {
@@ -177,6 +278,8 @@ public final class StateContext {
         }
         if (spectatorMode) {
             transitionPlayerToSpectator(playerId);
+        } else {
+            clearSpectatorOverride(playerId);
         }
     }
 
@@ -191,5 +294,86 @@ public final class StateContext {
         RosterManager.Entry entry = roster.get(playerId);
         return entry != null && entry.isRespawnAllowed();
     }
-}
 
+    private void scheduleRespawn(UUID playerId, long delayTicks) {
+        if (delayTicks <= 0L) {
+            performRespawn(playerId);
+            return;
+        }
+        BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            respawnTasks.remove(playerId);
+            performRespawn(playerId);
+        }, delayTicks);
+        respawnTasks.put(playerId, task);
+    }
+
+    private void performRespawn(UUID playerId) {
+        RosterManager.Entry entry = roster.get(playerId);
+        if (entry == null || !entry.isRespawnAllowed()) {
+            return;
+        }
+
+        Player player = Bukkit.getPlayer(playerId);
+        if (player == null) {
+            return;
+        }
+
+        entry.setState(RosterManager.PlayerState.ACTIVE);
+        clearSpectatorOverride(playerId);
+
+        player.setAllowFlight(false);
+        player.setFlying(false);
+        player.getInventory().remove(Material.RED_BED);
+        player.setGameMode(GameMode.SURVIVAL);
+
+        Location respawnLocation = resolveRespawnLocation(playerId);
+        if (respawnLocation != null) {
+            player.teleportAsync(respawnLocation);
+        }
+
+        if (currentFlagContext != null && !currentFlagContext.isBlank()) {
+            applyFlagContext(playerId, currentFlagContext);
+        }
+    }
+
+    private void teleportToOrigin(UUID playerId) {
+        Location origin = resolveMatchOrigin();
+        if (origin == null) {
+            return;
+        }
+        findPlayer(playerId).ifPresent(player -> player.teleportAsync(origin.clone()));
+    }
+
+    private Location resolveMatchOrigin() {
+        return getAttributeOptional(MinigameAttributes.MATCH_ENVIRONMENT, MatchEnvironment.class)
+                .map(MatchEnvironment::matchSpawn)
+                .map(Location::clone)
+                .orElseGet(this::resolveWorldSpawnFallback);
+    }
+
+    private Location resolveRespawnLocation(UUID playerId) {
+        // Team spawn support can be added later; fall back to match origin for now.
+        return resolveMatchOrigin();
+    }
+
+    private Location resolveWorldSpawnFallback() {
+        for (UUID id : activePlayers) {
+            Player player = Bukkit.getPlayer(id);
+            if (player != null) {
+                World world = player.getWorld();
+                if (world != null) {
+                    return world.getSpawnLocation().clone();
+                }
+            }
+        }
+        World defaultWorld = Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0);
+        return defaultWorld != null ? defaultWorld.getSpawnLocation().clone() : null;
+    }
+
+    private void cancelRespawnTask(UUID playerId) {
+        BukkitTask task = respawnTasks.remove(playerId);
+        if (task != null) {
+            task.cancel();
+        }
+    }
+}

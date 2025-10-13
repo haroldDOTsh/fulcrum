@@ -12,6 +12,7 @@ import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
 import sh.harold.fulcrum.api.module.impl.ModuleFeature;
 import sh.harold.fulcrum.api.module.impl.ModuleManager;
 import sh.harold.fulcrum.api.module.impl.ModuleVerificationManager;
+import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagFeature;
 import sh.harold.fulcrum.fundamentals.data.DataAPIFeature;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
@@ -74,6 +75,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new GamemodeFeature());
         FeatureManager.register(new ScoreboardFeature());
         FeatureManager.register(new MenuFeature());
+        FeatureManager.register(new ActionFlagFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
         FeatureManager.register(new MinigameEngineFeature());
         FeatureManager.register(new MinigameCommandFeature());
@@ -135,4 +137,3 @@ public final class FulcrumPlugin extends JavaPlugin {
     }
 
 }
-
