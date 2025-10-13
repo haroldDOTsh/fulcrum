@@ -3,6 +3,7 @@ package sh.harold.fulcrum.fundamentals.actionflag.command;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import net.kyori.adventure.text.Component;
@@ -73,18 +74,25 @@ public final class FlagDebugCommand {
                 .then(Commands.literal("query")
                         .executes(ctx -> executeQuery(ctx, resolveSelf(ctx)))
                         .then(Commands.argument("player", string())
+                                .suggests(playerSuggestions())
                                 .executes(ctx -> executeQuery(ctx, resolvePlayer(ctx, getString(ctx, "player"))))))
                 .then(Commands.literal("set")
                         .then(Commands.argument("player", string())
+                                .suggests(playerSuggestions())
                                 .then(Commands.argument("flag", string())
+                                        .suggests(flagSuggestions())
                                         .then(Commands.argument("state", string())
+                                                .suggests(stateSuggestions())
                                                 .executes(ctx -> executeSet(ctx))))))
                 .then(Commands.literal("unset")
                         .then(Commands.argument("player", string())
+                                .suggests(playerSuggestions())
                                 .then(Commands.argument("flag", string())
+                                        .suggests(flagSuggestions())
                                         .executes(ctx -> executeUnset(ctx)))))
                 .then(Commands.literal("reset")
                         .then(Commands.argument("player", string())
+                                .suggests(playerSuggestions())
                                 .executes(ctx -> executeReset(ctx))));
 
         CommandRegistrar.register(root.build());
@@ -182,5 +190,46 @@ public final class FlagDebugCommand {
         }
         service.popOverride(handle);
         return true;
+    }
+
+    private SuggestionProvider<CommandSourceStack> playerSuggestions() {
+        return (context, builder) -> {
+            String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+            if ("self".startsWith(remaining)) {
+                builder.suggest("self");
+            }
+            if ("~".startsWith(remaining)) {
+                builder.suggest("~");
+            }
+            Bukkit.getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .forEach(builder::suggest);
+            return builder.buildFuture();
+        };
+    }
+
+    private SuggestionProvider<CommandSourceStack> flagSuggestions() {
+        return (context, builder) -> {
+            String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+            for (ActionFlag flag : ActionFlag.values()) {
+                String option = flag.name().toLowerCase(Locale.ROOT);
+                if (option.startsWith(remaining)) {
+                    builder.suggest(option);
+                }
+            }
+            return builder.buildFuture();
+        };
+    }
+
+    private SuggestionProvider<CommandSourceStack> stateSuggestions() {
+        return (context, builder) -> {
+            String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+            for (String option : List.of("allow", "deny", "true", "false", "on", "off")) {
+                if (option.startsWith(remaining)) {
+                    builder.suggest(option);
+                }
+            }
+            return builder.buildFuture();
+        };
     }
 }
