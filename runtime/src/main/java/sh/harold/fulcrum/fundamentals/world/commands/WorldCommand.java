@@ -115,24 +115,12 @@ public class WorldCommand {
 
     private boolean canView(CommandSourceStack source) {
         CommandSender sender = source.getSender();
-        if (RankUtils.isAdmin(sender)) {
-            return true;
-        }
-        if (sender.hasPermission("fulcrum.world.manage") || sender.hasPermission("fulcrum.world.view")) {
-            return true;
-        }
-        return sender.isOp();
+        return RankUtils.isAdmin(sender);
     }
 
     private boolean canManage(CommandSourceStack source) {
         CommandSender sender = source.getSender();
-        if (RankUtils.isAdmin(sender)) {
-            return true;
-        }
-        if (sender.hasPermission("fulcrum.world.manage")) {
-            return true;
-        }
-        return sender.isOp();
+        return RankUtils.isAdmin(sender);
     }
 
     private int handleHelp(CommandContext<CommandSourceStack> context) {
