@@ -252,6 +252,7 @@ public class RegistryService {
         commandRegistry.register("stop", new StopCommand(this));
         commandRegistry.register("proxyregistry", new ProxyRegistryCommand(proxyRegistry, heartbeatMonitor));
         commandRegistry.register("backendregistry", new BackendRegistryCommand(serverRegistry, heartbeatMonitor));
+        commandRegistry.register("ls", new LogicalServersCommand(serverRegistry));
         commandRegistry.register("status", new StatusCommand(this));
         commandRegistry.register("clear", new ClearCommand());
         commandRegistry.register("debug", new DebugCommand(this));
