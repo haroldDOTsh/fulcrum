@@ -67,11 +67,6 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
                     playerDoc.set("lastJoin", System.currentTimeMillis());
                     playerDoc.set("lastSeen", System.currentTimeMillis());
                     playerDoc.set("joinCount", 1);
-                    playerDoc.set("totalPlaytime", 0L);
-
-                    // Proxy-specific fields
-                    playerDoc.set("lastProxySession", System.currentTimeMillis());
-                    playerDoc.set("protocolVersion", player.getProtocolVersion().getProtocol());
                 } else {
                     // Existing player - update relevant fields
                     logger.info("Updating existing player document for proxy: {}", player.getUsername());
@@ -87,14 +82,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
                 }
 
                 // Update proxy-specific fields
-                playerDoc.set("lastProxySession", System.currentTimeMillis());
                 playerDoc.set("protocolVersion", player.getProtocolVersion().getProtocol());
-
-                // Store IP if needed (unified field)
-                if (player.getRemoteAddress() != null) {
-                    String ip = player.getRemoteAddress().getAddress().getHostAddress();
-                    playerDoc.set("lastIp", ip);
-                }
 
                 // Store current server if connected
                 player.getCurrentServer().ifPresent(server -> {
@@ -129,25 +117,6 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
                 playerDoc.set("lastSeen", System.currentTimeMillis());
 
                 // Clear current server
-                playerDoc.set("currentServer", null);
-
-                // Calculate session duration and update total playtime
-                Long lastSession = playerDoc.get("lastProxySession", 0L);
-
-                if (lastSession != null && lastSession > 0) {
-                    long sessionDuration = System.currentTimeMillis() - lastSession;
-
-                    // Update total playtime (unified field)
-                    Long totalPlaytime = playerDoc.get("totalPlaytime", 0L);
-                    if (totalPlaytime == null) totalPlaytime = 0L;
-
-                    playerDoc.set("totalPlaytime", totalPlaytime + sessionDuration);
-
-                    logger.debug("Updated playtime for {}: session {} ms, total {} ms",
-                            player.getUsername(), sessionDuration, totalPlaytime + sessionDuration);
-                }
-
-                // Clear current server on disconnect
                 playerDoc.set("currentServer", null);
 
                 logger.info("Updated disconnect data for player: {}", player.getUsername());

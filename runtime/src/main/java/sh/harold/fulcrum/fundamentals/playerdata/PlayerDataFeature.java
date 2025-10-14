@@ -1,8 +1,6 @@
 package sh.harold.fulcrum.fundamentals.playerdata;
 
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -26,13 +24,11 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private JavaPlugin plugin;
     private Logger logger;
     private DataAPI dataAPI;
-    private FileConfiguration config;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
-        this.config = plugin.getConfig();
 
         // Get DataAPI from DependencyContainer
         this.dataAPI = container.getOptional(DataAPI.class).orElse(null);
@@ -76,7 +72,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                 playerDoc.set("lastJoin", System.currentTimeMillis());
                 playerDoc.set("lastSeen", System.currentTimeMillis());
                 playerDoc.set("joinCount", 1);
-                playerDoc.set("totalPlaytime", 0L);
             } else {
                 // Update existing player document
                 logger.fine("Updating existing player document for: " + player.getName());
@@ -95,26 +90,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
 
                 playerDoc.set("lastJoin", System.currentTimeMillis());
                 playerDoc.set("lastSeen", System.currentTimeMillis());
-            }
-
-            // Update backend-specific fields
-            Location loc = player.getLocation();
-            playerDoc.set("lastWorld", player.getWorld().getName());
-            playerDoc.set("lastLocation", String.format("%.2f,%.2f,%.2f",
-                    loc.getX(), loc.getY(), loc.getZ()));
-            playerDoc.set("gamemode", player.getGameMode().toString());
-
-            // Update player stats
-            playerDoc.set("level", player.getLevel());
-            playerDoc.set("exp", player.getExp());
-            playerDoc.set("health", player.getHealth());
-            playerDoc.set("foodLevel", player.getFoodLevel());
-
-            // Update IP if tracking is enabled (unified field)
-            if (config.getBoolean("player-data.track-ips", false)) {
-                if (player.getAddress() != null) {
-                    playerDoc.set("lastIp", player.getAddress().getAddress().getHostAddress());
-                }
             }
 
             logger.fine("Successfully updated player data for " + player.getName());
@@ -137,28 +112,8 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                     return;
                 }
 
-                // Update last seen
+                // Update last seen timestamp
                 playerDoc.set("lastSeen", System.currentTimeMillis());
-                playerDoc.set("online", false);
-
-                // Save last location and game state before quit
-                Location loc = player.getLocation();
-                playerDoc.set("lastWorld", player.getWorld().getName());
-                playerDoc.set("lastLocation", String.format("%.2f,%.2f,%.2f",
-                        loc.getX(), loc.getY(), loc.getZ()));
-                playerDoc.set("gamemode", player.getGameMode().toString());
-
-                // Calculate and update session time
-                // Handle numeric type conversion (JSON storage may return Double instead of Long)
-                Long lastJoin = getNumericAsLong(playerDoc.get("lastJoin"), 0L);
-                if (lastJoin > 0) {
-                    long sessionDuration = System.currentTimeMillis() - lastJoin;
-                    Long totalPlaytime = getNumericAsLong(playerDoc.get("totalPlaytime"), 0L);
-                    playerDoc.set("totalPlaytime", totalPlaytime + sessionDuration);
-
-                    logger.fine(String.format("Updated playtime for %s: session %d ms, total %d ms",
-                            player.getName(), sessionDuration, totalPlaytime + sessionDuration));
-                }
 
                 logger.info("Updated quit data for player: " + player.getName());
 

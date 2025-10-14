@@ -34,7 +34,6 @@ import java.util.stream.Collectors;
 public class RankFeature implements PluginFeature, RankService, Listener {
 
     private static final String PLAYERS_COLLECTION = "players";
-    private static final String LEGACY_RANKS_COLLECTION = "player_ranks";
     private final Map<UUID, Set<Rank>> rankCache = new ConcurrentHashMap<>();
     private final Map<UUID, Rank> primaryRankCache = new ConcurrentHashMap<>();
 
@@ -42,7 +41,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     private Logger logger;
     private DataAPI dataAPI;
     private Collection playersCollection;
-    private Collection legacyRanksCollection;
     private DependencyContainer container;
     private RankAuditLogRepository auditLogRepository;
 
@@ -60,7 +58,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             }
 
             this.playersCollection = dataAPI.collection(PLAYERS_COLLECTION);
-            this.legacyRanksCollection = dataAPI.from(LEGACY_RANKS_COLLECTION);
 
             initializeAuditLogging();
 
@@ -293,15 +290,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         return CompletableFuture.supplyAsync(() -> {
             Set<Rank> ranks = readRanksFromPlayerDocument(playerId);
 
-            if (ranks.isEmpty()) {
-                Set<Rank> legacy = readLegacyRanks(playerId);
-                if (!legacy.isEmpty()) {
-                    ranks = legacy;
-                    Rank effective = getEffectiveRankFromSet(ranks);
-                    persistRankState(playerId, null, effective, ranks, RankChangeContext.system(), true, false);
-                }
-            }
-
             rankCache.put(playerId, ranks);
             primaryRankCache.put(playerId, getEffectiveRankFromSet(ranks));
             return ranks;
@@ -336,41 +324,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
 
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to read rank data for " + playerId, e);
-            return new HashSet<>();
-        }
-    }
-
-    private Set<Rank> readLegacyRanks(UUID playerId) {
-        if (legacyRanksCollection == null) {
-            return new HashSet<>();
-        }
-
-        try {
-            Document doc = legacyRanksCollection.document(playerId.toString());
-            if (!doc.exists()) {
-                return new HashSet<>();
-            }
-
-            Set<Rank> ranks = new HashSet<>();
-            Object list = doc.get("ranks");
-            if (list instanceof List<?> rawRanks) {
-                for (Object value : rawRanks) {
-                    Rank parsed = parseRank(value);
-                    if (parsed != null) {
-                        ranks.add(parsed);
-                    }
-                }
-            }
-
-            String primaryName = doc.get("primary_rank", null);
-            Rank primary = parseRank(primaryName);
-            if (primary != null) {
-                ranks.add(primary);
-            }
-
-            return ranks;
-        } catch (Exception e) {
-            logger.log(Level.WARNING, "Failed to load legacy rank data for " + playerId, e);
             return new HashSet<>();
         }
     }
