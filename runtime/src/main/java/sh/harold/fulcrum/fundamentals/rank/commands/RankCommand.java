@@ -12,6 +12,7 @@ import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSele
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
@@ -35,6 +36,7 @@ import static io.papermc.paper.command.brigadier.Commands.literal;
 public class RankCommand {
 
     private static final String PERMISSION_MANAGE = "fulcrum.rank.manage";
+    private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacyAmpersand();
 
     private final RankService rankService;
     private final Logger logger;
@@ -514,14 +516,14 @@ public class RankCommand {
         if (!rank.getFullPrefix().isEmpty()) {
             sender.sendMessage(Component.text()
                     .append(Component.text("  Full Prefix: ", NamedTextColor.YELLOW))
-                    .append(Component.text(rank.getFullPrefix().replace("&", "§"), NamedTextColor.WHITE))
+                    .append(deserializeLegacyColored(rank.getFullPrefix()))
                     .build());
         }
 
         if (!rank.getShortPrefix().isEmpty()) {
             sender.sendMessage(Component.text()
                     .append(Component.text("  Short Prefix: ", NamedTextColor.YELLOW))
-                    .append(Component.text(rank.getShortPrefix().replace("&", "§"), NamedTextColor.WHITE))
+                    .append(deserializeLegacyColored(rank.getShortPrefix()))
                     .build());
         }
 
@@ -538,6 +540,10 @@ public class RankCommand {
                 .build());
 
         return 1;
+    }
+
+    private Component deserializeLegacyColored(String legacyText) {
+        return LEGACY_SERIALIZER.deserialize(legacyText).colorIfAbsent(NamedTextColor.WHITE);
     }
 
     private int clearRanksOnline(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
