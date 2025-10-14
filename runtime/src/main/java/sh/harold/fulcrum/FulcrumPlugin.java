@@ -15,6 +15,7 @@ import sh.harold.fulcrum.api.module.impl.ModuleVerificationManager;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagFeature;
 import sh.harold.fulcrum.fundamentals.data.DataAPIFeature;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
+import sh.harold.fulcrum.fundamentals.lifecycle.JoinMessageFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
 import sh.harold.fulcrum.fundamentals.minigame.debug.DebugMinigameFeature;
@@ -66,6 +67,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new MessageFeature());
         FeatureManager.register(new MessageBusFeature());
         FeatureManager.register(new ServerLifecycleFeature());
+        FeatureManager.register(new JoinMessageFeature());
         FeatureManager.register(new DataAPIFeature()); // Register DataAPI before PlayerData
         FeatureManager.register(new PlayerDataFeature()); // Depends on DataAPI
         FeatureManager.register(new RankFeature()); // Register Rank system after DataAPI
