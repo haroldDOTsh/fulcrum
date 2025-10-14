@@ -91,9 +91,11 @@ public final class DebugMinigameFeature implements PluginFeature {
 
     private void registerDebugBundles(ActionFlagService service) {
         service.registerContext(bundleId("play_a"),
-                FlagBundle.of(bundleId("play_a"), EnumSet.of(ActionFlag.BLOCK_BREAK, ActionFlag.BLOCK_PLACE)));
+                FlagBundle.of(bundleId("play_a"), EnumSet.of(ActionFlag.BLOCK_BREAK, ActionFlag.BLOCK_PLACE))
+                        .withGamemode(org.bukkit.GameMode.SURVIVAL));
         service.registerContext(bundleId("play_b"),
-                FlagBundle.of(bundleId("play_b"), EnumSet.of(ActionFlag.BLOCK_PLACE)));
+                FlagBundle.of(bundleId("play_b"), EnumSet.of(ActionFlag.BLOCK_PLACE))
+                        .withGamemode(org.bukkit.GameMode.SURVIVAL));
     }
 
     private String bundleId(String suffix) {
