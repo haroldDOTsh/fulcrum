@@ -198,6 +198,9 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
     public void handlePlayerQuit(PlayerQuitEvent event) {
         UUID playerId = event.getPlayer().getUniqueId();
         pendingTeleports.remove(playerId);
+        if (gameManager != null) {
+            gameManager.handlePlayerQuit(event.getPlayer());
+        }
         routeRegistry.remove(playerId);
     }
 

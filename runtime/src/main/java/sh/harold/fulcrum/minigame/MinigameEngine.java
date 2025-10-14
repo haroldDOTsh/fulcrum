@@ -107,6 +107,7 @@ public final class MinigameEngine {
         }
 
         if (removedMatch != null) {
+            removedMatch.getContext().getActivePlayers().forEach(playerMatchIndex::remove);
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_ID);
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_METADATA);
             removedMatch.getContext().removeAttribute(MinigameAttributes.MATCH_ENVIRONMENT);
@@ -125,6 +126,7 @@ public final class MinigameEngine {
         MinigameMatch match = activeMatches.get(matchId);
         if (match != null) {
             match.addPlayer(player, respawnAllowed);
+            playerMatchIndex.put(player.getUniqueId(), matchId);
         }
     }
 
@@ -132,6 +134,7 @@ public final class MinigameEngine {
         MinigameMatch match = activeMatches.get(matchId);
         if (match != null) {
             match.removePlayer(playerId);
+            playerMatchIndex.remove(playerId);
         }
     }
 
@@ -139,6 +142,25 @@ public final class MinigameEngine {
         return activeMatches.values().stream()
                 .filter(match -> match.getContext().isPlayerRegistered(playerId))
                 .findFirst();
+    }
+
+    public void handlePlayerQuit(Player player) {
+        if (player == null) {
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        UUID matchId = playerMatchIndex.remove(playerId);
+        MinigameMatch match = matchId != null ? activeMatches.get(matchId) : null;
+        if (match == null) {
+            match = findMatchByPlayer(playerId).orElse(null);
+            if (match != null) {
+                matchId = match.getMatchId();
+            }
+        }
+        if (match == null || matchId == null) {
+            return;
+        }
+        match.removePlayer(playerId);
     }
 
     public void handleRoutedPlayer(Player player, PlayerRouteRegistry.RouteAssignment assignment) {
@@ -328,6 +350,9 @@ public final class MinigameEngine {
                 actionFlags);
         activeMatches.put(matchId, match);
         matchStates.put(matchId, blueprint.getStartStateId());
+        for (Player player : players) {
+            playerMatchIndex.put(player.getUniqueId(), matchId);
+        }
         if (slotContext != null) {
             match.getContext().setAttribute(MinigameAttributes.SLOT_ID, slotContext.slotId);
 

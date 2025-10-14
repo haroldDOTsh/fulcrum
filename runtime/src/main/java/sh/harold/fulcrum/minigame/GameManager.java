@@ -32,4 +32,8 @@ public final class GameManager {
     public void handleRoutedPlayer(Player player, PlayerRouteRegistry.RouteAssignment assignment) {
         engine.handleRoutedPlayer(player, assignment);
     }
+
+    public void handlePlayerQuit(Player player) {
+        engine.handlePlayerQuit(player);
+    }
 }
