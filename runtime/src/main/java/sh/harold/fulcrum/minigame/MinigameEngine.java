@@ -5,6 +5,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
+import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagContexts;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
@@ -113,6 +114,9 @@ public final class MinigameEngine {
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_METADATA);
             removedMatch.getContext().removeAttribute(MinigameAttributes.MATCH_ENVIRONMENT);
             removedMatch.getContext().clearFlagsForRoster();
+            if (!removedMatch.getContext().getActivePlayers().isEmpty()) {
+                removedMatch.getContext().applyFlagContext(ActionFlagContexts.LOBBY_DEFAULT);
+            }
         }
     }
 

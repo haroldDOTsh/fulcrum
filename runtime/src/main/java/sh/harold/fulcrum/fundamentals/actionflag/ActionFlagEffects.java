@@ -12,10 +12,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -34,6 +31,7 @@ final class ActionFlagEffects implements PlayerFlagStateListener, Listener {
     private final ActionFlagService service;
     private final VanishService vanishService;
     private final Set<UUID> potionApplied = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, GameMode> previousGamemodes = new ConcurrentHashMap<>();
 
     ActionFlagEffects(JavaPlugin plugin, ActionFlagService service, VanishService vanishService) {
         this.service = Objects.requireNonNull(service, "service");
@@ -45,6 +43,7 @@ final class ActionFlagEffects implements PlayerFlagStateListener, Listener {
     void shutdown() {
         service.removeStateListener(this);
         potionApplied.clear();
+        previousGamemodes.clear();
         HandlerList.unregisterAll(this);
     }
 
@@ -76,20 +75,30 @@ final class ActionFlagEffects implements PlayerFlagStateListener, Listener {
     }
 
     private void handleGamemode(UUID playerId, PlayerFlagState previous, PlayerFlagState current) {
-        if (!hasFlag(current, ActionFlag.GAMEMODE)) {
-            return;
-        }
         Optional<GameMode> previousMode = previous.optionalGamemode();
         Optional<GameMode> currentMode = current.optionalGamemode();
         if (Objects.equals(previousMode.orElse(null), currentMode.orElse(null))) {
             return;
         }
-        currentMode.ifPresent(mode -> {
-            Player player = Bukkit.getPlayer(playerId);
-            if (player != null && player.getGameMode() != mode) {
+        Player player = Bukkit.getPlayer(playerId);
+        if (player == null) {
+            return;
+        }
+        if (currentMode.isPresent()) {
+            previousGamemodes.computeIfAbsent(playerId, id -> player.getGameMode());
+            GameMode mode = currentMode.get();
+            if (player.getGameMode() != mode) {
                 player.setGameMode(mode);
             }
-        });
+        } else {
+            GameMode fallback = previousGamemodes.remove(playerId);
+            if (fallback == null) {
+                fallback = GameMode.SURVIVAL;
+            }
+            if (player.getGameMode() != fallback) {
+                player.setGameMode(fallback);
+            }
+        }
     }
 
     private boolean hasFlag(PlayerFlagState state, ActionFlag flag) {
@@ -126,6 +135,7 @@ final class ActionFlagEffects implements PlayerFlagStateListener, Listener {
         if (snapshot.activeFlags().contains(ActionFlag.GAMEMODE)) {
             snapshot.gamemode().ifPresent(mode -> {
                 Player player = event.getPlayer();
+                previousGamemodes.putIfAbsent(playerId, player.getGameMode());
                 if (player.getGameMode() != mode) {
                     player.setGameMode(mode);
                 }
