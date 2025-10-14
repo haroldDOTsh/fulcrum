@@ -7,7 +7,6 @@ import java.time.Duration;
  */
 public final class PreLobbyOptions {
     private Duration countdown = Duration.ofSeconds(60);
-    private boolean mapVoteEnabled;
     private int minimumPlayers = 2;
 
     public Duration getCountdown() {
@@ -16,15 +15,6 @@ public final class PreLobbyOptions {
 
     public PreLobbyOptions countdownSeconds(int seconds) {
         this.countdown = Duration.ofSeconds(Math.max(0, seconds));
-        return this;
-    }
-
-    public boolean isMapVoteEnabled() {
-        return mapVoteEnabled;
-    }
-
-    public PreLobbyOptions mapVoteEnabled(boolean mapVoteEnabled) {
-        this.mapVoteEnabled = mapVoteEnabled;
         return this;
     }
 

@@ -34,11 +34,6 @@ public final class DefaultStates {
             return this;
         }
 
-        public PreLobbyBuilder mapVoteEnabled(boolean enabled) {
-            options.mapVoteEnabled(enabled);
-            return this;
-        }
-
         public PreLobbyOptions build() {
             return options;
         }
