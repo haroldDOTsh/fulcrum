@@ -172,16 +172,16 @@ public final class StateContext {
     public void applyFlagContext(String contextId) {
         if (actionFlags != null) {
             actionFlags.applyContext(activePlayers, contextId);
+            actionFlags.getBundle(contextId).flatMap(FlagBundle::gamemode).ifPresent(this::applyGamemodeForActive);
         }
         this.currentFlagContext = contextId;
-        applyGamemodeForActive(contextId);
     }
 
     public void applyFlagContext(UUID playerId, String contextId) {
         if (actionFlags != null) {
             actionFlags.applyContext(playerId, contextId);
+            actionFlags.getBundle(contextId).flatMap(FlagBundle::gamemode).ifPresent(mode -> applyGamemode(playerId, mode));
         }
-        applyGamemode(playerId, contextId);
     }
 
     public OverrideScopeHandle pushOverride(UUID playerId, OverrideRequest request) {
@@ -353,12 +353,14 @@ public final class StateContext {
         player.setAllowFlight(false);
         player.setFlying(false);
         player.getInventory().remove(Material.RED_BED);
-        player.setGameMode(GameMode.SURVIVAL);
 
         Location respawnLocation = resolveRespawnLocation(playerId);
         if (respawnLocation != null) {
             player.teleportAsync(respawnLocation);
             player.setRespawnLocation(respawnLocation, true);
+            if (actionFlags != null && currentFlagContext != null) {
+                actionFlags.getBundle(currentFlagContext).flatMap(FlagBundle::gamemode).ifPresent(mode -> applyGamemode(playerId, mode));
+            }
         }
 
         if (currentFlagContext != null && !currentFlagContext.isBlank()) {
@@ -378,6 +380,9 @@ public final class StateContext {
         findPlayer(playerId).ifPresent(player -> {
             player.teleportAsync(target);
             player.setRespawnLocation(target, true);
+            if (actionFlags != null && currentFlagContext != null) {
+                actionFlags.getBundle(currentFlagContext).flatMap(FlagBundle::gamemode).ifPresent(mode -> applyGamemode(playerId, mode));
+            }
         });
     }
 
@@ -431,7 +436,9 @@ public final class StateContext {
 
     public void registerPlayer(UUID playerId) {
         registeredPlayers.add(playerId);
-        applyGamemode(playerId, currentFlagContext);
+        if (currentFlagContext != null && actionFlags != null) {
+            actionFlags.getBundle(currentFlagContext).flatMap(FlagBundle::gamemode).ifPresent(mode -> applyGamemode(playerId, mode));
+        }
     }
 
     public void unregisterPlayer(UUID playerId) {
@@ -517,27 +524,21 @@ public final class StateContext {
         }
     }
 
-    private void applyGamemodeForActive(String contextId) {
+    private void applyGamemodeForActive(org.bukkit.GameMode gamemode) {
         for (UUID playerId : activePlayers) {
-            applyGamemode(playerId, contextId);
+            applyGamemode(playerId, gamemode);
         }
     }
 
-    private void applyGamemode(UUID playerId, String contextId) {
-        if (contextId == null) {
+    private void applyGamemode(UUID playerId, org.bukkit.GameMode gamemode) {
+        if (gamemode == null) {
             return;
         }
         RosterManager.Entry entry = roster.get(playerId);
         if (entry != null && entry.getState() == RosterManager.PlayerState.SPECTATOR) {
             return;
         }
-        findPlayer(playerId).ifPresent(player -> {
-            if (ActionFlagContexts.MATCH_PREGAME_DEFAULT.equals(contextId)) {
-                player.setGameMode(GameMode.ADVENTURE);
-            } else {
-                player.setGameMode(GameMode.SURVIVAL);
-            }
-        });
+        findPlayer(playerId).ifPresent(player -> player.setGameMode(gamemode));
     }
 
 }

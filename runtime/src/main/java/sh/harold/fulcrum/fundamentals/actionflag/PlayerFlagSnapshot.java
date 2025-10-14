@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.fundamentals.actionflag;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import org.bukkit.GameMode;
+
+import java.util.*;
 
 /**
  * Immutable view of a player's flag state for debugging or monitoring.
@@ -11,13 +11,16 @@ public final class PlayerFlagSnapshot {
     private final String baseContextId;
     private final Set<ActionFlag> activeFlags;
     private final List<OverrideSnapshot> overrides;
+    private final Optional<GameMode> gamemode;
 
     PlayerFlagSnapshot(String baseContextId,
                        Set<ActionFlag> activeFlags,
-                       List<OverrideSnapshot> overrides) {
+                       List<OverrideSnapshot> overrides,
+                       Optional<GameMode> gamemode) {
         this.baseContextId = baseContextId;
         this.activeFlags = Collections.unmodifiableSet(activeFlags);
-        this.overrides = Collections.unmodifiableList(overrides);
+        this.overrides = List.copyOf(overrides);
+        this.gamemode = Objects.requireNonNull(gamemode, "gamemode");
     }
 
     public String baseContextId() {
@@ -32,6 +35,13 @@ public final class PlayerFlagSnapshot {
         return overrides;
     }
 
-    public record OverrideSnapshot(int token, Set<ActionFlag> enabled, Set<ActionFlag> disabled) {
+    public Optional<GameMode> gamemode() {
+        return gamemode;
+    }
+
+    public record OverrideSnapshot(int token,
+                                   Set<ActionFlag> enabled,
+                                   Set<ActionFlag> disabled,
+                                   Optional<GameMode> gamemode) {
     }
 }

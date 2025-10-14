@@ -34,6 +34,26 @@ public enum ActionFlag {
      */
     INTERACT_BLOCK,
     /**
+     * Enables potion-based invisibility states.
+     */
+    INVISIBLE_POTION,
+    /**
+     * Hides the player at the packet level (vanish).
+     */
+    INVISIBLE_PACKET,
+    /**
+     * Allows the player to take damage (health changes).
+     */
+    HEALTH,
+    /**
+     * Allows hunger exhaustion (food level changes).
+     */
+    HUNGER,
+    /**
+     * Allows the player to use the active gamemode defined by contexts.
+     */
+    GAMEMODE,
+    /**
      * Allows interaction with entities (right-click use).
      */
     INTERACT_ENTITY,

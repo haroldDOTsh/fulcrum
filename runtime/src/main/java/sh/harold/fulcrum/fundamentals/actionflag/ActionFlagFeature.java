@@ -17,6 +17,8 @@ public final class ActionFlagFeature implements PluginFeature {
     private ActionFlagService service;
     private ActionFlagListener listener;
     private FlagDebugCommand command;
+    private VanishService vanishService;
+    private ActionFlagEffects flagEffects;
 
     @Override
     public int getPriority() {
@@ -32,6 +34,12 @@ public final class ActionFlagFeature implements PluginFeature {
             ServiceLocatorImpl.getInstance().registerService(ActionFlagService.class, service);
         }
 
+        this.vanishService = new VanishService(plugin);
+        container.register(VanishService.class, vanishService);
+        if (ServiceLocatorImpl.getInstance() != null) {
+            ServiceLocatorImpl.getInstance().registerService(VanishService.class, vanishService);
+        }
+
         // Register built-in bundles
         service.registerContext(ActionFlagContexts.LOBBY_DEFAULT, ActionFlagPresets.lobbyDefault());
         service.registerContext(ActionFlagContexts.MATCH_PREGAME_DEFAULT, ActionFlagPresets.matchPregameDefault());
@@ -44,11 +52,17 @@ public final class ActionFlagFeature implements PluginFeature {
         command = new FlagDebugCommand(service);
         command.register(plugin);
 
+        flagEffects = new ActionFlagEffects(plugin, service, vanishService);
+
         logger.info("ActionFlagFeature initialized");
     }
 
     @Override
     public void shutdown() {
+        if (flagEffects != null) {
+            flagEffects.shutdown();
+            flagEffects = null;
+        }
         if (listener != null) {
             HandlerList.unregisterAll(listener);
             listener = null;
@@ -56,6 +70,13 @@ public final class ActionFlagFeature implements PluginFeature {
         if (command != null) {
             command.unregister();
             command = null;
+        }
+        if (vanishService != null) {
+            vanishService.shutdown();
+            if (ServiceLocatorImpl.getInstance() != null) {
+                ServiceLocatorImpl.getInstance().unregisterService(VanishService.class);
+            }
+            vanishService = null;
         }
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().unregisterService(ActionFlagService.class);
