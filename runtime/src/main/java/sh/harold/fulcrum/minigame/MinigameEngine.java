@@ -91,14 +91,15 @@ public final class MinigameEngine {
         if (slotId != null) {
             slotMatches.remove(slotId);
 
+            Map<String, String> removalMetadata = metadataSnapshot != null
+                    ? new HashMap<>(metadataSnapshot)
+                    : new HashMap<>();
+            removalMetadata.put("phase", "terminated");
+            removalMetadata.put("removed", "true");
+            removalMetadata.put("teardownAt", Long.toString(System.currentTimeMillis()));
+
             if (slotOrchestrator != null) {
-                Map<String, String> removalMetadata = new HashMap<>();
-                if (metadataSnapshot != null && !metadataSnapshot.isEmpty()) {
-                    removalMetadata.putAll(metadataSnapshot);
-                }
-                removalMetadata.put("phase", "teardown");
-                removalMetadata.put("teardownAt", Long.toString(System.currentTimeMillis()));
-                slotOrchestrator.removeSlot(slotId, SlotLifecycleStatus.COOLDOWN, removalMetadata);
+                slotOrchestrator.removeSlot(slotId, SlotLifecycleStatus.AVAILABLE, removalMetadata);
             }
 
             if (environmentService != null) {

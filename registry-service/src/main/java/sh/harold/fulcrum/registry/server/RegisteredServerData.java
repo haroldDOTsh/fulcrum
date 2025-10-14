@@ -129,6 +129,12 @@ public class RegisteredServerData {
         return slots.get(slotSuffix);
     }
 
+    public void removeSlot(String slotSuffix) {
+        if (slotSuffix != null) {
+            slots.remove(slotSuffix);
+        }
+    }
+
     public LogicalSlotRecord applySlotUpdate(SlotStatusUpdateMessage update) {
         LogicalSlotRecord slot = slots.computeIfAbsent(update.getSlotSuffix(), suffix ->
                 new LogicalSlotRecord(update.getSlotId(), suffix, serverId));

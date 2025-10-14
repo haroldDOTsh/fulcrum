@@ -209,6 +209,14 @@ public class ServerRegistry {
         }
 
         LogicalSlotRecord record = server.applySlotUpdate(update);
+        if (record != null) {
+            String removedFlag = record.getMetadata().get("removed");
+            if ("true".equalsIgnoreCase(removedFlag)) {
+                server.removeSlot(record.getSlotSuffix());
+                LOGGER.debug("Removed slot {} for server {} (removal flag)", record.getSlotId(), serverId);
+                return null;
+            }
+        }
         LOGGER.debug("Updated slot {} for server {} -> status={} players={}/{}",
                 record.getSlotId(), serverId, record.getStatus(), record.getOnlinePlayers(), record.getMaxPlayers());
         return record;
