@@ -11,10 +11,11 @@ public final class FlagContextHandle {
     private final ActionFlagService service;
     private final String id;
     private final long mask;
+    private final FlagBundle bundle;
 
     FlagContextHandle(ActionFlagService service, FlagBundle bundle) {
         this.service = Objects.requireNonNull(service, "service");
-        Objects.requireNonNull(bundle, "bundle");
+        this.bundle = Objects.requireNonNull(bundle, "bundle");
         this.id = bundle.id();
         this.mask = bundle.mask();
     }
@@ -25,6 +26,10 @@ public final class FlagContextHandle {
 
     public long mask() {
         return mask;
+    }
+
+    public java.util.Optional<org.bukkit.GameMode> gamemode() {
+        return bundle.gamemode();
     }
 
     public void applyTo(UUID playerId) {

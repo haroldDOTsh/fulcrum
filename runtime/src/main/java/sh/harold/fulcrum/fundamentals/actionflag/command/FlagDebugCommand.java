@@ -113,13 +113,23 @@ public final class FlagDebugCommand {
         sender.sendMessage(Component.text("=== Action Flags for " + target.getName() + " ==="));
         sender.sendMessage(Component.text("Base context: " + (snapshot.baseContextId().isBlank() ? "<none>" : snapshot.baseContextId())));
         sender.sendMessage(Component.text("Active flags: " + snapshot.activeFlags()));
+        String gamemodeDisplay = snapshot.gamemode()
+                .map(mode -> "Gamemode: " + mode.name())
+                .orElse("Gamemode: <none>");
+        sender.sendMessage(Component.text(gamemodeDisplay));
         if (snapshot.overrides().isEmpty()) {
             sender.sendMessage(Component.text("Overrides: none"));
         } else {
-            snapshot.overrides().forEach(override ->
-                    sender.sendMessage(Component.text("Override " + override.token()
-                            + " enable=" + override.enabled()
-                            + " disable=" + override.disabled())));
+            snapshot.overrides().forEach(override -> {
+                StringBuilder line = new StringBuilder("Override ")
+                        .append(override.token())
+                        .append(" enable=")
+                        .append(override.enabled())
+                        .append(" disable=")
+                        .append(override.disabled());
+                override.gamemode().ifPresent(mode -> line.append(" gamemode=").append(mode.name()));
+                sender.sendMessage(Component.text(line.toString()));
+            });
         }
         return 1;
     }
