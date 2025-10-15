@@ -17,6 +17,17 @@ registry:
   recycle-ids: true      # reuse IDs from offline servers
   debug: false           # control verbose logging output
 
+storage:
+  mongodb:
+    connection-string: ${MONGODB_URI:mongodb://localhost:27017}
+    database: ${MONGODB_DATABASE:fulcrum}
+  postgres:
+    enabled: ${POSTGRES_ENABLED:true}
+    jdbc-url: ${POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/mydb}
+    username: ${POSTGRES_USERNAME:admin}
+    password: ${POSTGRES_PASSWORD:secret}
+    database: ${POSTGRES_DATABASE:mydb}
+
 # Logging settings
 logging:
   level: ${LOG_LEVEL:INFO}
