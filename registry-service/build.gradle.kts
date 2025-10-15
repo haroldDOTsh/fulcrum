@@ -25,6 +25,10 @@ repositories {
 dependencies {
     // Internal dependencies - using the existing message bus API
     implementation(project(":message-bus-api"))
+    implementation(project(":data-api")) {
+        exclude(group = "org.slf4j", module = "slf4j-simple")
+    }
+    implementation("org.mongodb:mongodb-driver-sync:4.11.1")
     
     // Redis client (same as used in runtime)
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
