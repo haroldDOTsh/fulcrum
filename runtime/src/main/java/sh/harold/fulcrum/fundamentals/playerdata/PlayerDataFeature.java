@@ -10,20 +10,32 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.session.PlayerSessionRecord;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Level;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 public class PlayerDataFeature implements PluginFeature, Listener {
     private static final String PLAYERS_COLLECTION = "players";
+    private static final Set<String> CORE_FIELDS = Set.of(
+            "username", "firstJoin", "lastSeen"
+    );
 
     private JavaPlugin plugin;
     private Logger logger;
     private DataAPI dataAPI;
+    private final Map<UUID, PlayerSessionService.PlayerSessionHandle> activeHandles = new ConcurrentHashMap<>();
+    private PlayerSessionService sessionService;
+    private sh.harold.fulcrum.fundamentals.session.PlayerSessionLogRepository sessionLogRepository;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -32,6 +44,9 @@ public class PlayerDataFeature implements PluginFeature, Listener {
 
         // Get DataAPI from DependencyContainer
         this.dataAPI = container.getOptional(DataAPI.class).orElse(null);
+        this.sessionService = container.getOptional(PlayerSessionService.class)
+                .orElseThrow(() -> new IllegalStateException("PlayerSessionService is required before PlayerDataFeature"));
+        this.sessionLogRepository = container.getOptional(sh.harold.fulcrum.fundamentals.session.PlayerSessionLogRepository.class).orElse(null);
 
         if (dataAPI == null) {
             logger.severe("DataAPI not available! PlayerDataFeature requires DataAPI to be initialized first.");
@@ -48,110 +63,84 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
-        // Run async to avoid blocking main thread
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            updatePlayerData(player);
-        });
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> updatePlayerData(player));
     }
 
     private void updatePlayerData(Player player) {
-        try {
-            // Access player document
-            Document playerDoc = dataAPI.collection(PLAYERS_COLLECTION).document(player.getUniqueId().toString());
+        UUID playerId = player.getUniqueId();
+        PersistedState persisted = loadPersistedState(playerId);
 
-            boolean exists = playerDoc.exists();
+        PlayerSessionService.PlayerSessionHandle handle = sessionService.attachOrCreateSession(playerId, persisted.data());
+        activeHandles.put(playerId, handle);
 
-            if (!exists) {
-                // Create new player document with unified structure
-                logger.info("Creating new player document for: " + player.getName() + " (" + player.getUniqueId() + ")");
+        long now = System.currentTimeMillis();
+        sessionService.withActiveSession(playerId, record -> {
+            Map<String, Object> core = record.getCore();
+            core.put("username", player.getName());
 
-                // Core fields - consistent across all servers
-                playerDoc.set("uuid", player.getUniqueId().toString());
-                playerDoc.set("username", player.getName());
-                playerDoc.set("firstJoin", System.currentTimeMillis());
-                playerDoc.set("lastJoin", System.currentTimeMillis());
-                playerDoc.set("lastSeen", System.currentTimeMillis());
-                playerDoc.set("joinCount", 1);
+            if (handle.createdNew()) {
+                core.put("firstJoin", now);
             } else {
-                // Update existing player document
-                logger.fine("Updating existing player document for: " + player.getName());
-
-                // Update core fields
-                playerDoc.set("username", player.getName());
-
-                // Check if this is a new session (last join was more than 30 seconds ago)
-                // Handle numeric type conversion (JSON storage may return Double instead of Long)
-                Long lastJoin = getNumericAsLong(playerDoc.get("lastJoin"), 0L);
-
-                if (System.currentTimeMillis() - lastJoin > 30000) {
-                    Integer joinCount = getNumericAsInteger(playerDoc.get("joinCount"), 0);
-                    playerDoc.set("joinCount", joinCount + 1);
-                }
-
-                playerDoc.set("lastJoin", System.currentTimeMillis());
-                playerDoc.set("lastSeen", System.currentTimeMillis());
+                core.putIfAbsent("firstJoin", now);
             }
 
-            logger.fine("Successfully updated player data for " + player.getName());
+            core.put("lastSeen", now);
+            record.touch();
+        });
 
-        } catch (Exception e) {
-            logger.log(Level.WARNING, "Failed to update player data for " + player.getName(), e);
+        if (handle.createdNew() && !persisted.exists()) {
+            Map<String, Object> seed = new HashMap<>();
+            seed.put("username", player.getName());
+            seed.put("firstJoin", now);
+            seed.put("lastSeen", now);
+            dataAPI.collection(PLAYERS_COLLECTION).create(playerId.toString(), seed);
         }
+
+        sessionService.startServerSegment(playerId);
+
+        logger.fine(() -> "Session state refreshed for " + player.getName());
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                Document playerDoc = dataAPI.collection(PLAYERS_COLLECTION).document(player.getUniqueId().toString());
-
-                if (!playerDoc.exists()) {
-                    logger.warning("Player document not found for quitting player: " + player.getName());
-                    return;
-                }
-
-                // Update last seen timestamp
-                playerDoc.set("lastSeen", System.currentTimeMillis());
-
-                logger.info("Updated quit data for player: " + player.getName());
-
-            } catch (Exception e) {
-                logger.log(Level.WARNING, "Failed to update quit data for " + player.getName(), e);
-            }
-        });
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> handleQuit(player));
     }
 
-    /**
-     * Gets a player document by UUID
-     * Checks for document existence to ensure compatibility with proxy
-     */
+    private void handleQuit(Player player) {
+        UUID playerId = player.getUniqueId();
+        sessionService.withActiveSession(playerId, record -> {
+            long now = System.currentTimeMillis();
+            record.getCore().put("lastSeen", now);
+        });
+
+        sessionService.endActiveSegment(playerId);
+
+        PlayerSessionService.PlayerSessionHandle handle = activeHandles.remove(playerId);
+        if (handle == null) {
+            return;
+        }
+
+        sessionService.endSession(playerId, handle.sessionId())
+                .ifPresent(record -> {
+                    persistSession(record);
+                    if (sessionLogRepository != null) {
+                        sessionLogRepository.recordSession(record, System.currentTimeMillis());
+                    }
+                });
+    }
+
     public CompletableFuture<Document> getPlayerData(UUID uuid) {
         return CompletableFuture.supplyAsync(() -> {
-            try {
-                Document doc = dataAPI.collection(PLAYERS_COLLECTION).document(uuid.toString());
-                return doc.exists() ? doc : null;
-            } catch (Exception e) {
-                logger.log(Level.WARNING, "Failed to get player data for UUID " + uuid, e);
-                return null;
-            }
+            Document doc = dataAPI.collection(PLAYERS_COLLECTION).document(uuid.toString());
+            return doc.exists() ? doc : null;
         });
     }
 
-    /**
-     * Check if a player document exists before creating
-     */
     public CompletableFuture<Boolean> playerDataExists(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                Document doc = dataAPI.collection(PLAYERS_COLLECTION).document(uuid.toString());
-                return doc.exists();
-            } catch (Exception e) {
-                logger.log(Level.WARNING, "Failed to check player data existence for UUID " + uuid, e);
-                return false;
-            }
-        });
+        return CompletableFuture.supplyAsync(() ->
+                dataAPI.collection(PLAYERS_COLLECTION).document(uuid.toString()).exists());
     }
 
     @Override
@@ -164,75 +153,84 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         return 50; // After DataAPI (priority 10)
     }
 
-    /**
-     * Safely converts a numeric value to Long, handling different numeric types
-     * that may be returned from different storage backends (e.g., JSON returns Double)
-     *
-     * @param value        The value to convert
-     * @param defaultValue The default value if conversion fails
-     * @return The value as a Long
-     */
-    private Long getNumericAsLong(Object value, Long defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-
-        if (value instanceof Long) {
-            return (Long) value;
-        } else if (value instanceof Double) {
-            return ((Double) value).longValue();
-        } else if (value instanceof Integer) {
-            return ((Integer) value).longValue();
-        } else if (value instanceof Float) {
-            return ((Float) value).longValue();
-        } else if (value instanceof Number) {
-            return ((Number) value).longValue();
-        } else if (value instanceof String) {
-            try {
-                return Long.parseLong((String) value);
-            } catch (NumberFormatException e) {
-                logger.fine("Failed to parse Long from string: " + value);
-                return defaultValue;
+    private PersistedState loadPersistedState(UUID playerId) {
+        Document doc = dataAPI.collection(PLAYERS_COLLECTION).document(playerId.toString());
+        if (doc.exists()) {
+            Map<String, Object> filtered = new HashMap<>();
+            Map<String, Object> source = doc.toMap();
+            for (String key : CORE_FIELDS) {
+                Object value = source.get(key);
+                if (value != null) {
+                    filtered.put(key, value);
+                }
             }
+            Object rankInfo = source.get("rankInfo");
+            if (rankInfo instanceof Map<?, ?> info) {
+                filtered.put("rankInfo", info);
+            }
+            Object rank = source.get("rank");
+            if (rank != null) {
+                filtered.put("rank", rank);
+            }
+            Object environment = source.get("environment");
+            if (environment != null) {
+                filtered.put("environment", environment);
+            }
+            Object minigames = source.get("minigames");
+            if (minigames instanceof Map<?, ?> games && !games.isEmpty()) {
+                filtered.put("minigames", games);
+            }
+            return new PersistedState(filtered, true);
         }
-
-        logger.fine("Unexpected type for Long conversion: " + value.getClass().getName());
-        return defaultValue;
+        return new PersistedState(new HashMap<>(), false);
     }
 
-    /**
-     * Safely converts a numeric value to Integer, handling different numeric types
-     * that may be returned from different storage backends (e.g., JSON returns Double)
-     *
-     * @param value        The value to convert
-     * @param defaultValue The default value if conversion fails
-     * @return The value as an Integer
-     */
-    private Integer getNumericAsInteger(Object value, Integer defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
+    private void persistSession(PlayerSessionRecord record) {
+        Map<String, Object> payload = buildPersistencePayload(record);
+        Document document = dataAPI.collection(PLAYERS_COLLECTION).document(record.getPlayerId().toString());
 
-        if (value instanceof Integer) {
-            return (Integer) value;
-        } else if (value instanceof Double) {
-            return ((Double) value).intValue();
-        } else if (value instanceof Long) {
-            return ((Long) value).intValue();
-        } else if (value instanceof Float) {
-            return ((Float) value).intValue();
-        } else if (value instanceof Number) {
-            return ((Number) value).intValue();
-        } else if (value instanceof String) {
-            try {
-                return Integer.parseInt((String) value);
-            } catch (NumberFormatException e) {
-                logger.fine("Failed to parse Integer from string: " + value);
-                return defaultValue;
+        if (document.exists()) {
+            payload.forEach((key, value) -> document.set(key, value));
+        } else {
+            dataAPI.collection(PLAYERS_COLLECTION).create(record.getPlayerId().toString(), payload);
+        }
+        logger.fine(() -> "Persisted session for " + record.getPlayerId());
+    }
+
+    private Map<String, Object> buildPersistencePayload(PlayerSessionRecord record) {
+        Map<String, Object> payload = new HashMap<>();
+        Map<String, Object> core = record.getCore();
+        for (String key : CORE_FIELDS) {
+            if ("uuid".equals(key)) {
+                continue;
+            }
+            Object value = core.get(key);
+            if (value != null) {
+                payload.put(key, value);
             }
         }
 
-        logger.fine("Unexpected type for Integer conversion: " + value.getClass().getName());
-        return defaultValue;
+        Object environment = core.get("environment");
+        if (environment != null) {
+            payload.put("environment", environment);
+        }
+
+        if (record.shouldPersistRank()) {
+            Map<String, Object> rankInfo = new HashMap<>(record.getRank());
+            payload.put("rankInfo", rankInfo);
+            Object primary = rankInfo.get("primary");
+            if (primary instanceof String primaryName && !Rank.DEFAULT.name().equalsIgnoreCase(primaryName)) {
+                payload.put("rank", primaryName);
+            }
+        }
+
+        if (!record.getMinigames().isEmpty()) {
+            payload.put("minigames", new HashMap<>(record.getMinigames()));
+        }
+
+        return payload;
+    }
+
+    private record PersistedState(Map<String, Object> data, boolean exists) {
     }
 }

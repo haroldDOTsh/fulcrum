@@ -15,10 +15,12 @@ import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankChangeContext;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.rank.commands.RankCommand;
+import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -41,6 +43,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     private Logger logger;
     private DataAPI dataAPI;
     private Collection playersCollection;
+    private PlayerSessionService sessionService;
     private DependencyContainer container;
     private RankAuditLogRepository auditLogRepository;
 
@@ -58,6 +61,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             }
 
             this.playersCollection = dataAPI.collection(PLAYERS_COLLECTION);
+            this.sessionService = container.getOptional(PlayerSessionService.class).orElse(null);
 
             initializeAuditLogging();
 
@@ -297,6 +301,14 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     }
 
     private Set<Rank> readRanksFromPlayerDocument(UUID playerId) {
+        // Prefer live session state if available
+        if (sessionService != null) {
+            Optional<PlayerSessionRecord> sessionRecord = sessionService.getActiveSession(playerId);
+            if (sessionRecord.isPresent()) {
+                return extractRanksFromSession(sessionRecord.get());
+            }
+        }
+
         try {
             Document doc = playersCollection.document(playerId.toString());
             Set<Rank> ranks = new HashSet<>();
@@ -312,9 +324,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             }
 
             String primaryName = doc.get("rankInfo.primary", null);
-            if (primaryName == null) {
-                primaryName = doc.get("rank", null); // legacy fallback
-            }
             Rank primary = parseRank(primaryName);
             if (primary != null) {
                 ranks.add(primary);
@@ -326,6 +335,26 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             logger.log(Level.WARNING, "Failed to read rank data for " + playerId, e);
             return new HashSet<>();
         }
+    }
+
+    private Set<Rank> extractRanksFromSession(PlayerSessionRecord record) {
+        Set<Rank> ranks = new HashSet<>();
+        Object storedRanks = record.getRank().get("all");
+        if (storedRanks instanceof Iterable<?> iterable) {
+            for (Object value : iterable) {
+                Rank parsed = parseRank(value);
+                if (parsed != null) {
+                    ranks.add(parsed);
+                }
+            }
+        }
+
+        Object primaryRaw = record.getRank().get("primary");
+        Rank primary = parseRank(primaryRaw);
+        if (primary != null) {
+            ranks.add(primary);
+        }
+        return ranks;
     }
 
     private Rank parseRank(Object value) {
@@ -354,37 +383,50 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                                   boolean changed,
                                   boolean allowLogging) {
         try {
-            Document playerDoc = playersCollection.document(playerId.toString());
-            String playerName = playerDoc.get("username", "Unknown");
+            List<String> orderedRanks = orderedRanks(ranks);
+            boolean updatedInSession = updateSessionRank(playerId, newPrimary, orderedRanks, context, changed);
 
-            List<String> orderedRanks = ranks.stream()
-                    .filter(Objects::nonNull)
-                    .sorted(Comparator.comparingInt(Rank::getPriority).reversed())
-                    .map(Enum::name)
-                    .collect(Collectors.toCollection(ArrayList::new));
+            String playerName;
+            if (!updatedInSession) {
+                Document playerDoc = playersCollection.document(playerId.toString());
+                playerName = playerDoc.get("username", "Unknown");
+                String primaryName = newPrimary != null ? newPrimary.name() : Rank.DEFAULT.name();
+                boolean hasNonDefaultPrimary = newPrimary != null && newPrimary != Rank.DEFAULT;
+                boolean hasNonDefaultRanks = orderedRanks.stream()
+                        .filter(Objects::nonNull)
+                        .anyMatch(rankName -> !Rank.DEFAULT.name().equalsIgnoreCase(rankName));
 
-            String primaryName = newPrimary != null ? newPrimary.name() : Rank.DEFAULT.name();
-            playerDoc.set("rank", primaryName);
+                if (hasNonDefaultPrimary || hasNonDefaultRanks) {
+                    playerDoc.set("rank", primaryName);
 
-            Map<String, Object> rankInfo = new HashMap<>();
-            rankInfo.put("primary", primaryName);
-            rankInfo.put("all", orderedRanks);
+                    Map<String, Object> rankInfo = new HashMap<>();
+                    rankInfo.put("primary", primaryName);
+                    rankInfo.put("all", new ArrayList<>(orderedRanks));
 
-            if (changed && context != null) {
-                rankInfo.put("updatedAt", System.currentTimeMillis());
-                rankInfo.put("updatedBy", buildUpdatedBy(context));
+                    if (changed && context != null && hasNonDefaultPrimary) {
+                        rankInfo.put("updatedAt", System.currentTimeMillis());
+                        rankInfo.put("updatedBy", buildUpdatedBy(context));
+                    } else {
+                        Object updatedAt = playerDoc.get("rankInfo.updatedAt");
+                        if (updatedAt != null) {
+                            rankInfo.put("updatedAt", updatedAt);
+                        }
+                        Object updatedBy = playerDoc.get("rankInfo.updatedBy");
+                        if (updatedBy != null) {
+                            rankInfo.put("updatedBy", updatedBy);
+                        }
+                    }
+
+                    playerDoc.set("rankInfo", rankInfo);
+                } else {
+                    playerDoc.set("rank", null);
+                    playerDoc.set("rankInfo", null);
+                }
             } else {
-                Object updatedAt = playerDoc.get("rankInfo.updatedAt");
-                if (updatedAt != null) {
-                    rankInfo.put("updatedAt", updatedAt);
-                }
-                Object updatedBy = playerDoc.get("rankInfo.updatedBy");
-                if (updatedBy != null) {
-                    rankInfo.put("updatedBy", updatedBy);
-                }
+                playerName = sessionService.getActiveSession(playerId)
+                        .map(record -> String.valueOf(record.getCore().getOrDefault("username", "Unknown")))
+                        .orElse("Unknown");
             }
-
-            playerDoc.set("rankInfo", rankInfo);
 
             if (auditLogRepository != null && allowLogging && changed && context != null &&
                     context.executorType() != RankChangeContext.Executor.SYSTEM) {
@@ -393,6 +435,52 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to persist rank data for " + playerId, e);
         }
+    }
+
+    private boolean updateSessionRank(UUID playerId,
+                                      Rank newPrimary,
+                                      List<String> orderedRanks,
+                                      RankChangeContext context,
+                                      boolean changed) {
+        if (sessionService == null) {
+            return false;
+        }
+
+        return sessionService.withActiveSession(playerId, record -> {
+            Map<String, Object> rankInfo = record.getRank();
+            String primaryName = newPrimary != null ? newPrimary.name() : Rank.DEFAULT.name();
+            List<String> orderedCopy = new ArrayList<>(orderedRanks);
+            rankInfo.put("primary", primaryName);
+            rankInfo.put("all", orderedCopy);
+
+            boolean hasNonDefaultPrimary = newPrimary != null && newPrimary != Rank.DEFAULT;
+            boolean hasNonDefaultRanks = orderedCopy.stream()
+                    .filter(Objects::nonNull)
+                    .anyMatch(name -> !Rank.DEFAULT.name().equalsIgnoreCase(name));
+
+            if (changed && context != null && hasNonDefaultPrimary) {
+                rankInfo.put("updatedAt", System.currentTimeMillis());
+                rankInfo.put("updatedBy", buildUpdatedBy(context));
+            } else {
+                rankInfo.remove("updatedAt");
+                rankInfo.remove("updatedBy");
+            }
+
+            if (!hasNonDefaultPrimary && !hasNonDefaultRanks && rankInfo.size() <= 2) { // only primary/all present
+                rankInfo.clear();
+                record.getCore().remove("rank");
+            } else {
+                record.getCore().put("rank", primaryName);
+            }
+        });
+    }
+
+    private List<String> orderedRanks(Set<Rank> ranks) {
+        return ranks.stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparingInt(Rank::getPriority).reversed())
+                .map(Enum::name)
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
     private Map<String, Object> buildUpdatedBy(RankChangeContext context) {

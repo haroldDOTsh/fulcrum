@@ -125,6 +125,8 @@ public final class ChannelConstants {
      * Player routing acknowledgement channel
      */
     public static final String PLAYER_ROUTE_ACK = "fulcrum.registry.player.route.ack";
+    public static final String PLAYER_RESERVATION_REQUEST = "fulcrum.registry.player.reservation.request";
+    public static final String PLAYER_RESERVATION_RESPONSE = "fulcrum.registry.player.reservation.response";
     /**
      * Prefix for directed slot provision commands
      */

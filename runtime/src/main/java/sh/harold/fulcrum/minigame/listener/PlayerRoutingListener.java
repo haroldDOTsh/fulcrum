@@ -13,11 +13,18 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 import org.bukkit.scheduler.BukkitScheduler;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
+import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteAck;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
+import sh.harold.fulcrum.fundamentals.session.PlayerReservationService;
+import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.minigame.GameManager;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,15 +39,25 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
     private final Plugin plugin;
     private final PlayerRouteRegistry routeRegistry;
     private final GameManager gameManager;
+    private final PlayerReservationService reservationService;
+    private final MessageBus messageBus;
+    private final PlayerSessionService sessionService;
     private final ObjectMapper objectMapper;
     private final Map<UUID, PendingTeleport> pendingTeleports = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> processedRequests = new ConcurrentHashMap<>();
 
     public PlayerRoutingListener(Plugin plugin,
                                  PlayerRouteRegistry routeRegistry,
-                                 GameManager gameManager) {
+                                 GameManager gameManager,
+                                 PlayerReservationService reservationService,
+                                 MessageBus messageBus,
+                                 PlayerSessionService sessionService) {
         this.plugin = plugin;
         this.routeRegistry = routeRegistry;
         this.gameManager = gameManager;
+        this.reservationService = reservationService;
+        this.messageBus = messageBus;
+        this.sessionService = sessionService;
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
@@ -84,14 +101,54 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
     public void handleRouteCommand(PlayerRouteCommand command) {
         plugin.getLogger().info(() -> "Received route command for " + command.getPlayerName()
                 + " (slot=" + command.getSlotId() + ", world=" + command.getTargetWorld() + ")");
+
+        UUID requestId = command.getRequestId();
+        if (requestId != null) {
+            Long previous = processedRequests.putIfAbsent(requestId, System.currentTimeMillis());
+            if (previous != null) {
+                plugin.getLogger().fine("Ignoring duplicate route command " + requestId);
+                return;
+            }
+        }
+
         UUID playerId = command.getPlayerId();
         Location target = resolveLocation(command);
         if (target == null) {
             plugin.getLogger().warning("Route command missing valid target location for player " + command.getPlayerName());
+            if (requestId != null) {
+                processedRequests.remove(requestId);
+            }
             return;
         }
 
-        Map<String, String> metadata = command.getMetadata() != null ? command.getMetadata() : Map.of();
+        Map<String, String> commandMetadata = command.getMetadata() != null ? command.getMetadata() : Map.of();
+        String token = commandMetadata.get("reservationToken");
+
+        if (reservationService != null) {
+            if (!reservationService.consumeReservation(token, playerId)) {
+                plugin.getLogger().warning("Rejected route for " + command.getPlayerName() + " due to missing or invalid reservation token");
+                sendReservationFailure(command, "invalid-reservation");
+                return;
+            }
+        } else {
+            plugin.getLogger().warning("PlayerReservationService unavailable; accepting route without reservation validation");
+        }
+
+        Map<String, String> metadata = new HashMap<>(commandMetadata);
+        metadata.remove("reservationToken");
+        if (sessionService != null) {
+            sessionService.recordHandoff(
+                    playerId,
+                    command.getServerId(),
+                    command.getSlotId(),
+                    token,
+                    metadata,
+                    Duration.ofSeconds(15)
+            );
+            sessionService.updateMinigameContext(playerId, metadata, command.getSlotId());
+        }
+        command.setMetadata(metadata);
+
         PlayerRouteRegistry.RouteAssignment assignment = new PlayerRouteRegistry.RouteAssignment(
                 playerId,
                 command.getPlayerName(),
@@ -104,7 +161,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         );
         routeRegistry.register(assignment);
 
-        pendingTeleports.put(playerId, new PendingTeleport(target));
+        pendingTeleports.put(playerId, new PendingTeleport(target, command));
         attemptTeleport(playerId);
 
         if (gameManager != null) {
@@ -115,10 +172,73 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         }
     }
 
+    private void sendReservationFailure(PlayerRouteCommand command, String reason) {
+        sendFailureAck(command, reason);
+    }
+
+    private void sendFailureAck(PlayerRouteCommand command, String reason) {
+        if (messageBus != null) {
+            PlayerRouteAck ack = new PlayerRouteAck();
+            ack.setRequestId(command.getRequestId());
+            ack.setPlayerId(command.getPlayerId());
+            ack.setProxyId(command.getProxyId());
+            ack.setServerId(command.getServerId());
+            ack.setSlotId(command.getSlotId());
+            ack.setStatus(PlayerRouteAck.Status.FAILED);
+            ack.setReason(reason);
+            messageBus.broadcast(ChannelConstants.PLAYER_ROUTE_ACK, ack);
+        }
+        if (sessionService != null && command.getPlayerId() != null) {
+            sessionService.clearHandoff(command.getPlayerId());
+            sessionService.clearMinigameContext(command.getPlayerId());
+        }
+        if (command.getRequestId() != null) {
+            processedRequests.remove(command.getRequestId());
+        }
+    }
+
+    private void sendSuccessAck(PlayerRouteCommand command) {
+        if (messageBus != null) {
+            PlayerRouteAck ack = new PlayerRouteAck();
+            ack.setRequestId(command.getRequestId());
+            ack.setPlayerId(command.getPlayerId());
+            ack.setProxyId(command.getProxyId());
+            ack.setServerId(command.getServerId());
+            ack.setSlotId(command.getSlotId());
+            ack.setStatus(PlayerRouteAck.Status.SUCCESS);
+            messageBus.broadcast(ChannelConstants.PLAYER_ROUTE_ACK, ack);
+        }
+
+        if (sessionService != null) {
+            Map<String, String> metadata = command.getMetadata() != null ? command.getMetadata() : Map.of();
+            Map<String, Object> segmentMetadata = new HashMap<>(metadata);
+            segmentMetadata.put("slotId", command.getSlotId());
+            segmentMetadata.put("serverId", command.getServerId());
+            String context = metadata.getOrDefault("family", command.getSlotId());
+            sessionService.startSegment(command.getPlayerId(), "MINIGAME", context, segmentMetadata, command.getServerId());
+            sessionService.clearHandoff(command.getPlayerId());
+            sessionService.updateMinigameContext(command.getPlayerId(),
+                    metadata,
+                    command.getSlotId());
+        }
+        if (command.getRequestId() != null) {
+            processedRequests.remove(command.getRequestId());
+        }
+    }
+
     private void handleDisconnect(PlayerRouteCommand command) {
         UUID playerId = command.getPlayerId();
         pendingTeleports.remove(playerId);
         routeRegistry.remove(playerId);
+        if (command.getRequestId() != null) {
+            processedRequests.remove(command.getRequestId());
+        }
+
+        if (sessionService != null) {
+            sessionService.endActiveSegment(playerId);
+            sessionService.clearHandoff(playerId);
+            sessionService.clearMinigameContext(playerId);
+        }
 
         Player target = Bukkit.getPlayer(playerId);
         if (target != null) {
@@ -145,6 +265,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             Location location = pending.location();
             if (location.getWorld() == null) {
                 plugin.getLogger().warning("Cannot teleport player " + player.getName() + " - world unavailable");
+                sendFailureAck(pending.command(), "invalid-target");
                 return;
             }
 
@@ -161,12 +282,15 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                         boolean success = player.teleport(location);
                         if (success) {
                             plugin.getLogger().info("Synchronous teleport succeeded for " + player.getName());
+                            sendSuccessAck(pending.command());
                         } else {
                             plugin.getLogger().warning("Synchronous teleport failed for " + player.getName());
+                            sendFailureAck(pending.command(), "teleport-failed");
                         }
                     });
                 } else {
                     plugin.getLogger().info("Async teleport succeeded for " + player.getName());
+                    sendSuccessAck(pending.command());
                 }
             });
         });
@@ -204,6 +328,6 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         routeRegistry.remove(playerId);
     }
 
-    private record PendingTeleport(Location location) {
+    private record PendingTeleport(Location location, PlayerRouteCommand command) {
     }
 }

@@ -11,6 +11,7 @@ import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
+import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 /**
  * Feature that registers and manages Velocity proxy commands.
@@ -26,6 +27,7 @@ public class VelocityCommandFeature implements VelocityFeature {
     private FulcrumVelocityPlugin plugin;
     private DataAPI dataAPI;
     private SlotFamilyCache familyCache;
+    private VelocityPlayerSessionService sessionService;
 
     @Override
     public String getName() {
@@ -50,6 +52,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         this.plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
         this.dataAPI = serviceLocator.getRequiredService(DataAPI.class);
         this.familyCache = serviceLocator.getRequiredService(SlotFamilyCache.class);
+        this.sessionService = serviceLocator.getRequiredService(VelocityPlayerSessionService.class);
 
         // Register proxy commands when they are introduced
         registerPlayCommand();
@@ -70,7 +73,7 @@ public class VelocityCommandFeature implements VelocityFeature {
                 .plugin(plugin)
                 .build();
 
-        commandManager.register(meta, new LocatePlayerCommand(proxy, messageBus, playerRoutingFeature, plugin, logger, dataAPI));
+        commandManager.register(meta, new LocatePlayerCommand(proxy, messageBus, playerRoutingFeature, plugin, logger, dataAPI, sessionService));
     }
 
     private void registerPlayCommand() {

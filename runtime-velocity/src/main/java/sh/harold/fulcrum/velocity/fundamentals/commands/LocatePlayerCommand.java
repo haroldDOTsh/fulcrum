@@ -21,6 +21,7 @@ import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.api.rank.Rank;
 import sh.harold.fulcrum.velocity.api.rank.VelocityRankUtils;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
+import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -41,6 +42,7 @@ final class LocatePlayerCommand implements SimpleCommand {
     private final FulcrumVelocityPlugin plugin;
     private final Logger logger;
     private final DataAPI dataAPI;
+    private final VelocityPlayerSessionService sessionService;
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
@@ -49,13 +51,15 @@ final class LocatePlayerCommand implements SimpleCommand {
                         PlayerRoutingFeature routingFeature,
                         FulcrumVelocityPlugin plugin,
                         Logger logger,
-                        DataAPI dataAPI) {
+                        DataAPI dataAPI,
+                        VelocityPlayerSessionService sessionService) {
         this.proxy = proxy;
         this.messageBus = messageBus;
         this.routingFeature = routingFeature;
         this.plugin = plugin;
         this.logger = logger;
         this.dataAPI = dataAPI;
+        this.sessionService = sessionService;
     }
 
     @Override
@@ -63,7 +67,7 @@ final class LocatePlayerCommand implements SimpleCommand {
         CommandSource source = invocation.source();
         String[] arguments = Arrays.copyOf(invocation.arguments(), invocation.arguments().length);
 
-        VelocityRankUtils.hasRankOrHigher(source, Rank.HELPER, dataAPI, logger)
+        VelocityRankUtils.hasRankOrHigher(source, Rank.HELPER, sessionService, dataAPI, logger)
                 .whenComplete((allowed, throwable) -> {
                     if (throwable != null) {
                         logger.warn("Failed to verify rank for /locateplayer", throwable);

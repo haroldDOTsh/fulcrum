@@ -66,6 +66,10 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest.class);
             register("player.locate.response",
                     sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse.class);
+            register(ChannelConstants.PLAYER_RESERVATION_REQUEST,
+                    sh.harold.fulcrum.api.messagebus.messages.PlayerReservationRequest.class);
+            register(ChannelConstants.PLAYER_RESERVATION_RESPONSE,
+                    sh.harold.fulcrum.api.messagebus.messages.PlayerReservationResponse.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {

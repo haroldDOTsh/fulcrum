@@ -35,11 +35,13 @@ import java.util.logging.Logger;
  */
 public final class DebugMinigameFeature implements PluginFeature {
     private static final Logger LOGGER = Logger.getLogger(DebugMinigameFeature.class.getName());
-    private static final String FAMILY_ID = "debug_pipeline";
+    private static final String FAMILY_ID = "debug";
+    private static final String VARIANT_ID = "pipeline";
     private static final SlotFamilyDescriptor DESCRIPTOR = SlotFamilyDescriptor.builder(FAMILY_ID, 1, 4)
             .putMetadata("category", "debug")
             .putMetadata("description", "Debug minigame pipeline verification")
             .putMetadata("mapId", "test")
+            .putMetadata("variant", VARIANT_ID)
             .putMetadata("preLobbySchematic", "prelobby")
             .putMetadata("preLobbyOffset", "120")
             .build();

@@ -106,7 +106,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 },
                 () -> {
                     // Generate temporary ID if MessageBusFeature is not available
-                    String tempId = "temp-proxy-" + UUID.randomUUID().toString();
+                    String tempId = "temp-proxy-" + UUID.randomUUID();
                     this.proxyIdentifier = ProxyIdentifier.fromLegacy(tempId);
                     this.proxyId = tempId;  // Keep legacy format until Registry assigns permanent ID
                     logger.warn("MessageBusFeature not available, generated temporary ID: {}", proxyId);
@@ -726,14 +726,14 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
 
             // Debug: Try to retrieve the server we just added
             proxy.getServer(serverId).ifPresentOrElse(
-                    server -> logger.info("??? Server {} successfully retrievable from Velocity", serverId),
-                    () -> logger.error("??? Server {} NOT retrievable from Velocity after registration!", serverId)
+                    server -> logger.info("Server {} successfully retrievable from Velocity", serverId),
+                    () -> logger.error("Server {} NOT retrievable from Velocity after registration!", serverId)
             );
 
             logger.info("Total servers registered in Velocity: {}", proxy.getAllServers().size());
 
             // Dynamic server registration successful - ProxyConnectionHandler will handle player connections
-            logger.info("??? Server '{}' dynamically registered and available for player connections", serverId);
+            logger.info("Server '{}' dynamically registered and available for player connections", serverId);
 
         } catch (Exception e) {
             logger.error("Exception while adding server to Velocity: {} at {}:{}",
@@ -1294,7 +1294,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         Long lastHeartbeat = serverHeartbeats.get(serverId);
         if (lastHeartbeat != null) {
             stats.put("lastHeartbeat", lastHeartbeat);
-            stats.put("online", System.currentTimeMillis() - lastHeartbeat < config.getTimeoutSeconds() * 1000);
+            stats.put("online", System.currentTimeMillis() - lastHeartbeat < config.getTimeoutSeconds() * 1000L);
         } else {
             stats.put("online", false);
         }

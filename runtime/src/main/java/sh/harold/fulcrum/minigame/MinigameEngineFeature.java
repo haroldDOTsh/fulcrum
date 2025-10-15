@@ -2,7 +2,10 @@ package sh.harold.fulcrum.minigame;
 
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
+import sh.harold.fulcrum.fundamentals.session.PlayerReservationService;
+import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.fundamentals.world.WorldManager;
 import sh.harold.fulcrum.fundamentals.world.WorldService;
@@ -73,7 +76,20 @@ public class MinigameEngineFeature implements PluginFeature {
         }
         Bukkit.getPluginManager().registerEvents(new SpectatorListener(), plugin);
         Bukkit.getPluginManager().registerEvents(new MatchDamageListener(engine), plugin);
-        routingListener = new PlayerRoutingListener(plugin, routeRegistry, gameManager);
+        PlayerReservationService reservationService = container.getOptional(PlayerReservationService.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(PlayerReservationService.class).orElse(null)
+                        : null);
+        MessageBus messageBus = container.getOptional(MessageBus.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(MessageBus.class).orElse(null)
+                        : null);
+        PlayerSessionService sessionService = container.getOptional(PlayerSessionService.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(PlayerSessionService.class).orElse(null)
+                        : null);
+
+        routingListener = new PlayerRoutingListener(plugin, routeRegistry, gameManager, reservationService, messageBus, sessionService);
         Bukkit.getPluginManager().registerEvents(routingListener, plugin);
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(PlayerRoutingListener.class, routingListener);

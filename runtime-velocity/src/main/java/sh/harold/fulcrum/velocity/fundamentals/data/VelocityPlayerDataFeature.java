@@ -7,19 +7,16 @@ import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.DataAPI;
-import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
-
-import java.util.concurrent.CompletableFuture;
+import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 public class VelocityPlayerDataFeature implements VelocityFeature {
     private Logger logger;
     private ProxyServer proxy;
-    private DataAPI dataAPI;
     private FulcrumVelocityPlugin plugin;
+    private VelocityPlayerSessionService sessionService;
 
     @Override
     public String getName() {
@@ -33,15 +30,15 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         // Get required services
         this.proxy = serviceLocator.getService(ProxyServer.class).orElseThrow(
                 () -> new RuntimeException("ProxyServer not available"));
-        this.dataAPI = serviceLocator.getService(DataAPI.class).orElseThrow(
-                () -> new RuntimeException("DataAPI not available"));
+        this.sessionService = serviceLocator.getService(VelocityPlayerSessionService.class).orElseThrow(
+                () -> new RuntimeException("VelocityPlayerSessionService not available"));
         this.plugin = serviceLocator.getService(FulcrumVelocityPlugin.class).orElseThrow(
                 () -> new RuntimeException("FulcrumVelocityPlugin not available"));
 
         // Register event listeners - MUST use plugin instance as container
         proxy.getEventManager().register(plugin, this);
 
-        logger.info("PlayerDataFeature initialized for Velocity - tracking proxy player data");
+        logger.info("PlayerDataFeature initialized for Velocity - using session cache");
     }
 
     @Subscribe
@@ -49,108 +46,17 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         Player player = event.getPlayer();
 
         // Run async to avoid blocking
-        CompletableFuture.runAsync(() -> {
-            try {
-                // Use unified 'players' collection
-                Document playerDoc = dataAPI.collection("players").document(player.getUniqueId().toString());
-
-                boolean exists = playerDoc.exists();
-
-                if (!exists) {
-                    // New player - create unified document
-                    logger.info("Creating new player document for proxy: {} ({})", player.getUsername(), player.getUniqueId());
-
-                    // Core fields (unified)
-                    playerDoc.set("uuid", player.getUniqueId().toString());
-                    playerDoc.set("username", player.getUsername());
-                    playerDoc.set("firstJoin", System.currentTimeMillis());
-                    playerDoc.set("lastJoin", System.currentTimeMillis());
-                    playerDoc.set("lastSeen", System.currentTimeMillis());
-                    playerDoc.set("joinCount", 1);
-                } else {
-                    // Existing player - update relevant fields
-                    logger.info("Updating existing player document for proxy: {}", player.getUsername());
-
-                    // Update core fields
-                    Integer joinCount = playerDoc.get("joinCount", 0);
-                    if (joinCount == null) joinCount = 0;
-
-                    playerDoc.set("joinCount", joinCount + 1);
-                    playerDoc.set("username", player.getUsername()); // Update in case of name change
-                    playerDoc.set("lastJoin", System.currentTimeMillis());
-                    playerDoc.set("lastSeen", System.currentTimeMillis());
-                }
-
-                // Update proxy-specific fields
-                playerDoc.set("protocolVersion", player.getProtocolVersion().getProtocol());
-
-                // Store current server if connected
-                player.getCurrentServer().ifPresent(server -> {
-                    playerDoc.set("currentServer", server.getServerInfo().getName());
-                });
-
-                logger.debug("Successfully updated player data for {}", player.getUsername());
-
-            } catch (Exception e) {
-                logger.warn("Failed to update player data for {}: {}", player.getUsername(), e.getMessage());
-                e.printStackTrace();
-            }
-        });
+        // Proxy no longer mutates persistent player data; backend handles core fields.
     }
 
     @Subscribe
     public void onPlayerDisconnect(DisconnectEvent event) {
-        Player player = event.getPlayer();
-
-        // Run async to avoid blocking
-        CompletableFuture.runAsync(() -> {
-            try {
-                Document playerDoc = dataAPI.collection("players").document(player.getUniqueId().toString());
-
-                // Check if document exists before updating
-                if (!playerDoc.exists()) {
-                    logger.warn("Player document not found for disconnecting player: {}", player.getUsername());
-                    return;
-                }
-
-                // Update last seen
-                playerDoc.set("lastSeen", System.currentTimeMillis());
-
-                // Clear current server
-                playerDoc.set("currentServer", null);
-
-                logger.info("Updated disconnect data for player: {}", player.getUsername());
-
-            } catch (Exception e) {
-                logger.warn("Failed to update disconnect data for {}: {}", player.getUsername(), e.getMessage());
-                e.printStackTrace();
-            }
-        });
+        // Intentionally no-op: backend will close the session.
     }
 
     @Subscribe
     public void onServerSwitch(ServerPostConnectEvent event) {
-        Player player = event.getPlayer();
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                Document playerDoc = dataAPI.collection("players").document(player.getUniqueId().toString());
-
-                if (!playerDoc.exists()) {
-                    return;
-                }
-
-                // Update current server
-                player.getCurrentServer().ifPresent(server -> {
-                    playerDoc.set("currentServer", server.getServerInfo().getName());
-                    playerDoc.set("lastServerSwitch", System.currentTimeMillis());
-                    playerDoc.set("lastSeen", System.currentTimeMillis());
-                });
-
-            } catch (Exception e) {
-                logger.warn("Failed to update server switch data for {}: {}", player.getUsername(), e.getMessage());
-            }
-        });
+        // No-op; backend tracks detailed session state.
     }
 
     @Override

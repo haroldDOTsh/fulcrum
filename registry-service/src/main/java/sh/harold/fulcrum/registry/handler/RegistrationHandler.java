@@ -22,6 +22,7 @@ import sh.harold.fulcrum.registry.server.ServerRegistry;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.function.Consumer;
 
 /**
  * Handles all registration and communication logic for the registry service.
@@ -38,6 +39,7 @@ public class RegistrationHandler {
     private final Map<String, PendingRequest> pendingRequests;
     // State management for ongoing proxy registrations
     private final Map<String, CompletableFuture<String>> ongoingProxyRegistrations = new ConcurrentHashMap<>();
+    private final CopyOnWriteArrayList<Consumer<String>> serverTimeoutListeners = new CopyOnWriteArrayList<>();
     private boolean debugMode;
     private MessageBus messageBus;
 
@@ -249,8 +251,7 @@ public class RegistrationHandler {
                         }
                     }
                     // Check if this is already a ServerRemovalNotification
-                    else if (payload instanceof ServerRemovalNotification) {
-                        ServerRemovalNotification notification = (ServerRemovalNotification) payload;
+                    else if (payload instanceof ServerRemovalNotification notification) {
                         if ("PROXY".equalsIgnoreCase(notification.getServerType())) {
                             handleProxyRemoval(notification);
                         }
@@ -291,7 +292,7 @@ public class RegistrationHandler {
                 }
 
                 // Retry every 10 seconds
-                if (now - pending.timestamp > 10000 * (pending.retryCount + 1)) {
+                if (now - pending.timestamp > 10000L * (pending.retryCount + 1)) {
                     pending.retryCount++;
                     LOGGER.warn("[RETRY] Resending registration response for {} (attempt {})",
                             pending.tempId, pending.retryCount);
@@ -936,9 +937,21 @@ public class RegistrationHandler {
             // Essential log - always show server timeouts
             LOGGER.warn("Server {} timed out and was removed from registry (blacklisted for 60 seconds)", serverId);
 
+            for (Consumer<String> listener : serverTimeoutListeners) {
+                try {
+                    listener.accept(serverId);
+                } catch (Exception listenerError) {
+                    LOGGER.error("Server timeout listener threw exception", listenerError);
+                }
+            }
+
         } catch (Exception e) {
             LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
         }
+    }
+
+    public void addServerTimeoutListener(Consumer<String> listener) {
+        serverTimeoutListeners.add(listener);
     }
 
     /**

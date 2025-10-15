@@ -22,7 +22,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class DebugMinigamePipelineCommand implements CommandHandler {
-    private static final String FAMILY_ID = "debug_pipeline";
+    private static final String FAMILY_ID = "debug";
+    private static final String VARIANT_ID = "pipeline";
     private static final long LOCATE_TIMEOUT_MS = 2000L;
 
     private final MessageBus messageBus;
@@ -75,6 +76,7 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
         metadata.put("initiator", "registry-console");
         metadata.put("reason", parsed.reason);
         metadata.put("mapId", parsed.mapId);
+        metadata.putIfAbsent("variant", VARIANT_ID);
         parsed.extraMetadata.forEach(metadata::putIfAbsent);
 
         PlayerSlotRequest request = new PlayerSlotRequest();
@@ -88,7 +90,8 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
 
         System.out.println("Enqueued player slot request for " + effectiveName
                 + " (uuid=" + request.getPlayerId() + ", proxy=" + proxyId
-                + ", map=" + parsed.mapId + ", requestId=" + request.getRequestId() + ")");
+                + ", map=" + parsed.mapId + ", variant=" + metadata.get("variant")
+                + ", requestId=" + request.getRequestId() + ")");
         System.out.println("Await backend logs for provisioning confirmation and routing outcome.");
         return true;
     }

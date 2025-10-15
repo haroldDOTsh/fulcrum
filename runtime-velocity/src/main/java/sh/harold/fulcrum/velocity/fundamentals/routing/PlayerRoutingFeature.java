@@ -222,7 +222,6 @@ public class PlayerRoutingFeature implements VelocityFeature {
                     }).delay(Duration.ofMillis(50))
                     .schedule();
             recordPlayerLocation(command, player);
-            sendSuccessAck(command);
             return;
         }
 
@@ -247,7 +246,6 @@ public class PlayerRoutingFeature implements VelocityFeature {
                     }).delay(Duration.ofMillis(50))
                     .schedule();
             recordPlayerLocation(command, player);
-            sendSuccessAck(command);
         });
     }
 
@@ -273,17 +271,6 @@ public class PlayerRoutingFeature implements VelocityFeature {
             logger.warn("Failed to send route payload to backend for {}: {}",
                     player.getUsername(), exception.getMessage());
         }
-    }
-
-    private void sendSuccessAck(PlayerRouteCommand command) {
-        PlayerRouteAck ack = new PlayerRouteAck();
-        ack.setRequestId(command.getRequestId());
-        ack.setPlayerId(command.getPlayerId());
-        ack.setProxyId(currentProxyId());
-        ack.setServerId(command.getServerId());
-        ack.setSlotId(command.getSlotId());
-        ack.setStatus(PlayerRouteAck.Status.SUCCESS);
-        messageBus.broadcast(ChannelConstants.PLAYER_ROUTE_ACK, ack);
     }
 
     private void sendFailureAck(PlayerRouteCommand command, String reason) {

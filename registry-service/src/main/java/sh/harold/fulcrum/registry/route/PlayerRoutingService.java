@@ -28,6 +28,7 @@ public class PlayerRoutingService {
     private static final Logger LOGGER = LoggerFactory.getLogger(PlayerRoutingService.class);
 
     private static final Duration ROUTE_TIMEOUT = Duration.ofSeconds(15);
+    private static final Duration RESERVATION_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration MAX_QUEUE_WAIT = Duration.ofSeconds(45);
     private static final int MAX_ROUTE_RETRIES = 3;
 
@@ -50,10 +51,12 @@ public class PlayerRoutingService {
     private final ConcurrentMap<UUID, InFlightRoute> inFlightRoutes = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Integer> pendingOccupancy = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Boolean> provisioningFamilies = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, CompletableFuture<PlayerReservationResponse>> pendingReservations = new ConcurrentHashMap<>();
 
     private final MessageHandler playerRequestHandler = this::handlePlayerRequest;
     private final MessageHandler slotStatusHandler = this::handleSlotStatus;
     private final MessageHandler routeAckHandler = this::handleRouteAck;
+    private final MessageHandler reservationResponseHandler = this::handleReservationResponse;
 
     public PlayerRoutingService(MessageBus messageBus,
                                 SlotProvisionService slotProvisionService,
@@ -75,6 +78,7 @@ public class PlayerRoutingService {
         messageBus.subscribe(ChannelConstants.REGISTRY_PLAYER_REQUEST, playerRequestHandler);
         messageBus.subscribe(ChannelConstants.REGISTRY_SLOT_STATUS, slotStatusHandler);
         messageBus.subscribe(ChannelConstants.PLAYER_ROUTE_ACK, routeAckHandler);
+        messageBus.subscribe(ChannelConstants.PLAYER_RESERVATION_RESPONSE, reservationResponseHandler);
 
         seedAvailableSlots();
         LOGGER.info("PlayerRoutingService subscribed to matchmaking channels");
@@ -85,6 +89,7 @@ public class PlayerRoutingService {
         messageBus.unsubscribe(ChannelConstants.REGISTRY_PLAYER_REQUEST, playerRequestHandler);
         messageBus.unsubscribe(ChannelConstants.REGISTRY_SLOT_STATUS, slotStatusHandler);
         messageBus.unsubscribe(ChannelConstants.PLAYER_ROUTE_ACK, routeAckHandler);
+        messageBus.unsubscribe(ChannelConstants.PLAYER_RESERVATION_RESPONSE, reservationResponseHandler);
         LOGGER.info("PlayerRoutingService shut down");
     }
 
@@ -191,6 +196,59 @@ public class PlayerRoutingService {
         }
     }
 
+    private CompletableFuture<PlayerReservationResponse> requestReservation(PlayerRequestContext context, LogicalSlotRecord slot) {
+        UUID reservationId = UUID.randomUUID();
+        PlayerReservationRequest reservationRequest = new PlayerReservationRequest();
+        reservationRequest.setRequestId(reservationId);
+        reservationRequest.setPlayerId(context.request.getPlayerId());
+        reservationRequest.setPlayerName(context.request.getPlayerName());
+        reservationRequest.setProxyId(context.request.getProxyId());
+        reservationRequest.setServerId(slot.getServerId());
+        reservationRequest.setSlotId(slot.getSlotId());
+        reservationRequest.setMetadata(context.request.getMetadata());
+
+        CompletableFuture<PlayerReservationResponse> future = new CompletableFuture<>();
+        CompletableFuture<PlayerReservationResponse> existing = pendingReservations.putIfAbsent(reservationId, future);
+        if (existing != null) {
+            return existing;
+        }
+
+        ScheduledFuture<?> timeoutTask = scheduler.schedule(() -> {
+            CompletableFuture<PlayerReservationResponse> pending = pendingReservations.remove(reservationId);
+            if (pending != null) {
+                pending.completeExceptionally(new TimeoutException("reservation-timeout"));
+            }
+        }, RESERVATION_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+
+        future.whenComplete((response, throwable) -> timeoutTask.cancel(false));
+
+        try {
+            messageBus.send(slot.getServerId(), ChannelConstants.PLAYER_RESERVATION_REQUEST, reservationRequest);
+        } catch (Exception exception) {
+            CompletableFuture<PlayerReservationResponse> pending = pendingReservations.remove(reservationId);
+            if (pending != null) {
+                pending.completeExceptionally(exception);
+            } else {
+                future.completeExceptionally(exception);
+            }
+        }
+
+        return future;
+    }
+
+    private void handleReservationResponse(MessageEnvelope envelope) {
+        try {
+            PlayerReservationResponse response = convert(envelope.getPayload(), PlayerReservationResponse.class);
+            response.validate();
+            CompletableFuture<PlayerReservationResponse> future = pendingReservations.remove(response.getRequestId());
+            if (future != null) {
+                future.complete(response);
+            }
+        } catch (Exception exception) {
+            LOGGER.error("Failed to handle reservation response", exception);
+        }
+    }
+
     private void enqueueContext(PlayerRequestContext context) {
         if (context == null) {
             return;
@@ -282,6 +340,41 @@ public class PlayerRoutingService {
     private void routePlayer(PlayerRequestContext context, LogicalSlotRecord slot) {
         PlayerSlotRequest request = context.request;
 
+        requestReservation(context, slot).whenCompleteAsync((response, throwable) -> {
+            if (throwable != null) {
+                LOGGER.warn("Reservation request failed for player {}: {}", request.getPlayerName(), throwable.getMessage());
+                retryRequest(context, "reservation-failed");
+                return;
+            }
+
+            if (response == null) {
+                LOGGER.warn("Reservation response missing for player {}", request.getPlayerName());
+                retryRequest(context, "reservation-failed");
+                return;
+            }
+
+            if (!response.isAccepted()) {
+                LOGGER.warn("Reservation rejected for player {}: {}", request.getPlayerName(), response.getReason());
+                retryRequest(context, response.getReason() != null ? response.getReason() : "reservation-rejected");
+                return;
+            }
+
+            String reservationToken = response.getReservationToken();
+            if (reservationToken == null || reservationToken.isBlank()) {
+                LOGGER.warn("Reservation accepted without token for player {}", request.getPlayerName());
+                retryRequest(context, "reservation-missing-token");
+                return;
+            }
+
+            dispatchRouteWithReservation(context, slot, reservationToken);
+        }, scheduler);
+    }
+
+    private void dispatchRouteWithReservation(PlayerRequestContext context,
+                                              LogicalSlotRecord slot,
+                                              String reservationToken) {
+        PlayerSlotRequest request = context.request;
+
         PlayerRouteCommand command = new PlayerRouteCommand();
         command.setAction(PlayerRouteCommand.Action.ROUTE);
         command.setRequestId(request.getRequestId());
@@ -302,8 +395,11 @@ public class PlayerRoutingService {
 
         Map<String, String> metadata = new HashMap<>();
         metadata.putAll(slotMetadata);
-        metadata.putAll(request.getMetadata());
+        if (request.getMetadata() != null) {
+            metadata.putAll(request.getMetadata());
+        }
         metadata.putIfAbsent("family", request.getFamilyId());
+        metadata.put("reservationToken", reservationToken);
         command.setMetadata(metadata);
 
         messageBus.broadcast(ChannelConstants.getPlayerRouteChannel(request.getProxyId()), command);
@@ -450,15 +546,6 @@ public class PlayerRoutingService {
         }
     }
 
-    private static final class InFlightRoute {
-        final PlayerRequestContext request;
-        final String slotId;
-        final ScheduledFuture<?> timeoutFuture;
-
-        InFlightRoute(PlayerRequestContext request, String slotId, ScheduledFuture<?> timeoutFuture) {
-            this.request = request;
-            this.slotId = slotId;
-            this.timeoutFuture = timeoutFuture;
-        }
+    private record InFlightRoute(PlayerRequestContext request, String slotId, ScheduledFuture<?> timeoutFuture) {
     }
 }

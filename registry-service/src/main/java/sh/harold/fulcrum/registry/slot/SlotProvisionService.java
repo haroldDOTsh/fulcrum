@@ -52,6 +52,10 @@ public class SlotProvisionService {
             SlotProvisionCommand command = new SlotProvisionCommand(candidate.getServerId(), familyId);
             if (metadata != null && !metadata.isEmpty()) {
                 command.setMetadata(metadata);
+                String variant = metadata.get("variant");
+                if (variant != null && !variant.isBlank()) {
+                    command.setVariant(variant);
+                }
             }
 
             try {

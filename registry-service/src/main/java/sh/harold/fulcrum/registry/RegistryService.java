@@ -18,6 +18,7 @@ import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
+import sh.harold.fulcrum.registry.session.DeadServerSessionSweeper;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 
 import java.io.InputStream;
@@ -50,6 +51,7 @@ public class RegistryService {
     private RegistryMessageBusAdapter messageBusAdapter;
     private SlotProvisionService slotProvisionService;
     private PlayerRoutingService playerRoutingService;
+    private sh.harold.fulcrum.registry.session.DeadServerSessionSweeper sessionSweeper;
 
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -130,6 +132,19 @@ public class RegistryService {
                         "recycle-ids", true,
                         "debug", false
                 ),
+                "storage", Map.of(
+                        "mongodb", Map.of(
+                                "connection-string", System.getenv("MONGODB_URI") != null ? System.getenv("MONGODB_URI") : "mongodb://localhost:27017",
+                                "database", System.getenv("MONGODB_DATABASE") != null ? System.getenv("MONGODB_DATABASE") : "fulcrum"
+                        ),
+                        "postgres", Map.of(
+                                "enabled", System.getenv("POSTGRES_ENABLED") == null || Boolean.parseBoolean(System.getenv("POSTGRES_ENABLED")),
+                                "jdbc-url", System.getenv("POSTGRES_JDBC_URL") != null ? System.getenv("POSTGRES_JDBC_URL") : "jdbc:postgresql://localhost:5432/fulcrum",
+                                "username", System.getenv("POSTGRES_USERNAME") != null ? System.getenv("POSTGRES_USERNAME") : "fulcrum",
+                                "password", System.getenv("POSTGRES_PASSWORD") != null ? System.getenv("POSTGRES_PASSWORD") : "",
+                                "database", System.getenv("POSTGRES_DATABASE") != null ? System.getenv("POSTGRES_DATABASE") : "fulcrum"
+                        )
+                ),
                 "logging", Map.of(
                         "level", System.getenv("LOG_LEVEL") != null ? System.getenv("LOG_LEVEL") : "INFO"
                 )
@@ -167,6 +182,17 @@ public class RegistryService {
             slotProvisionService = new SlotProvisionService(serverRegistry, messageBus);
             playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry);
             playerRoutingService.initialize();
+
+            sessionSweeper = createSessionSweeper();
+            if (sessionSweeper != null) {
+                registrationHandler.addServerTimeoutListener(serverId -> {
+                    try {
+                        sessionSweeper.sweepAsync(serverId);
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to schedule session sweep for {}", serverId, e);
+                    }
+                });
+            }
 
             // Log which implementation was created
             String busClassName = messageBus.getClass().getSimpleName();
@@ -387,6 +413,54 @@ public class RegistryService {
         return proxyRegistry;
     }
 
+    private DeadServerSessionSweeper createSessionSweeper() {
+        try {
+            Map<String, Object> redisSection = (Map<String, Object>) config.get("redis");
+            if (redisSection == null) {
+                LOGGER.warn("Redis configuration missing; session sweeper disabled");
+                return null;
+            }
+
+            String redisHost = String.valueOf(redisSection.getOrDefault("host", "localhost"));
+            int redisPort = redisSection.get("port") instanceof Number
+                    ? ((Number) redisSection.get("port")).intValue()
+                    : Integer.parseInt(String.valueOf(redisSection.getOrDefault("port", 6379)));
+            String redisPassword = String.valueOf(redisSection.getOrDefault("password", ""));
+
+            DeadServerSessionSweeper.RedisConfig redisConfig = new DeadServerSessionSweeper.RedisConfig(redisHost, redisPort, redisPassword);
+
+            Map<String, Object> storage = (Map<String, Object>) config.get("storage");
+            DeadServerSessionSweeper.MongoConfig mongoConfig = null;
+            DeadServerSessionSweeper.PostgresConfig postgresConfig = null;
+
+            if (storage != null) {
+                Map<String, Object> mongoSection = (Map<String, Object>) storage.get("mongodb");
+                if (mongoSection != null) {
+                    String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
+                    String database = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
+                    mongoConfig = new DeadServerSessionSweeper.MongoConfig(connectionString, database);
+                }
+
+                Map<String, Object> postgresSection = (Map<String, Object>) storage.get("postgres");
+                if (postgresSection != null) {
+                    boolean enabled = Boolean.parseBoolean(String.valueOf(postgresSection.getOrDefault("enabled", true)));
+                    if (enabled) {
+                        String jdbcUrl = String.valueOf(postgresSection.getOrDefault("jdbc-url", "jdbc:postgresql://localhost:5432/fulcrum"));
+                        String username = String.valueOf(postgresSection.getOrDefault("username", "fulcrum"));
+                        String password = String.valueOf(postgresSection.getOrDefault("password", ""));
+                        String database = String.valueOf(postgresSection.getOrDefault("database", "fulcrum"));
+                        postgresConfig = new DeadServerSessionSweeper.PostgresConfig(true, jdbcUrl, username, password, database);
+                    }
+                }
+            }
+
+            return new DeadServerSessionSweeper(LOGGER, scheduler, redisConfig, mongoConfig, postgresConfig);
+        } catch (Exception e) {
+            LOGGER.error("Failed to initialize session sweeper", e);
+            return null;
+        }
+    }
+
     /**
      * Check if debug mode is enabled
      */
@@ -421,6 +495,14 @@ public class RegistryService {
 
             if (playerRoutingService != null) {
                 playerRoutingService.shutdown();
+            }
+
+            if (sessionSweeper != null) {
+                try {
+                    sessionSweeper.close();
+                } catch (Exception sweeperClose) {
+                    LOGGER.warn("Failed to close session sweeper", sweeperClose);
+                }
             }
 
             // MessageBus shutdown is handled by the adapter
