@@ -69,7 +69,7 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
             if (maxPlayers > 0 && context.roster().activeCount() >= maxPlayers) {
                 int reduced = remainingSeconds.updateAndGet(current -> Math.min(current, 10));
                 if (reduced == 10 && accelerated.compareAndSet(false, true)) {
-                    context.broadcast(ChatColor.YELLOW + "All slots filled! Match starting in 10 seconds.");
+                    context.broadcast(ChatColor.YELLOW + "All slots filled! " + formatCountdownMessage(10));
                 }
             }
 
@@ -80,8 +80,8 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
                 return;
             }
 
-            if (seconds <= 10) {
-                context.broadcast("Match starting in " + seconds + " seconds");
+            if (shouldAnnounceCountdown(seconds)) {
+                context.broadcast(formatCountdownMessage(seconds));
             }
         }, 0L, 20L);
     }
@@ -100,6 +100,23 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         }
         context.removeAttribute(SPAWN_ATTRIBUTE);
         context.removeAttribute(MinigameAttributes.SLOT_METADATA);
+    }
+
+    private static boolean shouldAnnounceCountdown(int seconds) {
+        return seconds == 60 || seconds == 30 || seconds == 20 || seconds <= 10;
+    }
+
+    private static String formatCountdownMessage(int seconds) {
+        ChatColor countColor = ChatColor.YELLOW;
+        if (seconds > 19) {
+            countColor = ChatColor.YELLOW;
+        } else if (seconds > 9) {
+            countColor = ChatColor.GOLD;
+        } else {
+            countColor = ChatColor.RED;
+        }
+        String unit = seconds == 1 ? " second" : " seconds";
+        return ChatColor.YELLOW + "The game starts in " + countColor + seconds + ChatColor.YELLOW + unit + ChatColor.RESET;
     }
 
     @SuppressWarnings("unchecked")
@@ -250,6 +267,5 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         return Optional.empty();
     }
 }
-
 
 

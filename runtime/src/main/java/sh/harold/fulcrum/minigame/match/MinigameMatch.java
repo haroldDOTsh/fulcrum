@@ -4,8 +4,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagContexts;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
+import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
@@ -117,8 +120,13 @@ public final class MinigameMatch {
         }
         long activeCount = roster.activeCount();
         int maxPlayers = resolveMaxPlayers();
-        String display = ChatColor.GOLD + player.getName() + ChatColor.YELLOW;
-        String messageBody = " has joined! (" + activeCount + "/" + (maxPlayers > 0 ? maxPlayers : "?") + ")";
+        String playerColor = resolveRankColor(player);
+        String display = playerColor + player.getName() + ChatColor.YELLOW;
+        StringBuilder messageBody = new StringBuilder(" has joined! (")
+                .append(ChatColor.AQUA).append(activeCount)
+                .append(ChatColor.YELLOW).append("/")
+                .append(ChatColor.AQUA).append(maxPlayers > 0 ? maxPlayers : "?")
+                .append(ChatColor.YELLOW).append(")");
         context.broadcast(display + messageBody + ChatColor.RESET);
     }
 
@@ -142,5 +150,28 @@ public final class MinigameMatch {
             }
         }
         return 0;
+    }
+
+    private String resolveRankColor(Player player) {
+        if (player == null) {
+            return ChatColor.GOLD.toString();
+        }
+        ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
+        if (locator == null) {
+            return ChatColor.GOLD.toString();
+        }
+        RankService rankService = locator.findService(RankService.class).orElse(null);
+        if (rankService == null) {
+            return ChatColor.GOLD.toString();
+        }
+        try {
+            Rank effectiveRank = rankService.getEffectiveRankSync(player.getUniqueId());
+            if (effectiveRank != null) {
+                return ChatColor.translateAlternateColorCodes('&', effectiveRank.getColorCode());
+            }
+        } catch (Exception ignored) {
+            // Fall back to default color on any lookup failure.
+        }
+        return ChatColor.GOLD.toString();
     }
 }

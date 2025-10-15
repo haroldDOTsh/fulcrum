@@ -329,6 +329,11 @@ public final class StateContext {
             executeScheduled(() -> performRespawn(playerId));
             return;
         }
+        long seconds = Math.max(1L, (delayTicks + 19L) / 20L);
+        findPlayer(playerId).ifPresent(player -> {
+            String unit = seconds == 1L ? " second" : " seconds";
+            player.sendMessage(ChatColor.YELLOW + "You will respawn in " + ChatColor.RED + seconds + ChatColor.YELLOW + unit + ChatColor.RESET);
+        });
         BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             respawnTasks.remove(playerId);
             executeScheduled(() -> performRespawn(playerId));
@@ -366,6 +371,7 @@ public final class StateContext {
         if (currentFlagContext != null && !currentFlagContext.isBlank()) {
             applyFlagContext(playerId, currentFlagContext);
         }
+        player.sendMessage(ChatColor.YELLOW + "You have respawned!" + ChatColor.RESET);
     }
 
     public void teleportPlayerToDefaultSpawn(UUID playerId) {
