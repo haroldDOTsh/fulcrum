@@ -20,6 +20,8 @@ import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
+import sh.harold.fulcrum.minigame.data.MinigameCollection;
+import sh.harold.fulcrum.minigame.data.MinigameDataRegistry;
 import sh.harold.fulcrum.minigame.defaults.DefaultPreLobbyState;
 import sh.harold.fulcrum.minigame.defaults.PreLobbyOptions;
 import sh.harold.fulcrum.minigame.state.AbstractMinigameState;
@@ -28,6 +30,7 @@ import sh.harold.fulcrum.minigame.state.context.StateContext;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 /**
@@ -50,6 +53,7 @@ public final class DebugMinigameFeature implements PluginFeature {
     private static final String STATE_PLAY_B = "play_b";
 
     private SlotFamilyService slotFamilyService;
+    private MinigameCollection<DebugPlayerData> playerData;
 
     @Override
     public int getPriority() {
@@ -71,6 +75,16 @@ public final class DebugMinigameFeature implements PluginFeature {
         if (engine == null || flagService == null) {
             LOGGER.warning("Minigame engine or action flag service unavailable; skipping debug pipeline bootstrap.");
             return;
+        }
+
+        MinigameDataRegistry dataRegistry = container.getOptional(MinigameDataRegistry.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(MinigameDataRegistry.class).orElse(null)
+                        : null);
+        if (dataRegistry != null) {
+            playerData = dataRegistry.register(FAMILY_ID, "player_data_debug", DebugPlayerData.class);
+        } else {
+            LOGGER.warning("MinigameDataRegistry unavailable; debug minigame statistics will not persist.");
         }
 
         registerDebugBundles(flagService);
@@ -104,6 +118,22 @@ public final class DebugMinigameFeature implements PluginFeature {
         return "debug:" + suffix;
     }
 
+    private void recordChoice(UUID playerId, char letter) {
+        recordChoice(playerId, letter, null);
+    }
+
+    private void recordChoice(UUID playerId, char letter, Consumer<DebugPlayerData> extra) {
+        if (playerData == null || playerId == null) {
+            return;
+        }
+        playerData.upsert(playerId, data -> {
+            data.recordLetter(letter);
+            if (extra != null) {
+                extra.accept(data);
+            }
+        });
+    }
+
     private MinigameBlueprint buildBlueprint() {
         PreLobbyOptions preLobby = new PreLobbyOptions()
                 .minimumPlayers(1)
@@ -124,7 +154,7 @@ public final class DebugMinigameFeature implements PluginFeature {
         return builder.build();
     }
 
-    private static final class FirstPlayState extends AbstractMinigameState {
+    private final class FirstPlayState extends AbstractMinigameState {
         private final String contextId;
         private final String nextStateId;
         private Listener listener;
@@ -177,6 +207,7 @@ public final class DebugMinigameFeature implements PluginFeature {
                 }
                 BukkitScheduler scheduler = context.getPlugin().getServer().getScheduler();
                 scheduler.runTask(context.getPlugin(), () -> {
+                    recordChoice(playerId, 'a');
                     context.broadcast("Advancing to Stage B!");
                     context.requestTransition(nextStateId);
                 });
@@ -184,7 +215,7 @@ public final class DebugMinigameFeature implements PluginFeature {
         }
     }
 
-    private static final class SecondPlayState extends AbstractMinigameState {
+    private final class SecondPlayState extends AbstractMinigameState {
         private static final long RESPAWN_DELAY = 200L; // 10 seconds
         private final String contextId;
         private final String endStateId;
@@ -237,17 +268,20 @@ public final class DebugMinigameFeature implements PluginFeature {
                 BukkitScheduler scheduler = context.getPlugin().getServer().getScheduler();
                 switch (message) {
                     case "b" -> scheduler.runTask(context.getPlugin(), () -> {
+                        recordChoice(playerId, 'b', DebugPlayerData::incrementWins);
                         context.broadcast("Match complete!");
                         context.markMatchComplete();
                         context.requestTransition(endStateId);
                     });
                     case "c" -> scheduler.runTask(context.getPlugin(), () -> {
+                        recordChoice(playerId, 'c', DebugPlayerData::incrementLosses);
                         context.broadcast("Player eliminated: " + event.getPlayer().getName());
                         context.eliminatePlayer(playerId, false, 0L);
                         context.markMatchComplete();
                         context.requestTransition(endStateId);
                     });
                     case "d" -> scheduler.runTask(context.getPlugin(), () -> {
+                        recordChoice(playerId, 'd', DebugPlayerData::incrementDeaths);
                         context.broadcast("Player eliminated for 10 seconds: " + event.getPlayer().getName());
                         context.eliminatePlayer(playerId, true, RESPAWN_DELAY);
                     });

@@ -110,13 +110,8 @@ public class PlayerSessionRecord {
         return segments;
     }
 
-    @JsonProperty("segments")
-    public void setSegments(List<Segment> segments) {
-        this.segments.clear();
-        if (segments != null) {
-            this.segments.addAll(segments);
-        }
-        rebuildActiveSegment();
+    private static String newSegmentId() {
+        return UUID.randomUUID().toString();
     }
 
     @JsonIgnore
@@ -124,24 +119,18 @@ public class PlayerSessionRecord {
         this.lastUpdatedAt = Instant.now().toEpochMilli();
     }
 
-    @JsonIgnore
-    public void startSegment(String type,
-                             String context,
-                             String serverId,
-                             Map<String, Object> metadata,
-                             long startedAt) {
-        endActiveSegment(startedAt);
-
-        Segment segment = new Segment();
-        segment.setType(type);
-        segment.setContext(context);
-        segment.setServerId(serverId);
-        segment.setStartedAt(startedAt);
-        if (metadata != null && !metadata.isEmpty()) {
-            segment.getMetadata().putAll(metadata);
+    @JsonProperty("segments")
+    public void setSegments(List<Segment> segments) {
+        this.segments.clear();
+        if (segments != null) {
+            this.segments.addAll(segments);
+            this.segments.forEach(segment -> {
+                if (segment.getSegmentId() == null || segment.getSegmentId().isBlank()) {
+                    segment.setSegmentId(newSegmentId());
+                }
+            });
         }
-        segments.add(segment);
-        activeSegment = segment;
+        rebuildActiveSegment();
     }
 
     @JsonIgnore
@@ -170,6 +159,32 @@ public class PlayerSessionRecord {
         if (last.getEndedAt() == null) {
             activeSegment = last;
         }
+    }
+
+    @JsonIgnore
+    public void startSegment(String type,
+                             String context,
+                             String serverId,
+                             Map<String, Object> metadata,
+                             long startedAt) {
+        endActiveSegment(startedAt);
+
+        Segment segment = new Segment();
+        segment.setType(type);
+        segment.setContext(context);
+        segment.setServerId(serverId);
+        segment.setStartedAt(startedAt);
+        segment.setSegmentId(newSegmentId());
+        if (metadata != null && !metadata.isEmpty()) {
+            segment.getMetadata().putAll(metadata);
+        }
+        segments.add(segment);
+        activeSegment = segment;
+    }
+
+    @JsonIgnore
+    public Segment getActiveSegment() {
+        return activeSegment;
     }
 
     @JsonIgnore
@@ -225,12 +240,22 @@ public class PlayerSessionRecord {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class Segment {
+        private String segmentId;
         private String type;
         private String context;
         private String serverId;
         private long startedAt;
         private Long endedAt;
         private Map<String, Object> metadata = new HashMap<>();
+
+        @JsonProperty("segmentId")
+        public String getSegmentId() {
+            return segmentId;
+        }
+
+        public void setSegmentId(String segmentId) {
+            this.segmentId = segmentId;
+        }
 
         public String getType() {
             return type;

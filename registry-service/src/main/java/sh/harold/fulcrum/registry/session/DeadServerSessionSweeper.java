@@ -5,14 +5,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.UpdateOptions;
 import io.lettuce.core.*;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import org.bson.Document;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.data.playtime.PlaytimeTracker;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.time.Duration;
@@ -34,6 +36,7 @@ public class DeadServerSessionSweeper implements AutoCloseable {
     private final StatefulRedisConnection<String, String> redisConnection;
     private final MongoClient mongoClient;
     private final MongoCollection<Document> playersCollection;
+    private final PlaytimeTracker playtimeTracker;
     private final SessionLogRepository sessionLogRepository;
     private final ObjectMapper objectMapper;
 
@@ -50,9 +53,9 @@ public class DeadServerSessionSweeper implements AutoCloseable {
         this.redisClient = client;
         this.redisConnection = client != null ? client.connect() : null;
         this.mongoClient = mongoConfig != null ? MongoClients.create(mongoConfig.connectionString()) : null;
-        this.playersCollection = mongoClient != null
-                ? mongoClient.getDatabase(mongoConfig.database()).getCollection("players")
-                : null;
+        MongoDatabase database = mongoClient != null ? mongoClient.getDatabase(mongoConfig.database()) : null;
+        this.playersCollection = database != null ? database.getCollection("players") : null;
+        this.playtimeTracker = database != null ? new PlaytimeTracker(database, null) : null;
         if (playersCollection == null) {
             logger.warn("Session sweeper running without Mongo persistence; configure storage.mongodb to enable");
         }
@@ -134,15 +137,23 @@ public class DeadServerSessionSweeper implements AutoCloseable {
     }
 
     private void persistRecord(PlayerSessionRecord record, long endedAt) {
+        if (playtimeTracker != null) {
+            try {
+                playtimeTracker.recordCompletedSegments(record);
+            } catch (Exception exception) {
+                logger.warn("Failed to process playtime for session {}", record.getSessionId(), exception);
+            }
+        }
+
         Map<String, Object> payload = buildPersistencePayload(record);
 
         if (playersCollection != null) {
-            Document document = new Document("_id", record.getPlayerId().toString());
-            payload.forEach(document::put);
-            playersCollection.replaceOne(
+            Document update = new Document();
+            payload.forEach(update::put);
+            playersCollection.updateOne(
                     Filters.eq("_id", record.getPlayerId().toString()),
-                    document,
-                    new ReplaceOptions().upsert(true)
+                    new Document("$set", update),
+                    new UpdateOptions().upsert(true)
             );
         }
 

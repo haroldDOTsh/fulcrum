@@ -62,6 +62,27 @@ class SessionLogRepository implements AutoCloseable {
             variant = stringValue(activeMap.get("variant"));
         }
 
+        if ((family == null || variant == null || environment == null) && !record.getSegments().isEmpty()) {
+            for (int i = record.getSegments().size() - 1; i >= 0; i--) {
+                Map<String, Object> metadata = record.getSegments().get(i).getMetadata();
+                if (metadata == null || metadata.isEmpty()) {
+                    continue;
+                }
+                if (environment == null) {
+                    environment = stringValue(metadata.get("environment"));
+                }
+                if (family == null) {
+                    family = stringValue(metadata.get("family"));
+                }
+                if (variant == null) {
+                    variant = stringValue(metadata.get("variant"));
+                }
+                if (environment != null && family != null && variant != null) {
+                    break;
+                }
+            }
+        }
+
         return new SessionContext(environment, family, variant);
     }
 

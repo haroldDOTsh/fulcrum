@@ -214,6 +214,8 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             Map<String, Object> segmentMetadata = new HashMap<>(metadata);
             segmentMetadata.put("slotId", command.getSlotId());
             segmentMetadata.put("serverId", command.getServerId());
+            segmentMetadata.putIfAbsent("phase", "pre_lobby");
+            segmentMetadata.putIfAbsent("queue", Boolean.TRUE);
             String context = metadata.getOrDefault("family", command.getSlotId());
             sessionService.startSegment(command.getPlayerId(), "MINIGAME", context, segmentMetadata, command.getServerId());
             sessionService.clearHandoff(command.getPlayerId());

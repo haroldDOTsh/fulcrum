@@ -19,6 +19,7 @@ public class FulcrumConnectionAdapter {
     private final Logger logger;
     private ConnectionAdapter adapter;
     private PostgresConnectionAdapter postgresAdapter;
+    private MongoConnectionAdapter mongoAdapter;
 
     public FulcrumConnectionAdapter(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -67,6 +68,8 @@ public class FulcrumConnectionAdapter {
 
         logger.info("Initializing data storage with backend: " + storageType);
 
+        mongoAdapter = null;
+
         switch (storageType) {
             case JSON:
                 String dataPath = config.getString("json.data-path", "data");
@@ -89,7 +92,8 @@ public class FulcrumConnectionAdapter {
                 String username = config.getString("mongodb.username", "");
                 String password = config.getString("mongodb.password", "");
 
-                adapter = new MongoConnectionAdapter(connectionString, database);
+                mongoAdapter = new MongoConnectionAdapter(connectionString, database);
+                adapter = mongoAdapter;
                 logger.info("Using MongoDB storage backend: " + database);
                 break;
 
@@ -128,6 +132,10 @@ public class FulcrumConnectionAdapter {
 
     public PostgresConnectionAdapter getPostgresAdapter() {
         return postgresAdapter;
+    }
+
+    public MongoConnectionAdapter getMongoAdapter() {
+        return mongoAdapter;
     }
 
     private void initializePostgresAdapter(YamlConfiguration config) {

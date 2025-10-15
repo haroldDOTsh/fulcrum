@@ -27,11 +27,11 @@ public final class ProxyIdentifier implements Serializable, Comparable<ProxyIden
      * Format: proxy-{uuid}-{instance}-{timestamp}
      */
     private static final Pattern ID_PATTERN = Pattern.compile(
-            "^proxy-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})-([0-9]{2})-(\\d+)$",
+            "^proxy-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})-([0-9]{1,2})-(\\d+)$",
             Pattern.CASE_INSENSITIVE
     );
 
-    private static final String ID_FORMAT = "proxy-%s-%02d-%d";
+    private static final String ID_FORMAT = "proxy-%s-%d-%d";
     private static final String DEFAULT_VERSION = "1.0.0";
 
     private final UUID uuid;
@@ -53,7 +53,7 @@ public final class ProxyIdentifier implements Serializable, Comparable<ProxyIden
         this.instanceId = instanceId;
         this.timestamp = timestamp;
         this.version = version != null ? version : DEFAULT_VERSION;
-        this.formattedId = String.format(ID_FORMAT, uuid.toString(), instanceId, timestamp);
+        this.formattedId = String.format(ID_FORMAT, uuid, instanceId, timestamp);
 
         validateInstanceId(instanceId);
         validateTimestamp(timestamp);
@@ -172,12 +172,18 @@ public final class ProxyIdentifier implements Serializable, Comparable<ProxyIden
 
         // Handle temp-proxy-{uuid} format
         if (legacyId.startsWith("temp-proxy-")) {
-            String uuidPart = legacyId.substring("temp-proxy-".length());
+            String suffix = legacyId.substring("temp-proxy-".length());
             try {
-                UUID uuid = UUID.fromString(uuidPart);
+                UUID uuid = UUID.fromString(suffix);
                 return new ProxyIdentifier(uuid, 0, Instant.now().toEpochMilli(), DEFAULT_VERSION);
-            } catch (Exception e) {
-                // Fall through to next attempt
+            } catch (IllegalArgumentException ignored) {
+                try {
+                    int instanceId = Integer.parseInt(suffix);
+                    UUID uuid = UUID.nameUUIDFromBytes(legacyId.getBytes());
+                    return new ProxyIdentifier(uuid, Math.abs(instanceId) % 100, Instant.now().toEpochMilli(), DEFAULT_VERSION);
+                } catch (NumberFormatException ex) {
+                    // Fall through to next attempt
+                }
             }
         }
 
@@ -208,9 +214,9 @@ public final class ProxyIdentifier implements Serializable, Comparable<ProxyIden
     }
 
     private static void validateTimestamp(long timestamp) {
-        if (timestamp < 0) {
+        if (timestamp <= 0) {
             throw new IllegalArgumentException(
-                    "Timestamp cannot be negative, got: " + timestamp
+                    "Timestamp must be a positive epoch millis value, got: " + timestamp
             );
         }
         // Sanity check: timestamp should not be in the far future (more than 1 year ahead)
@@ -309,8 +315,7 @@ public final class ProxyIdentifier implements Serializable, Comparable<ProxyIden
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof ProxyIdentifier)) return false;
-        ProxyIdentifier that = (ProxyIdentifier) o;
+        if (!(o instanceof ProxyIdentifier that)) return false;
         return instanceId == that.instanceId &&
                 timestamp == that.timestamp &&
                 uuid.equals(that.uuid);

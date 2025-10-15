@@ -2,6 +2,7 @@ package sh.harold.fulcrum.fundamentals.data;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -16,6 +17,7 @@ public class DataAPIFeature implements PluginFeature {
     private FulcrumConnectionAdapter connectionAdapter;
     private DependencyContainer container;
     private PostgresConnectionAdapter postgresAdapter;
+    private MongoConnectionAdapter mongoAdapter;
     private DataAPI dataAPI;
 
     @Override
@@ -49,6 +51,16 @@ public class DataAPIFeature implements PluginFeature {
                 logger.warning("PostgreSQL adapter not available; relational features relying on SQL will be disabled.");
             }
 
+            mongoAdapter = connectionAdapter.getMongoAdapter();
+            if (mongoAdapter != null) {
+                container.register(MongoConnectionAdapter.class, mongoAdapter);
+                if (ServiceLocatorImpl.getInstance() != null) {
+                    ServiceLocatorImpl.getInstance().registerService(MongoConnectionAdapter.class, mongoAdapter);
+                }
+            } else {
+                logger.warning("MongoDB adapter not available; minigame data persistence will be disabled.");
+            }
+
             // Also register via ServiceLocator if available
             if (ServiceLocatorImpl.getInstance() != null) {
                 ServiceLocatorImpl.getInstance().registerService(DataAPI.class, dataAPI);
@@ -77,12 +89,14 @@ public class DataAPIFeature implements PluginFeature {
             container.unregister(DataAPI.class);
             container.unregister(ConnectionAdapter.class);
             container.unregister(PostgresConnectionAdapter.class);
+            container.unregister(MongoConnectionAdapter.class);
         }
 
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().unregisterService(DataAPI.class);
             ServiceLocatorImpl.getInstance().unregisterService(ConnectionAdapter.class);
             ServiceLocatorImpl.getInstance().unregisterService(PostgresConnectionAdapter.class);
+            ServiceLocatorImpl.getInstance().unregisterService(MongoConnectionAdapter.class);
         }
 
         logger.info("Data API shut down successfully");
@@ -104,5 +118,9 @@ public class DataAPIFeature implements PluginFeature {
 
     public PostgresConnectionAdapter getPostgresAdapter() {
         return postgresAdapter;
+    }
+
+    public MongoConnectionAdapter getMongoAdapter() {
+        return mongoAdapter;
     }
 }

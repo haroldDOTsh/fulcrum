@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
+import sh.harold.fulcrum.data.playtime.PlaytimeTracker;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
@@ -35,6 +36,7 @@ public class PlayerSessionService {
     private final String fallbackServerId;
     private final String fallbackEnvironment;
     private final ServerIdentifier serverIdentifier;
+    private final PlaytimeTracker playtimeTracker;
 
     private final ConcurrentHashMap<UUID, String> activeSessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, PlayerSessionRecord> localRecords = new ConcurrentHashMap<>();
@@ -44,12 +46,14 @@ public class PlayerSessionService {
                                 ObjectMapper objectMapper,
                                 String fallbackServerId,
                                 String fallbackEnvironment,
-                                ServerIdentifier serverIdentifier) {
+                                ServerIdentifier serverIdentifier,
+                                PlaytimeTracker playtimeTracker) {
         this.redisOperations = redisOperations;
         this.objectMapper = objectMapper;
         this.fallbackServerId = fallbackServerId;
         this.fallbackEnvironment = fallbackEnvironment;
         this.serverIdentifier = serverIdentifier;
+        this.playtimeTracker = playtimeTracker;
         this.redisAvailable = redisOperations != null && redisOperations.isAvailable();
     }
 
@@ -119,6 +123,9 @@ public class PlayerSessionService {
                 .filter(r -> proposedSessionId.equals(r.getSessionId()))
                 .map(r -> {
                     r.closeSegmentsIfNeeded(System.currentTimeMillis());
+                    if (playtimeTracker != null) {
+                        playtimeTracker.recordCompletedSegments(r);
+                    }
                     return r;
                 });
 
@@ -187,7 +194,26 @@ public class PlayerSessionService {
     }
 
     public void endActiveSegment(UUID playerId) {
-        withActiveSession(playerId, record -> record.endActiveSegment(System.currentTimeMillis()));
+        withActiveSession(playerId, record -> {
+            long now = System.currentTimeMillis();
+            PlayerSessionRecord.Segment active = record.getActiveSegment();
+            record.endActiveSegment(now);
+            if (playtimeTracker != null && active != null) {
+                playtimeTracker.recordSegment(record, active);
+            }
+        });
+    }
+
+    public void updateActiveSegmentMetadata(UUID playerId, Consumer<Map<String, Object>> mutator) {
+        if (mutator == null) {
+            return;
+        }
+        withActiveSession(playerId, record -> {
+            PlayerSessionRecord.Segment active = record.getActiveSegment();
+            if (active != null) {
+                mutator.accept(active.getMetadata());
+            }
+        });
     }
 
     @SuppressWarnings("unchecked")
@@ -357,33 +383,31 @@ public class PlayerSessionService {
 
     public void updateMinigameContext(UUID playerId, Map<String, String> metadata, String slotId) {
         withActiveSession(playerId, record -> {
-            Map<String, Object> active = new HashMap<>();
-            if (slotId != null && !slotId.isBlank()) {
-                active.put("slotId", slotId);
-            }
-            if (metadata != null) {
-                metadata.forEach((key, value) -> {
-                    if (value != null && !value.isBlank()) {
-                        switch (key) {
-                            case "family" -> active.put("family", value);
-                            case "variant" -> active.put("variant", value);
-                            case "mapId" -> active.put("mapId", value);
-                            case "environment" -> active.put("environment", value);
-                            default -> {
-                                // only include relevant keys
-                            }
-                        }
-                    }
-                });
-            }
-            active.putIfAbsent("environment", currentEnvironment());
             ensureEnvironment(record);
-            record.getMinigames().put("active", active);
+            record.getMinigames().remove("active");
+            record.getMinigames().remove("lastSlotId");
         });
     }
 
     public void clearMinigameContext(UUID playerId) {
-        withActiveSession(playerId, record -> record.getMinigames().remove("active"));
+        withActiveSession(playerId, record -> {
+            record.getMinigames().remove("active");
+            record.getMinigames().remove("lastSlotId");
+        });
+    }
+
+    public void setActiveMatchId(UUID playerId, UUID matchId) {
+        withActiveSession(playerId, record -> {
+            if (matchId != null) {
+                record.getMinigames().put("lastMatchId", matchId.toString());
+            } else {
+                record.getMinigames().remove("lastMatchId");
+            }
+        });
+    }
+
+    public void clearTrackedMatch(UUID playerId) {
+        withActiveSession(playerId, record -> record.getMinigames().remove("lastMatchId"));
     }
 
     private String stateKey(UUID playerId) {

@@ -1,10 +1,13 @@
 package sh.harold.fulcrum.minigame;
 
 import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
+import sh.harold.fulcrum.minigame.data.MinigameCollection;
+import sh.harold.fulcrum.minigame.data.MinigameDataRegistry;
 
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Metadata binding a slot family to a blueprint and configuration.
@@ -18,13 +21,22 @@ public final class MinigameRegistration {
     private final String familyId;
     private final SlotFamilyDescriptor descriptor;
     private final MinigameBlueprint blueprint;
+    private final Consumer<RegistrationContext> registrationHandler;
 
     public MinigameRegistration(String familyId,
                                 SlotFamilyDescriptor descriptor,
                                 MinigameBlueprint blueprint) {
+        this(familyId, descriptor, blueprint, null);
+    }
+
+    public MinigameRegistration(String familyId,
+                                SlotFamilyDescriptor descriptor,
+                                MinigameBlueprint blueprint,
+                                Consumer<RegistrationContext> registrationHandler) {
         this.familyId = Objects.requireNonNull(familyId, "familyId");
         this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
         this.blueprint = Objects.requireNonNull(blueprint, "blueprint");
+        this.registrationHandler = registrationHandler;
     }
 
     public String getFamilyId() {
@@ -37,6 +49,10 @@ public final class MinigameRegistration {
 
     public MinigameBlueprint getBlueprint() {
         return blueprint;
+    }
+
+    public Optional<Consumer<RegistrationContext>> getRegistrationHandler() {
+        return Optional.ofNullable(registrationHandler);
     }
 
     /**
@@ -70,5 +86,30 @@ public final class MinigameRegistration {
             return DEFAULT_PRE_LOBBY_OFFSET;
         }
     }
-}
 
+    public static final class RegistrationContext {
+        private final String familyId;
+        private final MinigameDataRegistry dataRegistry;
+        private final MinigameCollection<?> defaultCollection;
+
+        public RegistrationContext(String familyId,
+                                   MinigameDataRegistry dataRegistry,
+                                   MinigameCollection<?> defaultCollection) {
+            this.familyId = Objects.requireNonNull(familyId, "familyId");
+            this.dataRegistry = Objects.requireNonNull(dataRegistry, "dataRegistry");
+            this.defaultCollection = defaultCollection;
+        }
+
+        public String familyId() {
+            return familyId;
+        }
+
+        public MinigameDataRegistry collections() {
+            return dataRegistry;
+        }
+
+        public Optional<MinigameCollection<?>> defaultCollection() {
+            return Optional.ofNullable(defaultCollection);
+        }
+    }
+}

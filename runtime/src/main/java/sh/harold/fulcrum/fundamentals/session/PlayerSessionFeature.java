@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
 import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
@@ -12,6 +13,7 @@ import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
+import sh.harold.fulcrum.data.playtime.PlaytimeTracker;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
@@ -35,6 +37,7 @@ public class PlayerSessionFeature implements PluginFeature {
     private Logger logger;
     private PlayerSessionLogRepository sessionLogRepository;
     private JavaPlugin plugin;
+    private PlaytimeTracker playtimeTracker;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -60,11 +63,24 @@ public class PlayerSessionFeature implements PluginFeature {
                 : plugin.getServer().getName();
         String environment = resolveEnvironment(resolvedIdentifier);
         ObjectMapper mapper = new ObjectMapper();
-        sessionService = new PlayerSessionService(redisOperations, mapper, serverId, environment, resolvedIdentifier);
+        playtimeTracker = container.getOptional(MongoConnectionAdapter.class)
+                .map(MongoConnectionAdapter::getMongoDatabase)
+                .map(database -> new PlaytimeTracker(database, plugin.getLogger()))
+                .orElse(null);
+        if (playtimeTracker == null) {
+            logger.warning("PlaytimeTracker disabled (Mongo adapter unavailable). Playtime totals will not update.");
+        }
+        sessionService = new PlayerSessionService(redisOperations, mapper, serverId, environment, resolvedIdentifier, playtimeTracker);
 
         container.register(PlayerSessionService.class, sessionService);
+        if (playtimeTracker != null) {
+            container.register(PlaytimeTracker.class, playtimeTracker);
+        }
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(PlayerSessionService.class, sessionService);
+            if (playtimeTracker != null) {
+                ServiceLocatorImpl.getInstance().registerService(PlaytimeTracker.class, playtimeTracker);
+            }
         }
 
         messageBus = container.getOptional(MessageBus.class).orElse(null);
@@ -100,11 +116,13 @@ public class PlayerSessionFeature implements PluginFeature {
             ServiceLocatorImpl.getInstance().unregisterService(PlayerSessionService.class);
             ServiceLocatorImpl.getInstance().unregisterService(PlayerSessionLogRepository.class);
             ServiceLocatorImpl.getInstance().unregisterService(PlayerReservationService.class);
+            ServiceLocatorImpl.getInstance().unregisterService(PlaytimeTracker.class);
         }
         if (container != null) {
             container.unregister(PlayerSessionService.class);
             container.unregister(PlayerSessionLogRepository.class);
             container.unregister(PlayerReservationService.class);
+            container.unregister(PlaytimeTracker.class);
         }
         if (messageBus != null && reservationHandler != null) {
             messageBus.unsubscribe(ChannelConstants.PLAYER_RESERVATION_REQUEST, reservationHandler);
@@ -112,6 +130,7 @@ public class PlayerSessionFeature implements PluginFeature {
         if (sessionService != null) {
             sessionService.clearLocalCache();
         }
+        playtimeTracker = null;
         if (redisOperations != null) {
             try {
                 redisOperations.close();
@@ -145,6 +164,24 @@ public class PlayerSessionFeature implements PluginFeature {
                             "Create player session segment table",
                             plugin.getClass().getClassLoader(),
                             "migrations/player_session_segments.sql"
+                    )
+            );
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "player-match-history-001",
+                            "Create player match history table",
+                            plugin.getClass().getClassLoader(),
+                            "migrations/player_match_history.sql"
+                    )
+            );
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "match-log-001",
+                            "Create match log table",
+                            plugin.getClass().getClassLoader(),
+                            "migrations/match_log.sql"
                     )
             );
             return true;
