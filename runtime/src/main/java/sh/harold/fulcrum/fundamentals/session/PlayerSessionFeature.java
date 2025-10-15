@@ -184,6 +184,15 @@ public class PlayerSessionFeature implements PluginFeature {
                             "migrations/match_log.sql"
                     )
             );
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "match-participants-001",
+                            "Create match participants table",
+                            plugin.getClass().getClassLoader(),
+                            "migrations/match_participants.sql"
+                    )
+            );
             return true;
         } catch (Exception ex) {
             logger.warning("Failed to ensure player session schema: " + ex.getMessage());

@@ -24,12 +24,11 @@ import sh.harold.fulcrum.minigame.data.MinigameCollection;
 import sh.harold.fulcrum.minigame.data.MinigameDataRegistry;
 import sh.harold.fulcrum.minigame.defaults.DefaultPreLobbyState;
 import sh.harold.fulcrum.minigame.defaults.PreLobbyOptions;
+import sh.harold.fulcrum.minigame.match.MatchLogWriter;
 import sh.harold.fulcrum.minigame.state.AbstractMinigameState;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
 
-import java.util.EnumSet;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
@@ -54,6 +53,7 @@ public final class DebugMinigameFeature implements PluginFeature {
 
     private SlotFamilyService slotFamilyService;
     private MinigameCollection<DebugPlayerData> playerData;
+    private MinigameEngine engine;
 
     @Override
     public int getPriority() {
@@ -71,6 +71,8 @@ public final class DebugMinigameFeature implements PluginFeature {
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(ActionFlagService.class).orElse(null)
                         : null);
+
+        this.engine = engine;
 
         if (engine == null || flagService == null) {
             LOGGER.warning("Minigame engine or action flag service unavailable; skipping debug pipeline bootstrap.");
@@ -118,11 +120,15 @@ public final class DebugMinigameFeature implements PluginFeature {
         return "debug:" + suffix;
     }
 
-    private void recordChoice(UUID playerId, char letter) {
-        recordChoice(playerId, letter, null);
+    private void recordChoice(StateContext context, UUID playerId, char letter) {
+        recordChoice(context, playerId, letter, Collections.emptyMap(), null);
     }
 
-    private void recordChoice(UUID playerId, char letter, Consumer<DebugPlayerData> extra) {
+    private void recordChoice(StateContext context,
+                              UUID playerId,
+                              char letter,
+                              Map<String, Object> extraDetails,
+                              Consumer<DebugPlayerData> extra) {
         if (playerData == null || playerId == null) {
             return;
         }
@@ -132,6 +138,12 @@ public final class DebugMinigameFeature implements PluginFeature {
                 extra.accept(data);
             }
         });
+        Map<String, Object> details = new HashMap<>();
+        details.put("letter", String.valueOf(letter));
+        if (extraDetails != null && !extraDetails.isEmpty()) {
+            details.putAll(extraDetails);
+        }
+        logEvent(context, "LETTER_CHOICE", playerId, null, details);
     }
 
     private MinigameBlueprint buildBlueprint() {
@@ -152,6 +164,18 @@ public final class DebugMinigameFeature implements PluginFeature {
 
         builder.startState(MinigameBlueprint.STATE_PRE_LOBBY);
         return builder.build();
+    }
+
+    private void logEvent(StateContext context,
+                          String type,
+                          UUID actor,
+                          UUID target,
+                          Map<String, Object> details) {
+        if (engine == null || context == null) {
+            return;
+        }
+        engine.logMatchEvent(context.getMatchId(),
+                new MatchLogWriter.Event(System.currentTimeMillis(), type, actor, target, details));
     }
 
     private final class FirstPlayState extends AbstractMinigameState {
@@ -207,7 +231,7 @@ public final class DebugMinigameFeature implements PluginFeature {
                 }
                 BukkitScheduler scheduler = context.getPlugin().getServer().getScheduler();
                 scheduler.runTask(context.getPlugin(), () -> {
-                    recordChoice(playerId, 'a');
+                    recordChoice(context, playerId, 'a');
                     context.broadcast("Advancing to Stage B!");
                     context.requestTransition(nextStateId);
                 });
@@ -268,20 +292,23 @@ public final class DebugMinigameFeature implements PluginFeature {
                 BukkitScheduler scheduler = context.getPlugin().getServer().getScheduler();
                 switch (message) {
                     case "b" -> scheduler.runTask(context.getPlugin(), () -> {
-                        recordChoice(playerId, 'b', DebugPlayerData::incrementWins);
+                        recordChoice(context, playerId, 'b', Map.of("result", "WIN"), DebugPlayerData::incrementWins);
+                        logEvent(context, "MATCH_COMPLETED", playerId, null, Map.of("result", "WIN"));
                         context.broadcast("Match complete!");
                         context.markMatchComplete();
                         context.requestTransition(endStateId);
                     });
                     case "c" -> scheduler.runTask(context.getPlugin(), () -> {
-                        recordChoice(playerId, 'c', DebugPlayerData::incrementLosses);
+                        recordChoice(context, playerId, 'c', Map.of("result", "LOSS"), DebugPlayerData::incrementLosses);
+                        logEvent(context, "MATCH_COMPLETED", playerId, null, Map.of("result", "LOSS"));
                         context.broadcast("Player eliminated: " + event.getPlayer().getName());
                         context.eliminatePlayer(playerId, false, 0L);
                         context.markMatchComplete();
                         context.requestTransition(endStateId);
                     });
                     case "d" -> scheduler.runTask(context.getPlugin(), () -> {
-                        recordChoice(playerId, 'd', DebugPlayerData::incrementDeaths);
+                        recordChoice(context, playerId, 'd', Map.of("respawnDelay", RESPAWN_DELAY), DebugPlayerData::incrementDeaths);
+                        logEvent(context, "PLAYER_DEATH", playerId, null, Map.of("respawnDelay", RESPAWN_DELAY));
                         context.broadcast("Player eliminated for 10 seconds: " + event.getPlayer().getName());
                         context.eliminatePlayer(playerId, true, RESPAWN_DELAY);
                     });

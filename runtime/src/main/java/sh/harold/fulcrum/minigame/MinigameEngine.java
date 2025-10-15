@@ -524,8 +524,8 @@ public final class MinigameEngine {
                 case MinigameBlueprint.STATE_END_GAME -> {
                     match.getRoster().all().forEach(entry ->
                             sessionService.updateActiveSegmentMetadata(entry.getPlayerId(), metadata -> metadata.put("phase", MinigameBlueprint.STATE_END_GAME)));
-                    recordMatchHistory(matchId, match);
                     recordMatchLog(matchId, match);
+                    recordMatchHistory(matchId, match);
                 }
                 default -> {
                 }
@@ -652,16 +652,15 @@ public final class MinigameEngine {
         match.getRoster().all().forEach(entry -> {
             UUID playerId = entry.getPlayerId();
             UUID sessionId = resolveSessionId(matchId, playerId);
-            if (sessionId != null) {
-                participants.add(new MatchHistoryWriter.Participant(playerId, sessionId));
-            }
+            String state = entry.getState() != null ? entry.getState().name() : null;
+            Boolean respawnAllowed = entry.isRespawnAllowed();
+            participants.add(new MatchHistoryWriter.Participant(playerId, sessionId, state, respawnAllowed));
         });
         if (participants.isEmpty()) {
             return;
         }
-        long startedAt = matchStartTimes.getOrDefault(matchId, System.currentTimeMillis());
-        long endedAt = System.currentTimeMillis();
-        matchHistoryWriter.recordMatch(matchId, startedAt, endedAt, context.family(), context.variant(), context.mapId(), participants);
+        long recordedAt = System.currentTimeMillis();
+        matchHistoryWriter.recordMatch(matchId, recordedAt, participants);
         recordedMatches.add(matchId);
     }
 
@@ -682,13 +681,6 @@ public final class MinigameEngine {
             events = List.copyOf(events);
         }
 
-        List<MatchLogWriter.RosterEntry> roster = new ArrayList<>();
-        match.getRoster().all().forEach(entry -> roster.add(
-                new MatchLogWriter.RosterEntry(entry.getPlayerId(),
-                        entry.getState() != null ? entry.getState().name() : null,
-                        entry.isRespawnAllowed())
-        ));
-
         long startedAt = matchStartTimes.getOrDefault(matchId, System.currentTimeMillis());
         long endedAt = System.currentTimeMillis();
 
@@ -700,7 +692,6 @@ public final class MinigameEngine {
                 context.slotId(),
                 startedAt,
                 endedAt,
-                roster,
                 events);
     }
 
