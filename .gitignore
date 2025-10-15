@@ -158,3 +158,4 @@ test-output/
 # Generated files
 generated/
 auto-generated/
+/AGENTS.md
