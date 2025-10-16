@@ -9,8 +9,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -53,6 +52,7 @@ public class PlayerSessionLogRepository {
             ps.executeUpdate();
 
             persistSegments(connection, record, sessionContext);
+            linkSessionToMatches(connection, record);
         } catch (SQLException e) {
             logger.log(Level.WARNING, "Failed to persist session summary for " + record.getPlayerId(), e);
         }
@@ -98,6 +98,77 @@ public class PlayerSessionLogRepository {
             insertPs.executeBatch();
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to persist session segments for " + record.getSessionId(), e);
+        }
+    }
+
+    private void linkSessionToMatches(Connection connection, PlayerSessionRecord record) {
+        Set<UUID> matchIds = collectMatchIds(record);
+        if (matchIds.isEmpty()) {
+            return;
+        }
+
+        UUID sessionUuid;
+        try {
+            sessionUuid = UUID.fromString(record.getSessionId());
+        } catch (Exception ex) {
+            logger.log(Level.FINE, "Skipping session link; invalid session id '" + record.getSessionId() + "'", ex);
+            return;
+        }
+
+        String updateParticipants = "UPDATE match_participants SET session_id = ? " +
+                "WHERE match_id = ? AND player_uuid = ? AND (session_id IS NULL OR session_id <> ?)";
+        String updateHistory = "UPDATE player_match_history SET session_id = ?, recorded_at = recorded_at " +
+                "WHERE match_id = ? AND player_uuid = ? AND (session_id IS NULL OR session_id <> ?)";
+
+        try (PreparedStatement participantsPs = connection.prepareStatement(updateParticipants);
+             PreparedStatement historyPs = connection.prepareStatement(updateHistory)) {
+            for (UUID matchId : matchIds) {
+                participantsPs.setObject(1, sessionUuid);
+                participantsPs.setObject(2, matchId);
+                participantsPs.setObject(3, record.getPlayerId());
+                participantsPs.setObject(4, sessionUuid);
+                participantsPs.addBatch();
+
+                historyPs.setObject(1, sessionUuid);
+                historyPs.setObject(2, matchId);
+                historyPs.setObject(3, record.getPlayerId());
+                historyPs.setObject(4, sessionUuid);
+                historyPs.addBatch();
+            }
+            participantsPs.executeBatch();
+            historyPs.executeBatch();
+        } catch (SQLException ex) {
+            logger.log(Level.FINE, "Failed to backfill session links for session " + record.getSessionId(), ex);
+        }
+    }
+
+    private Set<UUID> collectMatchIds(PlayerSessionRecord record) {
+        Set<UUID> matchIds = new LinkedHashSet<>();
+
+        Object lastMatchId = record.getMinigames().get("lastMatchId");
+        parseMatchId(lastMatchId).ifPresent(matchIds::add);
+
+        for (PlayerSessionRecord.Segment segment : record.getSegments()) {
+            Object raw = segment.getMetadata().get("matchId");
+            parseMatchId(raw).ifPresent(matchIds::add);
+        }
+
+        return matchIds;
+    }
+
+    private Optional<UUID> parseMatchId(Object value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        String text = value.toString();
+        if (text.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(UUID.fromString(text.trim()));
+        } catch (IllegalArgumentException ex) {
+            logger.log(Level.FINE, "Ignoring invalid match id '" + text + "' while linking sessions", ex);
+            return Optional.empty();
         }
     }
 
