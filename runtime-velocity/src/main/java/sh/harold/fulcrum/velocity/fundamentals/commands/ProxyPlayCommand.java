@@ -61,7 +61,6 @@ final class ProxyPlayCommand implements SimpleCommand {
         }
 
         String familyId = selection.familyId();
-        String variantId = selection.variantId();
 
         if (!familyCache.hasFamily(familyId)) {
             source.sendMessage(Component.text("No backend registered for family '" + familyId + "'.", NamedTextColor.RED));
@@ -69,11 +68,27 @@ final class ProxyPlayCommand implements SimpleCommand {
         }
 
         Set<String> knownVariants = familyCache.variants(familyId);
-        if (!knownVariants.isEmpty() && !knownVariants.contains(variantId)) {
-            source.sendMessage(Component.text(
-                    "Variant '" + variantId + "' is not currently advertised for " + familyId + ".",
-                    NamedTextColor.RED));
-            return;
+        String fallbackVariant = selection.variantToken();
+        String variantId;
+        if (knownVariants.isEmpty()) {
+            variantId = fallbackVariant;
+            if (variantId == null || variantId.isBlank()) {
+                source.sendMessage(Component.text(
+                        "Variant '" + selection.displayValue() + "' is not a valid identifier.",
+                        NamedTextColor.RED));
+                return;
+            }
+            logger.debug("Accepting play request for {}:{} without cached variants; awaiting registry status updates.",
+                    familyId, variantId);
+        } else {
+            Optional<String> resolvedVariant = resolveVariant(familyId, selection, knownVariants);
+            if (resolvedVariant.isEmpty()) {
+                source.sendMessage(Component.text(
+                        "Variant '" + selection.displayValue() + "' is not currently advertised for " + familyId + ".",
+                        NamedTextColor.RED));
+                return;
+            }
+            variantId = resolvedVariant.get();
         }
 
         if (isOnCooldown(player)) {
@@ -143,7 +158,7 @@ final class ProxyPlayCommand implements SimpleCommand {
             if (family.isEmpty() || variant.isEmpty()) {
                 return null;
             }
-            return new VariantSelection(family, variant);
+            return new VariantSelection(family, variant, variant);
         }
 
         String token = normalise(arguments[0]);
@@ -160,7 +175,8 @@ final class ProxyPlayCommand implements SimpleCommand {
         if (family.isEmpty() || variant.isEmpty()) {
             return null;
         }
-        return new VariantSelection(family, variant);
+        String rawVariant = sanitiseToken(token);
+        return new VariantSelection(family, variant, rawVariant);
     }
 
     private String joinTail(String[] arguments) {
@@ -214,6 +230,18 @@ final class ProxyPlayCommand implements SimpleCommand {
         return suggestVariantTokens(family, variant);
     }
 
+    private Optional<String> resolveVariant(String familyId, VariantSelection selection, Set<String> knownVariants) {
+        String token = sanitiseToken(selection.variantToken());
+        String raw = sanitiseToken(selection.rawInput());
+        for (String candidate : knownVariants) {
+            VariantForms forms = variantForms(familyId, candidate);
+            if (forms.matches(token, familyId) || forms.matches(raw, familyId)) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
+    }
+
     private String normalise(String input) {
         return input == null ? "" : input.trim().toLowerCase(Locale.ROOT);
     }
@@ -255,10 +283,16 @@ final class ProxyPlayCommand implements SimpleCommand {
             return List.of();
         }
         String effectivePrefix = prefix == null ? "" : prefix;
-        return variants.stream()
-                .filter(variant -> variant.startsWith(effectivePrefix))
-                .sorted()
-                .collect(Collectors.toUnmodifiableList());
+        LinkedHashSet<String> suggestions = new LinkedHashSet<>();
+        for (String variant : variants) {
+            VariantForms forms = variantForms(family, variant);
+            for (String base : forms.baseTokens()) {
+                if (base.startsWith(effectivePrefix)) {
+                    suggestions.add(base);
+                }
+            }
+        }
+        return List.copyOf(suggestions);
     }
 
     private List<String> suggestCombinedVariants(String family, String prefix, char separator) {
@@ -271,17 +305,69 @@ final class ProxyPlayCommand implements SimpleCommand {
         }
         String effectivePrefix = prefix == null ? "" : prefix;
         String joiner = separator == ' ' ? " " : Character.toString(separator);
-        return variants.stream()
-                .filter(variant -> variant.startsWith(effectivePrefix))
-                .map(variant -> family + joiner + variant)
-                .sorted()
-                .collect(Collectors.toUnmodifiableList());
+        LinkedHashSet<String> suggestions = new LinkedHashSet<>();
+        for (String variant : variants) {
+            VariantForms forms = variantForms(family, variant);
+            for (String base : forms.baseTokens()) {
+                if (!base.startsWith(effectivePrefix)) {
+                    continue;
+                }
+                suggestions.add(family + " " + base);
+            }
+        }
+        return List.copyOf(suggestions);
     }
 
     private boolean isEdgeSeparator(char character) {
         return character == '_' || character == '-';
     }
 
-    private record VariantSelection(String familyId, String variantId) {
+    private VariantForms variantForms(String family, String variantId) {
+        LinkedHashSet<String> baseTokens = new LinkedHashSet<>();
+        String canonical = sanitiseToken(variantId);
+        if (!canonical.isBlank()) {
+            baseTokens.add(canonical);
+        }
+        for (char separator : new char[]{'_', '-', ':', '/', '.'}) {
+            String prefix = family + separator;
+            if (variantId.startsWith(prefix) && variantId.length() > prefix.length()) {
+                String trimmed = sanitiseToken(variantId.substring(prefix.length()));
+                if (!trimmed.isBlank()) {
+                    baseTokens.add(trimmed);
+                }
+            }
+        }
+        return new VariantForms(canonical.isBlank() ? variantId : canonical, List.copyOf(baseTokens));
+    }
+
+    private record VariantForms(String canonical, List<String> baseTokens) {
+        boolean matches(String candidate, String family) {
+            if (candidate == null || candidate.isBlank()) {
+                return false;
+            }
+            if (!canonical.isBlank() && candidate.equals(canonical)) {
+                return true;
+            }
+            for (String token : baseTokens) {
+                if (candidate.equals(token)) {
+                    return true;
+                }
+                if (!family.isBlank()) {
+                    if (candidate.equals(family + "_" + token)) {
+                        return true;
+                    }
+                    if (candidate.equals(family + token)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    private record VariantSelection(String familyId, String variantToken, String rawInput) {
+        String displayValue() {
+            return rawInput != null && !rawInput.isBlank() ? rawInput : variantToken;
+        }
     }
 }

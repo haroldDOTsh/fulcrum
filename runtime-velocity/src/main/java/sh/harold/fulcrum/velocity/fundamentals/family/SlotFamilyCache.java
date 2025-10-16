@@ -50,6 +50,51 @@ public final class SlotFamilyCache {
     }
 
     /**
+     * Update advertised variants for the given server.
+     */
+    public void updateVariants(String serverId, Map<String, ? extends Collection<String>> variants) {
+        if (serverId == null || serverId.isBlank()) {
+            return;
+        }
+        if (variants == null) {
+            ConcurrentMap<String, FamilyData> families = serverFamilies.get(serverId);
+            if (families != null) {
+                families.values().forEach(data -> data.variants.clear());
+            }
+            return;
+        }
+
+        ConcurrentMap<String, FamilyData> families = serverFamilies.computeIfAbsent(serverId, key -> new ConcurrentHashMap<>());
+        Set<String> normalisedKeys = variants.keySet().stream()
+                .map(this::normalize)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        families.forEach((family, data) -> {
+            if (!normalisedKeys.contains(family)) {
+                data.variants.clear();
+            }
+        });
+
+        variants.forEach((family, values) -> {
+            String key = normalize(family);
+            if (key == null) {
+                return;
+            }
+            FamilyData data = families.computeIfAbsent(key, ignored -> new FamilyData());
+            data.variants.clear();
+            if (values == null) {
+                return;
+            }
+            for (String variant : values) {
+                String variantKey = normalize(variant);
+                if (variantKey != null) {
+                    data.variants.add(variantKey);
+                }
+            }
+        });
+    }
+
+    /**
      * Record that a variant is advertised for a family on a server.
      */
     public void recordVariant(String serverId, String familyId, String variantId) {

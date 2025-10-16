@@ -236,6 +236,17 @@ public class ServerRegistry {
         LOGGER.debug("Updated family capacities for {} => {}", serverId, capacities);
     }
 
+    public void updateFamilyVariants(String serverId, Map<String, ? extends Collection<String>> variants) {
+        RegisteredServerData server = servers.get(serverId);
+        if (server == null) {
+            LOGGER.debug("Ignoring family variant advertisement for unknown server {}", serverId);
+            return;
+        }
+
+        server.updateSlotFamilyVariants(variants);
+        LOGGER.debug("Updated family variants for {} => {}", serverId, variants);
+    }
+
     /**
      * Check if server exists
      */

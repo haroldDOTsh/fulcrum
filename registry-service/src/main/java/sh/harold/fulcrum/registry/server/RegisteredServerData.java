@@ -3,9 +3,7 @@ package sh.harold.fulcrum.registry.server;
 import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -22,6 +20,7 @@ public class RegisteredServerData {
     private final int maxCapacity;
     private final Map<String, LogicalSlotRecord> slots = new ConcurrentHashMap<>();
     private final Map<String, Integer> slotFamilyCapacities = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> slotFamilyVariants = new ConcurrentHashMap<>();
     private String role = "default";
     private Status status = Status.STARTING;
     private long lastHeartbeat;
@@ -150,6 +149,12 @@ public class RegisteredServerData {
         return Collections.unmodifiableMap(slotFamilyCapacities);
     }
 
+    public Map<String, Set<String>> getSlotFamilyVariants() {
+        Map<String, Set<String>> snapshot = new LinkedHashMap<>();
+        slotFamilyVariants.forEach((family, variants) -> snapshot.put(family, Set.copyOf(variants)));
+        return Collections.unmodifiableMap(snapshot);
+    }
+
     // Setters
 
     public void updateSlotFamilyCapacities(Map<String, Integer> capacities) {
@@ -161,6 +166,33 @@ public class RegisteredServerData {
 
     public void clearSlotFamilyCapacities() {
         slotFamilyCapacities.clear();
+    }
+
+    public void updateSlotFamilyVariants(Map<String, ? extends Collection<String>> variants) {
+        slotFamilyVariants.clear();
+        if (variants == null) {
+            return;
+        }
+        variants.forEach((family, values) -> {
+            if (family == null || family.isBlank()) {
+                return;
+            }
+            Set<String> normalized = new LinkedHashSet<>();
+            if (values != null) {
+                for (String variant : values) {
+                    if (variant == null) {
+                        continue;
+                    }
+                    String trimmed = variant.trim();
+                    if (!trimmed.isEmpty()) {
+                        normalized.add(trimmed);
+                    }
+                }
+            }
+            if (!normalized.isEmpty()) {
+                slotFamilyVariants.put(family, Set.copyOf(normalized));
+            }
+        });
     }
 
     public boolean supportsFamily(String familyId) {

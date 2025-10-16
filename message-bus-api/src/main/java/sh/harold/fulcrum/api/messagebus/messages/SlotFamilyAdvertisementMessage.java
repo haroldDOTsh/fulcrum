@@ -6,9 +6,7 @@ import sh.harold.fulcrum.api.messagebus.BaseMessage;
 import sh.harold.fulcrum.api.messagebus.MessageType;
 
 import java.io.Serializable;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Broadcast by backends to declare which slot families they can host and how many concurrent instances.
@@ -17,6 +15,7 @@ import java.util.Map;
 public class SlotFamilyAdvertisementMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     private final Map<String, Integer> familyCapacities = new HashMap<>();
+    private final Map<String, List<String>> familyVariants = new HashMap<>();
     private String serverId;
 
     public SlotFamilyAdvertisementMessage() {
@@ -46,6 +45,58 @@ public class SlotFamilyAdvertisementMessage implements BaseMessage, Serializable
         familyCapacities.clear();
         if (capacities != null) {
             capacities.forEach((family, cap) -> familyCapacities.put(family, Math.max(1, cap)));
+        }
+    }
+
+    @JsonProperty("familyVariants")
+    public Map<String, List<String>> getFamilyVariants() {
+        Map<String, List<String>> snapshot = new HashMap<>();
+        familyVariants.forEach((family, variants) -> snapshot.put(family, List.copyOf(variants)));
+        return Collections.unmodifiableMap(snapshot);
+    }
+
+    @JsonSetter("familyVariants")
+    public void setFamilyVariants(Map<String, ? extends Collection<String>> variants) {
+        familyVariants.clear();
+        if (variants == null) {
+            return;
+        }
+        variants.forEach((family, values) -> {
+            if (family == null || family.isBlank() || values == null) {
+                return;
+            }
+            List<String> sanitized = new ArrayList<>();
+            for (String value : values) {
+                if (value == null) {
+                    continue;
+                }
+                String trimmed = value.trim();
+                if (!trimmed.isEmpty()) {
+                    sanitized.add(trimmed);
+                }
+            }
+            if (!sanitized.isEmpty()) {
+                familyVariants.put(family, List.copyOf(sanitized));
+            }
+        });
+    }
+
+    public void addFamilyVariants(String family, Collection<String> variants) {
+        if (family == null || family.isBlank() || variants == null) {
+            return;
+        }
+        List<String> sanitized = new ArrayList<>();
+        for (String value : variants) {
+            if (value == null) {
+                continue;
+            }
+            String trimmed = value.trim();
+            if (!trimmed.isEmpty()) {
+                sanitized.add(trimmed);
+            }
+        }
+        if (!sanitized.isEmpty()) {
+            familyVariants.put(family, List.copyOf(sanitized));
         }
     }
 

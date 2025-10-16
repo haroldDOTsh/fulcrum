@@ -12,6 +12,7 @@ import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -192,22 +193,12 @@ public class SimpleSlotOrchestrator {
         return families.keySet().stream().findFirst().orElse(null);
     }
 
-    /**
-     * Broadcast the server's family capabilities to the registry.
-     */
-    public void advertiseFamilies() {
-        if (!active.get() || families.isEmpty()) {
-            return;
+    private static String normalizeVariantId(String variant) {
+        if (variant == null) {
+            return null;
         }
-        Map<String, Integer> payload = new HashMap<>();
-        double availablePlayers = availablePlayerBudget();
-        families.forEach((name, profile) -> payload.put(name, computeAvailableSlots(profile, availablePlayers)));
-        SlotFamilyAdvertisementMessage message = new SlotFamilyAdvertisementMessage(
-                serverIdentifier.getServerId(),
-                payload
-        );
-        messageBus.broadcast(ChannelConstants.REGISTRY_SLOT_FAMILY_ADVERTISEMENT, message);
-        LOGGER.fine(() -> "Advertised slot families for " + serverIdentifier.getServerId() + ": " + payload);
+        String trimmed = variant.trim().toLowerCase(Locale.ROOT);
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**
@@ -337,6 +328,34 @@ public class SimpleSlotOrchestrator {
     }
 
     /**
+     * Broadcast the server's family capabilities to the registry.
+     */
+    public void advertiseFamilies() {
+        if (!active.get() || families.isEmpty()) {
+            return;
+        }
+        Map<String, Integer> payload = new LinkedHashMap<>();
+        Map<String, List<String>> variantPayload = new LinkedHashMap<>();
+        double availablePlayers = availablePlayerBudget();
+        families.forEach((name, profile) -> {
+            payload.put(name, computeAvailableSlots(profile, availablePlayers));
+            List<String> variants = profile.advertisedVariants();
+            if (!variants.isEmpty()) {
+                variantPayload.put(name, variants);
+            }
+        });
+        SlotFamilyAdvertisementMessage message = new SlotFamilyAdvertisementMessage(
+                serverIdentifier.getServerId(),
+                payload
+        );
+        if (!variantPayload.isEmpty()) {
+            message.setFamilyVariants(variantPayload);
+        }
+        messageBus.broadcast(ChannelConstants.REGISTRY_SLOT_FAMILY_ADVERTISEMENT, message);
+        LOGGER.fine(() -> "Advertised slot families for " + serverIdentifier.getServerId() + ": " + payload);
+    }
+
+    /**
      * Update an existing slot's status and optional metadata.
      */
     public boolean updateSlotStatus(String slotId,
@@ -354,28 +373,21 @@ public class SimpleSlotOrchestrator {
         slot.onlinePlayers = Math.max(0, onlinePlayers);
         if (metadata != null && !metadata.isEmpty()) {
             slot.metadata.putAll(metadata);
-        }
-        broadcastSlotUpdate(slot);
-        return true;
-    }
-
-    /**
-     * Update metadata for an existing slot without altering lifecycle state.
-     */
-    public boolean updateSlotMetadata(String slotId, Map<String, String> metadata) {
-        TrackedSlot slot = findSlot(slotId);
-        if (slot == null) {
-            LOGGER.warning(() -> "Attempted to update metadata for unknown slot " + slotId);
-            return false;
-        }
-        if (metadata != null && !metadata.isEmpty()) {
-            metadata.forEach((key, value) -> {
-                if (value == null) {
-                    slot.metadata.remove(key);
+            String variantValue = metadata.get("variant");
+            if (variantValue != null) {
+                String normalizedVariant = normalizeVariantId(variantValue);
+                if (normalizedVariant != null) {
+                    slot.metadata.put("variant", normalizedVariant);
+                    slot.variant = normalizedVariant;
+                    FamilyProfile profile = families.get(slot.family);
+                    if (profile != null) {
+                        profile.trackVariant(normalizedVariant);
+                    }
                 } else {
-                    slot.metadata.put(key, value);
+                    slot.metadata.remove("variant");
+                    slot.variant = null;
                 }
-            });
+            }
         }
         broadcastSlotUpdate(slot);
         return true;
@@ -450,6 +462,43 @@ public class SimpleSlotOrchestrator {
         messageBus.broadcast(ChannelConstants.REGISTRY_SLOT_STATUS, message);
     }
 
+    /**
+     * Update metadata for an existing slot without altering lifecycle state.
+     */
+    public boolean updateSlotMetadata(String slotId, Map<String, String> metadata) {
+        TrackedSlot slot = findSlot(slotId);
+        if (slot == null) {
+            LOGGER.warning(() -> "Attempted to update metadata for unknown slot " + slotId);
+            return false;
+        }
+        if (metadata != null && !metadata.isEmpty()) {
+            String variantValue = metadata.get("variant");
+            metadata.forEach((key, value) -> {
+                if (value == null) {
+                    slot.metadata.remove(key);
+                } else {
+                    slot.metadata.put(key, value);
+                }
+            });
+            if (variantValue != null) {
+                String normalizedVariant = normalizeVariantId(variantValue);
+                if (normalizedVariant != null) {
+                    slot.metadata.put("variant", normalizedVariant);
+                    slot.variant = normalizedVariant;
+                    FamilyProfile profile = families.get(slot.family);
+                    if (profile != null) {
+                        profile.trackVariant(normalizedVariant);
+                    }
+                } else {
+                    slot.metadata.remove("variant");
+                    slot.variant = null;
+                }
+            }
+        }
+        broadcastSlotUpdate(slot);
+        return true;
+    }
+
     private TrackedSlot createSlot(FamilyProfile profile,
                                    String variant,
                                    SlotLifecycleStatus status,
@@ -458,7 +507,8 @@ public class SimpleSlotOrchestrator {
         String suffix = generateSuffix(profile.counter.getAndIncrement());
         SlotFamilyDescriptor descriptor = profile.descriptor;
         TrackedSlot slot = new TrackedSlot(serverIdentifier.getServerId() + suffix, suffix, profile.name, descriptor);
-        slot.variant = variant;
+        String normalizedVariant = normalizeVariantId(variant);
+        slot.variant = normalizedVariant;
         slot.status = status != null ? status : SlotLifecycleStatus.AVAILABLE;
         slot.onlinePlayers = Math.max(0, onlinePlayers);
         int maxPlayers = resolveMaxPlayers(descriptor);
@@ -467,8 +517,20 @@ public class SimpleSlotOrchestrator {
             slot.metadata.putAll(metadata);
         }
         slot.metadata.putIfAbsent("family", profile.name);
-        if (variant != null && !variant.isBlank()) {
-            slot.metadata.put("variant", variant);
+        if (normalizedVariant != null) {
+            slot.metadata.put("variant", normalizedVariant);
+            profile.trackVariant(normalizedVariant);
+        } else {
+            String metaVariant = slot.metadata.get("variant");
+            String normalizedMetaVariant = normalizeVariantId(metaVariant);
+            if (normalizedMetaVariant != null) {
+                slot.metadata.put("variant", normalizedMetaVariant);
+                slot.variant = normalizedMetaVariant;
+                profile.trackVariant(normalizedMetaVariant);
+            } else {
+                slot.metadata.remove("variant");
+                slot.variant = null;
+            }
         }
         slot.metadata.putIfAbsent("familyMinPlayers", String.valueOf(descriptor.getMinPlayers()));
         slot.metadata.putIfAbsent("familyMaxPlayers", String.valueOf(maxPlayers));
@@ -492,15 +554,60 @@ public class SimpleSlotOrchestrator {
         final String name;
         final AtomicInteger counter = new AtomicInteger(0);
         final Map<String, TrackedSlot> slots = new ConcurrentHashMap<>();
+        final CopyOnWriteArraySet<String> declaredVariants = new CopyOnWriteArraySet<>();
         volatile SlotFamilyDescriptor descriptor;
 
         FamilyProfile(SlotFamilyDescriptor descriptor) {
             this.name = descriptor.getFamilyId();
             this.descriptor = descriptor;
+            refreshDeclaredVariants(descriptor);
         }
 
         void updateDescriptor(SlotFamilyDescriptor descriptor) {
             this.descriptor = descriptor;
+            refreshDeclaredVariants(descriptor);
+        }
+
+        void trackVariant(String variant) {
+            String normalized = normalizeVariantId(variant);
+            if (normalized != null) {
+                declaredVariants.add(normalized);
+            }
+        }
+
+        List<String> advertisedVariants() {
+            LinkedHashSet<String> variants = new LinkedHashSet<>(declaredVariants);
+            for (TrackedSlot slot : slots.values()) {
+                addVariant(variants, slot.variant);
+                addVariant(variants, slot.metadata.get("variant"));
+            }
+            return List.copyOf(variants);
+        }
+
+        private void refreshDeclaredVariants(SlotFamilyDescriptor descriptor) {
+            declaredVariants.clear();
+            if (descriptor == null) {
+                return;
+            }
+            Map<String, String> metadata = descriptor.getMetadata();
+            if (metadata == null || metadata.isEmpty()) {
+                return;
+            }
+            trackVariant(metadata.get("variant"));
+            trackVariant(metadata.get("defaultVariant"));
+            String variants = metadata.get("variants");
+            if (variants != null) {
+                for (String token : variants.split("[,;\\s]+")) {
+                    trackVariant(token);
+                }
+            }
+        }
+
+        private void addVariant(Collection<String> collection, String candidate) {
+            String normalized = normalizeVariantId(candidate);
+            if (normalized != null) {
+                collection.add(normalized);
+            }
         }
     }
 
@@ -530,5 +637,3 @@ public class SimpleSlotOrchestrator {
     }
 
 }
-
-

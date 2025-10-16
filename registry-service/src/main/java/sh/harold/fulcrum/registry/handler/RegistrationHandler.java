@@ -192,6 +192,7 @@ public class RegistrationHandler {
                     SlotFamilyAdvertisementMessage message = objectMapper.treeToValue(
                             envelope.getPayload(), SlotFamilyAdvertisementMessage.class);
                     serverRegistry.updateFamilyCapabilities(message.getServerId(), message.getFamilyCapacities());
+                    serverRegistry.updateFamilyVariants(message.getServerId(), message.getFamilyVariants());
                 } catch (Exception e) {
                     LOGGER.warn("Failed to process slot family advertisement", e);
                 }

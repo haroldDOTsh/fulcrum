@@ -96,6 +96,7 @@ public final class SlotFamilyFeature implements VelocityFeature {
         String serverId = message.getServerId();
         Map<String, Integer> capacities = message.getFamilyCapacities();
         cache.updateCapacities(serverId, capacities);
+        cache.updateVariants(serverId, message.getFamilyVariants());
 
         if (logger.isDebugEnabled()) {
             logger.debug("Updated slot family cache for {} => {}", serverId, capacities);
