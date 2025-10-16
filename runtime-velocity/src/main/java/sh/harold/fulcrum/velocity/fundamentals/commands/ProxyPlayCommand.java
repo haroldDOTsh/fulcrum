@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
  */
 final class ProxyPlayCommand implements SimpleCommand {
     private static final Pattern SEPARATOR = Pattern.compile("[:/._-]");
+    private static final Pattern INVALID_TOKEN_CHARS = Pattern.compile("[^a-z0-9_-]");
     private static final Duration COOLDOWN = Duration.ofSeconds(5);
     private static final Map<UUID, Long> COOLDOWNS = new ConcurrentHashMap<>();
 
@@ -137,9 +138,9 @@ final class ProxyPlayCommand implements SimpleCommand {
             return null;
         }
         if (arguments.length >= 2) {
-            String family = normalise(arguments[0]);
-            String variant = normalise(joinTail(arguments));
-            if (family.isBlank() || variant.isBlank()) {
+            String family = sanitiseToken(normalise(arguments[0]));
+            String variant = sanitiseToken(normalise(joinTail(arguments)));
+            if (family.isEmpty() || variant.isEmpty()) {
                 return null;
             }
             return new VariantSelection(family, variant);
@@ -154,9 +155,9 @@ final class ProxyPlayCommand implements SimpleCommand {
             return null;
         }
         int index = matcher.start();
-        String family = token.substring(0, index);
-        String variant = token.substring(index + 1);
-        if (family.isBlank() || variant.isBlank()) {
+        String family = sanitiseToken(token.substring(0, index));
+        String variant = sanitiseToken(token.substring(index + 1));
+        if (family.isEmpty() || variant.isEmpty()) {
             return null;
         }
         return new VariantSelection(family, variant);
@@ -172,8 +173,113 @@ final class ProxyPlayCommand implements SimpleCommand {
                 .collect(Collectors.joining("_"));
     }
 
+    @Override
+    public List<String> suggest(Invocation invocation) {
+        String[] arguments = invocation.arguments();
+        if (arguments == null || arguments.length == 0) {
+            return suggestFamilies("");
+        }
+
+        if (arguments.length == 1) {
+            String token = normalise(arguments[0]);
+            if (token.isBlank()) {
+                return suggestFamilies("");
+            }
+
+            Matcher matcher = SEPARATOR.matcher(token);
+            if (matcher.find()) {
+                String family = sanitiseToken(token.substring(0, matcher.start()));
+                String variant = sanitiseToken(token.substring(matcher.start() + 1));
+                if (family.isEmpty()) {
+                    return suggestFamilies(variant);
+                }
+                return suggestCombinedVariants(family, variant, token.charAt(matcher.start()));
+            }
+
+            String familyPrefix = sanitiseToken(token);
+            LinkedHashSet<String> suggestions = new LinkedHashSet<>();
+            suggestions.addAll(suggestFamilies(familyPrefix));
+            if (!familyPrefix.isEmpty() && familyCache.hasFamily(familyPrefix)) {
+                suggestions.addAll(suggestCombinedVariants(familyPrefix, "", ' '));
+            }
+            return List.copyOf(suggestions);
+        }
+
+        String family = sanitiseToken(normalise(arguments[0]));
+        if (family.isEmpty()) {
+            return suggestFamilies("");
+        }
+
+        String variant = sanitiseToken(normalise(joinTail(arguments)));
+        return suggestVariantTokens(family, variant);
+    }
+
     private String normalise(String input) {
         return input == null ? "" : input.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String sanitiseToken(String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+        String cleaned = INVALID_TOKEN_CHARS.matcher(input).replaceAll("");
+        int start = 0;
+        int end = cleaned.length();
+        while (start < end && isEdgeSeparator(cleaned.charAt(start))) {
+            start++;
+        }
+        while (end > start && isEdgeSeparator(cleaned.charAt(end - 1))) {
+            end--;
+        }
+        return start >= end ? "" : cleaned.substring(start, end);
+    }
+
+    private List<String> suggestFamilies(String prefix) {
+        Set<String> families = familyCache.families();
+        if (families.isEmpty()) {
+            return List.of();
+        }
+        String effectivePrefix = prefix == null ? "" : prefix;
+        return families.stream()
+                .filter(family -> family.startsWith(effectivePrefix))
+                .sorted()
+                .collect(Collectors.toUnmodifiableList());
+    }
+
+    private List<String> suggestVariantTokens(String family, String prefix) {
+        if (family == null || family.isEmpty()) {
+            return List.of();
+        }
+        Set<String> variants = familyCache.variants(family);
+        if (variants.isEmpty()) {
+            return List.of();
+        }
+        String effectivePrefix = prefix == null ? "" : prefix;
+        return variants.stream()
+                .filter(variant -> variant.startsWith(effectivePrefix))
+                .sorted()
+                .collect(Collectors.toUnmodifiableList());
+    }
+
+    private List<String> suggestCombinedVariants(String family, String prefix, char separator) {
+        if (family == null || family.isEmpty()) {
+            return List.of();
+        }
+        Set<String> variants = familyCache.variants(family);
+        if (variants.isEmpty()) {
+            return List.of();
+        }
+        String effectivePrefix = prefix == null ? "" : prefix;
+        String joiner = separator == ' ' ? " " : Character.toString(separator);
+        return variants.stream()
+                .filter(variant -> variant.startsWith(effectivePrefix))
+                .map(variant -> family + joiner + variant)
+                .sorted()
+                .collect(Collectors.toUnmodifiableList());
+    }
+
+    private boolean isEdgeSeparator(char character) {
+        return character == '_' || character == '-';
     }
 
     private record VariantSelection(String familyId, String variantId) {
