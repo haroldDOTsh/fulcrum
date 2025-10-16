@@ -127,7 +127,8 @@ public final class PlaytimeTracker {
             inc.append(variantPath + ".totalMs", duration);
         }
 
-        Document set = new Document("playtime.processedSegments." + segmentKey, endedAt);
+        String processedPath = "playtime.processedSegments." + segmentKey;
+        Document set = new Document(processedPath, endedAt);
         set.append("playtime.families." + sanitiseKey(family) + ".familyId", family);
         if (variant != null && !variant.isBlank()) {
             set.append(familyPath + ".variants." + sanitiseKey(variant) + ".variantId", variant);
@@ -137,16 +138,21 @@ public final class PlaytimeTracker {
                 .append("$inc", inc)
                 .append("$set", set);
 
-        UpdateOptions options = new UpdateOptions().upsert(true);
-
         try {
+            // Ensure the base document exists without interfering with existing players
+            players.updateOne(
+                    Filters.eq("_id", playerId),
+                    new Document("$setOnInsert", new Document("playtime", new Document())),
+                    new UpdateOptions().upsert(true)
+            );
+
             players.updateOne(
                     Filters.and(
                             Filters.eq("_id", playerId),
-                            Filters.exists("playtime.processedSegments." + segmentKey, false)
+                            Filters.exists(processedPath, false)
                     ),
                     update,
-                    options
+                    new UpdateOptions()
             );
         } catch (Exception exception) {
             logger.log(Level.WARNING, "Failed to update playtime for " + playerId + " (segment=" + segmentKey + ")", exception);
