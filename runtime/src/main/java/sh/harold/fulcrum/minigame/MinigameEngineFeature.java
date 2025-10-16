@@ -5,6 +5,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
+import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.fundamentals.session.PlayerReservationService;
@@ -95,13 +97,17 @@ public class MinigameEngineFeature implements PluginFeature {
                         ? ServiceLocatorImpl.getInstance().findService(PostgresConnectionAdapter.class).orElse(null)
                         : null);
         if (postgresAdapter != null) {
-            matchHistoryWriter = new MatchHistoryWriter(postgresAdapter, plugin.getLogger());
-            matchLogWriter = new MatchLogWriter(postgresAdapter, plugin.getLogger());
-            container.register(MatchHistoryWriter.class, matchHistoryWriter);
-            container.register(MatchLogWriter.class, matchLogWriter);
-            if (ServiceLocatorImpl.getInstance() != null) {
-                ServiceLocatorImpl.getInstance().registerService(MatchHistoryWriter.class, matchHistoryWriter);
-                ServiceLocatorImpl.getInstance().registerService(MatchLogWriter.class, matchLogWriter);
+            if (ensureMatchSchema(plugin, postgresAdapter)) {
+                matchHistoryWriter = new MatchHistoryWriter(postgresAdapter, plugin.getLogger());
+                matchLogWriter = new MatchLogWriter(postgresAdapter, plugin.getLogger());
+                container.register(MatchHistoryWriter.class, matchHistoryWriter);
+                container.register(MatchLogWriter.class, matchLogWriter);
+                if (ServiceLocatorImpl.getInstance() != null) {
+                    ServiceLocatorImpl.getInstance().registerService(MatchHistoryWriter.class, matchHistoryWriter);
+                    ServiceLocatorImpl.getInstance().registerService(MatchLogWriter.class, matchLogWriter);
+                }
+            } else {
+                plugin.getLogger().warning("Match history schema unavailable; match logging features disabled.");
             }
         } else {
             plugin.getLogger().warning("PostgreSQL adapter unavailable; match history logging disabled.");
@@ -202,5 +208,41 @@ public class MinigameEngineFeature implements PluginFeature {
         }
         Logger logger = plugin.getLogger();
         return new MinigameEnvironmentService(logger, worldService, worldManager);
+    }
+
+    private boolean ensureMatchSchema(JavaPlugin plugin, PostgresConnectionAdapter adapter) {
+        try {
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "match-log-001",
+                            "Create match log table",
+                            plugin.getClass().getClassLoader(),
+                            "migrations/match_log.sql"
+                    )
+            );
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "match-participants-001",
+                            "Create match participants table",
+                            plugin.getClass().getClassLoader(),
+                            "migrations/match_participants.sql"
+                    )
+            );
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "player-match-history-001",
+                            "Create player match history table",
+                            plugin.getClass().getClassLoader(),
+                            "migrations/player_match_history.sql"
+                    )
+            );
+            return true;
+        } catch (Exception ex) {
+            plugin.getLogger().warning("Failed to ensure match logging schema: " + ex.getMessage());
+            return false;
+        }
     }
 }

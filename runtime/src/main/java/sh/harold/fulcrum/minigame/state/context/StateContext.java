@@ -9,6 +9,7 @@ import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitScheduler;
 import org.bukkit.scheduler.BukkitTask;
 import sh.harold.fulcrum.fundamentals.actionflag.*;
@@ -39,6 +40,7 @@ public final class StateContext {
     private final ActionFlagService actionFlags;
     private final Map<UUID, OverrideScopeHandle> spectatorOverrides = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> respawnTasks = new ConcurrentHashMap<>();
+    private final Map<UUID, BukkitTask> respawnCountdowns = new ConcurrentHashMap<>();
     private final Set<UUID> registeredPlayers = ConcurrentHashMap.newKeySet();
     private final Queue<Runnable> pendingTasks = new ConcurrentLinkedQueue<>();
     private volatile String currentFlagContext;
@@ -223,21 +225,8 @@ public final class StateContext {
         cancelRespawnTask(playerId);
     }
 
-    public void clearFlagsForRoster() {
-        if (actionFlags != null) {
-            for (UUID playerId : activePlayers) {
-                actionFlags.clear(playerId);
-            }
-        }
-        for (UUID playerId : activePlayers) {
-            clearSpectatorOverride(playerId);
-            cancelRespawnTask(playerId);
-        }
-        spectatorOverrides.clear();
-        respawnTasks.clear();
-        registeredPlayers.clear();
-        pendingTasks.clear();
-        this.currentFlagContext = null;
+    private static boolean shouldAnnounceRespawnCountdown(long seconds) {
+        return seconds == 60 || seconds == 30 || seconds == 20 || seconds <= 10;
     }
 
     public String getCurrentFlagContext() {
@@ -324,21 +313,14 @@ public final class StateContext {
         return entry != null && entry.isRespawnAllowed();
     }
 
-    private void scheduleRespawn(UUID playerId, long delayTicks) {
-        if (delayTicks <= 0L) {
-            executeScheduled(() -> performRespawn(playerId));
-            return;
+    private static ChatColor countdownColor(long seconds) {
+        if (seconds > 19) {
+            return ChatColor.YELLOW;
         }
-        long seconds = Math.max(1L, (delayTicks + 19L) / 20L);
-        findPlayer(playerId).ifPresent(player -> {
-            String unit = seconds == 1L ? " second" : " seconds";
-            player.sendMessage(ChatColor.YELLOW + "You will respawn in " + ChatColor.RED + seconds + ChatColor.YELLOW + unit + ChatColor.RESET);
-        });
-        BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            respawnTasks.remove(playerId);
-            executeScheduled(() -> performRespawn(playerId));
-        }, delayTicks);
-        respawnTasks.put(playerId, task);
+        if (seconds > 9) {
+            return ChatColor.GOLD;
+        }
+        return ChatColor.RED;
     }
 
     private void performRespawn(UUID playerId) {
@@ -433,11 +415,22 @@ public final class StateContext {
         return defaultWorld != null ? defaultWorld.getSpawnLocation().clone() : null;
     }
 
-    private void cancelRespawnTask(UUID playerId) {
-        BukkitTask task = respawnTasks.remove(playerId);
-        if (task != null) {
-            task.cancel();
+    public void clearFlagsForRoster() {
+        if (actionFlags != null) {
+            for (UUID playerId : activePlayers) {
+                actionFlags.clear(playerId);
+            }
         }
+        for (UUID playerId : activePlayers) {
+            clearSpectatorOverride(playerId);
+            cancelRespawnTask(playerId);
+        }
+        spectatorOverrides.clear();
+        respawnTasks.clear();
+        respawnCountdowns.clear();
+        registeredPlayers.clear();
+        pendingTasks.clear();
+        this.currentFlagContext = null;
     }
 
     public void registerPlayer(UUID playerId) {
@@ -517,6 +510,69 @@ public final class StateContext {
         } else {
             task.run();
         }
+    }
+
+    private void scheduleRespawn(UUID playerId, long delayTicks) {
+        if (delayTicks <= 0L) {
+            executeScheduled(() -> performRespawn(playerId));
+            return;
+        }
+        long seconds = Math.max(1L, (delayTicks + 19L) / 20L);
+        cancelRespawnCountdown(playerId);
+        BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            respawnTasks.remove(playerId);
+            cancelRespawnCountdown(playerId);
+            executeScheduled(() -> performRespawn(playerId));
+        }, delayTicks);
+        respawnTasks.put(playerId, task);
+        startRespawnCountdown(playerId, seconds);
+    }
+
+    private void cancelRespawnTask(UUID playerId) {
+        BukkitTask task = respawnTasks.remove(playerId);
+        if (task != null) {
+            task.cancel();
+        }
+        cancelRespawnCountdown(playerId);
+    }
+
+    private void startRespawnCountdown(UUID playerId, long totalSeconds) {
+        if (totalSeconds <= 0L) {
+            return;
+        }
+        BukkitRunnable countdown = new BukkitRunnable() {
+            private long remainingSeconds = totalSeconds;
+
+            @Override
+            public void run() {
+                if (!respawnTasks.containsKey(playerId) || remainingSeconds <= 0L) {
+                    respawnCountdowns.remove(playerId);
+                    cancel();
+                    return;
+                }
+                if (shouldAnnounceRespawnCountdown(remainingSeconds)) {
+                    sendRespawnCountdown(playerId, remainingSeconds);
+                }
+                remainingSeconds--;
+            }
+        };
+        BukkitTask countdownTask = countdown.runTaskTimer(plugin, 0L, 20L);
+        respawnCountdowns.put(playerId, countdownTask);
+    }
+
+    private void cancelRespawnCountdown(UUID playerId) {
+        BukkitTask countdown = respawnCountdowns.remove(playerId);
+        if (countdown != null) {
+            countdown.cancel();
+        }
+    }
+
+    private void sendRespawnCountdown(UUID playerId, long seconds) {
+        findPlayer(playerId).ifPresent(player -> {
+            ChatColor color = countdownColor(seconds);
+            String unit = seconds == 1L ? " second" : " seconds";
+            player.sendMessage(ChatColor.YELLOW + "You will respawn in " + color + seconds + ChatColor.YELLOW + unit + ChatColor.RESET);
+        });
     }
 
     private void runPendingTasks() {
