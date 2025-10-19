@@ -133,6 +133,13 @@ public final class ChannelConstants {
     public static final String PARTY_WARP_REQUEST = "fulcrum.party.warp.request";
     public static final String MATCH_ROSTER_CREATED = "fulcrum.match.roster.created";
     public static final String MATCH_ROSTER_ENDED = "fulcrum.match.roster.ended";
+
+    // ============================================
+    // Registry Channels - Rank Management
+    // ============================================
+    public static final String REGISTRY_RANK_MUTATION_REQUEST = "fulcrum.registry.rank.mutation.request";
+    public static final String REGISTRY_RANK_MUTATION_RESPONSE = "fulcrum.registry.rank.mutation.response";
+    public static final String REGISTRY_RANK_UPDATE = "fulcrum.registry.rank.update";
     /**
      * Prefix for directed slot provision commands
      */

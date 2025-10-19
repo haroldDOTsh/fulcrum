@@ -16,6 +16,7 @@ import sh.harold.fulcrum.registry.console.commands.*;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
+import sh.harold.fulcrum.registry.rank.RankMutationService;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.session.DeadServerSessionSweeper;
@@ -52,6 +53,7 @@ public class RegistryService {
     private SlotProvisionService slotProvisionService;
     private PlayerRoutingService playerRoutingService;
     private sh.harold.fulcrum.registry.session.DeadServerSessionSweeper sessionSweeper;
+    private RankMutationService rankMutationService;
 
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -194,6 +196,8 @@ public class RegistryService {
                 });
             }
 
+            rankMutationService = createRankMutationService();
+
             // Log which implementation was created
             String busClassName = messageBus.getClass().getSimpleName();
 
@@ -285,6 +289,9 @@ public class RegistryService {
         commandRegistry.register("reload", new ReloadCommand(this));
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
         commandRegistry.register("locateplayer", new LocatePlayerCommand(messageBus));
+        if (rankMutationService != null) {
+            commandRegistry.register("rank", new RankCommand(rankMutationService));
+        }
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
             commandRegistry.register("provisionminigame", new ProvisionMinigameCommand(slotProvisionService));
@@ -461,6 +468,34 @@ public class RegistryService {
         }
     }
 
+    private RankMutationService createRankMutationService() {
+        if (messageBus == null) {
+            LOGGER.warn("MessageBus unavailable; rank mutation service disabled");
+            return null;
+        }
+        Map<String, Object> storage = (Map<String, Object>) config.get("storage");
+        if (storage == null) {
+            LOGGER.warn("Storage configuration missing; rank mutation service disabled");
+            return null;
+        }
+
+        Map<String, Object> mongoSection = (Map<String, Object>) storage.get("mongodb");
+        if (mongoSection == null) {
+            LOGGER.warn("MongoDB configuration missing; rank mutation service disabled");
+            return null;
+        }
+
+        String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
+        String database = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
+
+        try {
+            return new RankMutationService(messageBus, LOGGER, connectionString, database);
+        } catch (Exception e) {
+            LOGGER.error("Failed to initialise rank mutation service", e);
+            return null;
+        }
+    }
+
     /**
      * Check if debug mode is enabled
      */
@@ -495,6 +530,14 @@ public class RegistryService {
 
             if (playerRoutingService != null) {
                 playerRoutingService.shutdown();
+            }
+
+            if (rankMutationService != null) {
+                try {
+                    rankMutationService.close();
+                } catch (Exception closeEx) {
+                    LOGGER.warn("Failed to close rank mutation service", closeEx);
+                }
             }
 
             if (sessionSweeper != null) {
