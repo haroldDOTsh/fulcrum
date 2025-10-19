@@ -3,7 +3,6 @@ package sh.harold.fulcrum.velocity.fundamentals.family;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
 
 /**
@@ -81,16 +80,16 @@ public final class SlotFamilyCache {
                 return;
             }
             FamilyData data = families.computeIfAbsent(key, ignored -> new FamilyData());
-            data.variants.clear();
             if (values == null) {
+                data.variants.clear();
                 return;
             }
-            for (String variant : values) {
-                String variantKey = normalize(variant);
-                if (variantKey != null) {
-                    data.variants.add(variantKey);
-                }
-            }
+            Set<String> sanitized = values.stream()
+                    .map(this::normalize)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            data.variants.keySet().removeIf(variant -> !sanitized.contains(variant));
+            sanitized.forEach(variant -> data.variants.computeIfAbsent(variant, ignored -> new VariantData()));
         });
     }
 
@@ -111,7 +110,7 @@ public final class SlotFamilyCache {
         }
         ConcurrentMap<String, FamilyData> families = serverFamilies.computeIfAbsent(serverId, key -> new ConcurrentHashMap<>());
         FamilyData data = families.computeIfAbsent(familyKey, key -> new FamilyData());
-        data.variants.add(variantKey);
+        data.variants.computeIfAbsent(variantKey, ignored -> new VariantData());
     }
 
     /**
@@ -176,7 +175,7 @@ public final class SlotFamilyCache {
         serverFamilies.values().forEach(families -> {
             FamilyData data = families.get(key);
             if (data != null && !data.variants.isEmpty()) {
-                variants.addAll(data.variants);
+                variants.addAll(data.variants.keySet());
             }
         });
         return Collections.unmodifiableSet(variants);
@@ -211,8 +210,94 @@ public final class SlotFamilyCache {
         return trimmed.toLowerCase(Locale.ROOT);
     }
 
+    public Optional<FamilyVariantInfo> getVariantInfo(String familyId, String variantId) {
+        String familyKey = normalize(familyId);
+        if (familyKey == null) {
+            return Optional.empty();
+        }
+        String variantKey = variantId != null ? normalize(variantId) : null;
+        int maxPlayers = 0;
+        int maxTeamSize = 0;
+        int maxTeams = 0;
+
+        for (ConcurrentMap<String, FamilyData> families : serverFamilies.values()) {
+            FamilyData data = families.get(familyKey);
+            if (data == null) {
+                continue;
+            }
+            if (variantKey != null) {
+                VariantData variant = data.variants.get(variantKey);
+                if (variant != null) {
+                    maxPlayers = Math.max(maxPlayers, variant.maxPlayers);
+                    maxTeamSize = Math.max(maxTeamSize, variant.maxTeamSize);
+                    maxTeams = Math.max(maxTeams, variant.maxTeams);
+                }
+            } else {
+                for (VariantData variant : data.variants.values()) {
+                    maxPlayers = Math.max(maxPlayers, variant.maxPlayers);
+                    maxTeamSize = Math.max(maxTeamSize, variant.maxTeamSize);
+                    maxTeams = Math.max(maxTeams, variant.maxTeams);
+                }
+            }
+        }
+
+        if (maxPlayers <= 0 && maxTeamSize <= 0 && maxTeams <= 0) {
+            return Optional.empty();
+        }
+        if (maxTeamSize <= 0) {
+            maxTeamSize = maxPlayers;
+        }
+        if (maxPlayers <= 0) {
+            maxPlayers = maxTeamSize;
+        }
+        if (maxTeamSize > 0 && maxTeams <= 0 && maxPlayers > 0) {
+            maxTeams = Math.max(1, maxPlayers / Math.max(1, maxTeamSize));
+        }
+        return Optional.of(new FamilyVariantInfo(maxPlayers, maxTeamSize, maxTeams));
+    }
+
+    public Optional<FamilyVariantInfo> getAnyVariantInfo(String familyId) {
+        return getVariantInfo(familyId, null);
+    }
+
+    public void updateVariantInfo(String serverId, String familyId, String variantId,
+                                  int maxPlayers, int maxTeamSize, int maxTeams) {
+        if (serverId == null || serverId.isBlank()) {
+            return;
+        }
+        String familyKey = normalize(familyId);
+        if (familyKey == null) {
+            return;
+        }
+        String variantKey = normalize(variantId);
+        if (variantKey == null) {
+            return;
+        }
+        ConcurrentMap<String, FamilyData> families = serverFamilies.computeIfAbsent(serverId, key -> new ConcurrentHashMap<>());
+        FamilyData data = families.computeIfAbsent(familyKey, key -> new FamilyData());
+        VariantData variant = data.variants.computeIfAbsent(variantKey, key -> new VariantData());
+        if (maxPlayers > 0) {
+            variant.maxPlayers = Math.max(variant.maxPlayers, maxPlayers);
+        }
+        if (maxTeamSize > 0) {
+            variant.maxTeamSize = Math.max(variant.maxTeamSize, maxTeamSize);
+        }
+        if (maxTeams > 0) {
+            variant.maxTeams = Math.max(variant.maxTeams, maxTeams);
+        }
+    }
+
+    private static final class VariantData {
+        volatile int maxPlayers;
+        volatile int maxTeamSize;
+        volatile int maxTeams;
+    }
+
     private static final class FamilyData {
-        final Set<String> variants = new CopyOnWriteArraySet<>();
+        final ConcurrentMap<String, VariantData> variants = new ConcurrentHashMap<>();
         volatile int capacity;
+    }
+
+    public record FamilyVariantInfo(int maxPlayers, int maxTeamSize, int maxTeams) {
     }
 }

@@ -20,6 +20,9 @@ import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEn
 import sh.harold.fulcrum.minigame.match.RosterManager;
 import sh.harold.fulcrum.minigame.state.machine.StateDefinition;
 import sh.harold.fulcrum.minigame.state.machine.StateMachine;
+import sh.harold.fulcrum.minigame.team.MatchTeam;
+import sh.harold.fulcrum.minigame.team.TeamData;
+import sh.harold.fulcrum.minigame.team.TeamService;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +41,7 @@ public final class StateContext {
     private final RosterManager roster;
     private final MinigameRegistration registration;
     private final ActionFlagService actionFlags;
+    private final TeamService teamService;
     private final Map<UUID, OverrideScopeHandle> spectatorOverrides = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> respawnTasks = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> respawnCountdowns = new ConcurrentHashMap<>();
@@ -54,7 +58,8 @@ public final class StateContext {
                         StateMachine stateMachine,
                         RosterManager roster,
                         MinigameRegistration registration,
-                        ActionFlagService actionFlags) {
+                        ActionFlagService actionFlags,
+                        TeamService teamService) {
         this.plugin = plugin;
         this.matchId = matchId;
         this.activePlayers = activePlayers;
@@ -62,6 +67,7 @@ public final class StateContext {
         this.roster = roster;
         this.registration = registration;
         this.actionFlags = actionFlags;
+        this.teamService = teamService;
         this.currentFlagContext = null;
         this.registeredPlayers.addAll(activePlayers);
     }
@@ -106,6 +112,31 @@ public final class StateContext {
 
     public ActionFlagService actionFlags() {
         return actionFlags;
+    }
+
+    public TeamService teams() {
+        return teamService;
+    }
+
+    public Optional<MatchTeam> team(UUID playerId) {
+        if (teamService == null) {
+            return Optional.empty();
+        }
+        return teamService.team(playerId);
+    }
+
+    public Collection<MatchTeam> teamsView() {
+        if (teamService == null) {
+            return List.of();
+        }
+        return teamService.teams();
+    }
+
+    public TeamData teamData(String teamId) {
+        if (teamService == null) {
+            return new TeamData();
+        }
+        return teamService.data(teamId);
     }
 
     public Optional<MinigameRegistration> getRegistration() {

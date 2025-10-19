@@ -28,6 +28,8 @@ public class VelocityCommandFeature implements VelocityFeature {
     private DataAPI dataAPI;
     private SlotFamilyCache familyCache;
     private VelocityPlayerSessionService sessionService;
+    private sh.harold.fulcrum.velocity.party.PartyService partyService;
+    private sh.harold.fulcrum.velocity.party.PartyReservationService partyReservationService;
 
     @Override
     public String getName() {
@@ -53,6 +55,8 @@ public class VelocityCommandFeature implements VelocityFeature {
         this.dataAPI = serviceLocator.getRequiredService(DataAPI.class);
         this.familyCache = serviceLocator.getRequiredService(SlotFamilyCache.class);
         this.sessionService = serviceLocator.getRequiredService(VelocityPlayerSessionService.class);
+        this.partyService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyService.class).orElse(null);
+        this.partyReservationService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyReservationService.class).orElse(null);
 
         // Register proxy commands when they are introduced
         registerPlayCommand();
@@ -81,6 +85,7 @@ public class VelocityCommandFeature implements VelocityFeature {
                 .plugin(plugin)
                 .build();
 
-        commandManager.register(meta, new ProxyPlayCommand(proxy, playerRoutingFeature, familyCache, plugin, logger));
+        commandManager.register(meta, new ProxyPlayCommand(proxy, playerRoutingFeature, familyCache, plugin, logger,
+                partyService, partyReservationService));
     }
 }

@@ -389,6 +389,7 @@ public class SimpleSlotOrchestrator {
                 }
             }
         }
+        normalizeTeamMetadata(slot.metadata);
         broadcastSlotUpdate(slot);
         return true;
     }
@@ -412,6 +413,7 @@ public class SimpleSlotOrchestrator {
         if (metadata != null && !metadata.isEmpty()) {
             slot.metadata.putAll(metadata);
         }
+        normalizeTeamMetadata(slot.metadata);
         broadcastSlotUpdate(slot);
 
         FamilyProfile profile = families.get(slot.family);
@@ -443,6 +445,7 @@ public class SimpleSlotOrchestrator {
     }
 
     private void broadcastSlotUpdate(TrackedSlot slot) {
+        normalizeTeamMetadata(slot.metadata);
         SlotStatusUpdateMessage message = new SlotStatusUpdateMessage(
                 serverIdentifier.getServerId(),
                 slot.slotId
@@ -535,6 +538,7 @@ public class SimpleSlotOrchestrator {
         slot.metadata.putIfAbsent("familyMinPlayers", String.valueOf(descriptor.getMinPlayers()));
         slot.metadata.putIfAbsent("familyMaxPlayers", String.valueOf(maxPlayers));
         slot.metadata.putIfAbsent("playerEquivalentFactor", String.valueOf(descriptor.getPlayerEquivalentFactor()));
+        normalizeTeamMetadata(slot.metadata);
         profile.slots.put(slot.suffix, slot);
         return slot;
     }
@@ -634,6 +638,28 @@ public class SimpleSlotOrchestrator {
                                   String familyId,
                                   String variant,
                                   Map<String, String> metadata) {
+    }
+
+    private void normalizeTeamMetadata(Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return;
+        }
+        sanitizeTeamEntry(metadata, "team.max");
+        sanitizeTeamEntry(metadata, "team.count");
+        metadata.keySet().removeIf(key -> key.startsWith("team.") && !key.equals("team.max") && !key.equals("team.count"));
+    }
+
+    private void sanitizeTeamEntry(Map<String, String> metadata, String key) {
+        String value = metadata.get(key);
+        if (value == null) {
+            return;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            metadata.remove(key);
+        } else {
+            metadata.put(key, trimmed);
+        }
     }
 
 }

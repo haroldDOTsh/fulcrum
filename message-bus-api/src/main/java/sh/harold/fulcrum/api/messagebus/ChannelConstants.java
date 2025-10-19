@@ -127,6 +127,12 @@ public final class ChannelConstants {
     public static final String PLAYER_ROUTE_ACK = "fulcrum.registry.player.route.ack";
     public static final String PLAYER_RESERVATION_REQUEST = "fulcrum.registry.player.reservation.request";
     public static final String PLAYER_RESERVATION_RESPONSE = "fulcrum.registry.player.reservation.response";
+    public static final String PARTY_UPDATE = "fulcrum.party.update";
+    public static final String PARTY_RESERVATION_CREATED = "fulcrum.party.reservation.created";
+    public static final String PARTY_RESERVATION_CLAIMED = "fulcrum.party.reservation.claimed";
+    public static final String PARTY_WARP_REQUEST = "fulcrum.party.warp.request";
+    public static final String MATCH_ROSTER_CREATED = "fulcrum.match.roster.created";
+    public static final String MATCH_ROSTER_ENDED = "fulcrum.match.roster.ended";
     /**
      * Prefix for directed slot provision commands
      */

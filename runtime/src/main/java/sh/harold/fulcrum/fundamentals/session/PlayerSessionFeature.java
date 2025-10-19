@@ -49,6 +49,10 @@ public class PlayerSessionFeature implements PluginFeature {
         if (redisConfig != null) {
             try {
                 redisOperations = new LettuceRedisOperations(redisConfig);
+                container.register(LettuceRedisOperations.class, redisOperations);
+                if (ServiceLocatorImpl.getInstance() != null) {
+                    ServiceLocatorImpl.getInstance().registerService(LettuceRedisOperations.class, redisOperations);
+                }
             } catch (RuntimeException ex) {
                 logger.warning("Failed to initialise Redis session backend, falling back to local cache: " + ex.getMessage());
                 redisOperations = null;
@@ -136,6 +140,12 @@ public class PlayerSessionFeature implements PluginFeature {
                 redisOperations.close();
             } catch (Exception e) {
                 logger.warning("Failed to close Redis connection gracefully: " + e.getMessage());
+            }
+            if (ServiceLocatorImpl.getInstance() != null) {
+                ServiceLocatorImpl.getInstance().unregisterService(LettuceRedisOperations.class);
+            }
+            if (container != null) {
+                container.unregister(LettuceRedisOperations.class);
             }
         }
         logger.info("PlayerSessionService shut down");

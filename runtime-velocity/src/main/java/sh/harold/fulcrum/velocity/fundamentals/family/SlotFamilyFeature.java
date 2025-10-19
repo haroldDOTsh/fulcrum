@@ -154,10 +154,42 @@ public final class SlotFamilyFeature implements VelocityFeature {
         variantId = normalize(variantId);
         if (variantId != null) {
             cache.recordVariant(serverId, familyId, variantId);
+            int maxPlayers = status.getMaxPlayers();
+            int maxTeamSize = extractTeamSize(metadata);
+            int maxTeams = extractTeamCount(metadata);
+            if (maxTeamSize > 0 && maxPlayers > 0 && maxTeams <= 0) {
+                maxTeams = Math.max(1, maxPlayers / Math.max(1, maxTeamSize));
+            }
+            cache.updateVariantInfo(serverId, familyId, variantId, maxPlayers, maxTeamSize, maxTeams);
             if (logger.isTraceEnabled()) {
                 logger.trace("Recorded variant {} for family {} on {}", variantId, familyId, serverId);
             }
         }
+    }
+
+    private int extractTeamSize(Map<String, String> metadata) {
+        return parsePositiveInt(metadata, "team.max");
+    }
+
+    private int extractTeamCount(Map<String, String> metadata) {
+        return parsePositiveInt(metadata, "team.count");
+    }
+
+    private int parsePositiveInt(Map<String, String> metadata, String key) {
+        if (metadata == null) {
+            return -1;
+        }
+        String raw = metadata.get(key);
+        if (raw == null || raw.isBlank()) {
+            return -1;
+        }
+        try {
+            int value = Integer.parseInt(raw.trim());
+            return value > 0 ? value : -1;
+        } catch (NumberFormatException ignored) {
+            // ignore malformed entries
+        }
+        return -1;
     }
 
     private String extractServerId(Object payload) {

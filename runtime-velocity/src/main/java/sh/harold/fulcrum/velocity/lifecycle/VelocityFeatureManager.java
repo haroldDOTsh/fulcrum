@@ -12,6 +12,7 @@ import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyFeature;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
+import sh.harold.fulcrum.velocity.party.VelocityPartyFeature;
 
 import java.util.*;
 import java.util.concurrent.Executors;
@@ -67,6 +68,7 @@ public class VelocityFeatureManager {
         registerFeature(new VelocityServerLifecycleFeature(proxyServer, logger, lifecycleConfig, scheduler, developmentMode));
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature());
         registerFeature(new VelocityPlayerDataFeature());
+        registerFeature(new VelocityPartyFeature());
         registerFeature(new VelocityCommandFeature());
     }
 

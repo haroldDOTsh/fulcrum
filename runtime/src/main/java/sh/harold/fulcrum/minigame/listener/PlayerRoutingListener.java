@@ -20,6 +20,7 @@ import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
 import sh.harold.fulcrum.fundamentals.session.PlayerReservationService;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.minigame.GameManager;
+import sh.harold.fulcrum.minigame.party.PartyReservationConsumer;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 
 import java.nio.charset.StandardCharsets;
@@ -40,6 +41,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
     private final PlayerRouteRegistry routeRegistry;
     private final GameManager gameManager;
     private final PlayerReservationService reservationService;
+    private final PartyReservationConsumer partyReservationConsumer;
     private final MessageBus messageBus;
     private final PlayerSessionService sessionService;
     private final ObjectMapper objectMapper;
@@ -50,12 +52,14 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                                  PlayerRouteRegistry routeRegistry,
                                  GameManager gameManager,
                                  PlayerReservationService reservationService,
+                                 PartyReservationConsumer partyReservationConsumer,
                                  MessageBus messageBus,
                                  PlayerSessionService sessionService) {
         this.plugin = plugin;
         this.routeRegistry = routeRegistry;
         this.gameManager = gameManager;
         this.reservationService = reservationService;
+        this.partyReservationConsumer = partyReservationConsumer;
         this.messageBus = messageBus;
         this.sessionService = sessionService;
         this.objectMapper = new ObjectMapper()
@@ -121,11 +125,22 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             return;
         }
 
-        Map<String, String> commandMetadata = command.getMetadata() != null ? command.getMetadata() : Map.of();
-        String token = commandMetadata.get("reservationToken");
+        Map<String, String> commandMetadata = command.getMetadata() != null ? new HashMap<>(command.getMetadata()) : new HashMap<>();
+        String reservationToken = commandMetadata.get("reservationToken");
+        String partyReservationId = commandMetadata.get("partyReservationId");
+        String partyTokenId = commandMetadata.get("partyTokenId");
 
-        if (reservationService != null) {
-            if (!reservationService.consumeReservation(token, playerId)) {
+        if (partyReservationId != null && !partyReservationId.isBlank()
+                && partyTokenId != null && !partyTokenId.isBlank()) {
+            if (partyReservationConsumer == null
+                    || !partyReservationConsumer.consume(partyReservationId, partyTokenId, playerId,
+                    command.getServerId(), command.getSlotId())) {
+                plugin.getLogger().warning("Rejected party route for " + command.getPlayerName() + " due to reservation validation failure");
+                sendReservationFailure(command, "party-reservation-invalid");
+                return;
+            }
+        } else if (reservationService != null) {
+            if (!reservationService.consumeReservation(reservationToken, playerId)) {
                 plugin.getLogger().warning("Rejected route for " + command.getPlayerName() + " due to missing or invalid reservation token");
                 sendReservationFailure(command, "invalid-reservation");
                 return;
@@ -136,12 +151,14 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
 
         Map<String, String> metadata = new HashMap<>(commandMetadata);
         metadata.remove("reservationToken");
+        metadata.remove("partyReservationId");
+        metadata.remove("partyTokenId");
         if (sessionService != null) {
             sessionService.recordHandoff(
                     playerId,
                     command.getServerId(),
                     command.getSlotId(),
-                    token,
+                    reservationToken,
                     metadata,
                     Duration.ofSeconds(15)
             );

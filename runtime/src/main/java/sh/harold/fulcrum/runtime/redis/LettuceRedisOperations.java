@@ -2,6 +2,8 @@ package sh.harold.fulcrum.runtime.redis;
 
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
+import io.lettuce.core.ScriptOutputType;
+import io.lettuce.core.SetArgs;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 
@@ -94,6 +96,25 @@ public class LettuceRedisOperations implements AutoCloseable {
             }
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to set key: " + key, e);
+        }
+    }
+
+    public boolean setIfAbsent(String key, String value, long ttlSeconds) {
+        if (!available) {
+            return false;
+        }
+
+        try {
+            RedisCommands<String, String> commands = connection.sync();
+            SetArgs args = SetArgs.Builder.nx();
+            if (ttlSeconds > 0) {
+                args.ex(ttlSeconds);
+            }
+            String result = commands.set(key, value, args);
+            return result != null && result.equalsIgnoreCase("OK");
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to set-if-absent key: " + key, e);
+            return false;
         }
     }
 
@@ -204,6 +225,26 @@ public class LettuceRedisOperations implements AutoCloseable {
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to delete multiple keys", e);
             return 0;
+        }
+    }
+
+    public boolean deleteIfMatches(String key, String value) {
+        if (!available) {
+            return false;
+        }
+
+        try {
+            RedisCommands<String, String> commands = connection.sync();
+            Long result = commands.eval(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                    ScriptOutputType.INTEGER,
+                    new String[]{key},
+                    value
+            );
+            return result != null && result > 0;
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to conditionally delete key: " + key, e);
+            return false;
         }
     }
 

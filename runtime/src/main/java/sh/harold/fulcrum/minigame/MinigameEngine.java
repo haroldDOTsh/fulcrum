@@ -4,7 +4,11 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+import sh.harold.fulcrum.api.messagebus.ChannelConstants;
+import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
+import sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterCreatedMessage;
+import sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterEndedMessage;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagContexts;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
@@ -17,12 +21,14 @@ import sh.harold.fulcrum.minigame.match.MatchLogWriter;
 import sh.harold.fulcrum.minigame.match.MinigameMatch;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
+import sh.harold.fulcrum.minigame.team.TeamPlanner;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 /**
  * Runtime engine that manages active minigame matches.
@@ -38,6 +44,7 @@ public final class MinigameEngine {
     private final MinigameDataRegistry dataRegistry;
     private final MatchHistoryWriter matchHistoryWriter;
     private final MatchLogWriter matchLogWriter;
+    private final MessageBus messageBus;
     private final Set<String> provisioningSlots = ConcurrentHashMap.newKeySet();
     private final Map<String, MinigameRegistration> registrations = new ConcurrentHashMap<>();
     private final Map<UUID, MinigameMatch> activeMatches = new ConcurrentHashMap<>();
@@ -53,6 +60,7 @@ public final class MinigameEngine {
     private final Map<UUID, Map<UUID, UUID>> matchPlayerSessions = new ConcurrentHashMap<>();
     private final Map<UUID, List<MatchLogWriter.Event>> matchEvents = new ConcurrentHashMap<>();
     private final Set<UUID> recordedMatches = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> publishedRosters = ConcurrentHashMap.newKeySet();
     private BukkitTask tickTask;
 
     public MinigameEngine(JavaPlugin plugin,
@@ -63,7 +71,8 @@ public final class MinigameEngine {
                           PlayerSessionService sessionService,
                           MinigameDataRegistry dataRegistry,
                           MatchHistoryWriter matchHistoryWriter,
-                          MatchLogWriter matchLogWriter) {
+                          MatchLogWriter matchLogWriter,
+                          MessageBus messageBus) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.routeRegistry = routeRegistry;
         this.environmentService = environmentService;
@@ -73,6 +82,7 @@ public final class MinigameEngine {
         this.dataRegistry = dataRegistry;
         this.matchHistoryWriter = matchHistoryWriter;
         this.matchLogWriter = matchLogWriter;
+        this.messageBus = messageBus;
     }
 
     public void registerRegistration(MinigameRegistration registration) {
@@ -137,9 +147,12 @@ public final class MinigameEngine {
             if (environmentService != null) {
                 environmentService.cleanup(slotId);
             }
+
+            publishRosterEnded(matchId, slotId);
         }
 
         if (removedMatch != null) {
+            removedMatch.shutdown();
             removedMatch.getContext().getActivePlayers().forEach(playerMatchIndex::remove);
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_ID);
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_METADATA);
@@ -158,6 +171,7 @@ public final class MinigameEngine {
         matchPlayerSessions.remove(matchId);
         recordedMatches.remove(matchId);
         matchEvents.remove(matchId);
+        publishedRosters.remove(matchId);
     }
 
     public void publishEvent(UUID matchId, MinigameEvent event) {
@@ -396,8 +410,9 @@ public final class MinigameEngine {
                                     MinigameRegistration registration,
                                     Collection<Player> players) {
         Objects.requireNonNull(players, "players");
+        List<Player> initialPlayers = new ArrayList<>(players);
         UUID matchId = UUID.randomUUID();
-        SlotContext slotContext = resolveSlotContext(players);
+        SlotContext slotContext = resolveSlotContext(initialPlayers);
         Map<String, String> metadataSnapshot = new HashMap<>();
         if (slotContext != null && slotContext.metadata != null && !slotContext.metadata.isEmpty()) {
             metadataSnapshot.putAll(slotContext.metadata);
@@ -409,12 +424,25 @@ public final class MinigameEngine {
         metadataSnapshot.putIfAbsent("environment", context.environment());
         matchContexts.put(matchId, context);
 
-        MinigameMatch match = new MinigameMatch(plugin, matchId, blueprint, registration, players,
+        Map<UUID, Map<String, String>> playerMetadata = collectPlayerMetadata(initialPlayers);
+        TeamPlanner.TeamPlan teamPlan;
+        try {
+            teamPlan = TeamPlanner.plan(matchId, initialPlayers, metadataSnapshot, playerMetadata);
+        } catch (Exception exception) {
+            plugin.getLogger().warning("Failed to compute team plan for match " + matchId + ": " + exception.getMessage());
+            Map<String, String> fallbackMetadata = new HashMap<>(metadataSnapshot);
+            fallbackMetadata.put("team.max", Integer.toString(Math.max(1, initialPlayers.size())));
+            fallbackMetadata.put("team.count", "1");
+            teamPlan = TeamPlanner.plan(matchId, initialPlayers, fallbackMetadata, playerMetadata);
+        }
+
+        MinigameMatch match = new MinigameMatch(plugin, matchId, blueprint, registration, initialPlayers,
                 stateId -> onStateChange(matchId, familyId, stateId),
-                actionFlags);
+                actionFlags,
+                teamPlan);
         activeMatches.put(matchId, match);
         matchStates.put(matchId, blueprint.getStartStateId());
-        for (Player player : players) {
+        for (Player player : initialPlayers) {
             UUID playerId = player.getUniqueId();
             playerMatchIndex.put(playerId, matchId);
             captureSessionId(matchId, playerId);
@@ -432,6 +460,7 @@ public final class MinigameEngine {
 
             matchSlotIds.put(matchId, slotContext.slotId);
             slotMatches.put(slotContext.slotId, matchId);
+            publishedRosters.remove(matchId);
 
             if (environmentService != null) {
                 environmentService.getEnvironment(slotContext.slotId)
@@ -443,7 +472,7 @@ public final class MinigameEngine {
                 statusMetadata.putIfAbsent("phase", "pre_lobby");
                 slotOrchestrator.updateSlotStatus(slotContext.slotId,
                         SlotLifecycleStatus.ALLOCATED,
-                        players != null ? players.size() : 0,
+                        initialPlayers.size(),
                         statusMetadata);
                 matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(statusMetadata));
             } else {
@@ -475,6 +504,22 @@ public final class MinigameEngine {
         return null;
     }
 
+    private Map<UUID, Map<String, String>> collectPlayerMetadata(Collection<Player> players) {
+        Map<UUID, Map<String, String>> result = new HashMap<>();
+        if (routeRegistry == null || players == null) {
+            return result;
+        }
+        for (Player player : players) {
+            routeRegistry.get(player.getUniqueId()).ifPresent(assignment -> {
+                Map<String, String> metadata = assignment.metadata() != null
+                        ? new HashMap<>(assignment.metadata())
+                        : new HashMap<>();
+                result.put(player.getUniqueId(), metadata);
+            });
+        }
+        return result;
+    }
+
     private void onStateChange(UUID matchId, String familyId, String stateId) {
         String previousState = matchStates.put(matchId, stateId);
         plugin.getLogger().fine(() -> "Match " + matchId + " (" + familyId + ") transitioned to " + stateId);
@@ -495,6 +540,9 @@ public final class MinigameEngine {
                     int activePlayers = match != null ? (int) match.getRoster().activeCount() : 0;
                     slotOrchestrator.updateSlotStatus(slotId, SlotLifecycleStatus.IN_GAME, activePlayers, metadataSnapshot);
                     matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(metadataSnapshot));
+                    if (match != null) {
+                        publishMatchRoster(matchId, match);
+                    }
                 }
                 case MinigameBlueprint.STATE_END_GAME -> {
                     slotOrchestrator.updateSlotStatus(slotId, SlotLifecycleStatus.COOLDOWN, 0, metadataSnapshot);
@@ -543,6 +591,70 @@ public final class MinigameEngine {
                 && sessionService != null) {
             matchStartTimes.put(matchId, System.currentTimeMillis());
             markActiveGameplay(matchId, match);
+        }
+    }
+
+    private void publishMatchRoster(UUID matchId, MinigameMatch match) {
+        if (messageBus == null || match == null) {
+            return;
+        }
+        if (!publishedRosters.add(matchId)) {
+            return;
+        }
+
+        String slotId = matchSlotIds.get(matchId);
+        if (slotId == null || slotId.isBlank()) {
+            publishedRosters.remove(matchId);
+            return;
+        }
+
+        Set<UUID> players = match.getRoster().all().stream()
+                .map(entry -> entry != null ? entry.getPlayerId() : null)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (players.isEmpty()) {
+            publishedRosters.remove(matchId);
+            return;
+        }
+
+        MatchContext context = matchContexts.get(matchId);
+        MatchRosterCreatedMessage message = new MatchRosterCreatedMessage();
+        message.setMatchId(matchId);
+        message.setSlotId(slotId);
+        String currentServerId = messageBus.currentServerId();
+        if (currentServerId != null && !currentServerId.isBlank()) {
+            message.setServerId(currentServerId);
+        }
+        if (context != null) {
+            message.setFamilyId(context.family());
+            message.setVariantId(context.variant());
+        }
+        message.setPlayers(players);
+        message.setCreatedAt(System.currentTimeMillis());
+        try {
+            message.validate();
+            messageBus.broadcast(ChannelConstants.MATCH_ROSTER_CREATED, message);
+        } catch (Exception exception) {
+            plugin.getLogger().log(Level.WARNING, "Failed to publish match roster for " + matchId, exception);
+        }
+    }
+
+    private void publishRosterEnded(UUID matchId, String slotId) {
+        if (messageBus == null || slotId == null || slotId.isBlank()) {
+            return;
+        }
+        try {
+            MatchRosterEndedMessage message = new MatchRosterEndedMessage();
+            message.setMatchId(matchId);
+            message.setSlotId(slotId);
+            String currentServerId = messageBus.currentServerId();
+            if (currentServerId != null && !currentServerId.isBlank()) {
+                message.setServerId(currentServerId);
+            }
+            message.validate();
+            messageBus.broadcast(ChannelConstants.MATCH_ROSTER_ENDED, message);
+        } catch (Exception exception) {
+            plugin.getLogger().log(Level.WARNING, "Failed to publish match roster end for " + matchId, exception);
         }
     }
 
@@ -720,6 +832,12 @@ public final class MinigameEngine {
         if (matchId == null || event == null || matchLogWriter == null) {
             return;
         }
-        matchEvents.computeIfAbsent(matchId, id -> Collections.synchronizedList(new ArrayList<>())).add(event);
+        Map<String, Object> details = new HashMap<>(event.details());
+        MinigameMatch match = activeMatches.get(matchId);
+        if (match != null) {
+            match.getContext().team(event.actor()).ifPresent(team -> details.put("teamId", team.getId()));
+        }
+        MatchLogWriter.Event enriched = new MatchLogWriter.Event(event.timestamp(), event.type(), event.actor(), event.target(), details);
+        matchEvents.computeIfAbsent(matchId, id -> Collections.synchronizedList(new ArrayList<>())).add(enriched);
     }
 }

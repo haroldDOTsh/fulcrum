@@ -27,7 +27,9 @@ import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
 import sh.harold.fulcrum.minigame.listener.SpectatorListener;
 import sh.harold.fulcrum.minigame.match.MatchHistoryWriter;
 import sh.harold.fulcrum.minigame.match.MatchLogWriter;
+import sh.harold.fulcrum.minigame.party.PartyReservationConsumer;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
+import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
 import java.util.logging.Logger;
 
@@ -113,7 +115,12 @@ public class MinigameEngineFeature implements PluginFeature {
             plugin.getLogger().warning("PostgreSQL adapter unavailable; match history logging disabled.");
         }
 
-        engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, actionFlagService, sessionService, dataRegistry, matchHistoryWriter, matchLogWriter);
+        MessageBus messageBus = container.getOptional(MessageBus.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(MessageBus.class).orElse(null)
+                        : null);
+
+        engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, actionFlagService, sessionService, dataRegistry, matchHistoryWriter, matchLogWriter, messageBus);
         if (orchestrator != null) {
             orchestrator.addProvisionListener(engine::handleProvisionedSlot);
         }
@@ -137,12 +144,21 @@ public class MinigameEngineFeature implements PluginFeature {
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(PlayerReservationService.class).orElse(null)
                         : null);
-        MessageBus messageBus = container.getOptional(MessageBus.class)
+
+        LettuceRedisOperations redisOperations = container.getOptional(LettuceRedisOperations.class)
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
-                        ? ServiceLocatorImpl.getInstance().findService(MessageBus.class).orElse(null)
+                        ? ServiceLocatorImpl.getInstance().findService(LettuceRedisOperations.class).orElse(null)
                         : null);
 
-        routingListener = new PlayerRoutingListener(plugin, routeRegistry, gameManager, reservationService, messageBus, sessionService);
+        PartyReservationConsumer partyReservationConsumer = null;
+        if (redisOperations != null && messageBus != null) {
+            partyReservationConsumer = new PartyReservationConsumer(redisOperations, messageBus, plugin.getLogger());
+        } else {
+            plugin.getLogger().warning("Party reservation consumer disabled (Redis or MessageBus unavailable)");
+        }
+
+        routingListener = new PlayerRoutingListener(plugin, routeRegistry, gameManager, reservationService,
+                partyReservationConsumer, messageBus, sessionService);
         Bukkit.getPluginManager().registerEvents(routingListener, plugin);
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(PlayerRoutingListener.class, routingListener);

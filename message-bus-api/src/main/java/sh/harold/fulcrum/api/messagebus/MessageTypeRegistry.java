@@ -70,6 +70,18 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.PlayerReservationRequest.class);
             register(ChannelConstants.PLAYER_RESERVATION_RESPONSE,
                     sh.harold.fulcrum.api.messagebus.messages.PlayerReservationResponse.class);
+            register(ChannelConstants.PARTY_UPDATE,
+                    sh.harold.fulcrum.api.messagebus.messages.party.PartyUpdateMessage.class);
+            register(ChannelConstants.PARTY_RESERVATION_CREATED,
+                    sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationCreatedMessage.class);
+            register(ChannelConstants.PARTY_RESERVATION_CLAIMED,
+                    sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationClaimedMessage.class);
+            register(ChannelConstants.PARTY_WARP_REQUEST,
+                    sh.harold.fulcrum.api.messagebus.messages.party.PartyWarpRequestMessage.class);
+            register(ChannelConstants.MATCH_ROSTER_CREATED,
+                    sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterCreatedMessage.class);
+            register(ChannelConstants.MATCH_ROSTER_ENDED,
+                    sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterEndedMessage.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {

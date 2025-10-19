@@ -7,9 +7,13 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.api.party.PartyConstants;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
+import sh.harold.fulcrum.velocity.party.PartyReservationResult;
+import sh.harold.fulcrum.velocity.party.PartyReservationService;
+import sh.harold.fulcrum.velocity.party.PartyService;
 
 import java.time.Duration;
 import java.util.*;
@@ -33,17 +37,23 @@ final class ProxyPlayCommand implements SimpleCommand {
     private final SlotFamilyCache familyCache;
     private final FulcrumVelocityPlugin plugin;
     private final Logger logger;
+    private final PartyService partyService;
+    private final PartyReservationService reservationService;
 
     ProxyPlayCommand(ProxyServer proxy,
                      PlayerRoutingFeature routingFeature,
                      SlotFamilyCache familyCache,
                      FulcrumVelocityPlugin plugin,
-                     Logger logger) {
+                     Logger logger,
+                     PartyService partyService,
+                     PartyReservationService reservationService) {
         this.proxy = proxy;
         this.routingFeature = routingFeature;
         this.familyCache = familyCache;
         this.plugin = plugin;
         this.logger = logger;
+        this.partyService = partyService;
+        this.reservationService = reservationService;
     }
 
     @Override
@@ -97,6 +107,10 @@ final class ProxyPlayCommand implements SimpleCommand {
             return;
         }
 
+        if (handlePartyQueue(player, familyId, variantId)) {
+            return;
+        }
+
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("source", "velocity-play-command");
         metadata.put("initiator", player.getUsername());
@@ -116,12 +130,59 @@ final class ProxyPlayCommand implements SimpleCommand {
                     }
 
                     player.sendMessage(Component.text(
-                            "Queued for " + familyId + " (" + variantId + ").",
+                            "Queued for " + displayVariant(familyId, variantId) + ".",
                             NamedTextColor.GREEN));
                     COOLDOWNS.put(player.getUniqueId(), System.currentTimeMillis());
                     logger.debug("Submitted play request {} for {} -> {}",
                             requestId, player.getUsername(), familyId + ":" + variantId);
                 }).schedule());
+    }
+
+    private boolean handlePartyQueue(Player leader, String familyId, String variantId) {
+        if (partyService == null || reservationService == null) {
+            return false;
+        }
+
+        Optional<sh.harold.fulcrum.api.party.PartySnapshot> partyOpt = partyService.getPartyByPlayer(leader.getUniqueId());
+        if (partyOpt.isEmpty()) {
+            return false;
+        }
+
+        sh.harold.fulcrum.api.party.PartySnapshot snapshot = partyOpt.get();
+        if (!Objects.equals(snapshot.getLeaderId(), leader.getUniqueId())) {
+            leader.sendMessage(Component.text("Only the party leader can use /play.", NamedTextColor.RED));
+            return true;
+        }
+
+        if (snapshot.getSize() <= 1) {
+            return false; // treat single-member party as solo queue
+        }
+
+        List<Player> participants = snapshot.getMembers().keySet().stream()
+                .map(proxy::getPlayer)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .collect(Collectors.toList());
+
+        PartyReservationResult result = reservationService.reserveForPlay(snapshot, familyId, variantId, null, participants);
+        if (!result.isSuccess()) {
+            result.errorMessage().ifPresent(leader::sendMessage);
+            return true;
+        }
+
+        Component confirmation = Component.text("Queued party for ", NamedTextColor.GREEN)
+                .append(Component.text(displayVariant(familyId, variantId), NamedTextColor.AQUA))
+                .append(Component.text(". Reservation expires in " + PartyConstants.RESERVATION_TOKEN_TTL_SECONDS + "s.", NamedTextColor.GREEN));
+        leader.sendMessage(confirmation);
+
+        result.participants().stream()
+                .filter(player -> !player.getUniqueId().equals(leader.getUniqueId()))
+                .forEach(player -> player.sendMessage(Component.text(
+                        leader.getUsername() + " queued the party for " + displayVariant(familyId, variantId) + ".",
+                        NamedTextColor.GREEN)));
+
+        COOLDOWNS.put(leader.getUniqueId(), System.currentTimeMillis());
+        return true;
     }
 
     private boolean isOnCooldown(Player player) {
@@ -187,6 +248,13 @@ final class ProxyPlayCommand implements SimpleCommand {
                 .map(this::normalise)
                 .filter(s -> !s.isBlank())
                 .collect(Collectors.joining("_"));
+    }
+
+    private String displayVariant(String familyId, String variantId) {
+        if (variantId == null || variantId.isBlank()) {
+            return familyId;
+        }
+        return familyId + ":" + variantId;
     }
 
     @Override
