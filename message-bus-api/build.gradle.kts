@@ -10,6 +10,7 @@ dependencies {
     // Core dependencies
     compileOnly("com.fasterxml.jackson.core:jackson-databind:2.17.0")
     implementation(project(":data-api"))
+    implementation(project(":rank-api"))
     
     // Redis support - changed to implementation to provide transitive Netty dependencies
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")

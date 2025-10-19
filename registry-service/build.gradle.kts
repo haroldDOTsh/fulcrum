@@ -28,6 +28,7 @@ dependencies {
     implementation(project(":data-api")) {
         exclude(group = "org.slf4j", module = "slf4j-simple")
     }
+    implementation(project(":rank-api"))
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
     
     // Redis client (same as used in runtime)

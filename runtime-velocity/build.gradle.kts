@@ -16,6 +16,7 @@ repositories {
 dependencies {
     api(project(":message-bus-api"))
     api(project(":data-api"))
+    api(project(":rank-api"))
     
     // Velocity API
     compileOnly("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
