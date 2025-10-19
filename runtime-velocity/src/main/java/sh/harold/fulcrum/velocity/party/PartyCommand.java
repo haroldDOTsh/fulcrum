@@ -5,34 +5,48 @@ import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import org.slf4j.Logger;
+import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.party.*;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
+import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
 final class PartyCommand implements SimpleCommand {
     private static final Component FRAME_LINE = Component.text("-----------------------------------------------------", NamedTextColor.BLUE)
-            .decorate(TextDecoration.STRIKETHROUGH, true);
+            .decorate(TextDecoration.STRIKETHROUGH);
 
     private final PartyService partyService;
     private final PartyReservationService reservationService;
     private final ProxyServer proxy;
     private final PlayerRoutingFeature routingFeature;
     private final PartyMatchRosterStore rosterStore;
+    private final DataAPI dataAPI;
+    private final VelocityPlayerSessionService sessionService;
+    private final Logger logger;
 
     PartyCommand(PartyService partyService,
                  PartyReservationService reservationService,
                  ProxyServer proxy,
                  PlayerRoutingFeature routingFeature,
-                 PartyMatchRosterStore rosterStore) {
+                 PartyMatchRosterStore rosterStore,
+                 DataAPI dataAPI,
+                 VelocityPlayerSessionService sessionService,
+                 Logger logger) {
         this.partyService = partyService;
         this.reservationService = reservationService;
         this.proxy = proxy;
         this.routingFeature = routingFeature;
         this.rosterStore = rosterStore;
+        this.dataAPI = dataAPI;
+        this.sessionService = sessionService;
+        this.logger = logger;
     }
 
     private void sendFramed(Player player, Component... lines) {
@@ -43,6 +57,22 @@ final class PartyCommand implements SimpleCommand {
         player.sendMessage(FRAME_LINE);
         lines.forEach(player::sendMessage);
         player.sendMessage(FRAME_LINE);
+    }
+
+    private Component formatName(UUID playerId, String fallbackName) {
+        return PartyTextFormatter.formatName(playerId, fallbackName, dataAPI, sessionService, logger);
+    }
+
+    private Component yellow(String text) {
+        return PartyTextFormatter.yellow(text);
+    }
+
+    private Component redNumber(long value) {
+        return PartyTextFormatter.redNumber(value);
+    }
+
+    private Component error(String text) {
+        return Component.text(text, NamedTextColor.RED);
     }
 
     @Override
@@ -169,7 +199,7 @@ final class PartyCommand implements SimpleCommand {
     private void handleCreate(Player player) {
         PartyOperationResult result = partyService.createParty(player.getUniqueId(), player.getUsername());
         if (result.isSuccess()) {
-            sendFramed(player, Component.text("Created a new party.", NamedTextColor.GREEN));
+            sendFramed(player, yellow("Created a new party."));
         } else {
             sendError(player, result);
         }
@@ -178,7 +208,7 @@ final class PartyCommand implements SimpleCommand {
     private void handleInvite(Player player, String targetName) {
         Optional<Player> targetOpt = proxy.getPlayer(targetName);
         if (targetOpt.isEmpty()) {
-            sendFramed(player, Component.text(targetName + " is not online.", NamedTextColor.RED));
+            sendFramed(player, yellow("Couldn't find a player with that name!"));
             return;
         }
         Player target = targetOpt.get();
@@ -194,12 +224,26 @@ final class PartyCommand implements SimpleCommand {
         PartyOperationResult result = partyService.invitePlayer(
                 player.getUniqueId(), player.getUsername(), target.getUniqueId(), target.getUsername());
         if (result.isSuccess()) {
-            sendFramed(player, Component.text("Invited " + target.getUsername() + " to your party.", NamedTextColor.GREEN));
+            Component success = Component.text()
+                    .append(yellow("Invited "))
+                    .append(formatName(target.getUniqueId(), target.getUsername()))
+                    .append(yellow(" to your party!"))
+                    .build();
+            sendFramed(player, success);
+
             result.invite().ifPresent(invite -> {
                 long seconds = Math.max(1, (invite.getExpiresAt() - System.currentTimeMillis()) / 1000L);
-                Component message = Component.text(player.getUsername() + " invited you to their party. Use /party accept "
-                        + player.getUsername() + " to join. (" + seconds + "s)", NamedTextColor.AQUA);
-                sendFramed(target, message);
+                Component click = Component.text("Click here to join!", NamedTextColor.GOLD)
+                        .clickEvent(ClickEvent.runCommand("/party accept " + player.getUsername()))
+                        .hoverEvent(HoverEvent.showText(Component.text("Join the party", NamedTextColor.YELLOW)));
+                Component inviteMessage = Component.text()
+                        .append(formatName(player.getUniqueId(), player.getUsername()))
+                        .append(yellow(" has invited you to join their party! You have "))
+                        .append(redNumber(seconds))
+                        .append(yellow(" seconds to accept. "))
+                        .append(click)
+                        .build();
+                sendFramed(target, inviteMessage);
             });
         } else {
             sendError(player, result);
@@ -208,13 +252,13 @@ final class PartyCommand implements SimpleCommand {
 
     private void handleAccept(Player player, String[] args) {
         if (args.length < 2) {
-            sendFramed(player, Component.text("Usage: /party accept <player>", NamedTextColor.RED));
+            sendFramed(player, yellow("Usage: /party accept <player>"));
             return;
         }
 
         List<PartyInvite> invites = partyService.getInvites(player.getUniqueId());
         if (invites.isEmpty()) {
-            sendFramed(player, Component.text("You do not have any pending party invites.", NamedTextColor.RED));
+            sendFramed(player, yellow("You do not have any pending party invites."));
             return;
         }
 
@@ -234,15 +278,18 @@ final class PartyCommand implements SimpleCommand {
             if (names.isBlank()) {
                 names = "your pending parties";
             }
-            sendFramed(player, Component.text("No party invite found from " + selector + ". Pending invites: " + names + ".",
-                    NamedTextColor.YELLOW));
+            sendFramed(player, yellow("No party invite found from " + selector + ". Pending invites: " + names + "."));
             return;
         }
 
         PartyOperationResult result = partyService.acceptInvite(player.getUniqueId(), player.getUsername(), selected.getPartyId());
         if (result.isSuccess()) {
-            String inviter = selected.getInviterUsername() != null ? selected.getInviterUsername() : "the party";
-            sendFramed(player, Component.text("You joined " + inviter + "'s party.", NamedTextColor.GREEN));
+            Component joined = Component.text()
+                    .append(yellow("You have joined "))
+                    .append(formatName(selected.getInviterPlayerId(), selected.getInviterUsername()))
+                    .append(yellow("'s party!"))
+                    .build();
+            sendFramed(player, joined);
         } else {
             sendError(player, result);
         }
@@ -251,7 +298,7 @@ final class PartyCommand implements SimpleCommand {
     private void handleDeny(Player player, String[] args) {
         List<PartyInvite> invites = partyService.getInvites(player.getUniqueId());
         if (invites.isEmpty()) {
-            sendFramed(player, Component.text("You do not have any pending party invites.", NamedTextColor.RED));
+            sendFramed(player, yellow("You do not have any pending party invites."));
             return;
         }
 
@@ -269,14 +316,13 @@ final class PartyCommand implements SimpleCommand {
                 .orElse(null);
 
         if (selected == null) {
-            sendFramed(player, Component.text("No party invite found from " + selector + ".", NamedTextColor.RED));
+            sendFramed(player, yellow("No party invite found from " + selector + "."));
             return;
         }
 
         PartyOperationResult result = partyService.declineInvite(player.getUniqueId(), selected.getPartyId());
         if (result.isSuccess()) {
-            sendFramed(player, Component.text("Declined the party invite from " + selected.getInviterUsername() + ".",
-                    NamedTextColor.YELLOW));
+            sendFramed(player, yellow("Declined the party invite from " + selected.getInviterUsername() + "."));
         } else {
             sendError(player, result);
         }
@@ -285,7 +331,7 @@ final class PartyCommand implements SimpleCommand {
     private void handleList(Player player) {
         Optional<PartySnapshot> snapshotOpt = partyService.getPartyByPlayer(player.getUniqueId());
         if (snapshotOpt.isEmpty()) {
-            sendFramed(player, Component.text("You are not in a party.", NamedTextColor.RED));
+            sendFramed(player, yellow("You are not currently in a party!"));
             return;
         }
         PartySnapshot snapshot = snapshotOpt.get();
@@ -329,7 +375,7 @@ final class PartyCommand implements SimpleCommand {
     private void handleRoleChange(Player player, String targetName, RoleChange change) {
         Optional<Player> targetOpt = proxy.getPlayer(targetName);
         if (targetOpt.isEmpty()) {
-            sendFramed(player, Component.text(targetName + " is not online.", NamedTextColor.RED));
+            sendFramed(player, yellow("Couldn't find a player with that name!"));
             return;
         }
         Player target = targetOpt.get();
@@ -338,19 +384,35 @@ final class PartyCommand implements SimpleCommand {
             case DEMOTE -> partyService.demote(player.getUniqueId(), target.getUniqueId());
         };
         if (result.isSuccess()) {
-            String message;
+            PartySnapshot snapshot = result.party().orElse(null);
+            PartyMember updated = snapshot != null ? snapshot.getMember(target.getUniqueId()) : null;
+            Component response;
             if (change == RoleChange.PROMOTE) {
-                PartyRole newRole = result.party()
-                        .map(snapshot -> snapshot.getMember(target.getUniqueId()))
-                        .map(PartyMember::getRole)
-                        .orElse(PartyRole.MODERATOR);
-                message = (newRole == PartyRole.LEADER)
-                        ? "Promoted " + target.getUsername() + " to party leader."
-                        : "Promoted " + target.getUsername() + " to party moderator.";
+                PartyRole newRole = updated != null ? updated.getRole() : PartyRole.MODERATOR;
+                if (newRole == PartyRole.LEADER) {
+                    response = Component.text()
+                            .append(formatName(player.getUniqueId(), player.getUsername()))
+                            .append(yellow(" has promoted "))
+                            .append(formatName(target.getUniqueId(), target.getUsername()))
+                            .append(yellow(" to Party Leader."))
+                            .build();
+                } else {
+                    response = Component.text()
+                            .append(formatName(player.getUniqueId(), player.getUsername()))
+                            .append(yellow(" has promoted "))
+                            .append(formatName(target.getUniqueId(), target.getUsername()))
+                            .append(yellow(" to Party Moderator."))
+                            .build();
+                }
             } else {
-                message = "Demoted " + target.getUsername() + " to party member.";
+                response = Component.text()
+                        .append(formatName(player.getUniqueId(), player.getUsername()))
+                        .append(yellow(" has demoted "))
+                        .append(formatName(target.getUniqueId(), target.getUsername()))
+                        .append(yellow(" to Party Member."))
+                        .build();
             }
-            sendFramed(player, Component.text(message, NamedTextColor.GREEN));
+            sendFramed(player, response);
         } else {
             sendError(player, result);
         }
@@ -359,13 +421,23 @@ final class PartyCommand implements SimpleCommand {
     private void handleTransfer(Player player, String targetName) {
         Optional<Player> targetOpt = proxy.getPlayer(targetName);
         if (targetOpt.isEmpty()) {
-            sendFramed(player, Component.text(targetName + " is not online.", NamedTextColor.RED));
+            sendFramed(player, yellow("Couldn't find a player with that name!"));
             return;
         }
         Player target = targetOpt.get();
         PartyOperationResult result = partyService.transferLeadership(player.getUniqueId(), target.getUniqueId());
         if (result.isSuccess()) {
-            sendFramed(player, Component.text("Transferred party leadership to " + target.getUsername() + ".", NamedTextColor.GREEN));
+            Component promoted = Component.text()
+                    .append(formatName(player.getUniqueId(), player.getUsername()))
+                    .append(yellow(" has promoted "))
+                    .append(formatName(target.getUniqueId(), target.getUsername()))
+                    .append(yellow(" to Party Leader."))
+                    .build();
+            Component demoted = Component.text()
+                    .append(formatName(player.getUniqueId(), player.getUsername()))
+                    .append(yellow(" is now a Party Moderator."))
+                    .build();
+            sendFramed(player, promoted, demoted);
         } else {
             sendError(player, result);
         }
@@ -374,13 +446,18 @@ final class PartyCommand implements SimpleCommand {
     private void handleKick(Player player, String targetName) {
         Optional<Player> targetOpt = proxy.getPlayer(targetName);
         if (targetOpt.isEmpty()) {
-            sendFramed(player, Component.text(targetName + " is not online.", NamedTextColor.RED));
+            sendFramed(player, yellow("Couldn't find a player with that name!"));
             return;
         }
         Player target = targetOpt.get();
         PartyOperationResult result = partyService.kick(player.getUniqueId(), target.getUniqueId());
         if (result.isSuccess()) {
-            sendFramed(player, Component.text("Kicked " + target.getUsername() + " from the party.", NamedTextColor.YELLOW));
+            Component kicked = Component.text()
+                    .append(yellow("Kicked "))
+                    .append(formatName(target.getUniqueId(), target.getUsername()))
+                    .append(yellow(" from the party."))
+                    .build();
+            sendFramed(player, kicked);
         } else {
             sendError(player, result);
         }
@@ -574,24 +651,20 @@ final class PartyCommand implements SimpleCommand {
 
     private void sendError(Player player, PartyOperationResult result) {
         Component message = switch (result.errorCode()) {
-            case ALREADY_IN_PARTY -> Component.text("You're already in a party.", NamedTextColor.RED);
-            case NOT_IN_PARTY -> Component.text("You are not in a party.", NamedTextColor.RED);
-            case NOT_LEADER -> Component.text("Only the party leader can do that.", NamedTextColor.RED);
-            case NOT_MODERATOR ->
-                    Component.text("Only the leader or party moderators can do that.", NamedTextColor.RED);
-            case TARGET_ALREADY_IN_PARTY -> Component.text("That player is already in a party.", NamedTextColor.RED);
-            case TARGET_NOT_IN_PARTY -> Component.text("That player is not in your party.", NamedTextColor.RED);
-            case INVITE_ALREADY_PENDING ->
-                    Component.text("That player already has a pending invite.", NamedTextColor.RED);
-            case INVITE_NOT_FOUND -> Component.text("You have no pending invites.", NamedTextColor.RED);
-            case INVITE_EXPIRED -> Component.text("That party invite expired.", NamedTextColor.RED);
-            case PARTY_FULL -> Component.text("Your party is full.", NamedTextColor.RED);
-            case LEADER_ONLY_ACTION -> Component.text("Only the party leader can do that.", NamedTextColor.RED);
-            case CANNOT_TARGET_SELF -> Component.text("You cannot target yourself.", NamedTextColor.RED);
-            case REDIS_UNAVAILABLE -> Component.text("Party service is busy, try again soon.", NamedTextColor.RED);
-            default -> Component.text(
-                    result.message() != null ? result.message() : "Unable to complete that action.",
-                    NamedTextColor.RED);
+            case ALREADY_IN_PARTY -> error("You're already in a party!");
+            case NOT_IN_PARTY -> error("You are not currently in a party!");
+            case NOT_LEADER -> error("Only the party leader can do that.");
+            case NOT_MODERATOR -> error("Only the leader or party moderators can do that.");
+            case TARGET_ALREADY_IN_PARTY -> error("That player is already in a party.");
+            case TARGET_NOT_IN_PARTY -> error("That player is not in your party.");
+            case INVITE_ALREADY_PENDING -> error("That player already has a pending invite.");
+            case INVITE_NOT_FOUND -> error("You have no pending invites.");
+            case INVITE_EXPIRED -> error("That party invite has expired.");
+            case PARTY_FULL -> error("Your party is full.");
+            case LEADER_ONLY_ACTION -> error("Only the party leader can do that.");
+            case CANNOT_TARGET_SELF -> error("You cannot target yourself.");
+            case REDIS_UNAVAILABLE -> error("Party service is busy, try again soon.");
+            default -> error(result.message() != null ? result.message() : "Unable to complete that action.");
         };
         sendFramed(player, message);
     }

@@ -11,10 +11,8 @@ import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
-import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
@@ -25,8 +23,6 @@ import sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationClaimedMe
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationCreatedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyUpdateMessage;
 import sh.harold.fulcrum.api.party.*;
-import sh.harold.fulcrum.api.rank.Rank;
-import sh.harold.fulcrum.session.PlayerSessionRecord;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.RedisConfig;
@@ -42,15 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class VelocityPartyFeature implements VelocityFeature {
     private static final Component FRAME_LINE = Component.text("-----------------------------------------------------", NamedTextColor.BLUE)
-            .decorate(TextDecoration.STRIKETHROUGH, true);
-    private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacyAmpersand();
-    private static final Map<String, RankVisual> RANK_VISUAL_OVERRIDES = Map.ofEntries(
-            Map.entry("MVP_PLUS_PLUS", new RankVisual("&6[MVP++]", NamedTextColor.GOLD)),
-            Map.entry("MVP_PLUS", new RankVisual("&b[MVP+]", NamedTextColor.AQUA)),
-            Map.entry("MVP", new RankVisual("&b[MVP]", NamedTextColor.AQUA)),
-            Map.entry("VIP_PLUS", new RankVisual("&a[VIP+]", NamedTextColor.GREEN)),
-            Map.entry("VIP", new RankVisual("&a[VIP]", NamedTextColor.GREEN))
-    );
+            .decorate(TextDecoration.STRIKETHROUGH);
 
     private final ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private final Set<UUID> localPlayers = ConcurrentHashMap.newKeySet();
@@ -189,7 +177,16 @@ public final class VelocityPartyFeature implements VelocityFeature {
         CommandMeta meta = proxy.getCommandManager().metaBuilder("party")
                 .plugin(plugin)
                 .build();
-        PartyCommand command = new PartyCommand(partyService, reservationService, proxy, routingFeature, rosterStore);
+        PartyCommand command = new PartyCommand(
+                partyService,
+                reservationService,
+                proxy,
+                routingFeature,
+                rosterStore,
+                dataAPI,
+                sessionService,
+                logger
+        );
         proxy.getCommandManager().register(meta, command);
         proxy.getCommandManager().register(
                 proxy.getCommandManager().metaBuilder("p").plugin(plugin).build(), command);
@@ -223,52 +220,156 @@ public final class VelocityPartyFeature implements VelocityFeature {
             if (snapshot == null) {
                 return;
             }
+            UUID actorId = message.getActorPlayerId();
+            UUID targetId = message.getTargetPlayerId();
+            String reason = message.getReason();
+
             switch (message.getAction()) {
                 case INVITE_SENT -> {
                     Component broadcast = buildInviteBroadcast(snapshot, message);
                     broadcastToParty(snapshot, broadcast);
-                    String inviterName = safeName(snapshot, message.getActorPlayerId());
-                    notifyPlayer(message.getTargetPlayerId(), Component.text(messageContext(snapshot.getPartyId(),
-                                    "You have been invited to a party by "
-                                            + inviterName
-                                            + ". Use /party accept "
-                                            + inviterName + " to join."),
-                            NamedTextColor.AQUA));
+
+                    Component click = Component.text("Click here to join!", NamedTextColor.GOLD)
+                            .clickEvent(ClickEvent.runCommand("/party accept " + safeName(snapshot, actorId)))
+                            .hoverEvent(HoverEvent.showText(Component.text("Join the party", NamedTextColor.YELLOW)));
+
+                    Component inviteeMessage = Component.text()
+                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(PartyTextFormatter.yellow(" has invited you to join their party! You have "))
+                            .append(PartyTextFormatter.redNumber(PartyConstants.INVITE_TTL_SECONDS))
+                            .append(PartyTextFormatter.yellow(" seconds to accept. "))
+                            .append(click)
+                            .build();
+                    notifyPlayer(targetId, inviteeMessage);
                 }
-                case INVITE_ACCEPTED -> broadcastToParty(snapshot,
-                        Component.text(safeName(snapshot, message.getTargetPlayerId()) + " joined the party.", NamedTextColor.GREEN));
-                case INVITE_REVOKED, INVITE_EXPIRED -> notifyPlayer(message.getTargetPlayerId(),
-                        Component.text("Your party invite expired.", NamedTextColor.RED));
-                case MEMBER_LEFT -> broadcastToParty(snapshot,
-                        Component.text(safeName(snapshot, message.getActorPlayerId()) + " left the party.", NamedTextColor.YELLOW));
+                case INVITE_ACCEPTED, MEMBER_JOINED -> {
+                    Component joined = Component.text()
+                            .append(formatRankedName(targetId, safeName(snapshot, targetId)))
+                            .append(PartyTextFormatter.yellow(" has joined the party!"))
+                            .build();
+                    broadcastToParty(snapshot, joined);
+                }
+                case INVITE_REVOKED, INVITE_EXPIRED -> {
+                    Component expired = Component.text()
+                            .append(PartyTextFormatter.yellow("The party invite to "))
+                            .append(formatRankedName(targetId, safeName(snapshot, targetId)))
+                            .append(PartyTextFormatter.yellow(" has expired."))
+                            .build();
+                    broadcastToParty(snapshot, expired);
+                    notifyPlayer(targetId, PartyTextFormatter.yellow("Your party invite has expired."));
+                }
+                case MEMBER_LEFT -> {
+                    Component left = Component.text()
+                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(PartyTextFormatter.yellow(" left the party."))
+                            .build();
+                    broadcastToParty(snapshot, left);
+                }
                 case MEMBER_KICKED -> {
-                    String removedName = resolveRemovedMemberName(snapshot, message);
-                    broadcastToParty(snapshot,
-                            Component.text(removedName + " was removed from the party.", NamedTextColor.RED));
-                    notifyPlayer(message.getTargetPlayerId(),
-                            Component.text("You were removed from the party.", NamedTextColor.RED));
+                    Component kickedMessage;
+                    if (reason != null && reason.startsWith("offline")) {
+                        kickedMessage = Component.text()
+                                .append(PartyTextFormatter.yellow("Kicked "))
+                                .append(formatRankedName(targetId, resolveRemovedMemberName(snapshot, message)))
+                                .append(PartyTextFormatter.yellow(" because they were offline."))
+                                .build();
+                    } else {
+                        kickedMessage = Component.text()
+                                .append(formatRankedName(targetId, resolveRemovedMemberName(snapshot, message)))
+                                .append(PartyTextFormatter.yellow(" was removed from the party."))
+                                .build();
+                    }
+                    broadcastToParty(snapshot, kickedMessage);
+                    notifyPlayer(targetId, PartyTextFormatter.yellow("You were removed from the party."));
                 }
-                case TRANSFERRED -> broadcastToParty(snapshot,
-                        Component.text("Party leadership transferred to " + safeName(snapshot, snapshot.getLeaderId()) + ".", NamedTextColor.GOLD));
-                case DISBANDED -> broadcastToParty(snapshot,
-                        Component.text("Your party was disbanded.", NamedTextColor.YELLOW));
+                case TRANSFERRED -> {
+                    Component promoted = Component.text()
+                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(PartyTextFormatter.yellow(" has promoted "))
+                            .append(formatRankedName(targetId, safeName(snapshot, targetId)))
+                            .append(PartyTextFormatter.yellow(" to Party Leader."))
+                            .build();
+                    broadcastToParty(snapshot, promoted);
+
+                    Component demoted = Component.text()
+                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(PartyTextFormatter.yellow(" is now a Party Moderator."))
+                            .build();
+                    broadcastToParty(snapshot, demoted);
+
+                    Component transferred = Component.text()
+                            .append(PartyTextFormatter.yellow("The party was transferred to "))
+                            .append(formatRankedName(targetId, safeName(snapshot, targetId)))
+                            .append(PartyTextFormatter.yellow(" by "))
+                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .build();
+                    broadcastToParty(snapshot, transferred);
+                }
+                case ROLE_CHANGED -> {
+                    PartyMember member = snapshot.getMember(targetId);
+                    if (member != null) {
+                        if (member.getRole() == PartyRole.MODERATOR) {
+                            Component promoted = Component.text()
+                                    .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                                    .append(PartyTextFormatter.yellow(" has promoted "))
+                                    .append(formatRankedName(targetId, member.getUsername()))
+                                    .append(PartyTextFormatter.yellow(" to Party Moderator."))
+                                    .build();
+                            broadcastToParty(snapshot, promoted);
+                        } else if (member.getRole() == PartyRole.MEMBER) {
+                            Component demoted = Component.text()
+                                    .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                                    .append(PartyTextFormatter.yellow(" has demoted "))
+                                    .append(formatRankedName(targetId, member.getUsername()))
+                                    .append(PartyTextFormatter.yellow(" to Party Member."))
+                                    .build();
+                            broadcastToParty(snapshot, demoted);
+                        }
+                    }
+                }
+                case DISBANDED -> {
+                    Component messageComponent;
+                    if (actorId != null) {
+                        messageComponent = Component.text()
+                                .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                                .append(PartyTextFormatter.yellow(" has disbanded the party!"))
+                                .build();
+                    } else if ("empty-party-pruned".equals(reason)) {
+                        messageComponent = PartyTextFormatter.yellow("The party was disbanded because all invites expired and the party was empty.");
+                    } else {
+                        messageComponent = PartyTextFormatter.yellow("Your party was disbanded.");
+                    }
+                    broadcastToParty(snapshot, messageComponent);
+                }
                 case RESERVATION_CREATED -> broadcastToParty(snapshot,
                         Component.text("Party reservation is pending. Sit tight for matchmaking...", NamedTextColor.AQUA));
                 case RESERVATION_CLAIMED -> {
-                    String reason = message.getReason();
-                    if (reason != null && reason.startsWith("reservation-failed")) {
-                        String detail = reason.substring("reservation-failed".length()).replaceFirst("^:", "");
+                    String reservationReason = message.getReason();
+                    if (reservationReason != null && reservationReason.startsWith("reservation-failed")) {
+                        String detail = reservationReason.substring("reservation-failed".length()).replaceFirst("^:", "");
                         Component text = Component.text("Party reservation failed", NamedTextColor.RED);
                         if (detail != null && !detail.isBlank()) {
                             text = text.append(Component.text(": " + detail, NamedTextColor.GRAY));
                         }
                         broadcastToParty(snapshot, text);
-                    } else if ("reservation-missing-claims".equals(reason)) {
+                    } else if ("reservation-missing-claims".equals(reservationReason)) {
                         broadcastToParty(snapshot,
                                 Component.text("Party reservation expired before everyone joined.", NamedTextColor.YELLOW));
                     } else {
                         broadcastToParty(snapshot,
                                 Component.text("Party reservation completed.", NamedTextColor.GREEN));
+                    }
+                }
+                case UPDATED -> {
+                    if ("member-disconnected".equals(reason)) {
+                        long minutes = Math.max(1, PartyConstants.DISCONNECT_GRACE_SECONDS / 60);
+                        Component disconnectNotice = Component.text()
+                                .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                                .append(PartyTextFormatter.yellow(" has disconnected, they have "))
+                                .append(PartyTextFormatter.redNumber(minutes))
+                                .append(PartyTextFormatter.yellow(" minutes to rejoin before they are removed from the party."))
+                                .build();
+                        broadcastToParty(snapshot, disconnectNotice);
                     }
                 }
                 default -> {
@@ -427,8 +528,8 @@ public final class VelocityPartyFeature implements VelocityFeature {
         UUID targetId = message.getTargetPlayerId();
 
         String inviterName = safeName(snapshot, inviterId);
-        Component inviterDisplay = formatRankedName(snapshot, inviterId, inviterName);
-        Component targetDisplay = formatRankedName(snapshot, targetId, safeName(snapshot, targetId));
+        Component inviterDisplay = formatRankedName(inviterId, inviterName);
+        Component targetDisplay = formatRankedName(targetId, safeName(snapshot, targetId));
 
         long ttlSeconds = PartyConstants.INVITE_TTL_SECONDS;
 
@@ -441,11 +542,11 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
         return Component.text()
                 .append(inviterDisplay)
-                .append(Component.text(" invited ", NamedTextColor.YELLOW))
+                .append(PartyTextFormatter.yellow(" invited "))
                 .append(targetDisplay)
-                .append(Component.text(" to the party! They have ", NamedTextColor.YELLOW))
-                .append(Component.text(String.valueOf(ttlSeconds), NamedTextColor.RED))
-                .append(Component.text(" seconds to accept. ", NamedTextColor.YELLOW))
+                .append(PartyTextFormatter.yellow(" to the party! They have "))
+                .append(PartyTextFormatter.redNumber(ttlSeconds))
+                .append(PartyTextFormatter.yellow(" seconds to accept. "))
                 .append(clickHere)
                 .build();
     }
@@ -517,145 +618,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
         player.sendMessage(FRAME_LINE);
     }
 
-    private Component formatRankedName(PartySnapshot snapshot, UUID playerId, String fallbackName) {
-        RankVisual visual = resolveRankVisual(playerId);
-        Component prefix = deserializeLegacy(visual.prefixLegacy());
-        Component nameComponent = Component.text(fallbackName, visual.nameColor());
-        if (prefix != null && !prefix.equals(Component.empty())) {
-            return Component.text().append(prefix).append(Component.text(" ")).append(nameComponent).build();
-        }
-        return nameComponent;
-    }
-
-    private RankVisual resolveRankVisual(UUID playerId) {
-        Map<String, Object> rankInfo = new LinkedHashMap<>();
-
-        if (dataAPI != null) {
-            try {
-                Document doc = dataAPI.collection("players").document(playerId.toString());
-                if (doc.exists()) {
-                    Object raw = doc.get("rankInfo");
-                    if (raw instanceof Map<?, ?> map) {
-                        map.forEach((k, v) -> rankInfo.put(String.valueOf(k), v));
-                    }
-                }
-            } catch (Exception ex) {
-                logger.debug("Failed to read stored rank info for {}", playerId, ex);
-            }
-        }
-
-        if (sessionService != null) {
-            sessionService.getSession(playerId)
-                    .map(PlayerSessionRecord::getRank)
-                    .ifPresent(map -> map.forEach((k, v) -> rankInfo.put(String.valueOf(k), v)));
-        }
-
-        String prefixLegacy = firstNonBlank(
-                asString(rankInfo.get("fullPrefix")),
-                asString(rankInfo.get("prefix")),
-                asString(rankInfo.get("shortPrefix")),
-                asString(rankInfo.get("display")),
-                asString(rankInfo.get("formatted"))
-        );
-
-        NamedTextColor color = resolveColor(rankInfo);
-        String rankId = asString(rankInfo.get("primary"));
-
-        if (rankId == null && dataAPI != null) {
-            try {
-                Document doc = dataAPI.collection("players").document(playerId.toString());
-                if (doc.exists()) {
-                    rankId = asString(doc.get("rankInfo.primary"));
-                }
-            } catch (Exception ex) {
-                logger.debug("Failed to resolve stored primary rank for {}", playerId, ex);
-            }
-        }
-
-        RankVisual override = rankId != null ? RANK_VISUAL_OVERRIDES.get(normalizeRankId(rankId)) : null;
-        if (prefixLegacy == null && override != null) {
-            prefixLegacy = override.prefixLegacy();
-        }
-        if (color == null && override != null) {
-            color = override.nameColor();
-        }
-
-        if (prefixLegacy == null) {
-            Rank enumRank = rankId != null ? parseRank(rankId) : null;
-            if (enumRank != null) {
-                prefixLegacy = enumRank.getShortPrefix();
-                if (color == null) {
-                    color = enumRank.getNameColor();
-                }
-            }
-        }
-
-        if (color == null) {
-            color = NamedTextColor.YELLOW;
-        }
-
-        return new RankVisual(prefixLegacy, color);
-    }
-
-    private NamedTextColor resolveColor(Map<String, Object> rankInfo) {
-        Object rawColor = rankInfo.get("nameColor");
-        if (rawColor instanceof String colorName && !colorName.isBlank()) {
-            NamedTextColor named = NamedTextColor.NAMES.value(colorName.toLowerCase());
-            return named;
-        }
-        return null;
-    }
-
-    private Rank parseRank(String rankId) {
-        if (rankId == null) {
-            return null;
-        }
-        String normalized = normalizeRankId(rankId);
-        try {
-            return Rank.valueOf(normalized);
-        } catch (IllegalArgumentException ex) {
-            return null;
-        }
-    }
-
-    private String normalizeRankId(String value) {
-        if (value == null) {
-            return null;
-        }
-        String normalized = value.trim()
-                .replace(' ', '_')
-                .replace('-', '_');
-        normalized = normalized.replace("++", "_PLUS_PLUS");
-        normalized = normalized.replace("+", "_PLUS");
-        return normalized.toUpperCase();
-    }
-
-    private String asString(Object value) {
-        return value != null ? value.toString() : null;
-    }
-
-    private String firstNonBlank(String... values) {
-        if (values == null) {
-            return null;
-        }
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private Component deserializeLegacy(String legacy) {
-        if (legacy == null || legacy.isBlank()) {
-            return Component.empty();
-        }
-        return LEGACY_SERIALIZER.deserialize(legacy);
-    }
-
-    private record RankVisual(String prefixLegacy, NamedTextColor nameColor) {
-        RankVisual {
-            // default handled by caller
-        }
+    private Component formatRankedName(UUID playerId, String fallbackName) {
+        return PartyTextFormatter.formatName(playerId, fallbackName, dataAPI, sessionService, logger);
     }
 }

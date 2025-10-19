@@ -522,6 +522,7 @@ final class PartyServiceImpl implements PartyService {
                 repository.clearPlayerParty(playerId);
                 return null;
             }
+            boolean wasOnline = member.isOnline();
             member.setOnline(online);
             member.setLastSeenAt(System.currentTimeMillis());
             if (username != null && !username.isBlank()) {
@@ -529,6 +530,9 @@ final class PartyServiceImpl implements PartyService {
             }
             snapshot.setLastActivityAt(System.currentTimeMillis());
             repository.save(snapshot);
+            if (wasOnline && !online) {
+                publishUpdate(snapshot, PartyMessageAction.UPDATED, playerId, null, "member-disconnected");
+            }
             return snapshot;
         }));
     }
