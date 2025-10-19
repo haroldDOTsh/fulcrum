@@ -7,8 +7,6 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
@@ -229,16 +227,11 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     Component broadcast = buildInviteBroadcast(snapshot, message);
                     broadcastToParty(snapshot, broadcast);
 
-                    Component click = Component.text("Click here to join!", NamedTextColor.GOLD)
-                            .clickEvent(ClickEvent.runCommand("/party accept " + safeName(snapshot, actorId)))
-                            .hoverEvent(HoverEvent.showText(Component.text("Join the party", NamedTextColor.YELLOW)));
-
                     Component inviteeMessage = Component.text()
                             .append(formatRankedName(actorId, safeName(snapshot, actorId)))
                             .append(PartyTextFormatter.yellow(" has invited you to join their party! You have "))
                             .append(PartyTextFormatter.redNumber(PartyConstants.INVITE_TTL_SECONDS))
                             .append(PartyTextFormatter.yellow(" seconds to accept. "))
-                            .append(click)
                             .build();
                     notifyPlayer(targetId, inviteeMessage);
                 }
@@ -260,7 +253,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                 }
                 case MEMBER_LEFT -> {
                     Component left = Component.text()
-                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(formatRankedName(actorId, resolveLeavingMemberName(snapshot, message)))
                             .append(PartyTextFormatter.yellow(" left the party."))
                             .build();
                     broadcastToParty(snapshot, left);
@@ -529,16 +522,17 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
         String inviterName = safeName(snapshot, inviterId);
         Component inviterDisplay = formatRankedName(inviterId, inviterName);
-        Component targetDisplay = formatRankedName(targetId, safeName(snapshot, targetId));
 
         long ttlSeconds = PartyConstants.INVITE_TTL_SECONDS;
 
-        Component clickHere = Component.text("Click here to join", NamedTextColor.GOLD);
-        if (!"Unknown".equalsIgnoreCase(inviterName)) {
-            clickHere = clickHere
-                    .clickEvent(ClickEvent.runCommand("/party accept " + inviterName))
-                    .hoverEvent(HoverEvent.showText(Component.text("Join the party", NamedTextColor.YELLOW)));
+        String targetName = safeName(snapshot, targetId);
+        if ("Unknown".equals(targetName) && snapshot.getInvites().containsKey(targetId)) {
+            PartyInvite invite = snapshot.getInvites().get(targetId);
+            if (invite != null && invite.getTargetUsername() != null) {
+                targetName = invite.getTargetUsername();
+            }
         }
+        Component targetDisplay = formatRankedName(targetId, targetName);
 
         return Component.text()
                 .append(inviterDisplay)
@@ -546,8 +540,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                 .append(targetDisplay)
                 .append(PartyTextFormatter.yellow(" to the party! They have "))
                 .append(PartyTextFormatter.redNumber(ttlSeconds))
-                .append(PartyTextFormatter.yellow(" seconds to accept. "))
-                .append(clickHere)
+                .append(PartyTextFormatter.yellow(" seconds to accept."))
                 .build();
     }
 
@@ -566,11 +559,24 @@ public final class VelocityPartyFeature implements VelocityFeature {
         if (member != null) {
             return member.getUsername();
         }
+        PartyInvite invite = snapshot.getInvites().get(playerId);
+        if (invite != null && invite.getTargetUsername() != null && !invite.getTargetUsername().isBlank()) {
+            return invite.getTargetUsername();
+        }
         return "Unknown";
     }
 
     private String resolveRemovedMemberName(PartySnapshot snapshot, PartyUpdateMessage message) {
         String name = safeName(snapshot, message.getTargetPlayerId());
+        if (!"Unknown".equals(name)) {
+            return name;
+        }
+        String extracted = extractNameFromReason(message.getReason());
+        return extracted != null && !extracted.isBlank() ? extracted : name;
+    }
+
+    private String resolveLeavingMemberName(PartySnapshot snapshot, PartyUpdateMessage message) {
+        String name = safeName(snapshot, message.getActorPlayerId());
         if (!"Unknown".equals(name)) {
             return name;
         }
@@ -587,7 +593,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
             return null;
         }
         String prefix = reason.substring(0, separator);
-        if (!"offline-kick".equals(prefix) && !"offline-timeout".equals(prefix)) {
+        if (!Set.of("offline-kick", "offline-timeout", "invite-expired", "member-left").contains(prefix)) {
             return null;
         }
         return reason.substring(separator + 1);

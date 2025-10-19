@@ -92,7 +92,6 @@ final class PartyCommand implements SimpleCommand {
         String sub = args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "help" -> sendHelp(player);
-            case "create" -> handleCreate(player);
             case "list" -> handleList(player);
             case "leave" -> handleLeave(player);
             case "disband" -> handleDisband(player);
@@ -196,15 +195,6 @@ final class PartyCommand implements SimpleCommand {
         return value.regionMatches(true, 0, prefix, 0, prefix.length());
     }
 
-    private void handleCreate(Player player) {
-        PartyOperationResult result = partyService.createParty(player.getUniqueId(), player.getUsername());
-        if (result.isSuccess()) {
-            sendFramed(player, yellow("Created a new party."));
-        } else {
-            sendError(player, result);
-        }
-    }
-
     private void handleInvite(Player player, String targetName) {
         Optional<Player> targetOpt = proxy.getPlayer(targetName);
         if (targetOpt.isEmpty()) {
@@ -213,24 +203,9 @@ final class PartyCommand implements SimpleCommand {
         }
         Player target = targetOpt.get();
 
-        if (partyService.getPartyByPlayer(player.getUniqueId()).isEmpty()) {
-            PartyOperationResult create = partyService.createParty(player.getUniqueId(), player.getUsername());
-            if (!create.isSuccess()) {
-                sendError(player, create);
-                return;
-            }
-        }
-
         PartyOperationResult result = partyService.invitePlayer(
                 player.getUniqueId(), player.getUsername(), target.getUniqueId(), target.getUsername());
         if (result.isSuccess()) {
-            Component success = Component.text()
-                    .append(yellow("Invited "))
-                    .append(formatName(target.getUniqueId(), target.getUsername()))
-                    .append(yellow(" to your party!"))
-                    .build();
-            sendFramed(player, success);
-
             result.invite().ifPresent(invite -> {
                 long seconds = Math.max(1, (invite.getExpiresAt() - System.currentTimeMillis()) / 1000L);
                 Component click = Component.text("Click here to join!", NamedTextColor.GOLD)
@@ -633,6 +608,7 @@ final class PartyCommand implements SimpleCommand {
     private void sendHelp(Player player) {
         List<Component> lines = List.of(
                 Component.text("Party Commands:", NamedTextColor.AQUA),
+                Component.text("/party <player> - Invite a player.", NamedTextColor.GRAY),
                 Component.text("/party invite <player> - Invite a player.", NamedTextColor.GRAY),
                 Component.text("/party accept <player> - Accept an invite from that player.", NamedTextColor.GRAY),
                 Component.text("/party deny <player> - Decline an invite (no name clears all).", NamedTextColor.GRAY),

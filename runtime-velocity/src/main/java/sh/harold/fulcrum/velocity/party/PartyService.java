@@ -12,7 +12,6 @@ public interface PartyService {
 
     Optional<PartySnapshot> getPartyByPlayer(UUID playerId);
 
-    PartyOperationResult createParty(UUID leaderId, String leaderName);
 
     PartyOperationResult invitePlayer(UUID actorId, String actorName, UUID targetId, String targetName);
 
