@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.velocity.party;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -8,16 +9,15 @@ import sh.harold.fulcrum.api.party.PartyRedisKeys;
 import sh.harold.fulcrum.api.party.PartySnapshot;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 final class RedisPartyRepository implements PartyRepository {
     private final VelocityRedisOperations redis;
     private final ObjectMapper mapper;
     private final Logger logger;
+    private static final TypeReference<List<PartyInvite>> INVITE_LIST_TYPE = new TypeReference<>() {
+    };
 
     RedisPartyRepository(VelocityRedisOperations redis, Logger logger) {
         this.redis = redis;
@@ -104,20 +104,48 @@ final class RedisPartyRepository implements PartyRepository {
     }
 
     @Override
-    public Optional<PartyInvite> findInvite(UUID playerId) {
+    public List<PartyInvite> findInvites(UUID playerId) {
         if (playerId == null) {
-            return Optional.empty();
+            return Collections.emptyList();
         }
         String raw = redis.get(PartyRedisKeys.partyInviteKey(playerId));
         if (raw == null || raw.isBlank()) {
-            return Optional.empty();
+            return Collections.emptyList();
         }
         try {
-            return Optional.ofNullable(mapper.readValue(raw, PartyInvite.class));
+            List<PartyInvite> invites = mapper.readValue(raw, INVITE_LIST_TYPE);
+            if (invites == null || invites.isEmpty()) {
+                redis.delete(PartyRedisKeys.partyInviteKey(playerId));
+                return Collections.emptyList();
+            }
+            long now = System.currentTimeMillis();
+            boolean changed = false;
+            Iterator<PartyInvite> iterator = invites.iterator();
+            while (iterator.hasNext()) {
+                PartyInvite invite = iterator.next();
+                if (invite == null || invite.isExpired(now)) {
+                    iterator.remove();
+                    changed = true;
+                }
+            }
+            if (changed) {
+                persistInvites(playerId, invites);
+            }
+            return List.copyOf(invites);
         } catch (IOException ex) {
-            logger.warn("Failed to deserialize invite for {}", playerId, ex);
+            logger.warn("Failed to deserialize invites for {}", playerId, ex);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public Optional<PartyInvite> findInvite(UUID playerId, UUID partyId) {
+        if (playerId == null || partyId == null) {
             return Optional.empty();
         }
+        return findInvites(playerId).stream()
+                .filter(invite -> partyId.equals(invite.getPartyId()))
+                .findFirst();
     }
 
     @Override
@@ -125,17 +153,31 @@ final class RedisPartyRepository implements PartyRepository {
         if (invite == null || invite.getTargetPlayerId() == null) {
             return;
         }
-        try {
-            redis.set(PartyRedisKeys.partyInviteKey(invite.getTargetPlayerId()),
-                    mapper.writeValueAsString(invite),
-                    ttlSeconds);
-        } catch (Exception ex) {
-            logger.warn("Failed to store invite for {}", invite.getTargetPlayerId(), ex);
+        UUID targetId = invite.getTargetPlayerId();
+        List<PartyInvite> invites = new ArrayList<>(findInvites(targetId));
+        invites.removeIf(existing -> existing.getPartyId().equals(invite.getPartyId()));
+        invites.add(invite);
+        persistInvites(targetId, invites);
+    }
+
+    @Override
+    public void deleteInvite(UUID playerId, UUID partyId) {
+        if (playerId == null) {
+            return;
+        }
+        if (partyId == null) {
+            deleteInvites(playerId);
+            return;
+        }
+        List<PartyInvite> invites = new ArrayList<>(findInvites(playerId));
+        boolean changed = invites.removeIf(invite -> partyId.equals(invite.getPartyId()));
+        if (changed) {
+            persistInvites(playerId, invites);
         }
     }
 
     @Override
-    public void deleteInvite(UUID playerId) {
+    public void deleteInvites(UUID playerId) {
         if (playerId == null) {
             return;
         }
@@ -175,5 +217,24 @@ final class RedisPartyRepository implements PartyRepository {
             return;
         }
         redis.sRem(PartyRedisKeys.activePartiesSet(), partyId.toString());
+    }
+
+    private void persistInvites(UUID playerId, List<PartyInvite> invites) {
+        String key = PartyRedisKeys.partyInviteKey(playerId);
+        if (invites == null || invites.isEmpty()) {
+            redis.delete(key);
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long ttlMillis = invites.stream()
+                .mapToLong(invite -> Math.max(0L, invite.getExpiresAt() - now))
+                .max()
+                .orElse(0L);
+        long ttlSeconds = ttlMillis > 0 ? Math.max(1L, (ttlMillis + 999L) / 1000L) : 0L;
+        try {
+            redis.set(key, mapper.writeValueAsString(invites), ttlSeconds);
+        } catch (Exception ex) {
+            logger.warn("Failed to persist invites for {}", playerId, ex);
+        }
     }
 }

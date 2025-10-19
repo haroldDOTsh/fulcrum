@@ -3,11 +3,18 @@ package sh.harold.fulcrum.velocity.party;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.velocitypowered.api.command.CommandMeta;
+import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
@@ -17,10 +24,9 @@ import sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterEndedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationClaimedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationCreatedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyUpdateMessage;
-import sh.harold.fulcrum.api.party.PartyMember;
-import sh.harold.fulcrum.api.party.PartyReservationSnapshot;
-import sh.harold.fulcrum.api.party.PartyReservationToken;
-import sh.harold.fulcrum.api.party.PartySnapshot;
+import sh.harold.fulcrum.api.party.*;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.session.PlayerSessionRecord;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.RedisConfig;
@@ -28,15 +34,24 @@ import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
+import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.time.Duration;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class VelocityPartyFeature implements VelocityFeature {
+    private static final Component FRAME_LINE = Component.text("-----------------------------------------------------", NamedTextColor.BLUE)
+            .decorate(TextDecoration.STRIKETHROUGH, true);
+    private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacyAmpersand();
+    private static final Map<String, RankVisual> RANK_VISUAL_OVERRIDES = Map.ofEntries(
+            Map.entry("MVP_PLUS_PLUS", new RankVisual("&6[MVP++]", NamedTextColor.GOLD)),
+            Map.entry("MVP_PLUS", new RankVisual("&b[MVP+]", NamedTextColor.AQUA)),
+            Map.entry("MVP", new RankVisual("&b[MVP]", NamedTextColor.AQUA)),
+            Map.entry("VIP_PLUS", new RankVisual("&a[VIP+]", NamedTextColor.GREEN)),
+            Map.entry("VIP", new RankVisual("&a[VIP]", NamedTextColor.GREEN))
+    );
+
     private final ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private final Set<UUID> localPlayers = ConcurrentHashMap.newKeySet();
 
@@ -47,6 +62,8 @@ public final class VelocityPartyFeature implements VelocityFeature {
     private Logger logger;
     private ServiceLocator serviceLocator;
     private SlotFamilyCache familyCache;
+    private DataAPI dataAPI;
+    private VelocityPlayerSessionService sessionService;
 
     private VelocityRedisOperations redis;
     private PartyServiceImpl partyService;
@@ -83,6 +100,8 @@ public final class VelocityPartyFeature implements VelocityFeature {
         this.messageBus = serviceLocator.getRequiredService(MessageBus.class);
         this.familyCache = serviceLocator.getRequiredService(SlotFamilyCache.class);
         this.routingFeature = serviceLocator.getRequiredService(PlayerRoutingFeature.class);
+        this.dataAPI = serviceLocator.getService(DataAPI.class).orElse(null);
+        this.sessionService = serviceLocator.getService(VelocityPlayerSessionService.class).orElse(null);
 
         RedisConfig redisConfig = configLoader.getConfig(RedisConfig.class);
         if (redisConfig == null) {
@@ -114,6 +133,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                 .buildTask(plugin, () -> {
                     try {
                         partyService.purgeExpiredInvites();
+                        partyService.performMaintenance();
                         if (rosterStore != null) {
                             rosterStore.purgeExpired();
                         }
@@ -204,10 +224,17 @@ public final class VelocityPartyFeature implements VelocityFeature {
                 return;
             }
             switch (message.getAction()) {
-                case INVITE_SENT -> notifyPlayer(message.getTargetPlayerId(),
-                        Component.text(messageContext(snapshot.getPartyId(),
-                                        "You have been invited to a party by " + safeName(snapshot, message.getActorPlayerId()) + "."),
-                                NamedTextColor.AQUA));
+                case INVITE_SENT -> {
+                    Component broadcast = buildInviteBroadcast(snapshot, message);
+                    broadcastToParty(snapshot, broadcast);
+                    String inviterName = safeName(snapshot, message.getActorPlayerId());
+                    notifyPlayer(message.getTargetPlayerId(), Component.text(messageContext(snapshot.getPartyId(),
+                                    "You have been invited to a party by "
+                                            + inviterName
+                                            + ". Use /party accept "
+                                            + inviterName + " to join."),
+                            NamedTextColor.AQUA));
+                }
                 case INVITE_ACCEPTED -> broadcastToParty(snapshot,
                         Component.text(safeName(snapshot, message.getTargetPlayerId()) + " joined the party.", NamedTextColor.GREEN));
                 case INVITE_REVOKED, INVITE_EXPIRED -> notifyPlayer(message.getTargetPlayerId(),
@@ -215,8 +242,9 @@ public final class VelocityPartyFeature implements VelocityFeature {
                 case MEMBER_LEFT -> broadcastToParty(snapshot,
                         Component.text(safeName(snapshot, message.getActorPlayerId()) + " left the party.", NamedTextColor.YELLOW));
                 case MEMBER_KICKED -> {
+                    String removedName = resolveRemovedMemberName(snapshot, message);
                     broadcastToParty(snapshot,
-                            Component.text(safeName(snapshot, message.getTargetPlayerId()) + " was removed from the party.", NamedTextColor.RED));
+                            Component.text(removedName + " was removed from the party.", NamedTextColor.RED));
                     notifyPlayer(message.getTargetPlayerId(),
                             Component.text("You were removed from the party.", NamedTextColor.RED));
                 }
@@ -302,7 +330,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                 metadata.put("partyReservationId", reservationId);
                 metadata.put("partyTokenId", token.getTokenId());
                 routingFeature.sendSlotRequest(player, familyId, metadata);
-                player.sendMessage(Component.text(
+                sendFramed(player, Component.text(
                         "Queued party for " + displayVariant(familyId, variantId) + ".",
                         NamedTextColor.GREEN));
             }));
@@ -394,11 +422,39 @@ public final class VelocityPartyFeature implements VelocityFeature {
         snapshot.getMembers().keySet().forEach(memberId -> notifyPlayer(memberId, message));
     }
 
+    private Component buildInviteBroadcast(PartySnapshot snapshot, PartyUpdateMessage message) {
+        UUID inviterId = message.getActorPlayerId();
+        UUID targetId = message.getTargetPlayerId();
+
+        String inviterName = safeName(snapshot, inviterId);
+        Component inviterDisplay = formatRankedName(snapshot, inviterId, inviterName);
+        Component targetDisplay = formatRankedName(snapshot, targetId, safeName(snapshot, targetId));
+
+        long ttlSeconds = PartyConstants.INVITE_TTL_SECONDS;
+
+        Component clickHere = Component.text("Click here to join", NamedTextColor.GOLD);
+        if (!"Unknown".equalsIgnoreCase(inviterName)) {
+            clickHere = clickHere
+                    .clickEvent(ClickEvent.runCommand("/party accept " + inviterName))
+                    .hoverEvent(HoverEvent.showText(Component.text("Join the party", NamedTextColor.YELLOW)));
+        }
+
+        return Component.text()
+                .append(inviterDisplay)
+                .append(Component.text(" invited ", NamedTextColor.YELLOW))
+                .append(targetDisplay)
+                .append(Component.text(" to the party! They have ", NamedTextColor.YELLOW))
+                .append(Component.text(String.valueOf(ttlSeconds), NamedTextColor.RED))
+                .append(Component.text(" seconds to accept. ", NamedTextColor.YELLOW))
+                .append(clickHere)
+                .build();
+    }
+
     private void notifyPlayer(UUID playerId, Component message) {
         if (playerId == null || message == null || !localPlayers.contains(playerId)) {
             return;
         }
-        proxy.getPlayer(playerId).ifPresent(player -> player.sendMessage(message));
+        proxy.getPlayer(playerId).ifPresent(player -> sendFramed(player, message));
     }
 
     private String safeName(PartySnapshot snapshot, UUID playerId) {
@@ -406,7 +462,34 @@ public final class VelocityPartyFeature implements VelocityFeature {
             return "Unknown";
         }
         PartyMember member = snapshot.getMember(playerId);
-        return member != null ? member.getUsername() : "Unknown";
+        if (member != null) {
+            return member.getUsername();
+        }
+        return "Unknown";
+    }
+
+    private String resolveRemovedMemberName(PartySnapshot snapshot, PartyUpdateMessage message) {
+        String name = safeName(snapshot, message.getTargetPlayerId());
+        if (!"Unknown".equals(name)) {
+            return name;
+        }
+        String extracted = extractNameFromReason(message.getReason());
+        return extracted != null && !extracted.isBlank() ? extracted : name;
+    }
+
+    private String extractNameFromReason(String reason) {
+        if (reason == null) {
+            return null;
+        }
+        int separator = reason.indexOf(':');
+        if (separator <= 0 || separator >= reason.length() - 1) {
+            return null;
+        }
+        String prefix = reason.substring(0, separator);
+        if (!"offline-kick".equals(prefix) && !"offline-timeout".equals(prefix)) {
+            return null;
+        }
+        return reason.substring(separator + 1);
     }
 
     private String messageContext(UUID partyId, String message) {
@@ -422,5 +505,157 @@ public final class VelocityPartyFeature implements VelocityFeature {
             return familyId != null ? familyId : "";
         }
         return (familyId != null ? familyId : "") + ":" + variantId;
+    }
+
+    private void sendFramed(Player player, Component... lines) {
+        sendFramed(player, Arrays.asList(lines));
+    }
+
+    private void sendFramed(Player player, Collection<Component> lines) {
+        player.sendMessage(FRAME_LINE);
+        lines.forEach(player::sendMessage);
+        player.sendMessage(FRAME_LINE);
+    }
+
+    private Component formatRankedName(PartySnapshot snapshot, UUID playerId, String fallbackName) {
+        RankVisual visual = resolveRankVisual(playerId);
+        Component prefix = deserializeLegacy(visual.prefixLegacy());
+        Component nameComponent = Component.text(fallbackName, visual.nameColor());
+        if (prefix != null && !prefix.equals(Component.empty())) {
+            return Component.text().append(prefix).append(Component.text(" ")).append(nameComponent).build();
+        }
+        return nameComponent;
+    }
+
+    private RankVisual resolveRankVisual(UUID playerId) {
+        Map<String, Object> rankInfo = new LinkedHashMap<>();
+
+        if (dataAPI != null) {
+            try {
+                Document doc = dataAPI.collection("players").document(playerId.toString());
+                if (doc.exists()) {
+                    Object raw = doc.get("rankInfo");
+                    if (raw instanceof Map<?, ?> map) {
+                        map.forEach((k, v) -> rankInfo.put(String.valueOf(k), v));
+                    }
+                }
+            } catch (Exception ex) {
+                logger.debug("Failed to read stored rank info for {}", playerId, ex);
+            }
+        }
+
+        if (sessionService != null) {
+            sessionService.getSession(playerId)
+                    .map(PlayerSessionRecord::getRank)
+                    .ifPresent(map -> map.forEach((k, v) -> rankInfo.put(String.valueOf(k), v)));
+        }
+
+        String prefixLegacy = firstNonBlank(
+                asString(rankInfo.get("fullPrefix")),
+                asString(rankInfo.get("prefix")),
+                asString(rankInfo.get("shortPrefix")),
+                asString(rankInfo.get("display")),
+                asString(rankInfo.get("formatted"))
+        );
+
+        NamedTextColor color = resolveColor(rankInfo);
+        String rankId = asString(rankInfo.get("primary"));
+
+        if (rankId == null && dataAPI != null) {
+            try {
+                Document doc = dataAPI.collection("players").document(playerId.toString());
+                if (doc.exists()) {
+                    rankId = asString(doc.get("rankInfo.primary"));
+                }
+            } catch (Exception ex) {
+                logger.debug("Failed to resolve stored primary rank for {}", playerId, ex);
+            }
+        }
+
+        RankVisual override = rankId != null ? RANK_VISUAL_OVERRIDES.get(normalizeRankId(rankId)) : null;
+        if (prefixLegacy == null && override != null) {
+            prefixLegacy = override.prefixLegacy();
+        }
+        if (color == null && override != null) {
+            color = override.nameColor();
+        }
+
+        if (prefixLegacy == null) {
+            Rank enumRank = rankId != null ? parseRank(rankId) : null;
+            if (enumRank != null) {
+                prefixLegacy = enumRank.getShortPrefix();
+                if (color == null) {
+                    color = enumRank.getNameColor();
+                }
+            }
+        }
+
+        if (color == null) {
+            color = NamedTextColor.YELLOW;
+        }
+
+        return new RankVisual(prefixLegacy, color);
+    }
+
+    private NamedTextColor resolveColor(Map<String, Object> rankInfo) {
+        Object rawColor = rankInfo.get("nameColor");
+        if (rawColor instanceof String colorName && !colorName.isBlank()) {
+            NamedTextColor named = NamedTextColor.NAMES.value(colorName.toLowerCase());
+            return named;
+        }
+        return null;
+    }
+
+    private Rank parseRank(String rankId) {
+        if (rankId == null) {
+            return null;
+        }
+        String normalized = normalizeRankId(rankId);
+        try {
+            return Rank.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private String normalizeRankId(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim()
+                .replace(' ', '_')
+                .replace('-', '_');
+        normalized = normalized.replace("++", "_PLUS_PLUS");
+        normalized = normalized.replace("+", "_PLUS");
+        return normalized.toUpperCase();
+    }
+
+    private String asString(Object value) {
+        return value != null ? value.toString() : null;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Component deserializeLegacy(String legacy) {
+        if (legacy == null || legacy.isBlank()) {
+            return Component.empty();
+        }
+        return LEGACY_SERIALIZER.deserialize(legacy);
+    }
+
+    private record RankVisual(String prefixLegacy, NamedTextColor nameColor) {
+        RankVisual {
+            // default handled by caller
+        }
     }
 }

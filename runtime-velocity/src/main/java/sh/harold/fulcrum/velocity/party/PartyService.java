@@ -3,6 +3,7 @@ package sh.harold.fulcrum.velocity.party;
 import sh.harold.fulcrum.api.party.PartyInvite;
 import sh.harold.fulcrum.api.party.PartySnapshot;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,9 +16,9 @@ public interface PartyService {
 
     PartyOperationResult invitePlayer(UUID actorId, String actorName, UUID targetId, String targetName);
 
-    PartyOperationResult acceptInvite(UUID playerId, String playerName);
+    PartyOperationResult acceptInvite(UUID playerId, String playerName, UUID partyId);
 
-    PartyOperationResult declineInvite(UUID playerId);
+    PartyOperationResult declineInvite(UUID playerId, UUID partyId);
 
     PartyOperationResult leaveParty(UUID playerId);
 
@@ -37,7 +38,7 @@ public interface PartyService {
 
     PartyOperationResult updateSettings(UUID actorId, PartySettingsMutator mutator);
 
-    Optional<PartyInvite> getInvite(UUID playerId);
+    List<PartyInvite> getInvites(UUID playerId);
 
     void refreshPresence(UUID playerId, String username, boolean online);
 

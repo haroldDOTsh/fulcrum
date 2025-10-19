@@ -9,6 +9,7 @@ pluginManagement {
 
 include(
     "message-bus-api",
+    "rank-api",
     "runtime",
     "runtime-velocity",
     "registry-service",

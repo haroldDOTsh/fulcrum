@@ -3,6 +3,7 @@ package sh.harold.fulcrum.velocity.party;
 import sh.harold.fulcrum.api.party.PartyInvite;
 import sh.harold.fulcrum.api.party.PartySnapshot;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -20,11 +21,15 @@ interface PartyRepository {
 
     void clearPlayerParty(UUID playerId);
 
-    Optional<PartyInvite> findInvite(UUID playerId);
+    List<PartyInvite> findInvites(UUID playerId);
+
+    Optional<PartyInvite> findInvite(UUID playerId, UUID partyId);
 
     void saveInvite(PartyInvite invite, long ttlSeconds);
 
-    void deleteInvite(UUID playerId);
+    void deleteInvite(UUID playerId, UUID partyId);
+
+    void deleteInvites(UUID playerId);
 
     Set<UUID> listActiveParties();
 
