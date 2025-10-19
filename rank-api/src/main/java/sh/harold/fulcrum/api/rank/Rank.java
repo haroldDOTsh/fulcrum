@@ -30,8 +30,13 @@ public enum Rank {
     private final NamedTextColor nameColor;
     private final RankCategory category;
 
-    Rank(String displayName, String colorCode, int priority, String fullPrefix,
-         String shortPrefix, NamedTextColor nameColor, RankCategory category) {
+    Rank(String displayName,
+         String colorCode,
+         int priority,
+         String fullPrefix,
+         String shortPrefix,
+         NamedTextColor nameColor,
+         RankCategory category) {
         this.displayName = displayName;
         this.colorCode = colorCode;
         this.priority = priority;
