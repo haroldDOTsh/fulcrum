@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "sh.harold.fulcrum"
-version = "2.3.0"
+version = "2.3.1"
 
 repositories {
     mavenCentral()
@@ -21,6 +21,7 @@ repositories {
 dependencies {
     implementation(project(":message-bus-api"))
     implementation(project(":data-api"))
+    implementation(project(":rank-api"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.8-R0.1-SNAPSHOT")
