@@ -55,6 +55,24 @@ public interface Document {
     CompletableFuture<Document> setAsync(String path, Object value);
 
     /**
+     * Apply a partial update to this document.
+     *
+     * @param patch The patch describing the update operations
+     * @return This document for chaining
+     */
+    default Document patch(DocumentPatch patch) {
+        return patchAsync(patch).join();
+    }
+
+    /**
+     * Asynchronously apply a partial update to this document.
+     *
+     * @param patch The patch describing the update operations
+     * @return A future that completes with this document instance
+     */
+    CompletableFuture<Document> patchAsync(DocumentPatch patch);
+
+    /**
      * Check if this document exists in the storage backend.
      *
      * @return true if the document exists, false otherwise
@@ -85,4 +103,3 @@ public interface Document {
      */
     String toJson();
 }
-

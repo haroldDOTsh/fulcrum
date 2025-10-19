@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.api.data.storage;
 
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.data.query.Query;
 
 import java.util.List;
@@ -31,6 +32,16 @@ public interface StorageBackend {
      * @return CompletableFuture indicating completion
      */
     CompletableFuture<Void> saveDocument(String collection, String id, Map<String, Object> data);
+
+    /**
+     * Apply a partial update to a document.
+     *
+     * @param collection The collection name
+     * @param id         The document ID
+     * @param patch      The patch describing the update
+     * @return CompletableFuture indicating completion
+     */
+    CompletableFuture<Void> patchDocument(String collection, String id, DocumentPatch patch);
 
     /**
      * Delete a document from storage.

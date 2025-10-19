@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.api.data.impl;
 
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.data.query.Query;
 import sh.harold.fulcrum.api.data.storage.StorageBackend;
 
@@ -38,6 +39,28 @@ public class InMemoryStorageBackend implements StorageBackend {
         return CompletableFuture.runAsync(() -> {
             storage.computeIfAbsent(collection, k -> new ConcurrentHashMap<>())
                     .put(id, new HashMap<>(data));
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> patchDocument(String collection, String id, DocumentPatch patch) {
+        if (patch == null || patch.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return CompletableFuture.runAsync(() -> {
+            Map<String, Map<String, Object>> collectionData =
+                    storage.computeIfAbsent(collection, k -> new ConcurrentHashMap<>());
+            Map<String, Object> existing = collectionData.get(id);
+            boolean existed = existing != null;
+
+            if (!existed && !patch.isUpsert()) {
+                return;
+            }
+
+            Map<String, Object> updated = existed ? new HashMap<>(existing) : new HashMap<>();
+            patch.applyToMap(updated, !existed);
+            collectionData.put(id, updated);
         });
     }
 

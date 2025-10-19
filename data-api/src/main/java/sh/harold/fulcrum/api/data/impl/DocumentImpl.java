@@ -3,6 +3,7 @@ package sh.harold.fulcrum.api.data.impl;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.data.storage.StorageBackend;
 
 import java.util.HashMap;
@@ -61,6 +62,24 @@ public class DocumentImpl implements Document {
                 .thenApply(ignored -> this);
     }
 
+    @Override
+    public CompletableFuture<Document> patchAsync(DocumentPatch patch) {
+        if (patch == null || patch.isEmpty()) {
+            return CompletableFuture.completedFuture(this);
+        }
+
+        boolean existedBefore = exists();
+        if (!existedBefore && !patch.isUpsert()) {
+            return CompletableFuture.completedFuture(this);
+        }
+
+        return backend.patchDocument(collection, id, patch)
+                .thenApply(ignored -> {
+                    patch.applyToMap(data, !existedBefore);
+                    return this;
+                });
+    }
+
     private void setValueAtPath(String path, Object value) {
         String[] parts = path.split("\\.");
         Map<String, Object> current = data;
@@ -106,4 +125,3 @@ public class DocumentImpl implements Document {
         return collection;
     }
 }
-

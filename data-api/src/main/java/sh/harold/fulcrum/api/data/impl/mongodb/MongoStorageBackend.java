@@ -5,6 +5,7 @@ import com.mongodb.client.model.*;
 import com.mongodb.client.result.DeleteResult;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.data.impl.DocumentImpl;
 import sh.harold.fulcrum.api.data.impl.QueryImpl;
 import sh.harold.fulcrum.api.data.query.Query;
@@ -57,6 +58,37 @@ public class MongoStorageBackend implements StorageBackend {
 
             ReplaceOptions options = new ReplaceOptions().upsert(true);
             mongoCollection.replaceOne(Filters.eq(ID_FIELD, id), mongoDoc, options);
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> patchDocument(String collection, String id, DocumentPatch patch) {
+        if (patch == null || patch.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return CompletableFuture.runAsync(() -> {
+            MongoCollection<Document> mongoCollection = database.getCollection(collection);
+
+            Document update = new Document();
+            if (!patch.getSetOperations().isEmpty()) {
+                update.put("$set", mapToDocument(patch.getSetOperations()));
+            }
+            if (!patch.getUnsetPaths().isEmpty()) {
+                Document unsetDoc = new Document();
+                patch.getUnsetPaths().forEach(path -> unsetDoc.put(path, ""));
+                update.put("$unset", unsetDoc);
+            }
+            if (!patch.getSetOnInsertOperations().isEmpty()) {
+                update.put("$setOnInsert", mapToDocument(patch.getSetOnInsertOperations()));
+            }
+
+            if (update.isEmpty()) {
+                return;
+            }
+
+            UpdateOptions options = new UpdateOptions().upsert(patch.isUpsert());
+            mongoCollection.updateOne(Filters.eq(ID_FIELD, id), update, options);
         });
     }
 

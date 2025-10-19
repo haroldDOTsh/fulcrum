@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.data.impl.DocumentImpl;
 import sh.harold.fulcrum.api.data.impl.QueryImpl;
 import sh.harold.fulcrum.api.data.query.Query;
@@ -134,6 +135,60 @@ public class JsonStorageBackend implements StorageBackend {
                 updateIndex(collection, id, true);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to save document: " + collection + "/" + id, e);
+            } finally {
+                lock.writeLock().unlock();
+            }
+        }, executor);
+    }
+
+    @Override
+    public CompletableFuture<Void> patchDocument(String collection, String id, DocumentPatch patch) {
+        if (patch == null || patch.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return CompletableFuture.runAsync(() -> {
+            ReadWriteLock lock = getCollectionLock(collection);
+            lock.writeLock().lock();
+            try {
+                Path collectionPath = basePath.resolve(collection);
+                Files.createDirectories(collectionPath);
+
+                Path documentPath = getDocumentPath(collection, id);
+                Map<String, Object> existingData = null;
+                boolean existed = Files.exists(documentPath);
+
+                if (existed) {
+                    String json = Files.readString(documentPath, StandardCharsets.UTF_8);
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> parsed = gson.fromJson(json, Map.class);
+                    if (parsed != null) {
+                        existingData = parsed;
+                    }
+                }
+
+                if (!existed && !patch.isUpsert()) {
+                    return;
+                }
+
+                Map<String, Object> updated = existingData != null ? new HashMap<>(existingData) : new HashMap<>();
+                patch.applyToMap(updated, !existed);
+
+                Path tempPath = documentPath.resolveSibling(id + ".tmp");
+                String json = gson.toJson(updated);
+                Files.writeString(tempPath, json, StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING);
+
+                Files.move(tempPath, documentPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+
+                if (enableCache) {
+                    cache.put(getCacheKey(collection, id), new HashMap<>(updated));
+                }
+
+                updateIndex(collection, id, true);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to patch document: " + collection + "/" + id, e);
             } finally {
                 lock.writeLock().unlock();
             }

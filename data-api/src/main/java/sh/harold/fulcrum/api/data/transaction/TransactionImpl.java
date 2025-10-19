@@ -2,6 +2,7 @@ package sh.harold.fulcrum.api.data.transaction;
 
 import sh.harold.fulcrum.api.data.Collection;
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.data.storage.StorageBackend;
 
 import java.util.*;
@@ -404,6 +405,18 @@ public class TransactionImpl implements Transaction {
             return CompletableFuture.completedFuture(this);
         }
 
+        @Override
+        public CompletableFuture<Document> patchAsync(DocumentPatch patch) {
+            if (patch == null || patch.isEmpty()) {
+                return CompletableFuture.completedFuture(this);
+            }
+
+            patch.getUnsetPaths().forEach(this::remove);
+            patch.getSetOperations().forEach(this::set);
+            patch.getSetOnInsertOperations().forEach(this::set);
+            return CompletableFuture.completedFuture(this);
+        }
+
         public Document increment(String path, Number delta) {
             Map<String, Object> incData = new HashMap<>();
             incData.put(path, delta);
@@ -497,5 +510,3 @@ public class TransactionImpl implements Transaction {
         }
     }
 }
-
-
