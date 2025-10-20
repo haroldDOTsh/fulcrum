@@ -43,17 +43,17 @@ final class PartyServiceImpl implements PartyService {
 
     @Override
     public PartyOperationResult invitePlayer(UUID actorId, String actorName, UUID targetId, String targetName) {
-        if (actorId == null || targetId == null) {
+        if (actorId == null || targetId == null || targetName == null || targetName.isBlank()) {
             return PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "missing-ids");
         }
         if (actorId.equals(targetId)) {
             return PartyOperationResult.failure(PartyErrorCode.CANNOT_TARGET_SELF, "self-target");
         }
-        var maybeParty = getPartyByPlayer(actorId);
-        if (maybeParty.isEmpty()) {
-            return PartyOperationResult.failure(PartyErrorCode.NOT_IN_PARTY, "not-in-party");
+        PartySnapshot snapshot = getPartyByPlayer(actorId)
+                .orElseGet(() -> createEphemeralParty(actorId, actorName));
+        if (snapshot == null) {
+            return PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "party-create-failed");
         }
-        PartySnapshot snapshot = maybeParty.get();
         PartyMember actor = snapshot.getMember(actorId);
         if (actor == null) {
             return PartyOperationResult.failure(PartyErrorCode.NOT_IN_PARTY, "not-in-party");
@@ -84,7 +84,7 @@ final class PartyServiceImpl implements PartyService {
                 System.currentTimeMillis() + inviteTtlSeconds * 1000L
         );
 
-        mutateWithLock(snapshot.getPartyId(), locked -> {
+        snapshot = mutateWithLock(snapshot.getPartyId(), locked -> {
             PartySnapshot party = repository.load(locked.getPartyId()).orElse(locked);
             party.getInvites().put(targetId, invite);
             party.setLastActivityAt(System.currentTimeMillis());
@@ -131,6 +131,7 @@ final class PartyServiceImpl implements PartyService {
                 return PartyOperationResult.failure(PartyErrorCode.ALREADY_IN_PARTY, "already-in-party");
             }
 
+            snapshot.getInvites().remove(playerId);
             PartyMember member = new PartyMember(playerId, playerName, PartyRole.MEMBER);
             snapshot.getMembers().put(playerId, member);
             snapshot.setLastActivityAt(now);
@@ -201,14 +202,19 @@ final class PartyServiceImpl implements PartyService {
                 return PartyOperationResult.failure(PartyErrorCode.NOT_IN_PARTY, "not-in-party");
             }
 
+            String departureName = target.getUsername();
+
             if (snapshot.getLeaderId().equals(playerId)) {
                 snapshot.getMembers().remove(playerId);
                 repository.clearPlayerParty(playerId);
-                if (snapshot.getMembers().isEmpty()) {
+                if (snapshot.getMembers().isEmpty() || (snapshot.getMembers().size() <= 1 && snapshot.getInvites().isEmpty())) {
                     repository.delete(partyId);
-                    publishUpdate(snapshot, PartyMessageAction.DISBANDED, playerId, null, "leader left and disbanded");
+                    String reasonCode = snapshot.getMembers().isEmpty() ? "leader-disband" : "solo-party-expired";
+                    publishUpdate(snapshot, PartyMessageAction.DISBANDED, playerId, null,
+                            composeRemovalReason(reasonCode, departureName));
                     return PartyOperationResult.success();
                 }
+
                 UUID nextLeaderId = selectNextLeader(snapshot);
                 snapshot.setLeaderId(nextLeaderId);
                 PartyMember nextLeader = snapshot.getMember(nextLeaderId);
@@ -218,15 +224,27 @@ final class PartyServiceImpl implements PartyService {
                 long now = System.currentTimeMillis();
                 snapshot.setLastActivityAt(now);
                 repository.save(snapshot);
-                publishUpdate(snapshot, PartyMessageAction.TRANSFERRED, playerId, nextLeaderId, "leader left party");
+                if (snapshot.getMembers().size() <= 1 && snapshot.getInvites().isEmpty()) {
+                    repository.delete(partyId);
+                    publishUpdate(snapshot, PartyMessageAction.DISBANDED, playerId, null,
+                            composeRemovalReason("solo-party-expired", departureName));
+                    return PartyOperationResult.success();
+                }
+                publishUpdate(snapshot, PartyMessageAction.TRANSFERRED, playerId, nextLeaderId,
+                        composeRemovalReason("leader-left", departureName));
                 return PartyOperationResult.success(snapshot);
             } else {
-                String departureName = target.getUsername();
                 snapshot.getMembers().remove(playerId);
                 repository.clearPlayerParty(playerId);
                 long now = System.currentTimeMillis();
                 snapshot.setLastActivityAt(now);
                 repository.save(snapshot);
+                if (snapshot.getMembers().size() <= 1 && snapshot.getInvites().isEmpty()) {
+                    repository.delete(partyId);
+                    publishUpdate(snapshot, PartyMessageAction.DISBANDED, playerId, null,
+                            composeRemovalReason("solo-party-expired", departureName));
+                    return PartyOperationResult.success();
+                }
                 publishUpdate(snapshot, PartyMessageAction.MEMBER_LEFT, playerId, null,
                         composeRemovalReason("member-left", departureName));
                 return PartyOperationResult.success(snapshot);
@@ -253,9 +271,13 @@ final class PartyServiceImpl implements PartyService {
                 return PartyOperationResult.failure(PartyErrorCode.NOT_LEADER, "leader-only");
             }
 
+            String leaderName = Optional.ofNullable(snapshot.getMember(actorId))
+                    .map(PartyMember::getUsername)
+                    .orElse(null);
             snapshot.getMembers().keySet().forEach(repository::clearPlayerParty);
             repository.delete(partyId);
-            publishUpdate(snapshot, PartyMessageAction.DISBANDED, actorId, null, "party disbanded");
+            publishUpdate(snapshot, PartyMessageAction.DISBANDED, actorId, null,
+                    composeRemovalReason("leader-disband", leaderName));
             return PartyOperationResult.success();
         });
     }
@@ -546,6 +568,11 @@ final class PartyServiceImpl implements PartyService {
                                 targetPlayerId,
                                 composeRemovalReason("invite-expired", targetName));
                     }
+                    if (snapshot.getMembers().size() <= 1 && snapshot.getInvites().isEmpty()) {
+                        repository.delete(snapshot.getPartyId());
+                        publishUpdate(snapshot, PartyMessageAction.DISBANDED, null, null, "empty-party-pruned");
+                        return null;
+                    }
                 }
                 return snapshot;
             });
@@ -779,6 +806,36 @@ final class PartyServiceImpl implements PartyService {
         } finally {
             lockManager.release(partyId, lockToken.get());
         }
+    }
+
+    private PartySnapshot createEphemeralParty(UUID leaderId, String leaderName) {
+        if (leaderId == null || leaderName == null) {
+            return null;
+        }
+
+        Optional<UUID> existingParty = repository.findPartyIdForPlayer(leaderId);
+        if (existingParty.isPresent()) {
+            return existingParty.flatMap(repository::load).orElse(null);
+        }
+
+        PartySnapshot snapshot = new PartySnapshot();
+        UUID partyId = UUID.randomUUID();
+        snapshot.setPartyId(partyId);
+        snapshot.setLeaderId(leaderId);
+
+        PartyMember leader = new PartyMember(leaderId, leaderName, PartyRole.LEADER);
+        Map<UUID, PartyMember> members = new LinkedHashMap<>();
+        members.put(leaderId, leader);
+        snapshot.setMembers(members);
+        snapshot.setInvites(new LinkedHashMap<>());
+        snapshot.setSettings(PartySettings.defaults());
+        snapshot.setLastActivityAt(System.currentTimeMillis());
+
+        repository.save(snapshot);
+        repository.assignPlayerToParty(leaderId, partyId);
+        publishUpdate(snapshot, PartyMessageAction.CREATED, leaderId, null, "party created");
+        logger.info("Created party {} leader={} for invite flow", partyId, leaderName);
+        return snapshot;
     }
 
     private UUID selectNextLeader(PartySnapshot snapshot) {

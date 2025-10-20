@@ -228,7 +228,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     broadcastToParty(snapshot, broadcast);
 
                     Component inviteeMessage = Component.text()
-                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
                             .append(PartyTextFormatter.yellow(" has invited you to join their party! You have "))
                             .append(PartyTextFormatter.redNumber(PartyConstants.INVITE_TTL_SECONDS))
                             .append(PartyTextFormatter.yellow(" seconds to accept. "))
@@ -243,9 +243,10 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     broadcastToParty(snapshot, joined);
                 }
                 case INVITE_REVOKED, INVITE_EXPIRED -> {
+                    String expiredName = resolveRemovedMemberName(snapshot, message);
                     Component expired = Component.text()
                             .append(PartyTextFormatter.yellow("The party invite to "))
-                            .append(formatRankedName(targetId, safeName(snapshot, targetId)))
+                            .append(formatRankedName(targetId, expiredName))
                             .append(PartyTextFormatter.yellow(" has expired."))
                             .build();
                     broadcastToParty(snapshot, expired);
@@ -277,7 +278,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                 }
                 case TRANSFERRED -> {
                     Component promoted = Component.text()
-                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
                             .append(PartyTextFormatter.yellow(" has promoted "))
                             .append(formatRankedName(targetId, safeName(snapshot, targetId)))
                             .append(PartyTextFormatter.yellow(" to Party Leader."))
@@ -285,7 +286,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     broadcastToParty(snapshot, promoted);
 
                     Component demoted = Component.text()
-                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
                             .append(PartyTextFormatter.yellow(" is now a Party Moderator."))
                             .build();
                     broadcastToParty(snapshot, demoted);
@@ -294,7 +295,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                             .append(PartyTextFormatter.yellow("The party was transferred to "))
                             .append(formatRankedName(targetId, safeName(snapshot, targetId)))
                             .append(PartyTextFormatter.yellow(" by "))
-                            .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                            .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
                             .build();
                     broadcastToParty(snapshot, transferred);
                 }
@@ -303,7 +304,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     if (member != null) {
                         if (member.getRole() == PartyRole.MODERATOR) {
                             Component promoted = Component.text()
-                                    .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                                    .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
                                     .append(PartyTextFormatter.yellow(" has promoted "))
                                     .append(formatRankedName(targetId, member.getUsername()))
                                     .append(PartyTextFormatter.yellow(" to Party Moderator."))
@@ -311,7 +312,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                             broadcastToParty(snapshot, promoted);
                         } else if (member.getRole() == PartyRole.MEMBER) {
                             Component demoted = Component.text()
-                                    .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                                    .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
                                     .append(PartyTextFormatter.yellow(" has demoted "))
                                     .append(formatRankedName(targetId, member.getUsername()))
                                     .append(PartyTextFormatter.yellow(" to Party Member."))
@@ -324,11 +325,11 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     Component messageComponent;
                     if (actorId != null) {
                         messageComponent = Component.text()
-                                .append(formatRankedName(actorId, safeName(snapshot, actorId)))
+                                .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
                                 .append(PartyTextFormatter.yellow(" has disbanded the party!"))
                                 .build();
-                    } else if ("empty-party-pruned".equals(reason)) {
-                        messageComponent = PartyTextFormatter.yellow("The party was disbanded because all invites expired and the party was empty.");
+                    } else if ("empty-party-pruned".equals(reason) || "solo-party-expired".equals(reason)) {
+                        messageComponent = Component.text("The party was disbanded because all invites expired and the party was empty.", NamedTextColor.RED);
                     } else {
                         messageComponent = PartyTextFormatter.yellow("Your party was disbanded.");
                     }
@@ -584,6 +585,15 @@ public final class VelocityPartyFeature implements VelocityFeature {
         return extracted != null && !extracted.isBlank() ? extracted : name;
     }
 
+    private String resolveActorName(PartySnapshot snapshot, UUID actorId, String reason) {
+        String name = safeName(snapshot, actorId);
+        if (!"Unknown".equals(name)) {
+            return name;
+        }
+        String extracted = extractNameFromReason(reason);
+        return extracted != null && !extracted.isBlank() ? extracted : name;
+    }
+
     private String extractNameFromReason(String reason) {
         if (reason == null) {
             return null;
@@ -593,7 +603,8 @@ public final class VelocityPartyFeature implements VelocityFeature {
             return null;
         }
         String prefix = reason.substring(0, separator);
-        if (!Set.of("offline-kick", "offline-timeout", "invite-expired", "member-left").contains(prefix)) {
+        if (!Set.of("offline-kick", "offline-timeout", "invite-expired", "member-left", "leader-disband",
+                "solo-party-expired", "leader-left").contains(prefix)) {
             return null;
         }
         return reason.substring(separator + 1);

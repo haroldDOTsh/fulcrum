@@ -5,8 +5,6 @@ import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
@@ -197,30 +195,13 @@ final class PartyCommand implements SimpleCommand {
 
     private void handleInvite(Player player, String targetName) {
         Optional<Player> targetOpt = proxy.getPlayer(targetName);
-        if (targetOpt.isEmpty()) {
-            sendFramed(player, yellow("Couldn't find a player with that name!"));
-            return;
-        }
-        Player target = targetOpt.get();
 
         PartyOperationResult result = partyService.invitePlayer(
-                player.getUniqueId(), player.getUsername(), target.getUniqueId(), target.getUsername());
-        if (result.isSuccess()) {
-            result.invite().ifPresent(invite -> {
-                long seconds = Math.max(1, (invite.getExpiresAt() - System.currentTimeMillis()) / 1000L);
-                Component click = Component.text("Click here to join!", NamedTextColor.GOLD)
-                        .clickEvent(ClickEvent.runCommand("/party accept " + player.getUsername()))
-                        .hoverEvent(HoverEvent.showText(Component.text("Join the party", NamedTextColor.YELLOW)));
-                Component inviteMessage = Component.text()
-                        .append(formatName(player.getUniqueId(), player.getUsername()))
-                        .append(yellow(" has invited you to join their party! You have "))
-                        .append(redNumber(seconds))
-                        .append(yellow(" seconds to accept. "))
-                        .append(click)
-                        .build();
-                sendFramed(target, inviteMessage);
-            });
-        } else {
+                player.getUniqueId(),
+                player.getUsername(),
+                targetOpt.map(Player::getUniqueId).orElse(null),
+                targetName);
+        if (!result.isSuccess()) {
             sendError(player, result);
         }
     }
