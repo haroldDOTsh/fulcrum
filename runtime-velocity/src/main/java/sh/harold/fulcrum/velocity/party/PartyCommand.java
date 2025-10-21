@@ -382,21 +382,25 @@ final class PartyCommand implements SimpleCommand {
         }
         PartySnapshot snapshot = snapshotOpt.get();
         List<Component> lines = new ArrayList<>();
-        lines.add(Component.text("Party Members (" + snapshot.getSize() + "/" + PartyConstants.HARD_SIZE_CAP + "):",
-                NamedTextColor.AQUA));
-        snapshot.getMembers().values().stream()
+        lines.add(Component.text("Party Members (" + snapshot.getSize() + ")", NamedTextColor.GOLD));
+
+        List<PartyMember> members = snapshot.getMembers().values().stream()
                 .sorted(Comparator.comparing(PartyMember::getRole)
                         .thenComparing(PartyMember::getJoinedAt))
-                .map(this::formatMemberLine)
-                .forEach(lines::add);
+                .toList();
 
-        if (!snapshot.getInvites().isEmpty()) {
-            lines.add(Component.text("Pending invites:", NamedTextColor.GRAY));
-            for (PartyInvite invite : snapshot.getInvites().values()) {
-                long remaining = Math.max(0, (invite.getExpiresAt() - System.currentTimeMillis()) / 1000L);
-                lines.add(Component.text("- " + invite.getTargetUsername() + " (" + remaining + "s)", NamedTextColor.GRAY));
-            }
-        }
+        addRoleSection(lines, "Party Leader:", members.stream()
+                .filter(member -> member.getRole() == PartyRole.LEADER)
+                .toList());
+
+        addRoleSection(lines, "Party Moderators:", members.stream()
+                .filter(member -> member.getRole() == PartyRole.MODERATOR)
+                .toList());
+
+        addRoleSection(lines, "Party Members:", members.stream()
+                .filter(member -> member.getRole() == PartyRole.MEMBER)
+                .toList());
+
         sendFramed(player, lines);
     }
 
@@ -787,19 +791,22 @@ final class PartyCommand implements SimpleCommand {
         return VelocityRankUtils.hasRankOrHigherSync(player, Rank.HELPER, sessionService, dataAPI, logger);
     }
 
-    private Component formatMemberLine(PartyMember member) {
-        NamedTextColor color = switch (member.getRole()) {
-            case LEADER -> NamedTextColor.GOLD;
-            case MODERATOR -> NamedTextColor.AQUA;
-            default -> NamedTextColor.GRAY;
-        };
-        String suffix = member.isOnline() ? "" : " (offline)";
-        String marker = switch (member.getRole()) {
-            case LEADER -> " *";
-            case MODERATOR -> " +";
-            default -> "";
-        };
-        return Component.text(member.getUsername() + marker + suffix, color);
+    private void addRoleSection(List<Component> lines, String header, List<PartyMember> members) {
+        lines.add(Component.text(header, NamedTextColor.YELLOW));
+        if (members == null || members.isEmpty()) {
+            lines.add(Component.text("  (none)", NamedTextColor.GRAY));
+            return;
+        }
+        members.forEach(member -> {
+            boolean online = member.isOnline();
+            NamedTextColor dotColor = online ? NamedTextColor.GREEN : NamedTextColor.RED;
+            Component line = Component.text()
+                    .append(Component.text("  "))
+                    .append(Component.text("● ", dotColor))
+                    .append(formatName(member.getPlayerId(), member.getUsername()))
+                    .build();
+            lines.add(line);
+        });
     }
 
     private String firstNonBlank(String... values) {
