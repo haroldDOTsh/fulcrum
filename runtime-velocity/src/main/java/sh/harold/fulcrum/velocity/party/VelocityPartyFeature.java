@@ -7,6 +7,8 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
@@ -227,11 +229,23 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     Component broadcast = buildInviteBroadcast(snapshot, message);
                     broadcastToParty(snapshot, broadcast);
 
+                    String inviterName = resolveActorName(snapshot, actorId, reason);
+                    String acceptArgument = (inviterName != null && !inviterName.isBlank() && !"Unknown".equals(inviterName))
+                            ? inviterName
+                            : "";
+                    String acceptCommand = acceptArgument.isEmpty()
+                            ? "/party accept"
+                            : "/party accept " + acceptArgument;
+                    Component clickToAccept = Component.text("Click to accept.", NamedTextColor.GOLD)
+                            .clickEvent(ClickEvent.runCommand(acceptCommand))
+                            .hoverEvent(HoverEvent.showText(Component.text("Run " + acceptCommand, NamedTextColor.YELLOW)));
                     Component inviteeMessage = Component.text()
-                            .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
+                            .append(formatRankedName(actorId, inviterName))
                             .append(PartyTextFormatter.yellow(" has invited you to join their party! You have "))
                             .append(PartyTextFormatter.redNumber(PartyConstants.INVITE_TTL_SECONDS))
-                            .append(PartyTextFormatter.yellow(" seconds to accept. "))
+                            .append(PartyTextFormatter.yellow(" seconds to accept."))
+                            .append(Component.space())
+                            .append(clickToAccept)
                             .build();
                     notifyPlayer(targetId, inviteeMessage);
                 }
