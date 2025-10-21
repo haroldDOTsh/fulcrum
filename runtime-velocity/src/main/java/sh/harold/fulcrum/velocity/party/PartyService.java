@@ -33,6 +33,10 @@ public interface PartyService {
 
     PartyOperationResult kickOffline(UUID actorId, long offlineThresholdMillis);
 
+    PartyOperationResult hijackParty(UUID actorId, String actorName, UUID partyId);
+
+    PartyOperationResult yoinkPlayer(UUID actorId, String actorName, UUID targetId, String targetName);
+
     PartyOperationResult toggleMute(UUID actorId, boolean muted);
 
     PartyOperationResult updateSettings(UUID actorId, PartySettingsMutator mutator);

@@ -10,6 +10,8 @@ import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.party.*;
+import sh.harold.fulcrum.velocity.api.rank.Rank;
+import sh.harold.fulcrum.velocity.api.rank.VelocityRankUtils;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
@@ -105,6 +107,8 @@ final class PartyCommand implements SimpleCommand {
             }
             case "accept" -> handleAccept(player, args);
             case "deny" -> handleDeny(player, args);
+            case "hijack" -> handleHijack(player, args);
+            case "yoink" -> handleYoink(player, args);
             case "promote" -> {
                 if (args.length < 2) {
                     sendFramed(player, Component.text("Usage: /party promote <player>", NamedTextColor.RED));
@@ -149,17 +153,19 @@ final class PartyCommand implements SimpleCommand {
     @Override
     public List<String> suggest(Invocation invocation) {
         String[] args = invocation.arguments();
+        CommandSource source = invocation.source();
         if (args.length == 0) {
-            return suggestions(List.of("help", "invite", "accept", "deny", "list", "leave", "warp",
-                    "disband", "promote", "demote", "transfer", "kick", "kickoffline", "mute", "unmute", "settings"));
+            return suggestions(filterStaffCommands(List.of("help", "invite", "accept", "deny", "list", "leave", "warp",
+                    "disband", "promote", "demote", "transfer", "kick", "kickoffline", "mute", "unmute", "settings",
+                    "hijack", "yoink"), source), source);
         }
         if (args.length == 1) {
-            return suggestions(List.of("help", "invite", "accept", "deny", "list", "leave", "warp",
-                            "disband", "promote", "demote", "transfer", "kick", "kickoffline", "mute", "unmute", "settings"),
-                    args[0]);
+            return suggestions(filterStaffCommands(List.of("help", "invite", "accept", "deny", "list", "leave", "warp",
+                            "disband", "promote", "demote", "transfer", "kick", "kickoffline", "mute", "unmute", "settings",
+                            "hijack", "yoink"), source),
+                    args[0], source);
         }
         if (args.length == 2 && Set.of("accept", "deny").contains(args[0].toLowerCase(Locale.ROOT))) {
-            CommandSource source = invocation.source();
             if (source instanceof Player player) {
                 return partyService.getInvites(player.getUniqueId()).stream()
                         .map(PartyInvite::getInviterUsername)
@@ -170,7 +176,12 @@ final class PartyCommand implements SimpleCommand {
             }
             return List.of();
         }
-        if (args.length == 2 && Set.of("invite", "promote", "demote", "transfer", "kick").contains(args[0].toLowerCase(Locale.ROOT))) {
+        if (args.length == 2 && Set.of("invite", "promote", "demote", "transfer", "kick", "yoink", "hijack")
+                .contains(args[0].toLowerCase(Locale.ROOT))) {
+            String sub = args[0].toLowerCase(Locale.ROOT);
+            if (Set.of("yoink", "hijack").contains(sub) && !isStaffSource(source)) {
+                return List.of();
+            }
             return proxy.getAllPlayers().stream()
                     .map(Player::getUsername)
                     .filter(name -> startsWithIgnoreCase(name, args[1]))
@@ -179,14 +190,14 @@ final class PartyCommand implements SimpleCommand {
         return List.of();
     }
 
-    private List<String> suggestions(List<String> base, String prefix) {
-        return base.stream()
+    private List<String> suggestions(List<String> base, String prefix, CommandSource source) {
+        return filterStaffCommands(base, source).stream()
                 .filter(entry -> startsWithIgnoreCase(entry, prefix))
                 .collect(Collectors.toList());
     }
 
-    private List<String> suggestions(List<String> base) {
-        return new ArrayList<>(base);
+    private List<String> suggestions(List<String> base, CommandSource source) {
+        return filterStaffCommands(base, source);
     }
 
     private boolean startsWithIgnoreCase(String value, String prefix) {
@@ -284,6 +295,85 @@ final class PartyCommand implements SimpleCommand {
         }
     }
 
+    private void handleHijack(Player player, String[] args) {
+        if (!ensureStaff(player)) {
+            return;
+        }
+        if (args.length < 2) {
+            sendFramed(player, Component.text("Usage: /party hijack <player|uuid|partyId>", NamedTextColor.RED));
+            return;
+        }
+        String selector = args[1];
+        Optional<PartySnapshot> targetParty = resolveParty(selector);
+        if (targetParty.isEmpty()) {
+            sendFramed(player, error("Couldn't find a party for that selector."));
+            return;
+        }
+        PartySnapshot snapshot = targetParty.get();
+        UUID partyId = snapshot.getPartyId();
+        PartyOperationResult result = partyService.hijackParty(player.getUniqueId(), player.getUsername(), partyId);
+        if (!result.isSuccess()) {
+            sendError(player, result);
+            return;
+        }
+        PartySnapshot updated = result.party().orElseGet(() -> partyService.getParty(partyId).orElse(snapshot));
+        if (updated != null) {
+            Component message = Component.text()
+                    .append(formatName(player.getUniqueId(), player.getUsername()))
+                    .append(yellow(" has hijacked the party!"))
+                    .build();
+            broadcastToParty(updated, message);
+        }
+    }
+
+    private void handleYoink(Player player, String[] args) {
+        if (!ensureStaff(player)) {
+            return;
+        }
+        if (args.length < 2) {
+            sendFramed(player, Component.text("Usage: /party yoink <player|uuid>", NamedTextColor.RED));
+            return;
+        }
+
+        Optional<Player> targetOpt = resolveOnlinePlayer(args[1]);
+        if (targetOpt.isEmpty()) {
+            sendFramed(player, error("Couldn't find that player online."));
+            return;
+        }
+        Player target = targetOpt.get();
+        if (target.getUniqueId().equals(player.getUniqueId())) {
+            sendFramed(player, error("You cannot target yourself."));
+            return;
+        }
+
+        PartyOperationResult result = partyService.yoinkPlayer(
+                player.getUniqueId(),
+                player.getUsername(),
+                target.getUniqueId(),
+                target.getUsername());
+        if (!result.isSuccess()) {
+            sendError(player, result);
+            return;
+        }
+
+        PartySnapshot snapshot = result.party()
+                .orElseGet(() -> partyService.getPartyByPlayer(player.getUniqueId()).orElse(null));
+        Component victimMessage = Component.text()
+                .append(formatName(player.getUniqueId(), player.getUsername()))
+                .append(yellow(" has yoinked you into the party!"))
+                .build();
+        sendFramed(target, victimMessage);
+        if (snapshot != null) {
+            Component othersMessage = Component.text()
+                    .append(formatName(player.getUniqueId(), player.getUsername()))
+                    .append(yellow(" has yoinked "))
+                    .append(formatName(target.getUniqueId(), target.getUsername()))
+                    .append(yellow(" into the party!"))
+                    .build();
+            broadcastToParty(snapshot, othersMessage, target.getUniqueId());
+        }
+    }
+
     private void handleList(Player player) {
         Optional<PartySnapshot> snapshotOpt = partyService.getPartyByPlayer(player.getUniqueId());
         if (snapshotOpt.isEmpty()) {
@@ -321,9 +411,7 @@ final class PartyCommand implements SimpleCommand {
 
     private void handleDisband(Player player) {
         PartyOperationResult result = partyService.disbandParty(player.getUniqueId());
-        if (result.isSuccess()) {
-            sendFramed(player, Component.text("Disbanded your party.", NamedTextColor.YELLOW));
-        } else {
+        if (!result.isSuccess()) {
             sendError(player, result);
         }
     }
@@ -407,14 +495,7 @@ final class PartyCommand implements SimpleCommand {
         }
         Player target = targetOpt.get();
         PartyOperationResult result = partyService.kick(player.getUniqueId(), target.getUniqueId());
-        if (result.isSuccess()) {
-            Component kicked = Component.text()
-                    .append(yellow("Kicked "))
-                    .append(formatName(target.getUniqueId(), target.getUsername()))
-                    .append(yellow(" from the party."))
-                    .build();
-            sendFramed(player, kicked);
-        } else {
+        if (!result.isSuccess()) {
             sendError(player, result);
         }
     }
@@ -624,6 +705,86 @@ final class PartyCommand implements SimpleCommand {
             default -> error(result.message() != null ? result.message() : "Unable to complete that action.");
         };
         sendFramed(player, message);
+    }
+
+    private boolean ensureStaff(Player player) {
+        boolean allowed = VelocityRankUtils.hasRankOrHigherSync(player, Rank.HELPER, sessionService, dataAPI, logger);
+        if (!allowed) {
+            sendError(player, PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "missing-ids"));
+        }
+        return allowed;
+    }
+
+    private Optional<PartySnapshot> resolveParty(String selector) {
+        UUID uuid = tryParseUuid(selector);
+        if (uuid != null) {
+            Optional<PartySnapshot> byId = partyService.getParty(uuid);
+            if (byId.isPresent()) {
+                return byId;
+            }
+            Optional<PartySnapshot> byPlayer = partyService.getPartyByPlayer(uuid);
+            if (byPlayer.isPresent()) {
+                return byPlayer;
+            }
+        }
+        return proxy.getPlayer(selector)
+                .flatMap(player -> partyService.getPartyByPlayer(player.getUniqueId()));
+    }
+
+    private Optional<Player> resolveOnlinePlayer(String selector) {
+        UUID uuid = tryParseUuid(selector);
+        if (uuid != null) {
+            Optional<Player> byId = proxy.getPlayer(uuid);
+            if (byId.isPresent()) {
+                return byId;
+            }
+        }
+        return proxy.getPlayer(selector);
+    }
+
+    private UUID tryParseUuid(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private void broadcastToParty(PartySnapshot snapshot, Component message, UUID... excluded) {
+        if (snapshot == null || message == null) {
+            return;
+        }
+        Set<UUID> excludeSet = (excluded == null || excluded.length == 0)
+                ? Collections.emptySet()
+                : Arrays.stream(excluded)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        snapshot.getMembers().keySet().forEach(memberId -> {
+            if (excludeSet.contains(memberId)) {
+                return;
+            }
+            proxy.getPlayer(memberId).ifPresent(target -> sendFramed(target, message));
+        });
+    }
+
+    private List<String> filterStaffCommands(List<String> base, CommandSource source) {
+        if (base == null || base.isEmpty()) {
+            return List.of();
+        }
+        boolean staff = isStaffSource(source);
+        return base.stream()
+                .filter(entry -> staff || !Set.of("hijack", "yoink").contains(entry.toLowerCase(Locale.ROOT)))
+                .collect(Collectors.toList());
+    }
+
+    private boolean isStaffSource(CommandSource source) {
+        if (!(source instanceof Player player)) {
+            return true;
+        }
+        return VelocityRankUtils.hasRankOrHigherSync(player, Rank.HELPER, sessionService, dataAPI, logger);
     }
 
     private Component formatMemberLine(PartyMember member) {

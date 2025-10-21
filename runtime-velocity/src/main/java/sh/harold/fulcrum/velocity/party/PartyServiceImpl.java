@@ -408,7 +408,8 @@ final class PartyServiceImpl implements PartyService {
                 return PartyOperationResult.success();
             }
             repository.save(snapshot);
-            publishUpdate(snapshot, PartyMessageAction.MEMBER_KICKED, actorId, targetId, "member kicked");
+            publishUpdate(snapshot, PartyMessageAction.MEMBER_KICKED, actorId, targetId,
+                    composeRemovalReason("member-kicked", target.getUsername()));
             return PartyOperationResult.success(snapshot);
         });
     }
@@ -457,6 +458,132 @@ final class PartyServiceImpl implements PartyService {
                         target,
                         composeRemovalReason("offline-kick", name)));
             }
+            return PartyOperationResult.success(snapshot);
+        });
+    }
+
+    @Override
+    public PartyOperationResult hijackParty(UUID actorId, String actorName, UUID partyId) {
+        if (actorId == null || partyId == null) {
+            return PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "missing-player");
+        }
+
+        repository.findPartyIdForPlayer(actorId)
+                .filter(existing -> !existing.equals(partyId))
+                .ifPresent(existing -> leaveParty(actorId));
+
+        return executeWithLock(partyId, snapshot -> {
+            if (snapshot == null) {
+                return PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "party-missing");
+            }
+
+            long now = System.currentTimeMillis();
+            String resolvedName = (actorName != null && !actorName.isBlank()) ? actorName : "Unknown";
+            PartyMember member = snapshot.getMember(actorId);
+            if (member == null) {
+                member = new PartyMember(actorId, resolvedName, PartyRole.LEADER);
+                snapshot.getMembers().put(actorId, member);
+            } else {
+                member.setUsername(resolvedName);
+                member.setRole(PartyRole.LEADER);
+                member.setOnline(true);
+            }
+            member.setLastSeenAt(now);
+
+            snapshot.getMembers().values().forEach(existingMember -> {
+                if (!actorId.equals(existingMember.getPlayerId()) && existingMember.getRole() == PartyRole.LEADER) {
+                    existingMember.setRole(PartyRole.MODERATOR);
+                }
+            });
+
+            snapshot.getInvites().remove(actorId);
+            repository.deleteInvite(actorId, snapshot.getPartyId());
+
+            snapshot.setLeaderId(actorId);
+            snapshot.setPendingIdleDisbandAt(0L);
+            snapshot.setLastActivityAt(now);
+            updateSoloPartyExpiry(snapshot, now);
+
+            repository.assignPlayerToParty(actorId, snapshot.getPartyId());
+            repository.save(snapshot);
+            publishUpdate(snapshot, PartyMessageAction.UPDATED, actorId, null, "staff-hijack");
+            return PartyOperationResult.success(snapshot);
+        });
+    }
+
+    @Override
+    public PartyOperationResult yoinkPlayer(UUID actorId, String actorName, UUID targetId, String targetName) {
+        if (actorId == null || targetId == null) {
+            return PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "missing-player");
+        }
+        if (actorId.equals(targetId)) {
+            return PartyOperationResult.failure(PartyErrorCode.CANNOT_TARGET_SELF, "self-target");
+        }
+
+        PartySnapshot base = getPartyByPlayer(actorId)
+                .orElseGet(() -> createEphemeralParty(actorId, actorName));
+        if (base == null) {
+            return PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "party-missing");
+        }
+        UUID partyId = base.getPartyId();
+
+        repository.findPartyIdForPlayer(targetId)
+                .filter(existing -> !existing.equals(partyId))
+                .ifPresent(existing -> leaveParty(targetId));
+
+        return executeWithLock(partyId, snapshot -> {
+            if (snapshot == null) {
+                return PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "party-missing");
+            }
+            long now = System.currentTimeMillis();
+
+            String resolvedActorName = (actorName != null && !actorName.isBlank()) ? actorName : "Unknown";
+            PartyMember actorMember = snapshot.getMember(actorId);
+            if (actorMember == null) {
+                actorMember = new PartyMember(actorId, resolvedActorName, PartyRole.LEADER);
+                snapshot.getMembers().put(actorId, actorMember);
+                repository.assignPlayerToParty(actorId, partyId);
+            } else {
+                actorMember.setUsername(resolvedActorName);
+                actorMember.setRole(PartyRole.LEADER);
+                actorMember.setOnline(true);
+            }
+            actorMember.setLastSeenAt(now);
+
+            snapshot.getMembers().values().forEach(existingMember -> {
+                if (!actorId.equals(existingMember.getPlayerId()) && existingMember.getRole() == PartyRole.LEADER) {
+                    existingMember.setRole(PartyRole.MODERATOR);
+                }
+            });
+
+            boolean alreadyMember = snapshot.isMember(targetId);
+            if (!alreadyMember && snapshot.getSize() >= PartyConstants.HARD_SIZE_CAP) {
+                return PartyOperationResult.failure(PartyErrorCode.PARTY_FULL, "party-full");
+            }
+
+            String resolvedTargetName = (targetName != null && !targetName.isBlank()) ? targetName : "Unknown";
+            PartyMember targetMember = snapshot.getMember(targetId);
+            if (targetMember == null) {
+                targetMember = new PartyMember(targetId, resolvedTargetName, PartyRole.MEMBER);
+                snapshot.getMembers().put(targetId, targetMember);
+            } else {
+                targetMember.setUsername(resolvedTargetName);
+            }
+            targetMember.setRole(PartyRole.MEMBER);
+            targetMember.setOnline(true);
+            targetMember.setLastSeenAt(now);
+
+            snapshot.getInvites().remove(targetId);
+            repository.deleteInvite(targetId, partyId);
+
+            snapshot.setLeaderId(actorId);
+            snapshot.setPendingIdleDisbandAt(0L);
+            snapshot.setLastActivityAt(now);
+            updateSoloPartyExpiry(snapshot, now);
+
+            repository.assignPlayerToParty(targetId, partyId);
+            repository.save(snapshot);
+            publishUpdate(snapshot, PartyMessageAction.UPDATED, actorId, targetId, "staff-yoink");
             return PartyOperationResult.success(snapshot);
         });
     }

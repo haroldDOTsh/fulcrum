@@ -618,7 +618,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
         }
         String prefix = reason.substring(0, separator);
         if (!Set.of("offline-kick", "offline-timeout", "invite-expired", "member-left", "leader-disband",
-                "solo-party-expired", "leader-left").contains(prefix)) {
+                "solo-party-expired", "leader-left", "member-kicked").contains(prefix)) {
             return null;
         }
         return reason.substring(separator + 1);
