@@ -20,7 +20,7 @@ public enum Rank {
 
     // Staff ranks
     HELPER("Helper", "&9", 100, "&9[HELPER]", "&9[H]", NamedTextColor.BLUE, RankCategory.STAFF),
-    STAFF("Staff", "&c", 200, "&c[STAFF]", "&c[S]", NamedTextColor.DARK_RED, RankCategory.STAFF);
+    STAFF("Staff", "&c", 200, "&c[STAFF]", "&c[S]", NamedTextColor.RED, RankCategory.STAFF);
 
     private final String displayName;
     private final String colorCode;
