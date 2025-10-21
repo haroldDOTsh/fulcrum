@@ -150,11 +150,11 @@ final class PartyCommand implements SimpleCommand {
     public List<String> suggest(Invocation invocation) {
         String[] args = invocation.arguments();
         if (args.length == 0) {
-            return suggestions(List.of("help", "create", "invite", "accept", "deny", "list", "leave", "warp",
+            return suggestions(List.of("help", "invite", "accept", "deny", "list", "leave", "warp",
                     "disband", "promote", "demote", "transfer", "kick", "kickoffline", "mute", "unmute", "settings"));
         }
         if (args.length == 1) {
-            return suggestions(List.of("help", "create", "invite", "accept", "deny", "list", "leave", "warp",
+            return suggestions(List.of("help", "invite", "accept", "deny", "list", "leave", "warp",
                             "disband", "promote", "demote", "transfer", "kick", "kickoffline", "mute", "unmute", "settings"),
                     args[0]);
         }
