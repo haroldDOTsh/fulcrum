@@ -9,7 +9,6 @@ plugins {
 }
 
 group = "sh.harold.fulcrum"
-version = "2.4.0"
 
 repositories {
     mavenCentral()
@@ -70,7 +69,7 @@ tasks.named<Copy>("processResources") {
     val props = mapOf("version" to version)
     inputs.properties(props)
     filteringCharset = "UTF-8"
-    filesMatching("plugin.yml") {
+    filesMatching(listOf("plugin.yml", "paper-plugin.yml")) {
         expand(props)
     }
 }

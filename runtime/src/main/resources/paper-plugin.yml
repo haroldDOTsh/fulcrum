@@ -1,5 +1,5 @@
 name: Fulcrum
-version: 2.4.0
+version: ${version}
 main: sh.harold.fulcrum.FulcrumPlugin
 description: DEEZ
 author: Hqrxld, ZECHEESELORD
