@@ -7,7 +7,6 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.party.PartyConstants;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
@@ -169,17 +168,6 @@ final class ProxyPlayCommand implements SimpleCommand {
             result.errorMessage().ifPresent(leader::sendMessage);
             return true;
         }
-
-        Component confirmation = Component.text("Queued party for ", NamedTextColor.GREEN)
-                .append(Component.text(displayVariant(familyId, variantId), NamedTextColor.AQUA))
-                .append(Component.text(". Reservation expires in " + PartyConstants.RESERVATION_TOKEN_TTL_SECONDS + "s.", NamedTextColor.GREEN));
-        leader.sendMessage(confirmation);
-
-        result.participants().stream()
-                .filter(player -> !player.getUniqueId().equals(leader.getUniqueId()))
-                .forEach(player -> player.sendMessage(Component.text(
-                        leader.getUsername() + " queued the party for " + displayVariant(familyId, variantId) + ".",
-                        NamedTextColor.GREEN)));
 
         COOLDOWNS.put(leader.getUniqueId(), System.currentTimeMillis());
         return true;

@@ -349,8 +349,9 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     }
                     broadcastToParty(snapshot, messageComponent);
                 }
-                case RESERVATION_CREATED -> broadcastToParty(snapshot,
-                        Component.text("Party reservation is pending. Sit tight for matchmaking...", NamedTextColor.AQUA));
+                case RESERVATION_CREATED -> {
+                    // Intentionally suppress reservation pending message to avoid chat noise.
+                }
                 case RESERVATION_CLAIMED -> {
                     String reservationReason = message.getReason();
                     if (reservationReason != null && reservationReason.startsWith("reservation-failed")) {
@@ -363,9 +364,6 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     } else if ("reservation-missing-claims".equals(reservationReason)) {
                         broadcastToParty(snapshot,
                                 Component.text("Party reservation expired before everyone joined.", NamedTextColor.YELLOW));
-                    } else {
-                        broadcastToParty(snapshot,
-                                Component.text("Party reservation completed.", NamedTextColor.GREEN));
                     }
                 }
                 case UPDATED -> {
@@ -439,9 +437,6 @@ public final class VelocityPartyFeature implements VelocityFeature {
                 metadata.put("partyReservationId", reservationId);
                 metadata.put("partyTokenId", token.getTokenId());
                 routingFeature.sendSlotRequest(player, familyId, metadata);
-                sendFramed(player, Component.text(
-                        "Queued party for " + displayVariant(familyId, variantId) + ".",
-                        NamedTextColor.GREEN));
             }));
         } catch (Exception ex) {
             logger.warn("Failed to handle party reservation broadcast", ex);
