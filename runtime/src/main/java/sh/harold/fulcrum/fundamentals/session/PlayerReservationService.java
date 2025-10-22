@@ -36,7 +36,7 @@ public class PlayerReservationService {
 
     public void handleReservationRequest(MessageEnvelope envelope) {
         try {
-            PlayerReservationRequest request = objectMapper.treeToValue(envelope.getPayload(), PlayerReservationRequest.class);
+            PlayerReservationRequest request = objectMapper.treeToValue(envelope.payload(), PlayerReservationRequest.class);
             request.validate();
 
             cleanupExpired();
@@ -57,11 +57,11 @@ public class PlayerReservationService {
         } catch (Exception exception) {
             logger.log(Level.WARNING, "Failed to process reservation request", exception);
             try {
-                UUID requestId = envelope.getPayload().has("requestId")
-                        ? UUID.fromString(envelope.getPayload().get("requestId").asText())
+                UUID requestId = envelope.payload().has("requestId")
+                        ? UUID.fromString(envelope.payload().get("requestId").asText())
                         : UUID.randomUUID();
-                String serverId = envelope.getPayload().has("serverId")
-                        ? envelope.getPayload().get("serverId").asText()
+                String serverId = envelope.payload().has("serverId")
+                        ? envelope.payload().get("serverId").asText()
                         : "unknown";
                 PlayerReservationResponse response = new PlayerReservationResponse(
                         requestId,

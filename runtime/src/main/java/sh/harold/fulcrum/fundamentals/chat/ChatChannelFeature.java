@@ -116,7 +116,7 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
     private void handleChatMessage(MessageEnvelope envelope) {
         try {
             ChatChannelMessage message = MessageTypeRegistry.getInstance()
-                    .deserializeToClass(envelope.getPayload(), ChatChannelMessage.class);
+                    .deserializeToClass(envelope.payload(), ChatChannelMessage.class);
             if (message == null) {
                 return;
             }
@@ -129,7 +129,7 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
     private void handlePartyUpdate(MessageEnvelope envelope) {
         try {
             PartyUpdateMessage message = MessageTypeRegistry.getInstance()
-                    .deserializeToClass(envelope.getPayload(), PartyUpdateMessage.class);
+                    .deserializeToClass(envelope.payload(), PartyUpdateMessage.class);
             if (message == null) {
                 return;
             }

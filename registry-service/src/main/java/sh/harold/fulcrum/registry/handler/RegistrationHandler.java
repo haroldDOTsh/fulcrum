@@ -110,7 +110,7 @@ public class RegistrationHandler {
             LOGGER.debug("Registration handler invoked");
 
             try {
-                Object payload = envelope.getPayload();
+                Object payload = envelope.payload();
                 ServerRegistrationRequest request = null;
 
                 // Try to deserialize payload to ServerRegistrationRequest
@@ -159,9 +159,9 @@ public class RegistrationHandler {
                 try {
                     // Convert full envelope to JSON for heartbeat processing
                     Map<String, Object> envelopeMap = new HashMap<>();
-                    envelopeMap.put("type", envelope.getType());
-                    envelopeMap.put("senderId", envelope.getSenderId());
-                    envelopeMap.put("payload", objectMapper.convertValue(envelope.getPayload(), Map.class));
+                    envelopeMap.put("type", envelope.type());
+                    envelopeMap.put("senderId", envelope.senderId());
+                    envelopeMap.put("payload", objectMapper.convertValue(envelope.payload(), Map.class));
                     String json = objectMapper.writeValueAsString(envelopeMap);
                     handleServerHeartbeat(json);
                 } catch (Exception e) {
@@ -176,7 +176,7 @@ public class RegistrationHandler {
             public void handle(MessageEnvelope envelope) {
                 try {
                     SlotStatusUpdateMessage update = objectMapper.treeToValue(
-                            envelope.getPayload(), SlotStatusUpdateMessage.class);
+                            envelope.payload(), SlotStatusUpdateMessage.class);
                     serverRegistry.updateSlot(update.getServerId(), update);
                 } catch (Exception e) {
                     LOGGER.warn("Failed to process slot status update", e);
@@ -190,7 +190,7 @@ public class RegistrationHandler {
             public void handle(MessageEnvelope envelope) {
                 try {
                     SlotFamilyAdvertisementMessage message = objectMapper.treeToValue(
-                            envelope.getPayload(), SlotFamilyAdvertisementMessage.class);
+                            envelope.payload(), SlotFamilyAdvertisementMessage.class);
                     serverRegistry.updateFamilyCapabilities(message.getServerId(), message.getFamilyCapacities());
                     serverRegistry.updateFamilyVariants(message.getServerId(), message.getFamilyVariants());
                 } catch (Exception e) {
@@ -204,7 +204,7 @@ public class RegistrationHandler {
             @Override
             public void handle(MessageEnvelope envelope) {
                 try {
-                    String json = objectMapper.writeValueAsString(envelope.getPayload());
+                    String json = objectMapper.writeValueAsString(envelope.payload());
                     handleProxyUnregister(json);
                 } catch (Exception e) {
                     LOGGER.error("Failed to handle proxy unregister", e);
@@ -217,7 +217,7 @@ public class RegistrationHandler {
             @Override
             public void handle(MessageEnvelope envelope) {
                 try {
-                    String json = objectMapper.writeValueAsString(envelope.getPayload());
+                    String json = objectMapper.writeValueAsString(envelope.payload());
                     handleEvacuationRequest(json);
                 } catch (Exception e) {
                     LOGGER.error("Failed to handle evacuation request", e);
@@ -234,7 +234,7 @@ public class RegistrationHandler {
             @Override
             public void handle(MessageEnvelope envelope) {
                 try {
-                    Object payload = envelope.getPayload();
+                    Object payload = envelope.payload();
 
                     // Handle JsonNode payloads (which come from the MessageBus deserialization)
                     if (payload instanceof com.fasterxml.jackson.databind.JsonNode) {
@@ -244,7 +244,7 @@ public class RegistrationHandler {
                                     (com.fasterxml.jackson.databind.JsonNode) payload,
                                     ServerRemovalNotification.class
                             );
-                            if ("PROXY".equalsIgnoreCase(notification.getServerType())) {
+                            if ("PROXY".equalsIgnoreCase(notification.serverType())) {
                                 handleProxyRemoval(notification);
                             }
                         } catch (Exception e) {
@@ -253,7 +253,7 @@ public class RegistrationHandler {
                     }
                     // Check if this is already a ServerRemovalNotification
                     else if (payload instanceof ServerRemovalNotification notification) {
-                        if ("PROXY".equalsIgnoreCase(notification.getServerType())) {
+                        if ("PROXY".equalsIgnoreCase(notification.serverType())) {
                             handleProxyRemoval(notification);
                         }
                     } else if (payload instanceof Map) {
@@ -263,7 +263,7 @@ public class RegistrationHandler {
                             ServerRemovalNotification notification = objectMapper.convertValue(
                                     payload, ServerRemovalNotification.class);
 
-                            if ("PROXY".equalsIgnoreCase(notification.getServerType())) {
+                            if ("PROXY".equalsIgnoreCase(notification.serverType())) {
                                 RegistrationHandler.this.handleProxyRemoval(notification);
                             }
                         }
@@ -794,8 +794,8 @@ public class RegistrationHandler {
      * Handle server removal notification from backend servers
      */
     private void handleServerRemovalNotification(ServerRemovalNotification notification) {
-        String serverId = notification.getServerId();
-        String reason = notification.getReason();
+        String serverId = notification.serverId();
+        String reason = notification.reason();
 
         LOGGER.info("Received server removal notification for {} - Reason: {}", serverId, reason);
 
@@ -809,9 +809,9 @@ public class RegistrationHandler {
         try {
             Map<String, Object> removal = new HashMap<>();
             removal.put("serverId", serverId);
-            removal.put("serverType", notification.getServerType());
+            removal.put("serverType", notification.serverType());
             removal.put("reason", reason);
-            removal.put("timestamp", notification.getTimestamp());
+            removal.put("timestamp", notification.timestamp());
 
             // Broadcast server removal via MessageBus (standardized only)
             messageBus.broadcast(ChannelConstants.REGISTRY_SERVER_REMOVED, removal);
@@ -960,8 +960,8 @@ public class RegistrationHandler {
      */
     private void handleProxyRemoval(ServerRemovalNotification notification) {
         try {
-            String proxyId = notification.getServerId();
-            String reason = notification.getReason() != null ? notification.getReason() : "Unknown";
+            String proxyId = notification.serverId();
+            String reason = notification.reason() != null ? notification.reason() : "Unknown";
 
             LOGGER.info("Processing proxy removal request for: {} (Reason: {})", proxyId, reason);
 

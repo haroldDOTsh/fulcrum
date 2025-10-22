@@ -87,7 +87,7 @@ public final class SlotFamilyFeature implements VelocityFeature {
             return;
         }
 
-        Object payload = envelope.getPayload();
+        Object payload = envelope.payload();
         SlotFamilyAdvertisementMessage message = convert(payload, SlotFamilyAdvertisementMessage.class);
         if (message == null) {
             return;
@@ -108,7 +108,7 @@ public final class SlotFamilyFeature implements VelocityFeature {
             return;
         }
 
-        Object payload = envelope.getPayload();
+        Object payload = envelope.payload();
         String serverId = extractServerId(payload);
         if (serverId == null || serverId.isBlank()) {
             return;
@@ -124,7 +124,7 @@ public final class SlotFamilyFeature implements VelocityFeature {
         if (envelope == null) {
             return;
         }
-        SlotStatusUpdateMessage status = convert(envelope.getPayload(), SlotStatusUpdateMessage.class);
+        SlotStatusUpdateMessage status = convert(envelope.payload(), SlotStatusUpdateMessage.class);
         if (status == null) {
             return;
         }
@@ -209,15 +209,15 @@ public final class SlotFamilyFeature implements VelocityFeature {
                 return node.get("serverId").asText();
             }
             ServerRemovalNotification notification = convert(node, ServerRemovalNotification.class);
-            return notification != null ? notification.getServerId() : null;
+            return notification != null ? notification.serverId() : null;
         }
 
         if (payload instanceof ServerRemovalNotification notification) {
-            return notification.getServerId();
+            return notification.serverId();
         }
 
         ServerRemovalNotification notification = convert(payload, ServerRemovalNotification.class);
-        return notification != null ? notification.getServerId() : null;
+        return notification != null ? notification.serverId() : null;
     }
 
     private String firstNonBlank(String primary, String fallback) {

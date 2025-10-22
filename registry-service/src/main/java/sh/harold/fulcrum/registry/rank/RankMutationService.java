@@ -47,7 +47,7 @@ public final class RankMutationService implements AutoCloseable {
         RankMutationRequestMessage request;
         try {
             request = MessageTypeRegistry.getInstance()
-                    .deserializeToClass(envelope.getPayload(), RankMutationRequestMessage.class);
+                    .deserializeToClass(envelope.payload(), RankMutationRequestMessage.class);
         } catch (Exception ex) {
             logger.warn("Failed to deserialize rank mutation request", ex);
             return;
@@ -57,7 +57,7 @@ public final class RankMutationService implements AutoCloseable {
         }
 
         UUID playerId = request.getPlayerId();
-        String senderId = envelope.getSenderId();
+        String senderId = envelope.senderId();
         if (senderId == null || senderId.isBlank()) {
             logger.warn("Ignoring rank mutation request {} without sender", request.getRequestId());
             return;

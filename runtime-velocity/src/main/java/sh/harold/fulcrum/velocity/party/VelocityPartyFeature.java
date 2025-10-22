@@ -213,7 +213,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
     private void handlePartyUpdateEnvelope(MessageEnvelope envelope) {
         try {
-            PartyUpdateMessage message = convert(envelope.getPayload(), PartyUpdateMessage.class);
+            PartyUpdateMessage message = convert(envelope.payload(), PartyUpdateMessage.class);
             if (message == null || message.getPartyId() == null) {
                 return;
             }
@@ -375,7 +375,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
     private void handleReservationCreatedEnvelope(MessageEnvelope envelope) {
         try {
-            PartyReservationCreatedMessage message = convert(envelope.getPayload(), PartyReservationCreatedMessage.class);
+            PartyReservationCreatedMessage message = convert(envelope.payload(), PartyReservationCreatedMessage.class);
             if (message == null) {
                 return;
             }
@@ -431,7 +431,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
     private void handleReservationClaimedEnvelope(MessageEnvelope envelope) {
         try {
-            PartyReservationClaimedMessage message = convert(envelope.getPayload(), PartyReservationClaimedMessage.class);
+            PartyReservationClaimedMessage message = convert(envelope.payload(), PartyReservationClaimedMessage.class);
             if (message == null) {
                 return;
             }
@@ -474,7 +474,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
     private void handleMatchRosterEnvelope(MessageEnvelope envelope) {
         try {
-            MatchRosterCreatedMessage message = convert(envelope.getPayload(), MatchRosterCreatedMessage.class);
+            MatchRosterCreatedMessage message = convert(envelope.payload(), MatchRosterCreatedMessage.class);
             if (message == null || rosterStore == null) {
                 return;
             }
@@ -494,7 +494,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
     private void handleMatchRosterEndedEnvelope(MessageEnvelope envelope) {
         try {
-            MatchRosterEndedMessage message = convert(envelope.getPayload(), MatchRosterEndedMessage.class);
+            MatchRosterEndedMessage message = convert(envelope.payload(), MatchRosterEndedMessage.class);
             if (message == null || rosterStore == null) {
                 return;
             }

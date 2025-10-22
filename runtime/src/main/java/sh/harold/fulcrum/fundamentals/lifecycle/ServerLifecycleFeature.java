@@ -56,12 +56,12 @@ public class ServerLifecycleFeature implements PluginFeature {
     private DependencyContainer container;
     private DefaultServerIdentifier serverIdentifier;
     private BukkitRunnable heartbeatTask;
-    private AtomicBoolean registered = new AtomicBoolean(false);
+    private final AtomicBoolean registered = new AtomicBoolean(false);
     private String serverType = "MINI";  // Default type
     private int maxCapacity = 100;
     private long startTime;
     private String environment;  // Store the environment string directly
-    private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> registrationTimeoutTask;
     private ScheduledFuture<?> registrationRetryTask;
     private SimpleSlotOrchestrator slotOrchestrator;
@@ -277,7 +277,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         String channel = ChannelConstants.getServerPlayerRouteChannel(serverId);
         messageBus.subscribe(channel, envelope -> {
             try {
-                PlayerRouteCommand command = playerRouteMapper.convertValue(envelope.getPayload(), PlayerRouteCommand.class);
+                PlayerRouteCommand command = playerRouteMapper.convertValue(envelope.payload(), PlayerRouteCommand.class);
                 if (command == null) {
                     return;
                 }
@@ -308,7 +308,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         messageBus.subscribe(channel, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                SlotProvisionCommand command = mapper.treeToValue(envelope.getPayload(), SlotProvisionCommand.class);
+                SlotProvisionCommand command = mapper.treeToValue(envelope.payload(), SlotProvisionCommand.class);
                 if (slotOrchestrator != null) {
                     slotOrchestrator.handleProvisionCommand(command);
                 }
@@ -470,11 +470,11 @@ public class ServerLifecycleFeature implements PluginFeature {
                     try {
                         // Subscribe to new channel for permanent ID
                         messageBus.subscribe(ChannelConstants.getServerDirectChannel(permanentId), envelope -> {
-                            LOGGER.fine("Received message on permanent server channel: " + envelope.getType());
-                            if (envelope.getType().equals("server.registration.response")) {
+                            LOGGER.fine("Received message on permanent server channel: " + envelope.type());
+                            if (envelope.type().equals("server.registration.response")) {
                                 try {
                                     com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                                    ServerRegistrationResponse resp = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
+                                    ServerRegistrationResponse resp = mapper.treeToValue(envelope.payload(), ServerRegistrationResponse.class);
                                     handleProxyRegistrationResponse(resp);
                                 } catch (Exception e) {
                                     LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
@@ -662,7 +662,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         messageBus.subscribe(ChannelConstants.PROXY_ANNOUNCEMENT, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                ProxyAnnouncementMessage announcement = mapper.treeToValue(envelope.getPayload(), ProxyAnnouncementMessage.class);
+                ProxyAnnouncementMessage announcement = mapper.treeToValue(envelope.payload(), ProxyAnnouncementMessage.class);
                 handleProxyAnnouncement(announcement);
             } catch (Exception e) {
                 LOGGER.warning("Failed to deserialize proxy announcement: " + e.getMessage());
@@ -717,7 +717,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         messageBus.subscribe(ChannelConstants.SERVER_REGISTRATION_RESPONSE, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
+                com.fasterxml.jackson.databind.JsonNode payload = envelope.payload();
 
                 // Check if this response is for us by checking tempId
                 String tempId = null;
@@ -731,7 +731,7 @@ public class ServerLifecycleFeature implements PluginFeature {
 
                     // Parse the response from Registry Service
                     ServerRegistrationResponse response = new ServerRegistrationResponse();
-                    response.setSuccess(payload.has("success") ? payload.get("success").asBoolean() : false);
+                    response.setSuccess(payload.has("success") && payload.get("success").asBoolean());
                     response.setAssignedServerId(payload.has("assignedServerId") ? payload.get("assignedServerId").asText() : null);
                     response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
                     response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
@@ -753,11 +753,11 @@ public class ServerLifecycleFeature implements PluginFeature {
             try {
                 LOGGER.info("Received registration response on server-specific channel: " + serverSpecificChannel);
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                com.fasterxml.jackson.databind.JsonNode payload = envelope.getPayload();
+                com.fasterxml.jackson.databind.JsonNode payload = envelope.payload();
 
                 // Parse the response
                 ServerRegistrationResponse response = new ServerRegistrationResponse();
-                response.setSuccess(payload.has("success") ? payload.get("success").asBoolean() : false);
+                response.setSuccess(payload.has("success") && payload.get("success").asBoolean());
                 response.setAssignedServerId(payload.has("assignedServerId") ? payload.get("assignedServerId").asText() : null);
                 response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
                 response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
@@ -774,7 +774,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         messageBus.subscribe(ChannelConstants.SERVER_EVACUATION_REQUEST, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                ServerEvacuationRequest request = mapper.treeToValue(envelope.getPayload(), ServerEvacuationRequest.class);
+                ServerEvacuationRequest request = mapper.treeToValue(envelope.payload(), ServerEvacuationRequest.class);
                 handleEvacuationRequest(request);
             } catch (Exception e) {
                 LOGGER.warning("Failed to deserialize evacuation request: " + e.getMessage());
@@ -785,7 +785,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         messageBus.subscribe(ChannelConstants.SERVER_ANNOUNCEMENT, envelope -> {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                ServerAnnouncementMessage announcement = mapper.treeToValue(envelope.getPayload(), ServerAnnouncementMessage.class);
+                ServerAnnouncementMessage announcement = mapper.treeToValue(envelope.payload(), ServerAnnouncementMessage.class);
                 handleServerAnnouncement(announcement);
             } catch (Exception e) {
                 LOGGER.warning("Failed to deserialize server announcement: " + e.getMessage());
@@ -850,11 +850,11 @@ public class ServerLifecycleFeature implements PluginFeature {
     }
 
     private void handleEvacuationRequest(ServerEvacuationRequest request) {
-        if (!request.getServerId().equals(serverIdentifier.getServerId())) {
+        if (!request.serverId().equals(serverIdentifier.getServerId())) {
             return; // Not for this server
         }
 
-        LOGGER.warning("Received evacuation request: " + request.getReason());
+        LOGGER.warning("Received evacuation request: " + request.reason());
 
         // Perform evacuation asynchronously
         CompletableFuture.runAsync(() -> {
@@ -962,19 +962,6 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
     }
 
-    private static class ServerInfo {
-        final String serverType;
-        final String status;
-        final String host;
-        final int port;
-        final String role;
-
-        ServerInfo(String serverType, String status, String host, int port, String role) {
-            this.serverType = serverType;
-            this.status = status;
-            this.host = host;
-            this.port = port;
-            this.role = role;
-        }
+    private record ServerInfo(String serverType, String status, String host, int port, String role) {
     }
 }

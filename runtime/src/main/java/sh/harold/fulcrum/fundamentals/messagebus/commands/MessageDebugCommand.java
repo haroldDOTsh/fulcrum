@@ -315,13 +315,13 @@ public class MessageDebugCommand {
                 Map<String, List<MessageHandler>> subscriptions =
                         (Map<String, List<MessageHandler>>) subscriptionsField.get(messageBus);
 
-                List<MessageHandler> handlers = subscriptions.get(envelope.getType());
+                List<MessageHandler> handlers = subscriptions.get(envelope.type());
                 if (handlers != null && !handlers.isEmpty()) {
                     for (MessageHandler handler : handlers) {
                         try {
                             handler.handle(envelope);
                         } catch (Exception e) {
-                            LOGGER.warning("Error in handler for type " + envelope.getType() + ": " + e);
+                            LOGGER.warning("Error in handler for type " + envelope.type() + ": " + e);
                         }
                     }
                     return handlers.size();

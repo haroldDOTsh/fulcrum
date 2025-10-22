@@ -287,7 +287,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         // Listen for server additions from Registry Service
         messageBus.subscribe(ChannelConstants.REGISTRY_SERVER_ADDED, envelope -> {
             logger.info("=== SERVER ADDED BY REGISTRY ===");
-            Object payload = envelope.getPayload();
+            Object payload = envelope.payload();
 
             try {
                 ObjectMapper mapper = new ObjectMapper();
@@ -331,7 +331,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         // Listen for server removals from Registry Service
         messageBus.subscribe(ChannelConstants.REGISTRY_SERVER_REMOVED, envelope -> {
             logger.info("=== SERVER REMOVED BY REGISTRY ===");
-            Object payload = envelope.getPayload();
+            Object payload = envelope.payload();
 
             try {
                 ObjectMapper mapper = new ObjectMapper();
@@ -370,7 +370,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             try {
                 ObjectMapper mapper = new ObjectMapper();
                 ServerRemovalNotification notification = null;
-                Object payload = envelope.getPayload();
+                Object payload = envelope.payload();
 
                 if (payload instanceof JsonNode) {
                     notification = mapper.treeToValue((JsonNode) payload, ServerRemovalNotification.class);
@@ -388,7 +388,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
 
         // Handle server heartbeats
         messageBus.subscribe(ChannelConstants.SERVER_HEARTBEAT, envelope -> {
-            Object payload = envelope.getPayload();
+            Object payload = envelope.payload();
             ServerHeartbeatMessage heartbeat = null;
 
             // Handle ObjectNode from deserialization
@@ -427,7 +427,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
 
         // Handle server announcements (post-approval)
         messageBus.subscribe(ChannelConstants.SERVER_ANNOUNCEMENT, envelope -> {
-            Object payload = envelope.getPayload();
+            Object payload = envelope.payload();
             ServerAnnouncementMessage announcement = null;
 
             // Handle ObjectNode from deserialization
@@ -468,7 +468,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     ChannelConstants.PROXY_REGISTRATION_RESPONSE);
 
             try {
-                Object payload = envelope.getPayload();
+                Object payload = envelope.payload();
                 Map<String, Object> response = null;
 
                 if (payload instanceof JsonNode) {
@@ -498,7 +498,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             logger.info("[PROXY RESPONSE RECEIVED] Received proxy registration response on LEGACY channel");
 
             try {
-                Object payload = envelope.getPayload();
+                Object payload = envelope.payload();
                 Map<String, Object> response = null;
 
                 if (payload instanceof JsonNode) {
@@ -529,7 +529,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         // Handle proxy discovery requests - for OTHER servers discovering this proxy
         messageBus.subscribe(ChannelConstants.PROXY_DISCOVERY_REQUEST, envelope -> {
             logger.debug("Proxy discovery request received");
-            Object payload = envelope.getPayload();
+            Object payload = envelope.payload();
             ProxyDiscoveryRequest request = null;
 
             // Handle ObjectNode from deserialization
@@ -549,7 +549,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 return;
             }
 
-            logger.debug("Discovery request from server: {} (type: {})", request.getRequesterId(), request.getServerType());
+            logger.debug("Discovery request from server: {} (type: {})", request.requesterId(), request.serverType());
 
             // Only respond if we have been registered with Registry Service
             if (registeredWithRegistry && proxyId != null && !proxyId.startsWith("temp-")) {
@@ -639,7 +639,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
 
         // Handle server status change messages from registry
         messageBus.subscribe(ChannelConstants.REGISTRY_STATUS_CHANGE, envelope -> {
-            Object payload = envelope.getPayload();
+            Object payload = envelope.payload();
             ServerStatusChangeMessage statusChange = null;
 
             // Handle ObjectNode from deserialization
@@ -969,10 +969,10 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     }
 
     private void handleServerRemoval(ServerRemovalNotification notification) {
-        String serverId = notification.getServerId();
+        String serverId = notification.serverId();
 
         logger.warn("Received server removal notification for: {} (reason: {})",
-                serverId, notification.getReason());
+                serverId, notification.reason());
 
         // Remove from backend servers map
         ServerIdentifier removedServer = backendServers.remove(serverId);

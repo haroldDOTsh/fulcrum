@@ -254,7 +254,7 @@ public final class RankFeature implements PluginFeature, RankService, Listener {
     private void handleMutationResponse(MessageEnvelope envelope) {
         try {
             RankMutationResponseMessage response = MessageTypeRegistry.getInstance()
-                    .deserializeToClass(envelope.getPayload(), RankMutationResponseMessage.class);
+                    .deserializeToClass(envelope.payload(), RankMutationResponseMessage.class);
             if (response == null || response.getRequestId() == null) {
                 return;
             }
@@ -270,7 +270,7 @@ public final class RankFeature implements PluginFeature, RankService, Listener {
     private void handleRankSync(MessageEnvelope envelope) {
         try {
             RankSyncMessage message = MessageTypeRegistry.getInstance()
-                    .deserializeToClass(envelope.getPayload(), RankSyncMessage.class);
+                    .deserializeToClass(envelope.payload(), RankSyncMessage.class);
             if (message == null || message.getPlayerId() == null) {
                 return;
             }

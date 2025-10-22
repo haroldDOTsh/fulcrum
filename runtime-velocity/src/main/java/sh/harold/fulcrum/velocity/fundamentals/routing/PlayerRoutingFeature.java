@@ -133,7 +133,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
 
     private void handleLocateEnvelope(MessageEnvelope envelope) {
         try {
-            PlayerLocateRequest request = convert(envelope.getPayload(), PlayerLocateRequest.class);
+            PlayerLocateRequest request = convert(envelope.payload(), PlayerLocateRequest.class);
             if (request == null || request.getRequestId() == null) {
                 return;
             }
@@ -178,7 +178,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
     private void handleRouteEnvelope(MessageEnvelope envelope) {
         scheduler.buildTask(plugin, () -> {
             try {
-                PlayerRouteCommand command = convert(envelope.getPayload(), PlayerRouteCommand.class);
+                PlayerRouteCommand command = convert(envelope.payload(), PlayerRouteCommand.class);
                 logger.info("Proxy received route command: requestId={} player={} targetServer={} slot={} world={}",
                         command.getRequestId(), command.getPlayerName(), command.getServerId(),
                         command.getSlotId(), command.getTargetWorld());

@@ -132,7 +132,7 @@ public class PlayerRoutingService {
 
     private void handlePlayerRequest(MessageEnvelope envelope) {
         try {
-            PlayerSlotRequest request = convert(envelope.getPayload(), PlayerSlotRequest.class);
+            PlayerSlotRequest request = convert(envelope.payload(), PlayerSlotRequest.class);
             request.validate();
 
             Map<String, String> requestMetadata = request.getMetadata();
@@ -220,7 +220,7 @@ public class PlayerRoutingService {
 
     private void handleSlotStatus(MessageEnvelope envelope) {
         try {
-            SlotStatusUpdateMessage update = convert(envelope.getPayload(), SlotStatusUpdateMessage.class);
+            SlotStatusUpdateMessage update = convert(envelope.payload(), SlotStatusUpdateMessage.class);
             LogicalSlotRecord slot = serverRegistry.updateSlot(update.getServerId(), update);
             if (slot == null) {
                 return;
@@ -249,7 +249,7 @@ public class PlayerRoutingService {
 
     private void handlePartyReservationCreated(MessageEnvelope envelope) {
         try {
-            PartyReservationCreatedMessage message = convert(envelope.getPayload(), PartyReservationCreatedMessage.class);
+            PartyReservationCreatedMessage message = convert(envelope.payload(), PartyReservationCreatedMessage.class);
             if (message == null) {
                 return;
             }
@@ -322,7 +322,7 @@ public class PlayerRoutingService {
 
     private void handleMatchRosterCreated(MessageEnvelope envelope) {
         try {
-            MatchRosterCreatedMessage message = convert(envelope.getPayload(), MatchRosterCreatedMessage.class);
+            MatchRosterCreatedMessage message = convert(envelope.payload(), MatchRosterCreatedMessage.class);
             if (message == null) {
                 return;
             }
@@ -343,7 +343,7 @@ public class PlayerRoutingService {
 
     private void handleMatchRosterEnded(MessageEnvelope envelope) {
         try {
-            MatchRosterEndedMessage message = convert(envelope.getPayload(), MatchRosterEndedMessage.class);
+            MatchRosterEndedMessage message = convert(envelope.payload(), MatchRosterEndedMessage.class);
             if (message == null) {
                 return;
             }
@@ -359,7 +359,7 @@ public class PlayerRoutingService {
 
     private void handleRouteAck(MessageEnvelope envelope) {
         try {
-            PlayerRouteAck ack = convert(envelope.getPayload(), PlayerRouteAck.class);
+            PlayerRouteAck ack = convert(envelope.payload(), PlayerRouteAck.class);
             ack.validate();
 
             InFlightRoute route = inFlightRoutes.remove(ack.getRequestId());
@@ -442,7 +442,7 @@ public class PlayerRoutingService {
 
     private void handleReservationResponse(MessageEnvelope envelope) {
         try {
-            PlayerReservationResponse response = convert(envelope.getPayload(), PlayerReservationResponse.class);
+            PlayerReservationResponse response = convert(envelope.payload(), PlayerReservationResponse.class);
             response.validate();
             CompletableFuture<PlayerReservationResponse> future = pendingReservations.remove(response.getRequestId());
             if (future != null) {
@@ -929,7 +929,7 @@ public class PlayerRoutingService {
 
     private void handlePartyReservationClaimed(MessageEnvelope envelope) {
         try {
-            PartyReservationClaimedMessage message = convert(envelope.getPayload(), PartyReservationClaimedMessage.class);
+            PartyReservationClaimedMessage message = convert(envelope.payload(), PartyReservationClaimedMessage.class);
             if (message == null) {
                 return;
             }

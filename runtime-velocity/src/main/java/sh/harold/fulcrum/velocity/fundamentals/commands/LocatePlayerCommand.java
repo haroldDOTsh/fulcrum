@@ -210,7 +210,7 @@ final class LocatePlayerCommand implements SimpleCommand {
             return;
         }
         try {
-            PlayerLocateResponse response = convert(envelope.getPayload(), PlayerLocateResponse.class);
+            PlayerLocateResponse response = convert(envelope.payload(), PlayerLocateResponse.class);
             if (response == null || !requestId.equals(response.getRequestId())) {
                 return;
             }

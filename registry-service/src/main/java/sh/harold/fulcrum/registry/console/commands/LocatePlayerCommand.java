@@ -132,10 +132,10 @@ public class LocatePlayerCommand implements CommandHandler {
     }
 
     private <T> T convert(MessageEnvelope envelope, Class<T> type) {
-        if (envelope == null || envelope.getPayload() == null) {
+        if (envelope == null || envelope.payload() == null) {
             return null;
         }
-        Object payload = envelope.getPayload();
+        Object payload = envelope.payload();
         if (type.isInstance(payload)) {
             return type.cast(payload);
         }
