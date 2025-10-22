@@ -21,6 +21,8 @@ public class PlayerSessionRecord {
     private UUID playerId;
     private String sessionId;
     private String serverId;
+    private Integer clientProtocolVersion;
+    private String clientBrand;
     private long createdAt;
     private long lastUpdatedAt;
     @JsonIgnore
@@ -64,6 +66,28 @@ public class PlayerSessionRecord {
         this.serverId = serverId;
     }
 
+    @JsonProperty("clientProtocolVersion")
+    public Integer getClientProtocolVersion() {
+        return clientProtocolVersion;
+    }
+
+    public void setClientProtocolVersion(Integer clientProtocolVersion) {
+        this.clientProtocolVersion = clientProtocolVersion;
+    }
+
+    @JsonProperty("clientBrand")
+    public String getClientBrand() {
+        return clientBrand;
+    }
+
+    public void setClientBrand(String clientBrand) {
+        if (clientBrand != null && clientBrand.isBlank()) {
+            this.clientBrand = null;
+        } else {
+            this.clientBrand = clientBrand;
+        }
+    }
+
     public long getCreatedAt() {
         return createdAt;
     }
@@ -95,6 +119,42 @@ public class PlayerSessionRecord {
         return minigames;
     }
 
+    @JsonIgnore
+    public Map<String, Object> getSettings() {
+        Map<String, Object> settings = getSettingsInternal(false);
+        return settings == null ? Collections.emptyMap() : Collections.unmodifiableMap(settings);
+    }
+
+    @JsonIgnore
+    public boolean isDebugEnabled() {
+        Map<String, Object> settings = getSettingsInternal(false);
+        if (settings == null) {
+            return false;
+        }
+        Object debug = settings.get("debug");
+        if (debug instanceof Map<?, ?> debugMap) {
+            Object enabled = debugMap.get("enabled");
+            if (enabled instanceof Boolean b) {
+                return b;
+            }
+            if (enabled instanceof Number number) {
+                return number.intValue() != 0;
+            }
+            if (enabled instanceof String text) {
+                return Boolean.parseBoolean(text);
+            }
+        }
+        return false;
+    }
+
+    @JsonIgnore
+    public void setDebugEnabled(boolean enabled) {
+        Map<String, Object> settings = getSettingsInternal(true);
+        Map<String, Object> debugSection = toMutableMap(settings.get("debug"));
+        debugSection.put("enabled", enabled);
+        settings.put("debug", debugSection);
+    }
+
     @JsonAnyGetter
     public Map<String, Object> getExtras() {
         return extras;
@@ -112,6 +172,31 @@ public class PlayerSessionRecord {
 
     private static String newSegmentId() {
         return UUID.randomUUID().toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getSettingsInternal(boolean create) {
+        Object value = core.get("settings");
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> converted = toMutableMap(map);
+            core.put("settings", converted);
+            return converted;
+        }
+        if (create) {
+            Map<String, Object> created = new LinkedHashMap<>();
+            core.put("settings", created);
+            return created;
+        }
+        return null;
+    }
+
+    private Map<String, Object> toMutableMap(Object source) {
+        if (!(source instanceof Map<?, ?> map)) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        map.forEach((key, value) -> copy.put(String.valueOf(key), value));
+        return copy;
     }
 
     @JsonIgnore
@@ -202,6 +287,12 @@ public class PlayerSessionRecord {
             persisted.put("minigames", new HashMap<>(minigames));
         }
         persisted.put("lastUpdatedAt", lastUpdatedAt);
+        if (clientProtocolVersion != null) {
+            persisted.put("clientProtocolVersion", clientProtocolVersion);
+        }
+        if (clientBrand != null) {
+            persisted.put("clientBrand", clientBrand);
+        }
         return persisted;
     }
 

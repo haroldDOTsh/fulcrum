@@ -186,6 +186,14 @@ public class DeadServerSessionSweeper implements AutoCloseable {
         }
 
         payload.put("lastUpdatedAt", record.getLastUpdatedAt());
+        Integer protocolVersion = record.getClientProtocolVersion();
+        if (protocolVersion != null) {
+            payload.put("clientProtocolVersion", protocolVersion);
+        }
+        String brand = record.getClientBrand();
+        if (brand != null) {
+            payload.put("clientBrand", brand);
+        }
         return payload;
     }
 

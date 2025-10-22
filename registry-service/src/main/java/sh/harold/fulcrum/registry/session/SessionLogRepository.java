@@ -7,6 +7,7 @@ import sh.harold.fulcrum.session.PlayerSessionRecord;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,13 +24,15 @@ class SessionLogRepository implements AutoCloseable {
     }
 
     void recordSession(PlayerSessionRecord record, long endedAt) {
-        String insert = "INSERT INTO " + TABLE_NAME + " (session_id, player_uuid, environment, family, variant, started_at, ended_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?) " +
+        String insert = "INSERT INTO " + TABLE_NAME + " (session_id, player_uuid, environment, family, variant, started_at, ended_at, client_protocol_version, client_brand) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT (session_id) DO UPDATE SET " +
                 "environment = EXCLUDED.environment, " +
                 "family = EXCLUDED.family, " +
                 "variant = EXCLUDED.variant, " +
-                "ended_at = EXCLUDED.ended_at";
+                "ended_at = EXCLUDED.ended_at, " +
+                "client_protocol_version = EXCLUDED.client_protocol_version, " +
+                "client_brand = EXCLUDED.client_brand";
 
         SessionContext context = resolveSessionContext(record);
 
@@ -42,6 +45,13 @@ class SessionLogRepository implements AutoCloseable {
             ps.setString(5, context.variant());
             ps.setLong(6, record.getCreatedAt());
             ps.setLong(7, endedAt);
+            Integer protocolVersion = record.getClientProtocolVersion();
+            if (protocolVersion != null) {
+                ps.setInt(8, protocolVersion);
+            } else {
+                ps.setNull(8, Types.INTEGER);
+            }
+            ps.setString(9, record.getClientBrand());
             ps.executeUpdate();
         } catch (SQLException e) {
             logger.warn("Failed to persist session summary for {}", record.getPlayerId(), e);

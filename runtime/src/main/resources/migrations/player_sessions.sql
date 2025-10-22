@@ -20,13 +20,18 @@ CREATE TABLE IF NOT EXISTS player_sessions
     family VARCHAR
 (
     128
-),
+), 
     variant VARCHAR
 (
     128
 ),
     started_at BIGINT NOT NULL,
     ended_at BIGINT NOT NULL,
+    client_protocol_version INTEGER,
+    client_brand VARCHAR
+(
+    128
+),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -38,6 +43,12 @@ ALTER TABLE player_sessions
 
 ALTER TABLE player_sessions
     ADD COLUMN IF NOT EXISTS variant VARCHAR (128);
+
+ALTER TABLE player_sessions
+    ADD COLUMN IF NOT EXISTS client_protocol_version INTEGER;
+
+ALTER TABLE player_sessions
+    ADD COLUMN IF NOT EXISTS client_brand VARCHAR (128);
 
 ALTER TABLE player_sessions
 DROP

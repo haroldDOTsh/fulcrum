@@ -14,12 +14,10 @@ import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -29,18 +27,32 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private static final Set<String> CORE_FIELDS = Set.of(
             "username", "firstJoin", "lastSeen"
     );
+    private static final int BRAND_PROBE_MAX_ATTEMPTS = 10;
+    private static final long BRAND_PROBE_INTERVAL_TICKS = 20L;
 
     private JavaPlugin plugin;
     private Logger logger;
     private DataAPI dataAPI;
+    private DependencyContainer container;
     private final Map<UUID, PlayerSessionService.PlayerSessionHandle> activeHandles = new ConcurrentHashMap<>();
     private PlayerSessionService sessionService;
     private sh.harold.fulcrum.fundamentals.session.PlayerSessionLogRepository sessionLogRepository;
+    private PlayerDebugSettingsService debugSettingsService;
+
+    private static Map<String, Object> buildDefaultSettings() {
+        Map<String, Object> debug = new LinkedHashMap<>();
+        debug.put("enabled", false);
+
+        Map<String, Object> settings = new LinkedHashMap<>();
+        settings.put("debug", debug);
+        return settings;
+    }
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
+        this.container = container;
 
         // Get DataAPI from DependencyContainer
         this.dataAPI = container.getOptional(DataAPI.class).orElse(null);
@@ -56,6 +68,13 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         // Register event listeners
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
 
+        this.debugSettingsService = new PlayerDebugSettingsService(dataAPI, sessionService);
+        container.register(PlayerDebugSettingsService.class, debugSettingsService);
+        ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
+        if (locator != null) {
+            locator.registerService(PlayerDebugSettingsService.class, debugSettingsService);
+        }
+
         logger.info("PlayerDataFeature initialized - tracking backend player data");
     }
 
@@ -63,17 +82,24 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> updatePlayerData(player));
+        int protocolVersion = player.getProtocolVersion();
+        String clientBrand = sanitizeBrand(player.getClientBrandName());
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> updatePlayerData(player, protocolVersion, clientBrand));
+        if (clientBrand == null) {
+            scheduleBrandProbe(player.getUniqueId(), 0);
+        }
     }
 
-    private void updatePlayerData(Player player) {
+    private void updatePlayerData(Player player, int protocolVersion, String initialBrand) {
         UUID playerId = player.getUniqueId();
+        initialBrand = sanitizeBrand(initialBrand);
         PersistedState persisted = loadPersistedState(playerId);
 
         PlayerSessionService.PlayerSessionHandle handle = sessionService.attachOrCreateSession(playerId, persisted.data());
         activeHandles.put(playerId, handle);
 
         long now = System.currentTimeMillis();
+        final String brandToApply = initialBrand;
         sessionService.withActiveSession(playerId, record -> {
             Map<String, Object> core = record.getCore();
             core.put("username", player.getName());
@@ -85,6 +111,10 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             }
 
             core.put("lastSeen", now);
+            record.setClientProtocolVersion(protocolVersion);
+            if (brandToApply != null) {
+                record.setClientBrand(brandToApply);
+            }
             record.touch();
         });
 
@@ -93,6 +123,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             seed.put("username", player.getName());
             seed.put("firstJoin", now);
             seed.put("lastSeen", now);
+            seed.put("settings", buildDefaultSettings());
             dataAPI.collection(PLAYERS_COLLECTION).create(playerId.toString(), seed);
         }
 
@@ -145,12 +176,50 @@ public class PlayerDataFeature implements PluginFeature, Listener {
 
     @Override
     public void shutdown() {
+        ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
+        if (locator != null) {
+            locator.unregisterService(PlayerDebugSettingsService.class);
+        }
+        if (container != null) {
+            container.unregister(PlayerDebugSettingsService.class);
+        }
+        debugSettingsService = null;
         logger.info("Shutting down PlayerDataFeature");
     }
 
     @Override
     public int getPriority() {
         return 50; // After DataAPI (priority 10)
+    }
+
+    private void scheduleBrandProbe(UUID playerId, int attempt) {
+        if (attempt >= BRAND_PROBE_MAX_ATTEMPTS) {
+            return;
+        }
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Player online = Bukkit.getPlayer(playerId);
+            if (online == null || !online.isOnline()) {
+                return;
+            }
+            String brand = sanitizeBrand(online.getClientBrandName());
+            if (brand != null) {
+                Bukkit.getScheduler().runTaskAsynchronously(plugin, () ->
+                        sessionService.withActiveSession(playerId, record -> {
+                            record.setClientBrand(brand);
+                            record.touch();
+                        }));
+            } else {
+                scheduleBrandProbe(playerId, attempt + 1);
+            }
+        }, BRAND_PROBE_INTERVAL_TICKS);
+    }
+
+    private String sanitizeBrand(String brand) {
+        if (brand == null) {
+            return null;
+        }
+        String trimmed = brand.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private PersistedState loadPersistedState(UUID playerId) {
@@ -180,9 +249,16 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             if (minigames instanceof Map<?, ?> games && !games.isEmpty()) {
                 filtered.put("minigames", games);
             }
+            Object settings = source.get("settings");
+            if (settings instanceof Map<?, ?> map && !map.isEmpty()) {
+                filtered.put("settings", copyNestedMap(map));
+            }
+            filtered.putIfAbsent("settings", buildDefaultSettings());
             return new PersistedState(filtered, true);
         }
-        return new PersistedState(new HashMap<>(), false);
+        Map<String, Object> defaults = new HashMap<>();
+        defaults.put("settings", buildDefaultSettings());
+        return new PersistedState(defaults, false);
     }
 
     private void persistSession(PlayerSessionRecord record) {
@@ -215,6 +291,11 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             payload.put("environment", environment);
         }
 
+        Object settings = core.get("settings");
+        if (settings instanceof Map<?, ?> map && !map.isEmpty()) {
+            payload.put("settings", copyNestedMap(map));
+        }
+
         if (record.shouldPersistRank()) {
             Map<String, Object> rankInfo = new HashMap<>(record.getRank());
             payload.put("rankInfo", rankInfo);
@@ -228,7 +309,34 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             payload.put("minigames", new HashMap<>(record.getMinigames()));
         }
 
+        Integer protocolVersion = record.getClientProtocolVersion();
+        if (protocolVersion != null) {
+            payload.put("clientProtocolVersion", protocolVersion);
+        }
+        String brand = record.getClientBrand();
+        if (brand != null) {
+            payload.put("clientBrand", brand);
+        }
+
         return payload;
+    }
+
+    private Map<String, Object> copyNestedMap(Map<?, ?> source) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        if (source == null) {
+            return copy;
+        }
+        source.forEach((key, value) -> {
+            String stringKey = String.valueOf(key);
+            if (value instanceof Map<?, ?> nested) {
+                copy.put(stringKey, copyNestedMap(nested));
+            } else if (value instanceof List<?> list) {
+                copy.put(stringKey, new ArrayList<>(list));
+            } else {
+                copy.put(stringKey, value);
+            }
+        });
+        return copy;
     }
 
     private record PersistedState(Map<String, Object> data, boolean exists) {

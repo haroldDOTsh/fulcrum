@@ -9,10 +9,7 @@ import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -204,6 +201,16 @@ public class PlayerSessionService {
         });
     }
 
+    public boolean isDebugEnabled(UUID playerId) {
+        return getActiveSession(playerId)
+                .map(PlayerSessionRecord::isDebugEnabled)
+                .orElse(false);
+    }
+
+    public void setDebugEnabled(UUID playerId, boolean enabled) {
+        withActiveSession(playerId, record -> record.setDebugEnabled(enabled));
+    }
+
     public void updateActiveSegmentMetadata(UUID playerId, Consumer<Map<String, Object>> mutator) {
         if (mutator == null) {
             return;
@@ -242,6 +249,21 @@ public class PlayerSessionService {
                 map.forEach((k, v) -> record.getMinigames().put(String.valueOf(k), v));
                 return;
             }
+            if ("settings".equals(key) && value instanceof Map<?, ?> map) {
+                Map<String, Object> settingsCopy = copyNestedMap(map);
+                if (settingsCopy != null) {
+                    core.put("settings", settingsCopy);
+                }
+                return;
+            }
+            if ("clientProtocolVersion".equals(key)) {
+                record.setClientProtocolVersion(parseProtocolVersion(value));
+                return;
+            }
+            if ("clientBrand".equals(key)) {
+                record.setClientBrand(value != null ? value.toString() : null);
+                return;
+            }
             if (value != null) {
                 if (overwrite) {
                     core.put(key, value);
@@ -250,6 +272,42 @@ public class PlayerSessionService {
                 }
             }
         });
+    }
+
+    private Map<String, Object> copyNestedMap(Map<?, ?> source) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        if (source == null) {
+            return copy;
+        }
+        source.forEach((key, value) -> {
+            String stringKey = String.valueOf(key);
+            if (value instanceof Map<?, ?> nestedMap) {
+                copy.put(stringKey, copyNestedMap(nestedMap));
+            } else if (value instanceof List<?> list) {
+                copy.put(stringKey, new ArrayList<>(list));
+            } else {
+                copy.put(stringKey, value);
+            }
+        });
+        return copy;
+    }
+
+    private Integer parseProtocolVersion(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            String trimmed = text.trim();
+            if (trimmed.isEmpty()) {
+                return null;
+            }
+            try {
+                return Integer.parseInt(trimmed);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private Optional<PlayerSessionRecord> fetchRecord(UUID playerId) {

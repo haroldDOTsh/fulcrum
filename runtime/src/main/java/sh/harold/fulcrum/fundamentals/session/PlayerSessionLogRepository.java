@@ -30,13 +30,15 @@ public class PlayerSessionLogRepository {
     }
 
     public void recordSession(PlayerSessionRecord record, long endedAt) {
-        String insert = "INSERT INTO " + TABLE_NAME + " (session_id, player_uuid, environment, family, variant, started_at, ended_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?) " +
+        String insert = "INSERT INTO " + TABLE_NAME + " (session_id, player_uuid, environment, family, variant, started_at, ended_at, client_protocol_version, client_brand) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT (session_id) DO UPDATE SET " +
                 "environment = EXCLUDED.environment, " +
                 "family = EXCLUDED.family, " +
                 "variant = EXCLUDED.variant, " +
-                "ended_at = EXCLUDED.ended_at";
+                "ended_at = EXCLUDED.ended_at, " +
+                "client_protocol_version = EXCLUDED.client_protocol_version, " +
+                "client_brand = EXCLUDED.client_brand";
 
         SessionContext sessionContext = resolveSessionContext(record);
 
@@ -49,6 +51,13 @@ public class PlayerSessionLogRepository {
             ps.setString(5, sessionContext.variant());
             ps.setLong(6, record.getCreatedAt());
             ps.setLong(7, endedAt);
+            Integer protocolVersion = record.getClientProtocolVersion();
+            if (protocolVersion != null) {
+                ps.setInt(8, protocolVersion);
+            } else {
+                ps.setNull(8, Types.INTEGER);
+            }
+            ps.setString(9, record.getClientBrand());
             ps.executeUpdate();
 
             persistSegments(connection, record, sessionContext);
