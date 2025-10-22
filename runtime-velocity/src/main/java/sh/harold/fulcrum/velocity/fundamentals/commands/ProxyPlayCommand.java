@@ -72,7 +72,7 @@ final class ProxyPlayCommand implements SimpleCommand {
         String familyId = selection.familyId();
 
         if (!familyCache.hasFamily(familyId)) {
-            source.sendMessage(Component.text("No backend registered for family '" + familyId + "'.", NamedTextColor.RED));
+            source.sendMessage(Component.text("Your requested minigame '" + familyId + "' is currently unavailable!", NamedTextColor.RED));
             return;
         }
 
