@@ -208,7 +208,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
             return;
         }
 
-        player.sendMessage(Component.text("Routing you to " + command.getSlotId() + "...", NamedTextColor.GRAY));
+        player.sendMessage(Component.text("Sending you to " + command.getSlotId() + "...", NamedTextColor.GRAY));
 
         if (player.getCurrentServer()
                 .map(current -> current.getServerInfo().getName().equalsIgnoreCase(command.getServerId()))
