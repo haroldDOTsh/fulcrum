@@ -16,53 +16,23 @@ public record ServerRemovalNotification(String serverId, String serverType, Stri
                                         long timestamp) implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 
+    public ServerRemovalNotification(String serverId, String serverType, String reason) {
+        this(serverId, serverType, reason, System.currentTimeMillis());
+    }
+
+    public ServerRemovalNotification {
+        if (timestamp <= 0L) {
+            timestamp = System.currentTimeMillis();
+        }
+    }
+
     @JsonCreator
-    public ServerRemovalNotification(
+    public static ServerRemovalNotification fromJson(
             @JsonProperty("serverId") String serverId,
             @JsonProperty("serverType") String serverType,
             @JsonProperty("reason") String reason,
             @JsonProperty("timestamp") Long timestamp) {
-        this.serverId = serverId;
-        this.serverType = serverType;
-        this.reason = reason;
-        this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
-    }
-
-    public ServerRemovalNotification(String serverId, String serverType, String reason) {
-        this(serverId, serverType, reason, null);
-    }
-
-    @Override
-    @JsonProperty("serverId")
-    public String serverId() {
-        return serverId;
-    }
-
-    @Override
-    @JsonProperty("serverType")
-    public String serverType() {
-        return serverType;
-    }
-
-    @Override
-    @JsonProperty("reason")
-    public String reason() {
-        return reason;
-    }
-
-    @Override
-    @JsonProperty("timestamp")
-    public long timestamp() {
-        return timestamp;
-    }
-
-    @Override
-    public String toString() {
-        return "ServerRemovalNotification{" +
-                "serverId='" + serverId + '\'' +
-                ", serverType='" + serverType + '\'' +
-                ", reason='" + reason + '\'' +
-                ", timestamp=" + timestamp +
-                '}';
+        long resolvedTimestamp = timestamp != null ? timestamp : System.currentTimeMillis();
+        return new ServerRemovalNotification(serverId, serverType, reason, resolvedTimestamp);
     }
 }

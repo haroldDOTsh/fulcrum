@@ -16,57 +16,31 @@ public record ServerEvacuationRequest(String serverId, String reason, long times
                                       int timeoutMillis) implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 
+    public ServerEvacuationRequest(String serverId, String reason) {
+        this(serverId, reason, System.currentTimeMillis(), 5000);
+    }
+
+    public ServerEvacuationRequest(String serverId, String reason, int timeoutMillis) {
+        this(serverId, reason, System.currentTimeMillis(), timeoutMillis);
+    }
+
+    public ServerEvacuationRequest {
+        if (timestamp <= 0L) {
+            timestamp = System.currentTimeMillis();
+        }
+        if (timeoutMillis <= 0) {
+            timeoutMillis = 5000;
+        }
+    }
+
     @JsonCreator
-    public ServerEvacuationRequest(
+    public static ServerEvacuationRequest fromJson(
             @JsonProperty("serverId") String serverId,
             @JsonProperty("reason") String reason,
             @JsonProperty("timestamp") Long timestamp,
             @JsonProperty("timeoutMillis") Integer timeoutMillis) {
-        this.serverId = serverId;
-        this.reason = reason;
-        this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
-        this.timeoutMillis = timeoutMillis != null ? timeoutMillis : 5000;
-    }
-
-    public ServerEvacuationRequest(String serverId, String reason) {
-        this(serverId, reason, null, null);
-    }
-
-    public ServerEvacuationRequest(String serverId, String reason, int timeoutMillis) {
-        this(serverId, reason, null, timeoutMillis);
-    }
-
-    @Override
-    @JsonProperty("serverId")
-    public String serverId() {
-        return serverId;
-    }
-
-    @Override
-    @JsonProperty("reason")
-    public String reason() {
-        return reason;
-    }
-
-    @Override
-    @JsonProperty("timestamp")
-    public long timestamp() {
-        return timestamp;
-    }
-
-    @Override
-    @JsonProperty("timeoutMillis")
-    public int timeoutMillis() {
-        return timeoutMillis;
-    }
-
-    @Override
-    public String toString() {
-        return "ServerEvacuationRequest{" +
-                "serverId='" + serverId + '\'' +
-                ", reason='" + reason + '\'' +
-                ", timestamp=" + timestamp +
-                ", timeoutMillis=" + timeoutMillis +
-                '}';
+        long resolvedTimestamp = timestamp != null ? timestamp : System.currentTimeMillis();
+        int resolvedTimeout = timeoutMillis != null ? timeoutMillis : 5000;
+        return new ServerEvacuationRequest(serverId, reason, resolvedTimestamp, resolvedTimeout);
     }
 }

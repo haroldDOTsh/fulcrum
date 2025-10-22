@@ -16,71 +16,25 @@ public record ServerEvacuationResponse(String serverId, boolean success, int pla
                                        String message, long timestamp) implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 
+    public ServerEvacuationResponse(String serverId, boolean success, int playersEvacuated, int playersFailed, String message) {
+        this(serverId, success, playersEvacuated, playersFailed, message, System.currentTimeMillis());
+    }
+
+    public ServerEvacuationResponse {
+        if (timestamp <= 0L) {
+            timestamp = System.currentTimeMillis();
+        }
+    }
+
     @JsonCreator
-    public ServerEvacuationResponse(
+    public static ServerEvacuationResponse fromJson(
             @JsonProperty("serverId") String serverId,
             @JsonProperty("success") boolean success,
             @JsonProperty("playersEvacuated") int playersEvacuated,
             @JsonProperty("playersFailed") int playersFailed,
             @JsonProperty("message") String message,
             @JsonProperty("timestamp") Long timestamp) {
-        this.serverId = serverId;
-        this.success = success;
-        this.playersEvacuated = playersEvacuated;
-        this.playersFailed = playersFailed;
-        this.message = message;
-        this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
-    }
-
-    public ServerEvacuationResponse(String serverId, boolean success, int playersEvacuated, int playersFailed, String message) {
-        this(serverId, success, playersEvacuated, playersFailed, message, null);
-    }
-
-    @Override
-    @JsonProperty("serverId")
-    public String serverId() {
-        return serverId;
-    }
-
-    @Override
-    @JsonProperty("success")
-    public boolean success() {
-        return success;
-    }
-
-    @Override
-    @JsonProperty("playersEvacuated")
-    public int playersEvacuated() {
-        return playersEvacuated;
-    }
-
-    @Override
-    @JsonProperty("playersFailed")
-    public int playersFailed() {
-        return playersFailed;
-    }
-
-    @Override
-    @JsonProperty("message")
-    public String message() {
-        return message;
-    }
-
-    @Override
-    @JsonProperty("timestamp")
-    public long timestamp() {
-        return timestamp;
-    }
-
-    @Override
-    public String toString() {
-        return "ServerEvacuationResponse{" +
-                "serverId='" + serverId + '\'' +
-                ", success=" + success +
-                ", playersEvacuated=" + playersEvacuated +
-                ", playersFailed=" + playersFailed +
-                ", message='" + message + '\'' +
-                ", timestamp=" + timestamp +
-                '}';
+        long resolvedTimestamp = timestamp != null ? timestamp : System.currentTimeMillis();
+        return new ServerEvacuationResponse(serverId, success, playersEvacuated, playersFailed, message, resolvedTimestamp);
     }
 }

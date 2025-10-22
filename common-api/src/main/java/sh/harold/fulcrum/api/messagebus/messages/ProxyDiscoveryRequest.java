@@ -12,21 +12,21 @@ import java.io.Serializable;
 public record ProxyDiscoveryRequest(String requesterId, String serverType, long timestamp) implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    @JsonCreator
-    public ProxyDiscoveryRequest(@JsonProperty("requesterId") String requesterId,
-                                 @JsonProperty("serverType") String serverType,
-                                 @JsonProperty("timestamp") Long timestamp) {
-        this.requesterId = requesterId;
-        this.serverType = serverType;
-        this.timestamp = timestamp != null ? timestamp : System.currentTimeMillis();
-    }
-
     public ProxyDiscoveryRequest(String requesterId, String serverType) {
-        this(requesterId, serverType, null);
+        this(requesterId, serverType, System.currentTimeMillis());
     }
 
-    @Override
-    public String toString() {
-        return String.format("ProxyDiscoveryRequest[requester=%s, type=%s]", requesterId, serverType);
+    public ProxyDiscoveryRequest {
+        if (timestamp <= 0L) {
+            timestamp = System.currentTimeMillis();
+        }
+    }
+
+    @JsonCreator
+    public static ProxyDiscoveryRequest fromJson(@JsonProperty("requesterId") String requesterId,
+                                                 @JsonProperty("serverType") String serverType,
+                                                 @JsonProperty("timestamp") Long timestamp) {
+        long resolvedTimestamp = timestamp != null ? timestamp : System.currentTimeMillis();
+        return new ProxyDiscoveryRequest(requesterId, serverType, resolvedTimestamp);
     }
 }
