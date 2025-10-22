@@ -88,6 +88,8 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.rank.RankMutationResponseMessage.class);
             register(ChannelConstants.REGISTRY_RANK_UPDATE,
                     sh.harold.fulcrum.api.messagebus.messages.rank.RankSyncMessage.class);
+            register(ChannelConstants.CHAT_CHANNEL_MESSAGE,
+                    sh.harold.fulcrum.api.messagebus.messages.chat.ChatChannelMessage.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {

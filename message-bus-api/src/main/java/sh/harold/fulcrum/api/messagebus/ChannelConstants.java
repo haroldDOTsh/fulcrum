@@ -180,6 +180,10 @@ public final class ChannelConstants {
      * Proxy registered internally
      */
     public static final String FULCRUM_PROXY_REGISTERED = "fulcrum.internal.proxy.registered";
+    /**
+     * Cross-network chat channel messages
+     */
+    public static final String CHAT_CHANNEL_MESSAGE = "fulcrum.chat.channel.message";
 
     // ============================================
     // Discovery Channels
