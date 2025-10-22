@@ -7,6 +7,8 @@ import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
@@ -17,6 +19,9 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     private ProxyServer proxy;
     private FulcrumVelocityPlugin plugin;
     private VelocityPlayerSessionService sessionService;
+    private DataAPI dataAPI;
+    private ServiceLocator serviceLocator;
+    private PlayerSettingsService playerSettingsService;
 
     @Override
     public String getName() {
@@ -26,6 +31,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     @Override
     public void initialize(ServiceLocator serviceLocator, Logger logger) throws Exception {
         this.logger = logger;
+        this.serviceLocator = serviceLocator;
 
         // Get required services
         this.proxy = serviceLocator.getService(ProxyServer.class).orElseThrow(
@@ -34,6 +40,11 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
                 () -> new RuntimeException("VelocityPlayerSessionService not available"));
         this.plugin = serviceLocator.getService(FulcrumVelocityPlugin.class).orElseThrow(
                 () -> new RuntimeException("FulcrumVelocityPlugin not available"));
+        this.dataAPI = serviceLocator.getService(DataAPI.class).orElseThrow(
+                () -> new RuntimeException("DataAPI not available"));
+
+        this.playerSettingsService = new VelocityPlayerSettingsService(dataAPI, sessionService);
+        serviceLocator.register(PlayerSettingsService.class, playerSettingsService);
 
         // Register event listeners - MUST use plugin instance as container
         proxy.getEventManager().register(plugin, this);
@@ -64,6 +75,9 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         // Unregister event listeners
         if (proxy != null && plugin != null) {
             proxy.getEventManager().unregisterListeners(plugin);
+        }
+        if (serviceLocator != null) {
+            serviceLocator.unregister(PlayerSettingsService.class);
         }
         logger.info("Shutting down PlayerDataFeature for Velocity");
     }

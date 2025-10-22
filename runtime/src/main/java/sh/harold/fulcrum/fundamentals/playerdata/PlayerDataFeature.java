@@ -11,6 +11,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -37,7 +38,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private final Map<UUID, PlayerSessionService.PlayerSessionHandle> activeHandles = new ConcurrentHashMap<>();
     private PlayerSessionService sessionService;
     private sh.harold.fulcrum.fundamentals.session.PlayerSessionLogRepository sessionLogRepository;
-    private PlayerDebugSettingsService debugSettingsService;
+    private PlayerSettingsService playerSettingsService;
 
     private static Map<String, Object> buildDefaultSettings() {
         Map<String, Object> debug = new LinkedHashMap<>();
@@ -68,11 +69,11 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         // Register event listeners
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
 
-        this.debugSettingsService = new PlayerDebugSettingsService(dataAPI, sessionService);
-        container.register(PlayerDebugSettingsService.class, debugSettingsService);
+        this.playerSettingsService = new RuntimePlayerSettingsService(dataAPI, sessionService);
+        container.register(PlayerSettingsService.class, playerSettingsService);
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
-            locator.registerService(PlayerDebugSettingsService.class, debugSettingsService);
+            locator.registerService(PlayerSettingsService.class, playerSettingsService);
         }
 
         logger.info("PlayerDataFeature initialized - tracking backend player data");
@@ -178,12 +179,12 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     public void shutdown() {
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
-            locator.unregisterService(PlayerDebugSettingsService.class);
+            locator.unregisterService(PlayerSettingsService.class);
         }
         if (container != null) {
-            container.unregister(PlayerDebugSettingsService.class);
+            container.unregister(PlayerSettingsService.class);
         }
-        debugSettingsService = null;
+        playerSettingsService = null;
         logger.info("Shutting down PlayerDataFeature");
     }
 
