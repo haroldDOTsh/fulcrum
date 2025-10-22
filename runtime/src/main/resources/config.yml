@@ -1,9 +1,16 @@
 # Fulcrum Core Configuration
 # This file contains the main configuration for Fulcrum
 
+# Configuration file version
+config-version: 2
+
 # Development mode enables additional debugging features
 # and relaxed security checks for development environments
 development-mode: true
+
+# Feature toggles
+features:
+  debug-minigame: false
 
 # Module System Configuration
 module:

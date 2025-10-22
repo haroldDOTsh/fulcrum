@@ -1,5 +1,7 @@
 package sh.harold.fulcrum;
 
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.chat.impl.ChatFormatFeature;
 import sh.harold.fulcrum.api.environment.EnvironmentConfig;
@@ -34,6 +36,8 @@ import sh.harold.fulcrum.minigame.MinigameModule;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 
 public final class FulcrumPlugin extends JavaPlugin {
+    private static final int CONFIG_VERSION = 2;
+
     private ModuleManager moduleManager;
     private SlotFamilyService slotFamilyService;
     private DependencyContainer container;
@@ -52,6 +56,8 @@ public final class FulcrumPlugin extends JavaPlugin {
 
         // Save default config if it doesn't exist
         saveDefaultConfig();
+        FileConfiguration config = loadAndMigrateConfig();
+        boolean debugMinigameEnabled = config.getBoolean("features.debug-minigame", false);
 
         // Initialize dependency container
         container = new DependencyContainer();
@@ -82,7 +88,12 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ActionFlagFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
         FeatureManager.register(new MinigameEngineFeature());
-        FeatureManager.register(new DebugMinigameFeature());
+        if (debugMinigameEnabled) {
+            FeatureManager.register(new DebugMinigameFeature());
+            getLogger().info("Debug minigame feature enabled via configuration.");
+        } else {
+            getLogger().info("Debug minigame feature disabled via configuration.");
+        }
 
         // Initialize all features with dependency injection
         FeatureManager.initializeAll(this, container);
@@ -111,6 +122,42 @@ public final class FulcrumPlugin extends JavaPlugin {
         verificationManager.register();
 
         getLogger().info("Fulcrum started successfully");
+    }
+
+    private FileConfiguration loadAndMigrateConfig() {
+        FileConfiguration config = getConfig();
+        int currentVersion = config.getInt("config-version", 1);
+        boolean updated = false;
+
+        if (currentVersion < 2) {
+            currentVersion = 2;
+            updated = true;
+        }
+
+        ConfigurationSection features = config.getConfigurationSection("features");
+        if (features == null) {
+            features = config.createSection("features");
+            updated = true;
+        }
+        if (!features.contains("debug-minigame")) {
+            features.set("debug-minigame", false);
+            updated = true;
+        }
+
+        if (currentVersion != CONFIG_VERSION) {
+            currentVersion = CONFIG_VERSION;
+            updated = true;
+        }
+
+        if (updated) {
+            config.set("config-version", CONFIG_VERSION);
+            saveConfig();
+            reloadConfig();
+            config = getConfig();
+            getLogger().info("Migrated config.yml to version " + CONFIG_VERSION);
+        }
+
+        return config;
     }
 
     private void registerMinigameModules(MinigameEngine engine) {
