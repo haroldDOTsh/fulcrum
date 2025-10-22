@@ -19,7 +19,6 @@ repositories {
 
 dependencies {
     implementation(project(":common-api"))
-    implementation(project(":data-api"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.8-R0.1-SNAPSHOT")

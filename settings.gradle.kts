@@ -8,11 +8,8 @@ pluginManagement {
 }
 
 include(
-    "message-bus-api",
-    "rank-api",
     "common-api",
     "runtime",
     "runtime-velocity",
-    "registry-service",
-    "data-api"
+    "registry-service"
 )

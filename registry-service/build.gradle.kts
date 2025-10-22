@@ -25,9 +25,6 @@ repositories {
 dependencies {
     // Internal dependencies - using the shared core contracts
     implementation(project(":common-api"))
-    implementation(project(":data-api")) {
-        exclude(group = "org.slf4j", module = "slf4j-simple")
-    }
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
     
     // Redis client (same as used in runtime)

@@ -15,14 +15,13 @@ repositories {
 Add dependencies:
 
 ```gradle
-implementation 'com.github.haroldDOTsh.fulcrum:data-api:VERSION'
-implementation 'com.github.haroldDOTsh.fulcrum:message-bus-api:VERSION'
+implementation 'com.github.haroldDOTsh.fulcrum:common-api:VERSION'
 implementation 'com.github.haroldDOTsh.fulcrum:runtime:VERSION'
 ```
 
 ## Modules
 
-### Data API
+### Common API — Data
 Storage abstraction with MongoDB/JSON backends, transactions, and complex queries.
 
 ```java
@@ -31,7 +30,7 @@ Document player = dataAPI.player(uuid);
 player.set("stats.level", 10);
 ```
 
-### Message Bus API
+### Common API — Message Bus
 Inter-server messaging with Redis/in-memory backends.
 
 ```java
@@ -57,7 +56,7 @@ Localized messages and scoreboards.
 Message.success("payment.complete", amount).send(player);
 ```
 
-### Rank API
+### Common API — Rank
 Unified rank system with priorities and expiration.
 
 ```java
@@ -73,8 +72,7 @@ rankService.setRank(playerId, Rank.VIP, expiration);
 
 ## Documentation
 
-- [Data API](data-api/README.md)
-- [Message Bus API](message-bus-api/README.md)
+- [Common API](docs/common-module-consolidation.md)
 - [Menu API](runtime/src/main/java/sh/harold/fulcrum/api/menu/README.md)
 - [Message API](runtime/src/main/java/sh/harold/fulcrum/api/message/README.md)
 - [Rank API](runtime/src/main/java/sh/harold/fulcrum/api/rank/README.md)
