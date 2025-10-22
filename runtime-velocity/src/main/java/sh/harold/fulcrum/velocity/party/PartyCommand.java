@@ -5,6 +5,7 @@ import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
@@ -73,6 +74,14 @@ final class PartyCommand implements SimpleCommand {
 
     private Component error(String text) {
         return Component.text(text, NamedTextColor.RED);
+    }
+
+    private String memberNameOrUnknown(PartyMember member) {
+        if (member == null) {
+            return "Unknown";
+        }
+        String username = member.getUsername();
+        return (username == null || username.isBlank()) ? "Unknown" : username;
     }
 
     @Override
@@ -251,12 +260,63 @@ final class PartyCommand implements SimpleCommand {
 
         PartyOperationResult result = partyService.acceptInvite(player.getUniqueId(), player.getUsername(), selected.getPartyId());
         if (result.isSuccess()) {
-            Component joined = Component.text()
-                    .append(yellow("You have joined "))
-                    .append(formatName(selected.getInviterPlayerId(), selected.getInviterUsername()))
-                    .append(yellow("'s party!"))
-                    .build();
-            sendFramed(player, joined);
+            PartySnapshot snapshot = result.party().orElse(null);
+            if (snapshot != null) {
+                UUID leaderId = snapshot.getLeaderId();
+                Component leaderComponent;
+                if (leaderId != null) {
+                    PartyMember leaderMember = snapshot.getMember(leaderId);
+                    leaderComponent = formatName(leaderId, memberNameOrUnknown(leaderMember));
+                } else {
+                    leaderComponent = formatName(selected.getInviterPlayerId(), selected.getInviterUsername());
+                }
+                UUID leaderReference = leaderId != null ? leaderId : selected.getInviterPlayerId();
+
+                List<Component> lines = new ArrayList<>();
+                Component joined = Component.text()
+                        .append(yellow("You have joined "))
+                        .append(leaderComponent)
+                        .append(yellow("'s party!"))
+                        .build();
+                lines.add(joined);
+
+                List<Component> companions = new ArrayList<>();
+                if (leaderReference != null && !leaderReference.equals(player.getUniqueId())) {
+                    companions.add(leaderComponent);
+                }
+
+                snapshot.getMembers().forEach((memberId, partyMember) -> {
+                    if (memberId.equals(player.getUniqueId())) {
+                        return;
+                    }
+                    if (memberId.equals(leaderReference)) {
+                        return;
+                    }
+                    companions.add(formatName(memberId, memberNameOrUnknown(partyMember)));
+                });
+
+                if (companions.size() >= 2) {
+                    lines.add(Component.empty());
+                    TextComponent.Builder builder = Component.text()
+                            .append(yellow("You'll be partying with: "));
+                    for (int i = 0; i < companions.size(); i++) {
+                        builder.append(companions.get(i));
+                        if (i < companions.size() - 1) {
+                            builder.append(yellow(", "));
+                        }
+                    }
+                    lines.add(builder.build());
+                }
+
+                sendFramed(player, lines);
+            } else {
+                Component joined = Component.text()
+                        .append(yellow("You have joined "))
+                        .append(formatName(selected.getInviterPlayerId(), selected.getInviterUsername()))
+                        .append(yellow("'s party!"))
+                        .build();
+                sendFramed(player, joined);
+            }
         } else {
             sendError(player, result);
         }

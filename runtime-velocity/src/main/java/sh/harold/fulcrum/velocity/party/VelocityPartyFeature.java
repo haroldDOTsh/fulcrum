@@ -7,6 +7,7 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -236,17 +237,10 @@ public final class VelocityPartyFeature implements VelocityFeature {
                     String acceptCommand = acceptArgument.isEmpty()
                             ? "/party accept"
                             : "/party accept " + acceptArgument;
-                    Component clickToAccept = Component.text("Click to accept.", NamedTextColor.GOLD)
+                    Component clickToJoin = Component.text("Click here to join!", NamedTextColor.GOLD)
                             .clickEvent(ClickEvent.runCommand(acceptCommand))
                             .hoverEvent(HoverEvent.showText(Component.text("Run " + acceptCommand, NamedTextColor.YELLOW)));
-                    Component inviteeMessage = Component.text()
-                            .append(formatRankedName(actorId, inviterName))
-                            .append(PartyTextFormatter.yellow(" has invited you to join their party! You have "))
-                            .append(PartyTextFormatter.redNumber(PartyConstants.INVITE_TTL_SECONDS))
-                            .append(PartyTextFormatter.yellow(" seconds to accept."))
-                            .append(Component.space())
-                            .append(clickToAccept)
-                            .build();
+                    Component inviteeMessage = buildInviteeNotification(snapshot, actorId, inviterName, clickToJoin);
                     notifyPlayer(targetId, inviteeMessage);
                 }
                 case INVITE_ACCEPTED, MEMBER_JOINED -> {
@@ -516,6 +510,29 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
     private void broadcastToParty(PartySnapshot snapshot, Component message) {
         snapshot.getMembers().keySet().forEach(memberId -> notifyPlayer(memberId, message));
+    }
+
+    private Component buildInviteeNotification(PartySnapshot snapshot,
+                                               UUID inviterId,
+                                               String inviterName,
+                                               Component clickToJoin) {
+        TextComponent.Builder builder = Component.text()
+                .append(formatRankedName(inviterId, inviterName))
+                .append(PartyTextFormatter.yellow(" has invited you to join "));
+
+        UUID leaderId = snapshot.getLeaderId();
+        if (leaderId != null) {
+            String leaderName = safeName(snapshot, leaderId);
+            builder.append(formatRankedName(leaderId, leaderName))
+                    .append(PartyTextFormatter.yellow("'s party."));
+        } else {
+            builder.append(PartyTextFormatter.yellow("the party."));
+        }
+
+        return builder
+                .append(Component.space())
+                .append(clickToJoin)
+                .build();
     }
 
     private Component buildInviteBroadcast(PartySnapshot snapshot, PartyUpdateMessage message) {
