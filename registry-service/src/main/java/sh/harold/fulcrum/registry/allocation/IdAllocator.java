@@ -197,6 +197,32 @@ public class IdAllocator {
     }
 
     /**
+     * Ensure a previously released server ID is marked as in-use again.
+     * Called when a server returns after being considered dead.
+     *
+     * @param serverId The server ID to reclaim
+     */
+    public synchronized void claimServerId(String serverId) {
+        Matcher matcher = SERVER_ID_PATTERN.matcher(serverId);
+        if (!matcher.matches()) {
+            return;
+        }
+
+        String type = matcher.group(1);
+        int number = Integer.parseInt(matcher.group(2));
+
+        TreeSet<Integer> available = availableNumbers.computeIfAbsent(type, k -> new TreeSet<>());
+        if (available.remove(number) && debugMode) {
+            LOGGER.debug("Reclaimed server ID {} (number {} removed from available pool)", serverId, number);
+        }
+
+        AtomicInteger nextNumber = nextNumbers.computeIfAbsent(type, k -> new AtomicInteger(number + 1));
+        if (number >= nextNumber.get()) {
+            nextNumber.set(number + 1);
+        }
+    }
+
+    /**
      * Release a proxy ID for reuse
      *
      * @param proxyId The proxy ID to release

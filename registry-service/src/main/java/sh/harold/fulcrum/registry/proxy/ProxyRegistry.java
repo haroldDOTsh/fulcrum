@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import sh.harold.fulcrum.registry.state.RegistrationState;
+import sh.harold.fulcrum.registry.state.RegistrationStateMachine;
 
 import java.util.Collection;
 import java.util.Map;
@@ -241,6 +242,57 @@ public class ProxyRegistry {
                 tempId, proxyId.getFormattedId(), address, port);
 
         return proxyId.getFormattedId();
+    }
+
+    /**
+     * Attempt to reactivate a proxy that was previously marked unavailable.
+     *
+     * @param proxyIdString The proxy identifier string or temp ID
+     * @return The reactivated proxy data, or null if not found
+     */
+    public synchronized RegisteredProxyData reactivateProxy(String proxyIdString) {
+        ProxyIdentifier proxyId = resolveProxyIdentifier(proxyIdString);
+        if (proxyId == null) {
+            return null;
+        }
+
+        RegisteredProxyData active = proxies.get(proxyId);
+        if (active != null) {
+            return active;
+        }
+
+        RegisteredProxyData unavailable = unavailableProxies.remove(proxyId);
+        if (unavailable == null) {
+            return null;
+        }
+
+        unavailableTimestamps.remove(proxyId);
+        unavailable.setStatus(RegisteredProxyData.Status.AVAILABLE);
+        unavailable.setLastHeartbeat(System.currentTimeMillis());
+
+        RegistrationState previousState = unavailable.getRegistrationState();
+        RegistrationState intermediateState = previousState;
+
+        if (RegistrationStateMachine.isValidTransition(previousState, RegistrationState.RE_REGISTERING)) {
+            if (unavailable.transitionTo(RegistrationState.RE_REGISTERING, "Heartbeat reactivated proxy")) {
+                intermediateState = RegistrationState.RE_REGISTERING;
+            }
+        }
+        if (RegistrationStateMachine.isValidTransition(intermediateState, RegistrationState.REGISTERED)) {
+            unavailable.transitionTo(RegistrationState.REGISTERED, "Proxy heartbeat acknowledged");
+        }
+
+        proxies.put(proxyId, unavailable);
+        registrationTimestamps.put(proxyId, System.currentTimeMillis());
+        addressPortToProxyId.put(unavailable.getAddress() + ":" + unavailable.getPort(), proxyId);
+
+        if (debugMode) {
+            LOGGER.info("Reactivated proxy {} from unavailable pool (previous state: {})",
+                    proxyId.getFormattedId(), previousState);
+        } else {
+            LOGGER.info("Reactivated proxy {} from unavailable pool", proxyId.getFormattedId());
+        }
+        return unavailable;
     }
 
     /**
@@ -643,17 +695,10 @@ public class ProxyRegistry {
      */
     public void forceReleaseProxyId(String proxyIdString) {
         // Try to find by temp ID mapping
-        ProxyIdentifier proxyId = tempIdToPermId.get(proxyIdString);
+        ProxyIdentifier proxyId = resolveProxyIdentifier(proxyIdString);
         if (proxyId == null) {
-            // Try parsing
-            try {
-                proxyId = ProxyIdentifier.isValid(proxyIdString)
-                        ? ProxyIdentifier.parse(proxyIdString)
-                        : ProxyIdentifier.fromLegacy(proxyIdString);
-            } catch (Exception e) {
-                LOGGER.error("Failed to parse proxy ID for force release: {}", proxyIdString, e);
-                return;
-            }
+            LOGGER.error("Failed to resolve proxy ID for force release: {}", proxyIdString);
+            return;
         }
 
         if (unavailableProxies.containsKey(proxyId)) {
@@ -710,6 +755,42 @@ public class ProxyRegistry {
             return proxyId.getFormattedId();
         }
         return null;
+    }
+
+    private ProxyIdentifier resolveProxyIdentifier(String proxyIdString) {
+        if (proxyIdString == null || proxyIdString.isBlank()) {
+            return null;
+        }
+
+        // Direct match against active proxies
+        for (ProxyIdentifier identifier : proxies.keySet()) {
+            if (identifier.getFormattedId().equals(proxyIdString)) {
+                return identifier;
+            }
+        }
+
+        // Direct match against unavailable proxies
+        for (ProxyIdentifier identifier : unavailableProxies.keySet()) {
+            if (identifier.getFormattedId().equals(proxyIdString)) {
+                return identifier;
+            }
+        }
+
+        ProxyIdentifier fromTemp = tempIdToPermId.get(proxyIdString);
+        if (fromTemp != null) {
+            return fromTemp;
+        }
+
+        try {
+            return ProxyIdentifier.isValid(proxyIdString)
+                    ? ProxyIdentifier.parse(proxyIdString)
+                    : ProxyIdentifier.fromLegacy(proxyIdString);
+        } catch (Exception e) {
+            if (debugMode) {
+                LOGGER.debug("Failed to resolve proxy identifier '{}': {}", proxyIdString, e.getMessage());
+            }
+            return null;
+        }
     }
 
     /**

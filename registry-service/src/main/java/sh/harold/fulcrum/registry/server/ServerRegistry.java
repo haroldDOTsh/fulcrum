@@ -110,6 +110,44 @@ public class ServerRegistry {
     }
 
     /**
+     * Restore a previously deregistered server when it resumes heartbeats.
+     *
+     * @param snapshot Snapshot of the server at the time it was removed
+     * @return true if the server was restored
+     */
+    public synchronized boolean restoreServer(RegisteredServerData snapshot) {
+        if (snapshot == null) {
+            return false;
+        }
+
+        String serverId = snapshot.getServerId();
+        if (serverId == null || serverId.isBlank()) {
+            return false;
+        }
+
+        if (servers.containsKey(serverId)) {
+            return false; // Already present; nothing to do
+        }
+
+        // Ensure the allocator does not reassign this ID while we restore it
+        idAllocator.claimServerId(serverId);
+
+        snapshot.setLastHeartbeat(System.currentTimeMillis());
+        if (snapshot.getStatus() == RegisteredServerData.Status.DEAD) {
+            snapshot.setStatus(RegisteredServerData.Status.STARTING);
+        }
+
+        servers.put(serverId, snapshot);
+        if (snapshot.getTempId() != null && !snapshot.getTempId().isBlank()) {
+            tempIdToPermId.put(snapshot.getTempId(), serverId);
+        }
+
+        LOGGER.info("Restored server {} from heartbeat snapshot ({}:{})",
+                serverId, snapshot.getAddress(), snapshot.getPort());
+        return true;
+    }
+
+    /**
      * Deregister a server
      */
     public synchronized void deregisterServer(String serverId) {

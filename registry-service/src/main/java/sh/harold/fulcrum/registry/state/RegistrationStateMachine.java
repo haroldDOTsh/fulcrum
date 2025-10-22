@@ -69,6 +69,7 @@ public class RegistrationStateMachine {
     private final List<Consumer<StateTransitionEvent>> eventListeners = new CopyOnWriteArrayList<>();
     private final Map<RegistrationState, Instant> stateEntryTimes = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timeoutExecutor;
+    private final boolean ownsExecutor;
     private volatile RegistrationState currentState;
     private ScheduledFuture<?> timeoutFuture;
 
@@ -80,8 +81,15 @@ public class RegistrationStateMachine {
      */
     public RegistrationStateMachine(ProxyIdentifier proxyIdentifier,
                                     ScheduledExecutorService timeoutExecutor) {
+        this(proxyIdentifier, timeoutExecutor, false);
+    }
+
+    private RegistrationStateMachine(ProxyIdentifier proxyIdentifier,
+                                     ScheduledExecutorService timeoutExecutor,
+                                     boolean ownsExecutor) {
         this.proxyIdentifier = Objects.requireNonNull(proxyIdentifier, "ProxyIdentifier cannot be null");
         this.timeoutExecutor = Objects.requireNonNull(timeoutExecutor, "Timeout executor cannot be null");
+        this.ownsExecutor = ownsExecutor;
         this.currentState = RegistrationState.UNREGISTERED;
         this.stateEntryTimes.put(currentState, Instant.now());
     }
@@ -96,7 +104,7 @@ public class RegistrationStateMachine {
             Thread t = new Thread(r, "StateMachine-Timeout-" + proxyIdentifier.getFormattedId());
             t.setDaemon(true);
             return t;
-        }));
+        }), true);
     }
 
     /**
@@ -294,14 +302,14 @@ public class RegistrationStateMachine {
      */
     public void shutdown() {
         cancelTimeout();
-        if (timeoutExecutor instanceof ExecutorService) {
-            ((ExecutorService) timeoutExecutor).shutdown();
+        if (ownsExecutor && timeoutExecutor instanceof ExecutorService executor) {
+            executor.shutdown();
             try {
-                if (!((ExecutorService) timeoutExecutor).awaitTermination(5, TimeUnit.SECONDS)) {
-                    ((ExecutorService) timeoutExecutor).shutdownNow();
+                if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
                 }
             } catch (InterruptedException e) {
-                ((ExecutorService) timeoutExecutor).shutdownNow();
+                executor.shutdownNow();
                 Thread.currentThread().interrupt();
             }
         }
