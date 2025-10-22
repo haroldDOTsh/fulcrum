@@ -431,37 +431,7 @@ final class PartyCommand implements SimpleCommand {
             case PROMOTE -> partyService.promote(player.getUniqueId(), target.getUniqueId());
             case DEMOTE -> partyService.demote(player.getUniqueId(), target.getUniqueId());
         };
-        if (result.isSuccess()) {
-            PartySnapshot snapshot = result.party().orElse(null);
-            PartyMember updated = snapshot != null ? snapshot.getMember(target.getUniqueId()) : null;
-            Component response;
-            if (change == RoleChange.PROMOTE) {
-                PartyRole newRole = updated != null ? updated.getRole() : PartyRole.MODERATOR;
-                if (newRole == PartyRole.LEADER) {
-                    response = Component.text()
-                            .append(formatName(player.getUniqueId(), player.getUsername()))
-                            .append(yellow(" has promoted "))
-                            .append(formatName(target.getUniqueId(), target.getUsername()))
-                            .append(yellow(" to Party Leader."))
-                            .build();
-                } else {
-                    response = Component.text()
-                            .append(formatName(player.getUniqueId(), player.getUsername()))
-                            .append(yellow(" has promoted "))
-                            .append(formatName(target.getUniqueId(), target.getUsername()))
-                            .append(yellow(" to Party Moderator."))
-                            .build();
-                }
-            } else {
-                response = Component.text()
-                        .append(formatName(player.getUniqueId(), player.getUsername()))
-                        .append(yellow(" has demoted "))
-                        .append(formatName(target.getUniqueId(), target.getUsername()))
-                        .append(yellow(" to Party Member."))
-                        .build();
-            }
-            sendFramed(player, response);
-        } else {
+        if (!result.isSuccess()) {
             sendError(player, result);
         }
     }
@@ -474,19 +444,7 @@ final class PartyCommand implements SimpleCommand {
         }
         Player target = targetOpt.get();
         PartyOperationResult result = partyService.transferLeadership(player.getUniqueId(), target.getUniqueId());
-        if (result.isSuccess()) {
-            Component promoted = Component.text()
-                    .append(formatName(player.getUniqueId(), player.getUsername()))
-                    .append(yellow(" has promoted "))
-                    .append(formatName(target.getUniqueId(), target.getUsername()))
-                    .append(yellow(" to Party Leader."))
-                    .build();
-            Component demoted = Component.text()
-                    .append(formatName(player.getUniqueId(), player.getUsername()))
-                    .append(yellow(" is now a Party Moderator."))
-                    .build();
-            sendFramed(player, promoted, demoted);
-        } else {
+        if (!result.isSuccess()) {
             sendError(player, result);
         }
     }
@@ -792,21 +750,22 @@ final class PartyCommand implements SimpleCommand {
     }
 
     private void addRoleSection(List<Component> lines, String header, List<PartyMember> members) {
-        lines.add(Component.text(header, NamedTextColor.YELLOW));
         if (members == null || members.isEmpty()) {
-            lines.add(Component.text("  (none)", NamedTextColor.GRAY));
             return;
         }
-        members.forEach(member -> {
+        Component line = Component.text(header + " ", NamedTextColor.YELLOW);
+        Iterator<PartyMember> iterator = members.iterator();
+        while (iterator.hasNext()) {
+            PartyMember member = iterator.next();
             boolean online = member.isOnline();
             NamedTextColor dotColor = online ? NamedTextColor.GREEN : NamedTextColor.RED;
-            Component line = Component.text()
-                    .append(Component.text("  "))
-                    .append(Component.text("● ", dotColor))
-                    .append(formatName(member.getPlayerId(), member.getUsername()))
-                    .build();
-            lines.add(line);
-        });
+            line = line.append(formatName(member.getPlayerId(), member.getUsername()))
+                    .append(Component.text(" ●", dotColor));
+            if (iterator.hasNext()) {
+                line = line.append(Component.text(" "));
+            }
+        }
+        lines.add(line);
     }
 
     private String firstNonBlank(String... values) {

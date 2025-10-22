@@ -254,10 +254,12 @@ final class ChatChannelServiceImpl implements ChatChannelService {
                 .append(Component.text(": ", NamedTextColor.GRAY))
                 .append(rawMessage);
 
+        Component whiteBase = base.colorIfAbsent(NamedTextColor.WHITE);
+
         return switch (channel.type()) {
             case ALL -> base;
-            case STAFF -> Component.text("[STAFF] ", NamedTextColor.GOLD).append(base);
-            case PARTY -> Component.text("Party > ", NamedTextColor.DARK_BLUE).append(base);
+            case STAFF -> Component.text("Staff > ", NamedTextColor.AQUA).append(whiteBase);
+            case PARTY -> Component.text("Party > ", NamedTextColor.BLUE).append(whiteBase);
         };
     }
 

@@ -304,14 +304,6 @@ public final class VelocityPartyFeature implements VelocityFeature {
                             .append(PartyTextFormatter.yellow(" is now a Party Moderator."))
                             .build();
                     broadcastToParty(snapshot, demoted);
-
-                    Component transferred = Component.text()
-                            .append(PartyTextFormatter.yellow("The party was transferred to "))
-                            .append(formatRankedName(targetId, safeName(snapshot, targetId)))
-                            .append(PartyTextFormatter.yellow(" by "))
-                            .append(formatRankedName(actorId, resolveActorName(snapshot, actorId, reason)))
-                            .build();
-                    broadcastToParty(snapshot, transferred);
                 }
                 case ROLE_CHANGED -> {
                     PartyMember member = snapshot.getMember(targetId);
