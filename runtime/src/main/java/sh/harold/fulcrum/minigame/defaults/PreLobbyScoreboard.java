@@ -233,7 +233,7 @@ public final class PreLobbyScoreboard {
 
         String mapId = context.getAttributeOptional(MinigameAttributes.MATCH_ENVIRONMENT, MatchEnvironment.class)
                 .map(MatchEnvironment::mapId)
-                .filter(value -> value != null && !value.isBlank())
+                .filter(value -> !value.isBlank())
                 .orElseGet(() -> metadata.getOrDefault("mapId", null));
 
         if (mapId != null) {
@@ -265,13 +265,13 @@ public final class PreLobbyScoreboard {
                 .map(MinigameRegistration::getDescriptor)
                 .map(SlotFamilyDescriptor::getMetadata)
                 .map(meta -> meta.get("variant"))
-                .filter(value -> value != null && !value.isBlank())
+                .filter(value -> !value.isBlank())
                 .orElse("default");
     }
 
     private static Optional<String> findSlotId(StateContext context) {
         Optional<String> attr = context.getAttributeOptional(MinigameAttributes.SLOT_ID, String.class)
-                .filter(value -> value != null && !value.isBlank());
+                .filter(value -> !value.isBlank());
         if (attr.isPresent()) {
             return attr;
         }
@@ -300,8 +300,8 @@ public final class PreLobbyScoreboard {
     }
 
     private record InfoModule(DynamicContentProvider provider) implements ScoreboardModule {
-            private InfoModule(StateContext provider) {
-                this.provider = new DynamicContentProvider(playerId -> buildLines(provider), DEFAULT_REFRESH_INTERVAL);
+        private InfoModule(StateContext stateContext) {
+            this(new DynamicContentProvider(playerId -> buildLines(stateContext), DEFAULT_REFRESH_INTERVAL));
             }
 
             private static List<String> buildLines(StateContext context) {
@@ -361,9 +361,9 @@ public final class PreLobbyScoreboard {
     }
 
     private record ModeModule(DynamicContentProvider provider) implements ScoreboardModule {
-            private ModeModule(StateContext provider) {
-                this.provider = new DynamicContentProvider(playerId -> List.of(buildLine(provider)),
-                        DEFAULT_REFRESH_INTERVAL);
+        private ModeModule(StateContext stateContext) {
+            this(new DynamicContentProvider(playerId -> List.of(buildLine(stateContext)),
+                    DEFAULT_REFRESH_INTERVAL));
             }
 
             private static String buildLine(StateContext context) {
