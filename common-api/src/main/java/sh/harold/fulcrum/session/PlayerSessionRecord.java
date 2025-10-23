@@ -42,6 +42,10 @@ public class PlayerSessionRecord {
         return record;
     }
 
+    private static String newSegmentId() {
+        return UUID.randomUUID().toString();
+    }
+
     public UUID getPlayerId() {
         return playerId;
     }
@@ -170,8 +174,18 @@ public class PlayerSessionRecord {
         return segments;
     }
 
-    private static String newSegmentId() {
-        return UUID.randomUUID().toString();
+    @JsonProperty("segments")
+    public void setSegments(List<Segment> segments) {
+        this.segments.clear();
+        if (segments != null) {
+            this.segments.addAll(segments);
+            this.segments.forEach(segment -> {
+                if (segment.getSegmentId() == null || segment.getSegmentId().isBlank()) {
+                    segment.setSegmentId(newSegmentId());
+                }
+            });
+        }
+        rebuildActiveSegment();
     }
 
     @SuppressWarnings("unchecked")
@@ -202,20 +216,6 @@ public class PlayerSessionRecord {
     @JsonIgnore
     public void touch() {
         this.lastUpdatedAt = Instant.now().toEpochMilli();
-    }
-
-    @JsonProperty("segments")
-    public void setSegments(List<Segment> segments) {
-        this.segments.clear();
-        if (segments != null) {
-            this.segments.addAll(segments);
-            this.segments.forEach(segment -> {
-                if (segment.getSegmentId() == null || segment.getSegmentId().isBlank()) {
-                    segment.setSegmentId(newSegmentId());
-                }
-            });
-        }
-        rebuildActiveSegment();
     }
 
     @JsonIgnore
