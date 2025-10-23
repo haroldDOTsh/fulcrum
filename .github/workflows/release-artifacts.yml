@@ -1,0 +1,72 @@
+name: Release Artifacts
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Grant execute permission for Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Build all modules
+        run: ./gradlew --no-daemon clean build
+
+      - name: Collect jar artifacts
+        run: |
+          mkdir -p release-artifacts
+          read_runtime_version() {
+            ./gradlew -q :runtime:properties | awk -F': ' '$1 == "version" { print $2; exit }'
+          }
+          read_runtime_velocity_version() {
+            ./gradlew -q :runtime-velocity:properties | awk -F': ' '$1 == "version" { print $2; exit }'
+          }
+          read_registry_version() {
+            ./gradlew -q :registry-service:properties | awk -F': ' '$1 == "version" { print $2; exit }'
+          }
+
+          runtime_version=$(read_runtime_version)
+          runtime_velocity_version=$(read_runtime_velocity_version)
+          registry_version=$(read_registry_version)
+
+          for module in runtime runtime-velocity registry-service common-api; do
+            jar=$(ls "$module"/build/libs/*"${module##*/}"*.jar 2>/dev/null | grep -vE '(-sources|-javadoc)\.jar$' | head -n 1 || true)
+            if [ -n "$jar" ]; then
+              case "$module" in
+                runtime)
+                  cp "$jar" "release-artifacts/runtime-${runtime_version}.jar"
+                  ;;
+                runtime-velocity)
+                  cp "$jar" "release-artifacts/runtime-velocity-${runtime_velocity_version}.jar"
+                  ;;
+                registry-service)
+                  cp "$jar" "release-artifacts/registry-${registry_version}.jar"
+                  ;;
+                *)
+                  cp "$jar" "release-artifacts/$(basename "$jar")"
+                  ;;
+              esac
+            fi
+          done
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*.jar

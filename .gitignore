@@ -65,7 +65,11 @@ bin/
 
 # VS Code
 .vscode/
-.github/
+
+# GitHub configuration (ignore defaults, keep workflows tracked)
+.github/*
+!.github/workflows/
+!.github/workflows/**
 
 # Mac
 .DS_Store
