@@ -29,7 +29,6 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
     private static final String VERSION = "v1_21_R1";
     private static final int MAX_CHARACTERS_PER_LINE = 128; // 1.21 supports longer lines
     private static final int MAX_LINES = 15;
-    private static final String OBJECTIVE_NAME = "fulcrum_sb";
 
     // Track active scoreboards for each player
     private final ConcurrentHashMap<UUID, Objective> activeObjectives = new ConcurrentHashMap<>();
@@ -90,8 +89,9 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
 
             // Create new scoreboard and objective
             Scoreboard nmsScoreboard = new Scoreboard();
+            String objectiveName = computeObjectiveName(playerId, scoreboard);
             Objective objective = nmsScoreboard.addObjective(
-                    OBJECTIVE_NAME,
+                    objectiveName,
                     ObjectiveCriteria.DUMMY,
                     Component.literal(scoreboard.getEffectiveTitle()),
                     ObjectiveCriteria.RenderType.INTEGER,
@@ -132,7 +132,7 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
 
                 // Create score packet - fixed to use Optional.empty() instead of null
                 ClientboundSetScorePacket scorePacket =
-                        new ClientboundSetScorePacket(line, OBJECTIVE_NAME, score--, Optional.empty(), Optional.empty());
+                        new ClientboundSetScorePacket(line, objectiveName, score--, Optional.empty(), Optional.empty());
                 serverPlayer.connection.send(scorePacket);
             }
 
@@ -157,8 +157,9 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
         try {
             // Create new scoreboard
             org.bukkit.scoreboard.Scoreboard bukkitScoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+            String objectiveName = computeObjectiveName(playerId, scoreboard);
             org.bukkit.scoreboard.Objective objective = bukkitScoreboard.registerNewObjective(
-                    "fulcrum_sb",
+                    objectiveName,
                     "dummy",
                     scoreboard.getEffectiveTitle()
             );
@@ -234,12 +235,15 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
             }
         } else {
             // Fallback to Bukkit API
-            org.bukkit.scoreboard.Objective bukkitObjective = player.getScoreboard().getObjective("fulcrum_sb");
-            if (bukkitObjective != null) {
-                try {
-                    bukkitObjective.setDisplayName(title != null ? title : "");
-                } catch (Exception e) {
-                    Bukkit.getLogger().warning("Failed to update Bukkit title for player " + playerId + ": " + e.getMessage());
+            org.bukkit.scoreboard.Scoreboard bukkitScoreboard = player.getScoreboard();
+            if (bukkitScoreboard != null) {
+                org.bukkit.scoreboard.Objective sidebar = bukkitScoreboard.getObjective(org.bukkit.scoreboard.DisplaySlot.SIDEBAR);
+                if (sidebar != null) {
+                    try {
+                        sidebar.setDisplayName(title != null ? title : "");
+                    } catch (Exception e) {
+                        Bukkit.getLogger().warning("Failed to update Bukkit title for player " + playerId + ": " + e.getMessage());
+                    }
                 }
             }
         }
@@ -378,5 +382,20 @@ public class PacketRendererV1_21_R1 implements PacketRenderer {
     @Override
     public void setPacketBatchingEnabled(boolean enabled) {
         this.packetBatchingEnabled = enabled;
+    }
+
+    private String computeObjectiveName(UUID playerId, RenderedScoreboard scoreboard) {
+        String scoreboardId = scoreboard.getScoreboardId() != null ? scoreboard.getScoreboardId() : "default";
+        String hashPart = Integer.toHexString(scoreboardId.hashCode());
+        if (hashPart.length() > 6) {
+            hashPart = hashPart.substring(0, 6);
+        }
+        String randomPart = UUID.randomUUID().toString().replace("-", "");
+        randomPart = randomPart.substring(0, Math.min(8, randomPart.length()));
+        String name = "fsb" + hashPart + randomPart;
+        if (name.length() > 16) {
+            name = name.substring(0, 16);
+        }
+        return name;
     }
 }

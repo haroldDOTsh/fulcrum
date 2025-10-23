@@ -6,6 +6,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.message.impl.scoreboard.impl.DefaultPlayerScoreboardManager;
 import sh.harold.fulcrum.api.message.impl.scoreboard.impl.DefaultRenderingPipeline;
 import sh.harold.fulcrum.api.message.impl.scoreboard.impl.DefaultScoreboardRegistry;
@@ -51,7 +52,8 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         this.registry = new DefaultScoreboardRegistry();
         TitleManager titleManager = new DefaultTitleManager();
         this.playerManager = new DefaultPlayerScoreboardManager();
-        this.renderingPipeline = new DefaultRenderingPipeline(titleManager, playerManager);
+        ServerIdentifier serverIdentifier = container.getOptional(ServerIdentifier.class).orElse(null);
+        this.renderingPipeline = new DefaultRenderingPipeline(titleManager, playerManager, serverIdentifier);
 
         // Create main service
         this.scoreboardService = new SimpleScoreboardService(registry, playerManager, renderingPipeline, packetRenderer);

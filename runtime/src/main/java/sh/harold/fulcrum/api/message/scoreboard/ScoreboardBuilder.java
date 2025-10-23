@@ -26,6 +26,7 @@ public class ScoreboardBuilder {
     private final String scoreboardId;
     private final List<ScoreboardModule> modules = new ArrayList<>();
     private String title;
+    private String headerLabel;
 
     /**
      * Creates a new ScoreboardBuilder with the given scoreboard ID.
@@ -110,7 +111,18 @@ public class ScoreboardBuilder {
      * @return a new ScoreboardDefinition instance
      */
     public ScoreboardDefinition build() {
-        return new ScoreboardDefinition(scoreboardId, title, modules);
+        return new ScoreboardDefinition(scoreboardId, title, modules, headerLabel);
+    }
+
+    /**
+     * Sets the header label shown beneath the scoreboard title.
+     *
+     * @param label the header label text
+     * @return this builder instance
+     */
+    public ScoreboardBuilder headerLabel(String label) {
+        this.headerLabel = label;
+        return this;
     }
 
     /**

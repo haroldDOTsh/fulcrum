@@ -11,6 +11,7 @@ import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
+import sh.harold.fulcrum.minigame.defaults.PreLobbyScoreboard;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
 import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
 import sh.harold.fulcrum.minigame.state.machine.StateMachine;
@@ -97,9 +98,11 @@ public final class MinigameMatch {
         } else {
             context.applyFlagContext(playerId, ActionFlagContexts.MATCH_PREGAME_DEFAULT);
         }
+        PreLobbyScoreboard.showToPlayer(context, playerId);
         if (firstConnection) {
             announcePreLobbyJoin(player);
         }
+        PreLobbyScoreboard.refresh(context);
     }
 
     public void removePlayer(UUID playerId) {
@@ -110,6 +113,7 @@ public final class MinigameMatch {
         }
         context.clearFlags(playerId);
         context.unregisterPlayer(playerId);
+        PreLobbyScoreboard.hideFromPlayer(context, playerId);
         String playerName = Optional.ofNullable(Bukkit.getPlayer(playerId))
                 .map(Player::getName)
                 .orElseGet(() -> {
@@ -120,6 +124,7 @@ public final class MinigameMatch {
                     return name;
                 });
         announcePreLobbyQuit(playerName);
+        PreLobbyScoreboard.refresh(context);
     }
 
     public StateContext getContext() {

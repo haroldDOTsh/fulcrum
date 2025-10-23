@@ -61,8 +61,11 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
             return;
         }
 
+        PreLobbyScoreboard.apply(context, remainingSeconds);
+
         countdownTask = context.scheduleRepeatingTask(() -> {
             if (context.roster().activeCount() < options.getMinimumPlayers()) {
+                PreLobbyScoreboard.refresh(context);
                 return; // wait for players
             }
 
@@ -75,6 +78,7 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
 
             int seconds = remainingSeconds.getAndDecrement();
             if (seconds <= 0) {
+                PreLobbyScoreboard.refresh(context);
                 context.requestTransition(nextStateId);
                 cancelTask();
                 return;
@@ -83,12 +87,15 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
             if (shouldAnnounceCountdown(seconds)) {
                 context.broadcast(formatCountdownMessage(seconds));
             }
+
+            PreLobbyScoreboard.refresh(context);
         }, 0L, 20L);
     }
 
     @Override
     public void onExit(StateContext context) {
         cancelTask();
+        PreLobbyScoreboard.teardown(context);
         context.getAttributeOptional(LOBBY_ATTRIBUTE, PregameLobbyInstance.class).ifPresent(instance -> {
             instance.remove();
             context.removeAttribute(LOBBY_ATTRIBUTE);
@@ -267,5 +274,4 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         return Optional.empty();
     }
 }
-
 

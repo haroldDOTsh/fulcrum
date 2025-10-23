@@ -15,6 +15,7 @@ public class ScoreboardDefinition {
     private final String scoreboardId;
     private final String title;
     private final List<ScoreboardModule> modules;
+    private final String headerLabel;
     private final long createdTime;
 
     /**
@@ -25,7 +26,7 @@ public class ScoreboardDefinition {
      * @param modules      the list of modules in insertion order
      * @throws IllegalArgumentException if scoreboardId is null/empty or modules is null
      */
-    public ScoreboardDefinition(String scoreboardId, String title, List<ScoreboardModule> modules) {
+    public ScoreboardDefinition(String scoreboardId, String title, List<ScoreboardModule> modules, String headerLabel) {
         if (scoreboardId == null || scoreboardId.trim().isEmpty()) {
             throw new IllegalArgumentException("Scoreboard ID cannot be null or empty");
         }
@@ -36,6 +37,7 @@ public class ScoreboardDefinition {
         this.scoreboardId = scoreboardId;
         this.title = title;
         this.modules = new ArrayList<>(modules);
+        this.headerLabel = headerLabel;
         this.createdTime = System.currentTimeMillis();
     }
 
@@ -64,6 +66,15 @@ public class ScoreboardDefinition {
      */
     public List<ScoreboardModule> getModules() {
         return new ArrayList<>(modules);
+    }
+
+    /**
+     * Gets the custom header label to display beneath the scoreboard title.
+     *
+     * @return the header label, or null if not set
+     */
+    public String getHeaderLabel() {
+        return headerLabel;
     }
 
     /**
@@ -162,6 +173,7 @@ public class ScoreboardDefinition {
                 "scoreboardId='" + scoreboardId + '\'' +
                 ", title='" + title + '\'' +
                 ", moduleCount=" + modules.size() +
+                ", headerLabel='" + headerLabel + '\'' +
                 ", createdTime=" + createdTime +
                 '}';
     }

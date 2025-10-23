@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.message.impl.scoreboard.impl;
 
+import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule;
 import sh.harold.fulcrum.api.message.scoreboard.player.ModuleOverride;
 import sh.harold.fulcrum.api.message.scoreboard.player.PlayerScoreboardManager;
@@ -9,7 +10,10 @@ import sh.harold.fulcrum.api.message.scoreboard.render.RenderedScoreboard;
 import sh.harold.fulcrum.api.message.scoreboard.render.RenderingPipeline;
 import sh.harold.fulcrum.api.message.scoreboard.render.TitleManager;
 import sh.harold.fulcrum.api.message.scoreboard.util.ColorCodeProcessor;
+import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,17 +28,23 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
 
     private final TitleManager titleManager;
     private final PlayerScoreboardManager playerManager;
+    private static final DateTimeFormatter HEADER_DATE_FORMATTER = DateTimeFormatter.ofPattern("MM/dd/yy");
+    private final ServerIdentifier initialServerIdentifier;
     private final ColorCodeProcessor colorProcessor;
 
-    private int maxLines = 15;
+    private final int maxLines = 15;
     private String staticBottomLine = "&eplay.harold.sh"; // Default static bottom line
     private boolean blockSeparationEnabled = true;
     private String blockSeparationCharacter = "§r"; // Kept for backward compatibility
     private int separatorCounter = 0;
+    private volatile ServerIdentifier cachedServerIdentifier;
 
-    public DefaultRenderingPipeline(TitleManager titleManager, PlayerScoreboardManager playerManager) {
+    public DefaultRenderingPipeline(TitleManager titleManager,
+                                    PlayerScoreboardManager playerManager,
+                                    ServerIdentifier serverIdentifier) {
         this.titleManager = titleManager;
         this.playerManager = playerManager;
+        this.initialServerIdentifier = serverIdentifier;
         this.colorProcessor = new ColorCodeProcessor();
     }
 
@@ -138,7 +148,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
 
         List<String> processedContent = processModuleBlocks(playerId, moduleBlocks);
 
-        return processedContent;
+        return addDefaultHeader(processedContent, definition);
     }
 
     /**
@@ -352,5 +362,59 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
     @Override
     public void setBlockSeparationCharacter(String character) {
         this.blockSeparationCharacter = character;
+    }
+
+    /**
+     * Adds the hardcoded header metadata line directly beneath the scoreboard title.
+     */
+    private List<String> addDefaultHeader(List<String> content, ScoreboardDefinition definition) {
+        List<String> working = new ArrayList<>(content);
+
+        String headerLine = processColorCodes(buildHeaderLine(definition));
+        working.add(0, headerLine);
+
+        String spacerLine = generateUniqueSeparator();
+        working.add(1, spacerLine);
+
+        if (working.size() > maxLines) {
+            int removeIndex = Math.max(2, working.size() - 2);
+            if (removeIndex < working.size()) {
+                working.remove(removeIndex);
+            }
+        }
+
+        return working;
+    }
+
+    private String buildHeaderLine(ScoreboardDefinition definition) {
+        String datePart = HEADER_DATE_FORMATTER.format(LocalDate.now());
+        String label = resolveHeaderLabel(definition);
+        return "&7[" + datePart + "] &8" + label;
+    }
+
+    private String resolveHeaderLabel(ScoreboardDefinition definition) {
+        String custom = definition != null ? definition.getHeaderLabel() : null;
+        if (custom != null && !custom.trim().isEmpty()) {
+            return custom.trim();
+        }
+
+        ServerIdentifier identifier = cachedServerIdentifier != null ? cachedServerIdentifier : initialServerIdentifier;
+        if (identifier == null) {
+            ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
+            if (locator != null) {
+                identifier = locator.findService(ServerIdentifier.class).orElse(null);
+                if (identifier != null) {
+                    cachedServerIdentifier = identifier;
+                }
+            }
+        }
+
+        if (identifier != null) {
+            String id = identifier.getServerId();
+            if (id != null && !id.trim().isEmpty()) {
+                return id.trim();
+            }
+        }
+        return "unknown";
     }
 }
