@@ -6,7 +6,6 @@ plugins {
 }
 
 group = "sh.harold.fulcrum"
-version = "1.5.0"
 
 repositories {
     mavenCentral()
@@ -56,7 +55,7 @@ tasks.jar {
 
 // Shadow JAR configuration
 tasks.shadowJar {
-    archiveClassifier.set("")
+    archiveClassifier.set("all")
     
     // Include dependencies
     configurations = listOf(project.configurations.runtimeClasspath.get())
@@ -81,14 +80,6 @@ tasks.shadowJar {
 
 tasks.build {
     dependsOn(tasks.shadowJar)
-}
-
-publishing {
-    publications {
-        create<MavenPublication>("velocityPlugin") {
-            from(components["java"])
-        }
-    }
 }
 
 // Run-task plugin configuration for local development

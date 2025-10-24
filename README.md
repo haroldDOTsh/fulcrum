@@ -1,9 +1,9 @@
 # Fulcrum
 
-Fulcrum is a personal project that digs into system design for Minecraft networks. It's my answer to *"what happens when
-you stop depending on public plugins, chase inefficiencies out of the stack, and build a bespoke platform instead?"* (
-asked noone ever).
-It's heavily inspired by and tries to mimic Hypixel’s ecosystem as close to 1:1 (just without the Minecraft 1.7 tech
+Fulcrum is a personal project that digs into system design for Minecraft networks. It's my answer to *"what's a public
+plugin?"*
+Fulcrum is heavily inspired by and tries to mimic Hypixel’s ecosystem as close as possible to 1:1 (just without the
+Minecraft 1.7 tech
 debt)- I tried to stay consistent to the source material whenever possible (referencing public admin statements
 regarding their systems), making educated assumptions where there are uncertainties.
 
@@ -39,6 +39,45 @@ adjust connection strings as needed.
 > [!NOTE]
 > Once a backend boots, the registry automatically registers it, announcing it to every proxy. Heartbeat metrics keep it
 > alive. Scaling out horizontally is as simple as running another backend with the runtime jar.
+
+## Integrating Fulcrum In Your Project
+
+Whether you want typed access to the message bus, reuse the rank/session stack, or ship a module that Fulcrum can host,
+wire your own Gradle build like this:
+
+1. **Add JitPack.**
+   ```kotlin
+   // settings.gradle.kts
+   dependencyResolutionManagement {
+       repositories {
+           mavenCentral()
+           maven("https://jitpack.io")
+       }
+   }
+   ```
+
+2. **Pull the modules you need.**
+   ```kotlin
+   dependencies {
+       implementation("com.github.haroldDOTsh.fulcrum:common-api:3.0.3") // Contracts, ranks, session/message APIs
+       compileOnly("com.github.haroldDOTsh.fulcrum:runtime:3.0.3") // Paper runtime hooks (module development)
+       compileOnly("com.github.haroldDOTsh.fulcrum:runtime-velocity:3.0.3") // Proxy hooks (if you extend the proxy stack)
+   }
+   ```
+   Every published artifact keeps the `com.github.haroldDOTsh.fulcrum` group, so switching between tags or snapshots is
+   just a version
+   bump. JitPack will also expose `registry-service` if you need to use that somewhere.
+
+3. **Register your module.** Too lengthy for this README, check the **Getting Started** wiki page for lifecycle
+   integration, module
+   registration, and environment configuration details.
+
+Drop the `runtime` jar (and your own module jar) into Paper, the `runtime-velocity` jar into Velocity, and start
+the registry service for the full ecosystem (visit the releases page if you don't want to compile them yourself).
+Fulcrum exposes services like `RankService`, `SessionService`, and `MessageService` through
+`FulcrumPlatform#getService`,
+so lean on constructor injection or the provided lookups instead of re-resolving singletons yourself.
+For a complete walkthrough of module registration and lifecycle hooks, see the **Getting Started** wiki page.
 
 ### Development
 

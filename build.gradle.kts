@@ -1,6 +1,6 @@
 allprojects {
     group = "sh.harold.fulcrum"
-    version = "3.0.2"
+    version = "3.0.1"
 
     repositories {
         mavenCentral()
@@ -11,11 +11,7 @@ allprojects {
 
 subprojects {
     apply(plugin = "java-library")
-    
-    // Only apply maven-publish to API modules, not player-core
-    if (project.name != "runtime") {
-        apply(plugin = "maven-publish")
-    }
+    apply(plugin = "maven-publish")
 
     configure<JavaPluginExtension> {
         toolchain {
@@ -35,37 +31,34 @@ subprojects {
         useJUnitPlatform()
     }
 
-    // Only configure publishing for API modules, not player-core
-    if (project.name != "runtime") {
-        configure<PublishingExtension> {
-            publications {
-                create<MavenPublication>("maven") {
-                    from(components["java"])
-                    
-                    pom {
-                        name.set(project.name)
-                        description.set("${project.name} module of Fulcrum Core")
+    configure<PublishingExtension> {
+        publications {
+            create<MavenPublication>("maven") {
+                from(components["java"])
+
+                pom {
+                    name.set(project.name)
+                    description.set("${project.name} module of Fulcrum Core")
+                    url.set("https://github.com/haroldDOTsh/fulcrum")
+
+                    licenses {
+                        license {
+                            name.set("GNU General Public License v3.0")
+                            url.set("https://www.gnu.org/licenses/gpl-3.0.html")
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id.set("ZECHEESELORD")
+                            name.set("Hqrxld")
+                        }
+                    }
+
+                    scm {
+                        connection.set("scm:git:github.com/haroldDOTsh/fulcrum.git")
+                        developerConnection.set("scm:git:ssh://github.com/haroldDOTsh/fulcrum.git")
                         url.set("https://github.com/haroldDOTsh/fulcrum")
-                        
-                        licenses {
-                            license {
-                                name.set("MIT License")
-                                url.set("https://opensource.org/licenses/MIT")
-                            }
-                        }
-                        
-                        developers {
-                            developer {
-                                id.set("ZECHEESELORD")
-                                name.set("Hqrxld")
-                            }
-                        }
-                        
-                        scm {
-                            connection.set("scm:git:github.com/haroldDOTsh/fulcrum.git")
-                            developerConnection.set("scm:git:ssh://github.com/haroldDOTsh/fulcrum.git")
-                            url.set("https://github.com/haroldDOTsh/fulcrum")
-                        }
                     }
                 }
             }

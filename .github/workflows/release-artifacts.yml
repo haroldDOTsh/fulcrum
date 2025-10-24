@@ -47,7 +47,20 @@ jobs:
           registry_version=$(read_registry_version)
 
           for module in runtime runtime-velocity registry-service common-api; do
-            jar=$(ls "$module"/build/libs/*"${module##*/}"*.jar 2>/dev/null | grep -vE '(-sources|-javadoc)\.jar$' | head -n 1 || true)
+            case "$module" in
+              runtime)
+                jar=$(find "$module/build/libs" -maxdepth 1 -type f -name "runtime-${runtime_version}-all.jar" -print -quit 2>/dev/null)
+                ;;
+              runtime-velocity)
+                jar=$(find "$module/build/libs" -maxdepth 1 -type f -name "runtime-velocity-${runtime_velocity_version}-all.jar" -print -quit 2>/dev/null)
+                ;;
+              registry-service)
+                jar=$(find "$module/build/libs" -maxdepth 1 -type f -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" -print -quit 2>/dev/null)
+                ;;
+              *)
+                jar=$(find "$module/build/libs" -maxdepth 1 -type f -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" -print -quit 2>/dev/null)
+                ;;
+            esac
             if [ -n "$jar" ]; then
               case "$module" in
                 runtime)

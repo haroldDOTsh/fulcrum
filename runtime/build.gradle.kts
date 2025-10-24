@@ -72,14 +72,9 @@ tasks.named<Copy>("processResources") {
     }
 }
 
-// Disable plain jar — shadow will be the output
-tasks.named("jar") {
-    enabled = false
-}
-
-// Create the uberjar and set output
+// Create the shaded plugin jar
 tasks.named<ShadowJar>("shadowJar") {
-    archiveClassifier.set("")
+    archiveClassifier.set("all")
     configurations = listOf(project.configurations.runtimeClasspath.get())
 
     // Exclude duplicate or non-essential metadata to avoid remapper errors
