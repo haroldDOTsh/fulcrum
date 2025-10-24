@@ -9,8 +9,9 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterCreatedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterEndedMessage;
-import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagContexts;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
+import sh.harold.fulcrum.fundamentals.routing.EnvironmentRoutingService;
+import sh.harold.fulcrum.fundamentals.routing.EnvironmentRoutingService.RouteOptions;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.minigame.data.MinigameDataRegistry;
@@ -34,7 +35,7 @@ import java.util.stream.Collectors;
  * Runtime engine that manages active minigame matches.
  */
 public final class MinigameEngine {
-    private static final long MATCH_TEARDOWN_DELAY_TICKS = 100L;
+    private static final long MATCH_TEARDOWN_DELAY_TICKS = 600L;
     private final JavaPlugin plugin;
     private final PlayerRouteRegistry routeRegistry;
     private final MinigameEnvironmentService environmentService;
@@ -45,6 +46,7 @@ public final class MinigameEngine {
     private final MatchHistoryWriter matchHistoryWriter;
     private final MatchLogWriter matchLogWriter;
     private final MessageBus messageBus;
+    private final EnvironmentRoutingService environmentRoutingService;
     private final Set<String> provisioningSlots = ConcurrentHashMap.newKeySet();
     private final Map<String, MinigameRegistration> registrations = new ConcurrentHashMap<>();
     private final Map<UUID, MinigameMatch> activeMatches = new ConcurrentHashMap<>();
@@ -72,7 +74,8 @@ public final class MinigameEngine {
                           MinigameDataRegistry dataRegistry,
                           MatchHistoryWriter matchHistoryWriter,
                           MatchLogWriter matchLogWriter,
-                          MessageBus messageBus) {
+                          MessageBus messageBus,
+                          EnvironmentRoutingService environmentRoutingService) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.routeRegistry = routeRegistry;
         this.environmentService = environmentService;
@@ -83,6 +86,7 @@ public final class MinigameEngine {
         this.matchHistoryWriter = matchHistoryWriter;
         this.matchLogWriter = matchLogWriter;
         this.messageBus = messageBus;
+        this.environmentRoutingService = environmentRoutingService;
     }
 
     public void registerRegistration(MinigameRegistration registration) {
@@ -127,6 +131,10 @@ public final class MinigameEngine {
         MinigameMatch removedMatch = activeMatches.remove(matchId);
         matchStates.remove(matchId);
 
+        if (removedMatch != null) {
+            routePlayersToLobby(removedMatch);
+        }
+
         String slotId = matchSlotIds.remove(matchId);
         Map<String, String> metadataSnapshot = matchSlotMetadata.remove(matchId);
 
@@ -158,9 +166,6 @@ public final class MinigameEngine {
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_METADATA);
             removedMatch.getContext().removeAttribute(MinigameAttributes.MATCH_ENVIRONMENT);
             removedMatch.getContext().clearFlagsForRoster();
-            if (!removedMatch.getContext().getActivePlayers().isEmpty()) {
-                removedMatch.getContext().applyFlagContext(ActionFlagContexts.LOBBY_DEFAULT);
-            }
             if (sessionService != null) {
                 removedMatch.getRoster().all().forEach(entry ->
                         sessionService.clearTrackedMatch(entry.getPlayerId()));
@@ -386,6 +391,28 @@ public final class MinigameEngine {
             endMatch(matchId);
         }, MATCH_TEARDOWN_DELAY_TICKS);
         teardownTasks.put(matchId, task);
+    }
+
+    private void routePlayersToLobby(MinigameMatch match) {
+        if (match == null || environmentRoutingService == null) {
+            return;
+        }
+        List<Player> players = match.getContext().getActivePlayers().stream()
+                .map(plugin.getServer()::getPlayer)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (players.isEmpty()) {
+            return;
+        }
+        environmentRoutingService.routePlayers(
+                players,
+                "lobby",
+                RouteOptions.builder()
+                        .failureMode(RouteOptions.FailureMode.FAIL_WITH_KICK)
+                        .reason("minigame:auto-teardown")
+                        .metadata("source", "engine-teardown")
+                        .build()
+        );
     }
 
     public void refreshSlotMetadata(String slotId, Map<String, String> metadata) {

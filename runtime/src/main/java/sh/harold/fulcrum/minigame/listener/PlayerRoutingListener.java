@@ -13,6 +13,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 import org.bukkit.scheduler.BukkitScheduler;
+import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteAck;
@@ -47,6 +48,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
     private final ObjectMapper objectMapper;
     private final Map<UUID, PendingTeleport> pendingTeleports = new ConcurrentHashMap<>();
     private final Map<UUID, Long> processedRequests = new ConcurrentHashMap<>();
+    private final String localServerId;
 
     public PlayerRoutingListener(Plugin plugin,
                                  PlayerRouteRegistry routeRegistry,
@@ -54,7 +56,8 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                                  PlayerReservationService reservationService,
                                  PartyReservationConsumer partyReservationConsumer,
                                  MessageBus messageBus,
-                                 PlayerSessionService sessionService) {
+                                 PlayerSessionService sessionService,
+                                 ServerIdentifier serverIdentifier) {
         this.plugin = plugin;
         this.routeRegistry = routeRegistry;
         this.gameManager = gameManager;
@@ -64,6 +67,9 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         this.sessionService = sessionService;
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.localServerId = serverIdentifier != null && serverIdentifier.getServerId() != null
+                ? serverIdentifier.getServerId()
+                : plugin.getServer().getName();
 
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
@@ -129,6 +135,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         String reservationToken = commandMetadata.get("reservationToken");
         String partyReservationId = commandMetadata.get("partyReservationId");
         String partyTokenId = commandMetadata.get("partyTokenId");
+        Player player = Bukkit.getPlayer(playerId);
 
         if (partyReservationId != null && !partyReservationId.isBlank()
                 && partyTokenId != null && !partyTokenId.isBlank()) {
@@ -140,10 +147,16 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                 return;
             }
         } else if (reservationService != null) {
-            if (!reservationService.consumeReservation(reservationToken, playerId)) {
-                plugin.getLogger().warning("Rejected route for " + command.getPlayerName() + " due to missing or invalid reservation token");
-                sendReservationFailure(command, "invalid-reservation");
-                return;
+            boolean consumed = reservationService.consumeReservation(reservationToken, playerId);
+            if (!consumed) {
+                if (isLocalRoute(command, player)) {
+                    plugin.getLogger().fine(() -> "Bypassing reservation validation for local route to slot "
+                            + command.getSlotId() + " (token missing or expired).");
+                } else {
+                    plugin.getLogger().warning("Rejected route for " + command.getPlayerName() + " due to missing or invalid reservation token");
+                    sendReservationFailure(command, "invalid-reservation");
+                    return;
+                }
             }
         } else {
             plugin.getLogger().warning("PlayerReservationService unavailable; accepting route without reservation validation");
@@ -212,6 +225,20 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         if (command.getRequestId() != null) {
             processedRequests.remove(command.getRequestId());
         }
+    }
+
+    private boolean isLocalRoute(PlayerRouteCommand command, Player player) {
+        if (player == null) {
+            return false;
+        }
+        if (localServerId == null || localServerId.isBlank()) {
+            return false;
+        }
+        String targetServer = command.getServerId();
+        if (targetServer == null || targetServer.isBlank()) {
+            return false;
+        }
+        return targetServer.equalsIgnoreCase(localServerId);
     }
 
     private void sendSuccessAck(PlayerRouteCommand command) {

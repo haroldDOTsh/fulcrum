@@ -52,7 +52,7 @@ final class LobbyCommand implements SimpleCommand {
         }
 
         if (!hasLobbyAvailable()) {
-            player.sendMessage(Component.text("No lobby servers are currently available. Please try again shortly.", NamedTextColor.RED));
+            player.disconnect(Component.text("No lobby servers are currently available. Please reconnect in a moment.", NamedTextColor.RED));
             return;
         }
 
@@ -112,7 +112,7 @@ final class LobbyCommand implements SimpleCommand {
         message.setProxyId(messageBusFeature.getCurrentProxyId());
         message.setOriginServerId(originServerId);
         message.setTargetEnvironmentId(LOBBY_ENVIRONMENT);
-        message.setFailureMode(EnvironmentRouteRequestMessage.FailureMode.REPORT_ONLY);
+        message.setFailureMode(EnvironmentRouteRequestMessage.FailureMode.KICK_ON_FAIL);
         message.setMetadata(Map.of(
                 "reason", "command:lobby",
                 "issuedBy", player.getUniqueId().toString()
