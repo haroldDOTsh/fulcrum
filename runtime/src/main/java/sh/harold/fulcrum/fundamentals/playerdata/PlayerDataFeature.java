@@ -8,7 +8,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitTask;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.rank.Rank;
@@ -22,7 +21,6 @@ import sh.harold.fulcrum.session.PlayerSessionRecord;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 public class PlayerDataFeature implements PluginFeature, Listener {
@@ -32,14 +30,12 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     );
     private static final int BRAND_PROBE_MAX_ATTEMPTS = 10;
     private static final long BRAND_PROBE_INTERVAL_TICKS = 20L;
-    private static final long SESSION_TERMINATION_GRACE_PERIOD_TICKS = 20L * 5; // allow proxy transfers to complete
 
     private JavaPlugin plugin;
     private Logger logger;
     private DataAPI dataAPI;
     private DependencyContainer container;
     private final Map<UUID, PlayerSessionService.PlayerSessionHandle> activeHandles = new ConcurrentHashMap<>();
-    private final Map<UUID, PendingClosure> pendingSessionClosures = new ConcurrentHashMap<>();
     private PlayerSessionService sessionService;
     private sh.harold.fulcrum.fundamentals.session.PlayerSessionLogRepository sessionLogRepository;
     private PlayerSettingsService playerSettingsService;
@@ -102,7 +98,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
 
         PlayerSessionService.PlayerSessionHandle handle = sessionService.attachOrCreateSession(playerId, persisted.data());
         activeHandles.put(playerId, handle);
-        cancelPendingTermination(playerId);
 
         long now = System.currentTimeMillis();
         final String brandToApply = initialBrand;
@@ -158,78 +153,18 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         if (handle == null) {
             return;
         }
-        scheduleSessionTermination(playerId, handle);
-    }
-
-    private void scheduleSessionTermination(UUID playerId, PlayerSessionService.PlayerSessionHandle handle) {
-        if (handle == null) {
+        if (sessionService.getHandoff(playerId).isPresent()) {
+            logger.fine(() -> "Skipping session termination for handoff " + player.getName());
             return;
         }
-        String sessionId = handle.sessionId();
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            PendingClosure closure = new PendingClosure(sessionId);
-            PendingClosure previous = pendingSessionClosures.put(playerId, closure);
-            if (previous != null) {
-                previous.cancel();
-            }
-            BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                if (closure.isCancelled()) {
-                    return;
-                }
-                pendingSessionClosures.remove(playerId, closure);
-                concludeSessionAsync(playerId, closure.sessionId());
-            }, SESSION_TERMINATION_GRACE_PERIOD_TICKS);
-            closure.attach(task);
-        });
-    }
 
-    private void concludeSessionAsync(UUID playerId, String sessionId) {
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> handleSessionTermination(playerId, sessionId));
-    }
-
-    private void handleSessionTermination(UUID playerId, String sessionId) {
-        try {
-            Optional<PlayerSessionRecord> snapshot = sessionService.getSession(playerId);
-            if (snapshot.isEmpty()) {
-                sessionService.releaseSession(playerId);
-                return;
-            }
-
-            PlayerSessionRecord record = snapshot.get();
-            if (!sessionId.equals(record.getSessionId())) {
-                sessionService.releaseSession(playerId);
-                return;
-            }
-
-            String owner = record.getServerId();
-            String localServer = sessionService.getLocalServerId();
-            if (owner != null && localServer != null && !owner.equalsIgnoreCase(localServer)) {
-                sessionService.releaseSession(playerId);
-                return;
-            }
-
-            Optional<PlayerSessionRecord> ended = sessionService.endSession(playerId, sessionId);
-            if (ended.isPresent()) {
-                PlayerSessionRecord finalRecord = ended.get();
-                persistSession(finalRecord);
-                if (sessionLogRepository != null) {
-                    sessionLogRepository.recordSession(finalRecord, System.currentTimeMillis());
-                }
-            } else {
-                sessionService.releaseSession(playerId);
-            }
-        } catch (Exception exception) {
-            logger.warning("Failed to complete session termination for " + playerId + ": " + exception.getMessage());
-        }
-    }
-
-    private void cancelPendingTermination(UUID playerId) {
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            PendingClosure closure = pendingSessionClosures.remove(playerId);
-            if (closure != null) {
-                closure.cancel();
-            }
-        });
+        sessionService.endSession(playerId, handle.sessionId())
+                .ifPresent(record -> {
+                    persistSession(record);
+                    if (sessionLogRepository != null) {
+                        sessionLogRepository.recordSession(record, System.currentTimeMillis());
+                    }
+                });
     }
 
     public CompletableFuture<Document> getPlayerData(UUID uuid) {
@@ -254,8 +189,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             container.unregister(PlayerSettingsService.class);
         }
         playerSettingsService = null;
-        pendingSessionClosures.values().forEach(PendingClosure::cancel);
-        pendingSessionClosures.clear();
         logger.info("Shutting down PlayerDataFeature");
     }
 
@@ -409,38 +342,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             }
         });
         return copy;
-    }
-
-    private static final class PendingClosure {
-        private final String sessionId;
-        private final AtomicBoolean cancelled = new AtomicBoolean(false);
-        private BukkitTask task;
-
-        private PendingClosure(String sessionId) {
-            this.sessionId = sessionId;
-        }
-
-        private void attach(BukkitTask task) {
-            this.task = task;
-            if (cancelled.get()) {
-                task.cancel();
-            }
-        }
-
-        private void cancel() {
-            cancelled.set(true);
-            if (task != null) {
-                task.cancel();
-            }
-        }
-
-        private boolean isCancelled() {
-            return cancelled.get();
-        }
-
-        private String sessionId() {
-            return sessionId;
-        }
     }
 
     private record PersistedState(Map<String, Object> data, boolean exists) {

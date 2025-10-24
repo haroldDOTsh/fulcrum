@@ -468,22 +468,6 @@ public class PlayerSessionService {
         withActiveSession(playerId, record -> record.getMinigames().remove("lastMatchId"));
     }
 
-    public Optional<PlayerSessionRecord> getSession(UUID playerId) {
-        return fetchRecord(playerId);
-    }
-
-    public void releaseSession(UUID playerId) {
-        if (playerId == null) {
-            return;
-        }
-        activeSessions.remove(playerId);
-        localRecords.remove(playerId);
-    }
-
-    public String getLocalServerId() {
-        return currentServerId();
-    }
-
     private String stateKey(UUID playerId) {
         return SESSION_KEY_PREFIX + playerId + STATE_SUFFIX;
     }
