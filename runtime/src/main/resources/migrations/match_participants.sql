@@ -15,11 +15,6 @@ CREATE TABLE IF NOT EXISTS match_participants
     session_id
 )
   ON DELETE SET NULL,
-    state VARCHAR
-(
-    32
-),
-    respawn_allowed BOOLEAN,
     PRIMARY KEY
 (
     match_id,
@@ -27,4 +22,4 @@ CREATE TABLE IF NOT EXISTS match_participants
 )
     );
 
-CREATE INDEX IF NOT EXISTS idx_match_participants_player ON match_participants (player_uuid, match_id DESC);
+CREATE INDEX IF NOT EXISTS idx_match_participants_player ON match_participants (player_uuid, match_id);

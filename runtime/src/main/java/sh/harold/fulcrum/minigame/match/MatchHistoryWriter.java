@@ -8,25 +8,15 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Persists match participation rows to the {@code player_match_history} table.
+ * Persists match participation rows to the {@code match_participants} table.
  */
 public final class MatchHistoryWriter {
 
     private static final String INSERT_PARTICIPANT_SQL = """
-            INSERT INTO match_participants (match_id, player_uuid, session_id, state, respawn_allowed)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO match_participants (match_id, player_uuid, session_id)
+            VALUES (?, ?, ?)
             ON CONFLICT (match_id, player_uuid) DO UPDATE
-            SET session_id = EXCLUDED.session_id,
-                state = EXCLUDED.state,
-                respawn_allowed = EXCLUDED.respawn_allowed
-            """;
-
-    private static final String INSERT_HISTORY_SQL = """
-            INSERT INTO player_match_history (match_id, player_uuid, session_id, recorded_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (match_id, player_uuid) DO UPDATE
-            SET session_id = EXCLUDED.session_id,
-                recorded_at = EXCLUDED.recorded_at
+            SET session_id = EXCLUDED.session_id
             """;
 
     private final PostgresConnectionAdapter adapter;
@@ -38,7 +28,6 @@ public final class MatchHistoryWriter {
     }
 
     public void recordMatch(UUID matchId,
-                            long recordedAt,
                             Collection<Participant> participants) {
         Objects.requireNonNull(matchId, "matchId");
         Objects.requireNonNull(participants, "participants");
@@ -47,8 +36,7 @@ public final class MatchHistoryWriter {
         }
 
         try (Connection connection = adapter.getConnection();
-             PreparedStatement participantStatement = connection.prepareStatement(INSERT_PARTICIPANT_SQL);
-             PreparedStatement historyStatement = connection.prepareStatement(INSERT_HISTORY_SQL)) {
+             PreparedStatement participantStatement = connection.prepareStatement(INSERT_PARTICIPANT_SQL)) {
             Set<UUID> missingSessionIds = findMissingSessionIds(connection, participants);
             if (!missingSessionIds.isEmpty()) {
                 logger.fine(() -> "Skipping " + missingSessionIds.size() + " session references for match " + matchId);
@@ -65,22 +53,9 @@ public final class MatchHistoryWriter {
                 } else {
                     participantStatement.setNull(3, Types.OTHER);
                 }
-                participantStatement.setString(4, participant.state());
-                participantStatement.setObject(5, participant.respawnAllowed());
                 participantStatement.addBatch();
-
-                historyStatement.setObject(1, matchId);
-                historyStatement.setObject(2, participant.playerId());
-                if (includeSession) {
-                    historyStatement.setObject(3, sessionId);
-                } else {
-                    historyStatement.setNull(3, Types.OTHER);
-                }
-                historyStatement.setLong(4, recordedAt);
-                historyStatement.addBatch();
             }
             participantStatement.executeBatch();
-            historyStatement.executeBatch();
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed to record match history for " + matchId, exception);
         }
@@ -129,8 +104,6 @@ public final class MatchHistoryWriter {
     }
 
     public record Participant(UUID playerId,
-                              UUID sessionId,
-                              String state,
-                              Boolean respawnAllowed) {
+                              UUID sessionId) {
     }
 }

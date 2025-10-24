@@ -825,15 +825,12 @@ public final class MinigameEngine {
         match.getRoster().all().forEach(entry -> {
             UUID playerId = entry.getPlayerId();
             UUID sessionId = resolveSessionId(matchId, playerId);
-            String state = entry.getState() != null ? entry.getState().name() : null;
-            Boolean respawnAllowed = entry.isRespawnAllowed();
-            participants.add(new MatchHistoryWriter.Participant(playerId, sessionId, state, respawnAllowed));
+            participants.add(new MatchHistoryWriter.Participant(playerId, sessionId));
         });
         if (participants.isEmpty()) {
             return;
         }
-        long recordedAt = System.currentTimeMillis();
-        matchHistoryWriter.recordMatch(matchId, recordedAt, participants);
+        matchHistoryWriter.recordMatch(matchId, participants);
         recordedMatches.add(matchId);
     }
 

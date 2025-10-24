@@ -259,15 +259,6 @@ public class MinigameEngineFeature implements PluginFeature {
                             "migrations/match_participants.sql"
                     )
             );
-            SchemaRegistry.ensureSchema(
-                    adapter,
-                    SchemaDefinition.fromResource(
-                            "player-match-history-001",
-                            "Create player match history table",
-                            plugin.getClass().getClassLoader(),
-                            "migrations/player_match_history.sql"
-                    )
-            );
             return true;
         } catch (Exception ex) {
             plugin.getLogger().warning("Failed to ensure match logging schema: " + ex.getMessage());

@@ -126,26 +126,16 @@ public class PlayerSessionLogRepository {
 
         String updateParticipants = "UPDATE match_participants SET session_id = ? " +
                 "WHERE match_id = ? AND player_uuid = ? AND (session_id IS NULL OR session_id <> ?)";
-        String updateHistory = "UPDATE player_match_history SET session_id = ?, recorded_at = recorded_at " +
-                "WHERE match_id = ? AND player_uuid = ? AND (session_id IS NULL OR session_id <> ?)";
 
-        try (PreparedStatement participantsPs = connection.prepareStatement(updateParticipants);
-             PreparedStatement historyPs = connection.prepareStatement(updateHistory)) {
+        try (PreparedStatement participantsPs = connection.prepareStatement(updateParticipants)) {
             for (UUID matchId : matchIds) {
                 participantsPs.setObject(1, sessionUuid);
                 participantsPs.setObject(2, matchId);
                 participantsPs.setObject(3, record.getPlayerId());
                 participantsPs.setObject(4, sessionUuid);
                 participantsPs.addBatch();
-
-                historyPs.setObject(1, sessionUuid);
-                historyPs.setObject(2, matchId);
-                historyPs.setObject(3, record.getPlayerId());
-                historyPs.setObject(4, sessionUuid);
-                historyPs.addBatch();
             }
             participantsPs.executeBatch();
-            historyPs.executeBatch();
         } catch (SQLException ex) {
             logger.log(Level.FINE, "Failed to backfill session links for session " + record.getSessionId(), ex);
         }
