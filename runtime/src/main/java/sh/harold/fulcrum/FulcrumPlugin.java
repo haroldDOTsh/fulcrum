@@ -88,6 +88,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ActionFlagFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
         FeatureManager.register(new MinigameEngineFeature());
+        FeatureManager.register(new sh.harold.fulcrum.fundamentals.routing.EnvironmentRoutingFeature());
         if (debugMinigameEnabled) {
             FeatureManager.register(new DebugMinigameFeature());
             getLogger().info("Debug minigame feature enabled via configuration.");

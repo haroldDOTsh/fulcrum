@@ -82,6 +82,8 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterCreatedMessage.class);
             register(ChannelConstants.MATCH_ROSTER_ENDED,
                     sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterEndedMessage.class);
+            register(ChannelConstants.REGISTRY_ENVIRONMENT_ROUTE_REQUEST,
+                    sh.harold.fulcrum.api.messagebus.messages.EnvironmentRouteRequestMessage.class);
             register(ChannelConstants.REGISTRY_RANK_MUTATION_REQUEST,
                     sh.harold.fulcrum.api.messagebus.messages.rank.RankMutationRequestMessage.class);
             register(ChannelConstants.REGISTRY_RANK_MUTATION_RESPONSE,

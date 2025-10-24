@@ -113,6 +113,7 @@ public final class ChannelConstants {
      * Player matchmaking requests from proxies
      */
     public static final String REGISTRY_PLAYER_REQUEST = "fulcrum.registry.player.request";
+    public static final String REGISTRY_ENVIRONMENT_ROUTE_REQUEST = "fulcrum.registry.environment.route.request";
     /**
      * Registry broadcast used to locate the proxy currently hosting a player
      */

@@ -73,6 +73,7 @@ public class PlayerRoutingService {
     private final MessageHandler partyReservationClaimedHandler = this::handlePartyReservationClaimed;
     private final MessageHandler matchRosterHandler = this::handleMatchRosterCreated;
     private final MessageHandler matchRosterEndedHandler = this::handleMatchRosterEnded;
+    private final MessageHandler environmentRouteHandler = this::handleEnvironmentRouteRequest;
 
     public PlayerRoutingService(MessageBus messageBus,
                                 SlotProvisionService slotProvisionService,
@@ -99,6 +100,7 @@ public class PlayerRoutingService {
         messageBus.subscribe(ChannelConstants.MATCH_ROSTER_CREATED, matchRosterHandler);
         messageBus.subscribe(ChannelConstants.MATCH_ROSTER_ENDED, matchRosterEndedHandler);
         messageBus.subscribe(ChannelConstants.PARTY_RESERVATION_CLAIMED, partyReservationClaimedHandler);
+        messageBus.subscribe(ChannelConstants.REGISTRY_ENVIRONMENT_ROUTE_REQUEST, environmentRouteHandler);
 
         seedAvailableSlots();
         LOGGER.info("PlayerRoutingService subscribed to matchmaking channels");
@@ -114,6 +116,7 @@ public class PlayerRoutingService {
         messageBus.unsubscribe(ChannelConstants.MATCH_ROSTER_CREATED, matchRosterHandler);
         messageBus.unsubscribe(ChannelConstants.MATCH_ROSTER_ENDED, matchRosterEndedHandler);
         messageBus.unsubscribe(ChannelConstants.PARTY_RESERVATION_CLAIMED, partyReservationClaimedHandler);
+        messageBus.unsubscribe(ChannelConstants.REGISTRY_ENVIRONMENT_ROUTE_REQUEST, environmentRouteHandler);
         LOGGER.info("PlayerRoutingService shut down");
     }
 
@@ -355,6 +358,155 @@ public class PlayerRoutingService {
         } catch (Exception exception) {
             LOGGER.error("Failed to handle match roster end message", exception);
         }
+    }
+
+    private void handleEnvironmentRouteRequest(MessageEnvelope envelope) {
+        try {
+            EnvironmentRouteRequestMessage request = convert(envelope.payload(), EnvironmentRouteRequestMessage.class);
+            request.validate();
+
+            RegisteredProxyData proxy = proxyRegistry.getProxy(request.getProxyId());
+            if (proxy == null) {
+                LOGGER.warn("Dropping environment route for {} - proxy {} is unknown",
+                        request.getPlayerName(), request.getProxyId());
+                return;
+            }
+
+            RegisteredServerData target = resolveEnvironmentTarget(request);
+            if (target == null) {
+                handleEnvironmentRouteFailure(request, "environment-unavailable");
+                return;
+            }
+
+            dispatchEnvironmentRoute(request, target);
+        } catch (Exception exception) {
+            LOGGER.error("Failed to handle environment route request", exception);
+        }
+    }
+
+    private RegisteredServerData resolveEnvironmentTarget(EnvironmentRouteRequestMessage request) {
+        String explicit = request.getTargetServerId();
+        if (explicit != null && !explicit.isBlank()) {
+            RegisteredServerData server = serverRegistry.getServer(explicit);
+            if (server == null) {
+                LOGGER.warn("Environment route {} requested unknown server {}", request.getRequestId(), explicit);
+                return null;
+            }
+            if (!matchesEnvironment(server, request.getTargetEnvironmentId())) {
+                LOGGER.warn("Environment route {} rejected - server {} does not match environment {}",
+                        request.getRequestId(), explicit, request.getTargetEnvironmentId());
+                return null;
+            }
+            if (!isServerAccepting(server)) {
+                LOGGER.warn("Environment route {} rejected - server {} is not accepting players", request.getRequestId(), explicit);
+                return null;
+            }
+            return server;
+        }
+        return selectEnvironmentServer(request.getTargetEnvironmentId());
+    }
+
+    private void dispatchEnvironmentRoute(EnvironmentRouteRequestMessage request, RegisteredServerData target) {
+        PlayerRouteCommand command = new PlayerRouteCommand();
+        command.setAction(PlayerRouteCommand.Action.ROUTE);
+        command.setRequestId(request.getRequestId());
+        command.setPlayerId(request.getPlayerId());
+        command.setPlayerName(request.getPlayerName());
+        command.setProxyId(request.getProxyId());
+        command.setServerId(target.getServerId());
+        command.setSlotId(buildEnvironmentSlotId(target, request));
+        command.setSlotSuffix("env");
+        command.setTargetWorld(request.getWorldName() != null ? request.getWorldName() : "");
+        command.setSpawnX(request.getSpawnX());
+        command.setSpawnY(request.getSpawnY());
+        command.setSpawnZ(request.getSpawnZ());
+        command.setSpawnYaw(request.getSpawnYaw());
+        command.setSpawnPitch(request.getSpawnPitch());
+
+        Map<String, String> metadata = new HashMap<>();
+        if (request.getMetadata() != null) {
+            metadata.putAll(request.getMetadata());
+        }
+        metadata.put("environment", request.getTargetEnvironmentId());
+        metadata.put("targetServer", target.getServerId());
+        metadata.put("routeType", "environment");
+        metadata.putIfAbsent("originServer", request.getOriginServerId());
+        command.setMetadata(metadata);
+
+        messageBus.broadcast(ChannelConstants.getPlayerRouteChannel(request.getProxyId()), command);
+        messageBus.broadcast(ChannelConstants.getServerPlayerRouteChannel(target.getServerId()), command);
+        LOGGER.info("Routing player {} to environment {} on server {}", request.getPlayerName(),
+                request.getTargetEnvironmentId(), target.getServerId());
+    }
+
+    private void handleEnvironmentRouteFailure(EnvironmentRouteRequestMessage request, String reason) {
+        LOGGER.warn("Environment route failed for {} (player={}): {}", request.getTargetEnvironmentId(),
+                request.getPlayerName(), reason);
+        if (request.getFailureMode() == EnvironmentRouteRequestMessage.FailureMode.KICK_ON_FAIL) {
+            PlayerRouteCommand command = new PlayerRouteCommand();
+            command.setAction(PlayerRouteCommand.Action.DISCONNECT);
+            command.setRequestId(request.getRequestId());
+            command.setPlayerId(request.getPlayerId());
+            command.setPlayerName(request.getPlayerName());
+            command.setProxyId(request.getProxyId());
+            Map<String, String> metadata = new HashMap<>();
+            metadata.put("reason", reason);
+            metadata.put("environment", request.getTargetEnvironmentId());
+            command.setMetadata(metadata);
+            messageBus.broadcast(ChannelConstants.getPlayerRouteChannel(request.getProxyId()), command);
+        }
+    }
+
+    private boolean matchesEnvironment(RegisteredServerData server, String environmentId) {
+        if (environmentId == null || environmentId.isBlank()) {
+            return false;
+        }
+        return server.getRole() != null && server.getRole().equalsIgnoreCase(environmentId);
+    }
+
+    private boolean isServerAccepting(RegisteredServerData server) {
+        RegisteredServerData.Status status = server.getStatus();
+        boolean statusOk = status == RegisteredServerData.Status.RUNNING
+                || status == RegisteredServerData.Status.AVAILABLE;
+        if (!statusOk) {
+            return false;
+        }
+        int max = server.getMaxCapacity();
+        if (max <= 0) {
+            return true;
+        }
+        return server.getPlayerCount() < max;
+    }
+
+    private RegisteredServerData selectEnvironmentServer(String environmentId) {
+        if (environmentId == null || environmentId.isBlank()) {
+            return null;
+        }
+        RegisteredServerData best = null;
+        double bestScore = Double.MAX_VALUE;
+        for (RegisteredServerData server : serverRegistry.getAllServers()) {
+            if (!matchesEnvironment(server, environmentId)) {
+                continue;
+            }
+            if (!isServerAccepting(server)) {
+                continue;
+            }
+            double score = computeEnvironmentScore(server);
+            if (score < bestScore) {
+                best = server;
+                bestScore = score;
+            }
+        }
+        return best;
+    }
+
+    private double computeEnvironmentScore(RegisteredServerData server) {
+        int max = Math.max(1, server.getMaxCapacity());
+        return (double) server.getPlayerCount() / max;
+    }
+
+    private String buildEnvironmentSlotId(RegisteredServerData target, EnvironmentRouteRequestMessage request) {
+        return "env:" + request.getTargetEnvironmentId() + ":" + target.getServerId();
     }
 
     private void handleRouteAck(MessageEnvelope envelope) {

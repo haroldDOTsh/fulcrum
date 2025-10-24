@@ -922,6 +922,27 @@ public class ServerLifecycleFeature implements PluginFeature {
         return null;
     }
 
+    public boolean hasServerForRole(String role) {
+        if (role == null || role.isBlank()) {
+            return false;
+        }
+        String normalized = role.trim().toLowerCase(Locale.ROOT);
+        return availableServers.values().stream()
+                .anyMatch(info -> info.role != null
+                        && info.role.trim().equalsIgnoreCase(normalized)
+                        && "AVAILABLE".equalsIgnoreCase(info.status));
+    }
+
+    public boolean isServerKnown(String serverId) {
+        if (serverId == null || serverId.isBlank()) {
+            return false;
+        }
+        if (serverIdentifier != null && serverIdentifier.getServerId().equalsIgnoreCase(serverId)) {
+            return true;
+        }
+        return availableServers.containsKey(serverId);
+    }
+
     private String findAnyAvailableServer() {
         // Find any available server from cached server announcements
         for (Map.Entry<String, ServerInfo> entry : availableServers.entrySet()) {

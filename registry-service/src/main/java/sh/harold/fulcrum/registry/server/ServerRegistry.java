@@ -8,8 +8,10 @@ import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Registry for managing backend server registrations.
@@ -196,6 +198,16 @@ public class ServerRegistry {
      */
     public Collection<RegisteredServerData> getAllServers() {
         return servers.values();
+    }
+
+    public Collection<RegisteredServerData> getServersByRole(String role) {
+        if (role == null || role.isBlank()) {
+            return List.of();
+        }
+        String normalized = role.trim().toLowerCase();
+        return servers.values().stream()
+                .filter(server -> server.getRole() != null && server.getRole().trim().toLowerCase().equals(normalized))
+                .collect(Collectors.toUnmodifiableList());
     }
 
     /**
