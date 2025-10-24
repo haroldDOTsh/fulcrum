@@ -8,6 +8,8 @@ import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
+import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
+import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
@@ -30,6 +32,8 @@ public class VelocityCommandFeature implements VelocityFeature {
     private VelocityPlayerSessionService sessionService;
     private sh.harold.fulcrum.velocity.party.PartyService partyService;
     private sh.harold.fulcrum.velocity.party.PartyReservationService partyReservationService;
+    private VelocityServerLifecycleFeature lifecycleFeature;
+    private VelocityMessageBusFeature messageBusFeature;
 
     @Override
     public String getName() {
@@ -55,12 +59,15 @@ public class VelocityCommandFeature implements VelocityFeature {
         this.dataAPI = serviceLocator.getRequiredService(DataAPI.class);
         this.familyCache = serviceLocator.getRequiredService(SlotFamilyCache.class);
         this.sessionService = serviceLocator.getRequiredService(VelocityPlayerSessionService.class);
+        this.lifecycleFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature.class);
+        this.messageBusFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature.class);
         this.partyService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyService.class).orElse(null);
         this.partyReservationService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyReservationService.class).orElse(null);
 
         // Register proxy commands when they are introduced
         registerPlayCommand();
         registerLocatePlayerCommand();
+        registerLobbyCommand();
 
         logger.info("VelocityCommandFeature initialized");
     }
@@ -87,5 +94,23 @@ public class VelocityCommandFeature implements VelocityFeature {
 
         commandManager.register(meta, new ProxyPlayCommand(proxy, playerRoutingFeature, familyCache, plugin, logger,
                 partyService, partyReservationService));
+    }
+
+    private void registerLobbyCommand() {
+        CommandMeta meta = commandManager.metaBuilder("lobby")
+                .aliases("l")
+                .plugin(plugin)
+                .build();
+
+        LobbyCommand command = new LobbyCommand(
+                proxy,
+                messageBus,
+                messageBusFeature,
+                playerRoutingFeature,
+                lifecycleFeature,
+                logger
+        );
+
+        commandManager.register(meta, command);
     }
 }

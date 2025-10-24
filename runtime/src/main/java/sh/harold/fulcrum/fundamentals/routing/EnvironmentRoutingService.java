@@ -42,8 +42,8 @@ public final class EnvironmentRoutingService {
 
     public EnvironmentRouteResult routePlayer(Player player, String environmentId, RouteOptions options) {
         Objects.requireNonNull(player, "player");
-        environmentId = normalize(environmentId);
-        if (environmentId.isBlank()) {
+        final String normalizedEnvironment = normalize(environmentId);
+        if (normalizedEnvironment.isBlank()) {
             return EnvironmentRouteResult.failure("Environment id missing");
         }
 
@@ -54,22 +54,22 @@ public final class EnvironmentRoutingService {
             return EnvironmentRouteResult.failure("No proxy id associated with player");
         }
 
-        if (!isEnvironmentAvailable(environmentId, effective.targetServerId())) {
+        if (!isEnvironmentAvailable(normalizedEnvironment, effective.targetServerId())) {
             switch (effective.failureMode()) {
                 case FAIL_WITH_KICK -> {
                     // TODO: Replace with limbo transfer when implemented.
-                    plugin.getLogger().warning(() -> "Environment '" + environmentId + "' unavailable; kicking "
+                    plugin.getLogger().warning(() -> "Environment '" + normalizedEnvironment + "' unavailable; kicking "
                             + player.getName() + " until limbo support is implemented.");
-                    player.kickPlayer("No available servers for " + environmentId + ". Please try again.");
+                    player.kickPlayer("No available servers for " + normalizedEnvironment + ". Please try again.");
                 }
                 case REPORT_ONLY -> {
                     // Command handlers will surface the message themselves.
                 }
             }
-            return EnvironmentRouteResult.failure("No available servers for environment '" + environmentId + "'");
+            return EnvironmentRouteResult.failure("No available servers for environment '" + normalizedEnvironment + "'");
         }
 
-        EnvironmentRouteRequestMessage message = buildMessage(player, proxyId, environmentId, targetLocation, effective);
+        EnvironmentRouteRequestMessage message = buildMessage(player, proxyId, normalizedEnvironment, targetLocation, effective);
         messageBus.broadcast(ChannelConstants.REGISTRY_ENVIRONMENT_ROUTE_REQUEST, message);
         return EnvironmentRouteResult.success(message.getRequestId());
     }
