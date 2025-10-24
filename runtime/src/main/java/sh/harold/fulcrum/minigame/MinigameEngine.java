@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
  */
 public final class MinigameEngine {
     private static final long MATCH_TEARDOWN_DELAY_TICKS = 600L;
+    private static final long MATCH_IDLE_TEARDOWN_DELAY_TICKS = 1_200L;
     private final JavaPlugin plugin;
     private final PlayerRouteRegistry routeRegistry;
     private final MinigameEnvironmentService environmentService;
@@ -63,6 +64,7 @@ public final class MinigameEngine {
     private final Map<UUID, List<MatchLogWriter.Event>> matchEvents = new ConcurrentHashMap<>();
     private final Set<UUID> recordedMatches = ConcurrentHashMap.newKeySet();
     private final Set<UUID> publishedRosters = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, BukkitTask> idleTeardownTasks = new ConcurrentHashMap<>();
     private BukkitTask tickTask;
 
     public MinigameEngine(JavaPlugin plugin,
@@ -126,6 +128,11 @@ public final class MinigameEngine {
         BukkitTask pending = teardownTasks.remove(matchId);
         if (pending != null) {
             pending.cancel();
+        }
+
+        BukkitTask idle = idleTeardownTasks.remove(matchId);
+        if (idle != null) {
+            idle.cancel();
         }
 
         MinigameMatch removedMatch = activeMatches.remove(matchId);
@@ -199,6 +206,7 @@ public final class MinigameEngine {
             if (sessionService != null) {
                 sessionService.setActiveMatchId(playerId, matchId);
             }
+            cancelIdleTeardown(matchId);
         }
     }
 
@@ -207,6 +215,9 @@ public final class MinigameEngine {
         if (match != null) {
             match.removePlayer(playerId);
             playerMatchIndex.remove(playerId);
+            if (match.getRoster().activeCount() <= 0) {
+                scheduleIdleTeardown(matchId);
+            }
         }
     }
 
@@ -391,6 +402,29 @@ public final class MinigameEngine {
             endMatch(matchId);
         }, MATCH_TEARDOWN_DELAY_TICKS);
         teardownTasks.put(matchId, task);
+    }
+
+    private void scheduleIdleTeardown(UUID matchId) {
+        if (idleTeardownTasks.containsKey(matchId)) {
+            return;
+        }
+        BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            idleTeardownTasks.remove(matchId);
+            String slotId = matchSlotIds.get(matchId);
+            if (slotId == null || slotId.isBlank()) {
+                endMatch(matchId);
+            } else {
+                scheduleMatchTeardown(matchId, slotId);
+            }
+        }, MATCH_IDLE_TEARDOWN_DELAY_TICKS);
+        idleTeardownTasks.put(matchId, task);
+    }
+
+    private void cancelIdleTeardown(UUID matchId) {
+        BukkitTask task = idleTeardownTasks.remove(matchId);
+        if (task != null) {
+            task.cancel();
+        }
     }
 
     private void routePlayersToLobby(MinigameMatch match) {

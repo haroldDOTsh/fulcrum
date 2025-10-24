@@ -641,7 +641,7 @@ public class PlayerRoutingService {
 
         for (RegisteredServerData server : serverRegistry.getAllServers()) {
             for (LogicalSlotRecord slot : server.getSlots()) {
-                if (SlotLifecycleStatus.AVAILABLE != slot.getStatus()) {
+                if (!isSlotEligible(slot)) {
                     continue;
                 }
                 String slotFamily = slot.getMetadata().get("family");
@@ -665,7 +665,7 @@ public class PlayerRoutingService {
 
         for (RegisteredServerData server : serverRegistry.getAllServers()) {
             for (LogicalSlotRecord slot : server.getSlots()) {
-                if (SlotLifecycleStatus.AVAILABLE != slot.getStatus()) {
+                if (!isSlotEligible(slot)) {
                     continue;
                 }
                 String slotFamily = slot.getMetadata().get("family");
@@ -1122,6 +1122,14 @@ public class PlayerRoutingService {
         }
         int pending = pendingOccupancy.getOrDefault(slot.getSlotId(), 0);
         return max - slot.getOnlinePlayers() - pending;
+    }
+
+    private boolean isSlotEligible(LogicalSlotRecord slot) {
+        if (slot == null) {
+            return false;
+        }
+        SlotLifecycleStatus status = slot.getStatus();
+        return status == SlotLifecycleStatus.AVAILABLE || status == SlotLifecycleStatus.ALLOCATED;
     }
 
     private boolean variantMatches(LogicalSlotRecord slot, String variantId) {
