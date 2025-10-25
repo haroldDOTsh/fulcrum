@@ -188,25 +188,39 @@ public final class NetworkConfigManager implements AutoCloseable {
             }
 
             NetworkProfileView view = mapper.readValue(input, NetworkProfileView.class);
-            Instant updatedAt = view.updatedAt() != null ? view.updatedAt() : Instant.now();
+            Instant updatedAt = view.updatedAt();
+
+            Map<String, Object> scoreboard = view.getMap("scoreboard");
+            String scoreboardTitle = Objects.toString(scoreboard.getOrDefault("title", ""));
+            String scoreboardFooter = Objects.toString(scoreboard.getOrDefault("footer", ""));
 
             Map<String, NetworkProfileDocument.RankVisualDocument> ranks = new LinkedHashMap<>();
-            view.ranks().forEach((rankId, visual) -> ranks.put(rankId,
-                    new NetworkProfileDocument.RankVisualDocument(
-                            visual.displayName(),
-                            visual.colorCode(),
-                            visual.fullPrefix(),
-                            visual.shortPrefix(),
-                            visual.nameColor()
-                    )));
+            view.getMap("ranks").forEach((rankId, raw) -> {
+                if (raw instanceof Map<?, ?> visualMap) {
+                    Map<String, Object> visual = new LinkedHashMap<>();
+                    visualMap.forEach((k, v) -> {
+                        if (k != null) {
+                            visual.put(k.toString(), v);
+                        }
+                    });
+                    ranks.put(rankId,
+                            new NetworkProfileDocument.RankVisualDocument(
+                                    Objects.toString(visual.getOrDefault("displayName", "")),
+                                    Objects.toString(visual.getOrDefault("colorCode", "")),
+                                    Objects.toString(visual.getOrDefault("fullPrefix", "")),
+                                    Objects.toString(visual.getOrDefault("shortPrefix", "")),
+                                    Objects.toString(visual.getOrDefault("nameColor", ""))
+                            ));
+                }
+            });
 
             NetworkProfileDocument document = new NetworkProfileDocument(
                     view.profileId(),
-                    view.tag(),
-                    view.serverIp(),
-                    view.motd(),
-                    view.scoreboard().title(),
-                    view.scoreboard().footer(),
+                    view.getString("tag").orElse(view.profileId()),
+                    view.getString("serverIp").orElse(""),
+                    view.getStringList("motd"),
+                    scoreboardTitle,
+                    scoreboardFooter,
                     ranks,
                     updatedAt,
                     view.data()

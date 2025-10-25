@@ -18,7 +18,7 @@ import java.nio.file.Path;
 @Plugin(
         id = "fulcrum",
         name = "Fulcrum Velocity",
-        version = "1.5.0",
+        version = "3.0.0",
         description = "Fulcrum framework for Velocity proxy",
         authors = {"Harold"}
 )

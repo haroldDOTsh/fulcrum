@@ -4,11 +4,9 @@ import sh.harold.fulcrum.api.network.NetworkProfileView;
 import sh.harold.fulcrum.api.network.RankVisualView;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 record NetworkProfileDocument(
         String profileId,
@@ -40,26 +38,9 @@ record NetworkProfileDocument(
     }
 
     NetworkProfileView toView() {
-        Map<String, RankVisualView> visuals = ranks.entrySet().stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        entry -> entry.getValue().toView(),
-                        (a, b) -> a,
-                        LinkedHashMap::new));
-
-        NetworkProfileView.ScoreboardCopy scoreboard =
-                new NetworkProfileView.ScoreboardCopy(scoreboardTitle, scoreboardFooter);
-
-        return new NetworkProfileView(
-                profileId,
-                tag,
-                serverIp,
-                motd,
-                scoreboard,
-                visuals,
-                updatedAt,
-                rawData
-        );
+        NetworkProfileView view = new NetworkProfileView(profileId);
+        rawData.forEach(view::putAttribute);
+        return view;
     }
 
     record RankVisualDocument(

@@ -64,7 +64,7 @@ public final class NetworkConfigCache implements Closeable {
 
             Map<String, Object> activePayload = new LinkedHashMap<>();
             activePayload.put("profileId", profile.profileId());
-            activePayload.put("tag", profile.tag());
+            activePayload.put("tag", profile.getString("tag").orElse(profile.profileId()));
             activePayload.put("updatedAt", profile.updatedAt());
             String activeJson = mapper.writeValueAsString(activePayload);
             commands.set(ACTIVE_KEY, activeJson);

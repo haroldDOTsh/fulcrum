@@ -27,7 +27,6 @@ import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 
-import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.*;
 
@@ -301,7 +300,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         }
 
         @Override
-        public void flashModule(UUID playerId, int moduleIndex, sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule module, Duration duration) {
+        public void flashModule(UUID playerId, int moduleIndex, sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule module, java.time.Duration duration) {
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }

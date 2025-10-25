@@ -71,7 +71,8 @@ public final class NetworkConfigCommand implements CommandHandler {
 
         try {
             var view = manager.applyProfile(profileId);
-            System.out.println("Applied profile '" + view.profileId() + "' (" + view.tag() + ")");
+            String tag = view.getString("tag").orElse(view.profileId());
+            System.out.println("Applied profile '" + view.profileId() + "' (" + tag + ")");
             return true;
         } catch (IllegalArgumentException ex) {
             System.out.println("Failed to apply profile: " + ex.getMessage());
@@ -95,11 +96,14 @@ public final class NetworkConfigCommand implements CommandHandler {
     private boolean handleActive() {
         return manager.getActiveProfileView()
                 .map(profile -> {
+                    String tag = profile.getString("tag").orElse(profile.profileId());
+                    String serverIp = profile.getString("serverIp").orElse("unknown");
+                    List<String> motd = profile.getStringList("motd");
                     System.out.println("Active profile: " + profile.profileId());
-                    System.out.println(" Tag      : " + profile.tag());
+                    System.out.println(" Tag      : " + tag);
                     System.out.println(" Updated  : " + FORMATTER.format(profile.updatedAt()));
-                    System.out.println(" Server IP: " + profile.serverIp());
-                    System.out.println(" MOTD     : " + profile.motd());
+                    System.out.println(" Server IP: " + serverIp);
+                    System.out.println(" MOTD     : " + motd);
                     return true;
                 })
                 .orElseGet(() -> {
