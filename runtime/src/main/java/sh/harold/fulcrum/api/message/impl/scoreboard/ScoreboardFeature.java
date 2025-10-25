@@ -6,6 +6,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.message.impl.scoreboard.impl.DefaultPlayerScoreboardManager;
 import sh.harold.fulcrum.api.message.impl.scoreboard.impl.DefaultRenderingPipeline;
@@ -21,8 +22,10 @@ import sh.harold.fulcrum.api.message.scoreboard.render.RenderedScoreboard;
 import sh.harold.fulcrum.api.message.scoreboard.render.RenderingPipeline;
 import sh.harold.fulcrum.api.message.scoreboard.render.TitleManager;
 import sh.harold.fulcrum.api.message.scoreboard.util.ScoreboardFlashTask;
+import sh.harold.fulcrum.api.network.NetworkConfigService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 
 import java.time.Duration;
 import java.util.UUID;
@@ -30,14 +33,23 @@ import java.util.concurrent.*;
 
 public class ScoreboardFeature implements PluginFeature, Listener {
 
+    private JavaPlugin plugin;
+    private DependencyContainer container;
     private ScoreboardService scoreboardService;
     private DefaultPlayerScoreboardManager playerManager;
     private DefaultRenderingPipeline renderingPipeline;
     private PacketRenderer packetRenderer;
     private ScoreboardRegistry registry;
+    private TitleManager titleManager;
+    private BukkitTask networkConfigTask;
+    private String appliedScoreboardTitle;
+    private String appliedScoreboardFooter;
+    private NetworkConfigService cachedNetworkConfigService;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
+        this.plugin = plugin;
+        this.container = container;
         // Create NMS adapter based on server version
         NMSAdapter nmsAdapter = createNMSAdapter(plugin);
         if (nmsAdapter == null) {
@@ -51,6 +63,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         // Create core implementations
         this.registry = new DefaultScoreboardRegistry();
         TitleManager titleManager = new DefaultTitleManager();
+        this.titleManager = titleManager;
         this.playerManager = new DefaultPlayerScoreboardManager();
         ServerIdentifier serverIdentifier = container.getOptional(ServerIdentifier.class).orElse(null);
         this.renderingPipeline = new DefaultRenderingPipeline(titleManager, playerManager, serverIdentifier);
@@ -69,11 +82,15 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         // Register event listener for player joins
         Bukkit.getPluginManager().registerEvents(this, plugin);
 
+        startNetworkConfigSync();
         plugin.getLogger().info("[SCOREBOARD] Initialized with NMS version: " + nmsAdapter.getVersionInfo());
     }
 
     @Override
     public void shutdown() {
+        if (networkConfigTask != null) {
+            networkConfigTask.cancel();
+        }
         if (playerManager != null) {
             playerManager.clearAllPlayerData();
         }
@@ -90,6 +107,50 @@ public class ScoreboardFeature implements PluginFeature, Listener {
     @Override
     public int getPriority() {
         return 5; // Load after core features but before game features
+    }
+
+    private void startNetworkConfigSync() {
+        applyNetworkConfigDefaults();
+        networkConfigTask = plugin.getServer().getScheduler()
+                .runTaskTimer(plugin, this::applyNetworkConfigDefaults, 40L, 200L);
+    }
+
+    private void applyNetworkConfigDefaults() {
+        NetworkConfigService service = resolveNetworkConfigService();
+        if (service == null) {
+            return;
+        }
+
+        service.getString("scoreboard.title").ifPresent(title -> {
+            if (!title.equals(appliedScoreboardTitle)) {
+                appliedScoreboardTitle = title;
+                titleManager.setGlobalDefaultTitle(title);
+            }
+        });
+
+        service.getString("scoreboard.footer").ifPresent(footer -> {
+            if (!footer.equals(appliedScoreboardFooter)) {
+                appliedScoreboardFooter = footer;
+                renderingPipeline.setStaticBottomLine(footer);
+            }
+        });
+    }
+
+    private NetworkConfigService resolveNetworkConfigService() {
+        if (cachedNetworkConfigService != null) {
+            return cachedNetworkConfigService;
+        }
+        NetworkConfigService service = container.getOptional(NetworkConfigService.class).orElse(null);
+        if (service != null) {
+            cachedNetworkConfigService = service;
+            return cachedNetworkConfigService;
+        }
+        ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
+        if (locator != null) {
+            cachedNetworkConfigService = locator.findService(NetworkConfigService.class).orElse(null);
+            return cachedNetworkConfigService;
+        }
+        return null;
     }
 
     private NMSAdapter createNMSAdapter(JavaPlugin plugin) {
