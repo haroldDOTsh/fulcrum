@@ -294,6 +294,7 @@ public class RegistryService {
         commandRegistry.register("ls", new LogicalServersCommand(serverRegistry));
         commandRegistry.register("status", new StatusCommand(this));
         commandRegistry.register("clear", new ClearCommand());
+        commandRegistry.register("cleardead", new ClearDeadServicesCommand(serverRegistry, proxyRegistry, heartbeatMonitor));
         commandRegistry.register("debug", new DebugCommand(this));
         commandRegistry.register("reload", new ReloadCommand(this));
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));

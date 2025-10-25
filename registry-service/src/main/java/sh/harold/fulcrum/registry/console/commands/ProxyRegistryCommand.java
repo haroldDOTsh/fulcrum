@@ -7,9 +7,7 @@ import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 /**
  * Command to list registered proxies with pagination
@@ -46,10 +44,21 @@ public class ProxyRegistryCommand implements CommandHandler {
 
         // Get all active proxies
         List<RegisteredProxyData> proxies = new ArrayList<>(proxyRegistry.getAllProxies());
+        Set<String> knownProxyIds = new HashSet<>();
+        for (RegisteredProxyData proxy : proxies) {
+            knownProxyIds.add(proxy.getProxyIdString());
+        }
 
-        // Add recently dead proxies if heartbeat monitor is available
+        // Add recently dead proxies if heartbeat monitor is available (only if not already tracked)
         if (heartbeatMonitor != null) {
-            proxies.addAll(heartbeatMonitor.getRecentlyDeadProxies());
+            for (RegisteredProxyData snapshot : heartbeatMonitor.getRecentlyDeadProxies()) {
+                if (snapshot == null || snapshot.getProxyIdString() == null) {
+                    continue;
+                }
+                if (knownProxyIds.add(snapshot.getProxyIdString())) {
+                    proxies.add(snapshot);
+                }
+            }
         }
 
         // Sort proxies: active first, then by proxy ID

@@ -7,6 +7,7 @@ import sh.harold.fulcrum.registry.state.RegistrationState;
 import sh.harold.fulcrum.registry.state.RegistrationStateMachine;
 
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -602,61 +603,36 @@ public class ProxyRegistry {
      */
     public void updateProxyStatus(String proxyIdString, RegisteredProxyData.Status status) {
         RegisteredProxyData proxy = getProxy(proxyIdString);
-        if (proxy != null) {
-            RegisteredProxyData.Status oldStatus = proxy.getStatus();
-            if (oldStatus != status) {
-                proxy.setStatus(status);
-
-                // Update registration state based on status
-                if (status == RegisteredProxyData.Status.AVAILABLE) {
-                    if (proxy.getRegistrationState() == RegistrationState.DISCONNECTED) {
-                        proxy.transitionTo(RegistrationState.RE_REGISTERING, "Proxy reconnecting");
-                        proxy.transitionTo(RegistrationState.REGISTERED, "Proxy reconnected");
-                    }
-                }
-
-                if (debugMode) {
-                    LOGGER.info("Proxy {} status changed from {} to {} (state: {})",
-                            proxyIdString, oldStatus, status, proxy.getRegistrationState());
-                }
-
-                // Mark proxy as unavailable but don't release ID immediately
-                if (status == RegisteredProxyData.Status.DEAD ||
-                        status == RegisteredProxyData.Status.UNAVAILABLE) {
-                    // Need to find the ProxyIdentifier for deregistration
-                    ProxyIdentifier proxyId = null;
-
-                    // First check if we can find it by direct string match
-                    for (Map.Entry<ProxyIdentifier, RegisteredProxyData> entry : proxies.entrySet()) {
-                        if (entry.getKey().getFormattedId().equals(proxyIdString)) {
-                            proxyId = entry.getKey();
-                            break;
-                        }
-                    }
-
-                    // If not found, check temp ID mapping
-                    if (proxyId == null) {
-                        proxyId = tempIdToPermId.get(proxyIdString);
-                    }
-
-                    // If still not found, try parsing
-                    if (proxyId == null) {
-                        try {
-                            proxyId = ProxyIdentifier.isValid(proxyIdString)
-                                    ? ProxyIdentifier.parse(proxyIdString)
-                                    : ProxyIdentifier.fromLegacy(proxyIdString);
-                        } catch (Exception e) {
-                            LOGGER.error("Failed to parse proxy ID for deregistration: {}", proxyIdString, e);
-                            return;
-                        }
-                    }
-
-                    deregisterProxy(proxyId);
-                    if (debugMode) {
-                        LOGGER.info("Moved proxy {} to unavailable list (ID reserved)", proxyIdString);
-                    }
-                }
+        if (proxy == null) {
+            if (debugMode) {
+                LOGGER.debug("Attempted to update status for unknown proxy {}", proxyIdString);
             }
+            return;
+        }
+
+        RegisteredProxyData.Status oldStatus = proxy.getStatus();
+        if (oldStatus == status) {
+            return;
+        }
+
+        proxy.setStatus(status);
+
+        RegistrationState currentState = proxy.getRegistrationState();
+        if (status == RegisteredProxyData.Status.AVAILABLE) {
+            if (currentState == RegistrationState.DISCONNECTED) {
+                proxy.transitionTo(RegistrationState.RE_REGISTERING, "Proxy heartbeat restored");
+                proxy.transitionTo(RegistrationState.REGISTERED, "Proxy marked available");
+            } else if (currentState == RegistrationState.RE_REGISTERING) {
+                proxy.transitionTo(RegistrationState.REGISTERED, "Proxy marked available");
+            }
+        } else if (currentState == RegistrationState.REGISTERED) {
+            proxy.transitionTo(RegistrationState.DISCONNECTED,
+                    "Proxy marked " + status.name().toLowerCase(Locale.ROOT));
+        }
+
+        if (debugMode) {
+            LOGGER.info("Proxy {} status changed from {} to {} (state: {})",
+                    proxyIdString, oldStatus, status, proxy.getRegistrationState());
         }
     }
 
