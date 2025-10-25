@@ -1,0 +1,65 @@
+{
+  "profileId": "default",
+  "tag": "Bundled Defaults",
+  "serverIp": "play.harold.sh",
+  "motd": [
+    "&aHarold Test Network &c[1.21.8 - Latest]",
+    "&8v3.1.3 &b&lNEW RELEASE: &d&lSURVIVAL RPG"
+  ],
+  "scoreboard": {
+    "title": "&6&lHAROLD",
+    "footer": "&eplay.harold.sh"
+  },
+  "ranks": {
+    "DEFAULT": {
+      "displayName": "Default",
+      "colorCode": "&7",
+      "fullPrefix": "",
+      "shortPrefix": "",
+      "nameColor": "gray"
+    },
+    "DONATOR_1": {
+      "displayName": "Donator I",
+      "colorCode": "&a",
+      "fullPrefix": "&a[Donator I]",
+      "shortPrefix": "&a[D1]",
+      "nameColor": "green"
+    },
+    "DONATOR_2": {
+      "displayName": "Donator II",
+      "colorCode": "&b",
+      "fullPrefix": "&b[Donator II]",
+      "shortPrefix": "&b[D2]",
+      "nameColor": "aqua"
+    },
+    "DONATOR_3": {
+      "displayName": "Donator III",
+      "colorCode": "&d",
+      "fullPrefix": "&d[Donator III]",
+      "shortPrefix": "&d[D3]",
+      "nameColor": "light_purple"
+    },
+    "DONATOR_4": {
+      "displayName": "Donator IV",
+      "colorCode": "&6",
+      "fullPrefix": "&6[Donator IV]",
+      "shortPrefix": "&6[D4]",
+      "nameColor": "gold"
+    },
+    "HELPER": {
+      "displayName": "Helper",
+      "colorCode": "&9",
+      "fullPrefix": "&9[HELPER]",
+      "shortPrefix": "&9[H]",
+      "nameColor": "blue"
+    },
+    "STAFF": {
+      "displayName": "Staff",
+      "colorCode": "&c",
+      "fullPrefix": "&c[STAFF]",
+      "shortPrefix": "&c[S]",
+      "nameColor": "red"
+    }
+  },
+  "updatedAt": "2024-01-01T00:00:00Z"
+}
