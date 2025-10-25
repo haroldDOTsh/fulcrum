@@ -161,7 +161,7 @@ public enum Rank {
         return parseTextColor(resolveVisual().nameColor());
     }
 
-    RankVisualView defaultVisual() {
+    public RankVisualView defaultVisual() {
         return new RankVisualView(
                 displayName,
                 colorCode,
