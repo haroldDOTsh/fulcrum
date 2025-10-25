@@ -1,6 +1,12 @@
 package sh.harold.fulcrum.api.rank;
 
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextColor;
+import sh.harold.fulcrum.api.network.RankVisualView;
+
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Unified rank enum containing all ranks in the system.
@@ -30,6 +36,11 @@ public enum Rank {
     private final NamedTextColor nameColor;
     private final RankCategory category;
     private static volatile RankVisualResolver visualResolver = Rank::defaultVisual;
+    private static final Map<NamedTextColor, String> DEFAULT_COLOR_TOKENS =
+            NamedTextColor.NAMES.values().stream().collect(Collectors.toUnmodifiableMap(
+                    color -> color,
+                    color -> NamedTextColor.NAMES.key(color)
+            ));
 
     Rank(String displayName,
          String colorCode,
@@ -63,10 +74,6 @@ public enum Rank {
             }
         }
         return highest;
-    }
-
-    public static void setVisualResolver(RankVisualResolver resolver) {
-        visualResolver = resolver != null ? resolver : Rank::defaultVisual;
     }
 
     /**
@@ -125,11 +132,21 @@ public enum Rank {
         return category == RankCategory.SUBSCRIPTION;
     }
 
+    public static void setVisualResolver(RankVisualResolver resolver) {
+        visualResolver = resolver != null ? resolver : Rank::defaultVisual;
+    }
+
     /**
      * Gets the Adventure API name color for the rank.
+     * Falls back to the enum-defined color if the configuration is invalid.
      */
     public NamedTextColor getNameColor() {
-        return resolveVisual().nameColor();
+        TextColor textColor = parseTextColor(resolveVisual().nameColor());
+        if (textColor instanceof NamedTextColor named) {
+            return named;
+        }
+        NamedTextColor nearest = NamedTextColor.nearestTo(textColor);
+        return nearest != null ? nearest : nameColor;
     }
 
     private RankVisualView resolveVisual() {
@@ -137,7 +154,51 @@ public enum Rank {
         return visual != null ? visual : defaultVisual();
     }
 
+    /**
+     * @return the exact {@link TextColor} defined for this rank (supports full hex colors).
+     */
+    public TextColor getTextColor() {
+        return parseTextColor(resolveVisual().nameColor());
+    }
+
     RankVisualView defaultVisual() {
-        return new RankVisualView(displayName, colorCode, fullPrefix, shortPrefix, nameColor);
+        return new RankVisualView(
+                displayName,
+                colorCode,
+                fullPrefix,
+                shortPrefix,
+                defaultNameColorToken()
+        );
+    }
+
+    private String defaultNameColorToken() {
+        String token = DEFAULT_COLOR_TOKENS.get(nameColor);
+        return token != null ? token : nameColor.asHexString();
+    }
+
+    private TextColor parseTextColor(String token) {
+        if (token == null || token.isBlank()) {
+            return nameColor;
+        }
+
+        String normalized = token.trim();
+        if (normalized.startsWith("&#") && normalized.length() == 8) {
+            normalized = "#" + normalized.substring(2);
+        }
+
+        NamedTextColor named = NamedTextColor.NAMES.value(normalized.toLowerCase(Locale.ROOT));
+        if (named != null) {
+            return named;
+        }
+
+        if (!normalized.startsWith("#") && normalized.length() == 6) {
+            normalized = "#" + normalized;
+        }
+
+        try {
+            return TextColor.fromHexString(normalized);
+        } catch (IllegalArgumentException ex) {
+            return nameColor;
+        }
     }
 }
