@@ -29,6 +29,7 @@ public enum Rank {
     private final String shortPrefix;
     private final NamedTextColor nameColor;
     private final RankCategory category;
+    private static volatile RankVisualResolver visualResolver = Rank::defaultVisual;
 
     Rank(String displayName,
          String colorCode,
@@ -64,18 +65,15 @@ public enum Rank {
         return highest;
     }
 
+    public static void setVisualResolver(RankVisualResolver resolver) {
+        visualResolver = resolver != null ? resolver : Rank::defaultVisual;
+    }
+
     /**
      * Gets the display name of the rank.
      */
     public String getDisplayName() {
-        return displayName;
-    }
-
-    /**
-     * Gets the color code for the rank (legacy format).
-     */
-    public String getColorCode() {
-        return colorCode;
+        return resolveVisual().displayName();
     }
 
     /**
@@ -86,24 +84,24 @@ public enum Rank {
     }
 
     /**
+     * Gets the color code for the rank (legacy format).
+     */
+    public String getColorCode() {
+        return resolveVisual().colorCode();
+    }
+
+    /**
      * Gets the full prefix for the rank.
      */
     public String getFullPrefix() {
-        return fullPrefix;
+        return resolveVisual().fullPrefix();
     }
 
     /**
      * Gets the short prefix for the rank.
      */
     public String getShortPrefix() {
-        return shortPrefix;
-    }
-
-    /**
-     * Gets the Adventure API name color for the rank.
-     */
-    public NamedTextColor getNameColor() {
-        return nameColor;
+        return resolveVisual().shortPrefix();
     }
 
     /**
@@ -125,5 +123,21 @@ public enum Rank {
      */
     public boolean isSubscription() {
         return category == RankCategory.SUBSCRIPTION;
+    }
+
+    /**
+     * Gets the Adventure API name color for the rank.
+     */
+    public NamedTextColor getNameColor() {
+        return resolveVisual().nameColor();
+    }
+
+    private RankVisualView resolveVisual() {
+        RankVisualView visual = visualResolver.resolve(this);
+        return visual != null ? visual : defaultVisual();
+    }
+
+    RankVisualView defaultVisual() {
+        return new RankVisualView(displayName, colorCode, fullPrefix, shortPrefix, nameColor);
     }
 }

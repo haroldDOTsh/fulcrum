@@ -14,6 +14,7 @@ import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.messages.rank.RankMutationRequestMessage;
 import sh.harold.fulcrum.api.messagebus.messages.rank.RankMutationResponseMessage;
 import sh.harold.fulcrum.api.messagebus.messages.rank.RankSyncMessage;
+import sh.harold.fulcrum.api.network.NetworkConfigService;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankChangeContext;
 import sh.harold.fulcrum.api.rank.RankMutationType;
@@ -72,6 +73,9 @@ public final class RankFeature implements PluginFeature, RankService, Listener {
         this.playersCollection = dataAPI.collection(PLAYERS_COLLECTION);
         this.sessionService = container.getOptional(PlayerSessionService.class).orElse(null);
         this.messageBus = container.getOptional(MessageBus.class).orElse(null);
+
+        container.getOptional(NetworkConfigService.class)
+                .ifPresent(this::installVisualResolver);
 
         container.register(RankService.class, this);
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
@@ -195,6 +199,10 @@ public final class RankFeature implements PluginFeature, RankService, Listener {
 
         messageBus.subscribe(ChannelConstants.REGISTRY_RANK_MUTATION_RESPONSE, mutationResponseHandler);
         messageBus.subscribe(ChannelConstants.REGISTRY_RANK_UPDATE, rankUpdateHandler);
+    }
+
+    private void installVisualResolver(NetworkConfigService configService) {
+        Rank.setVisualResolver(new NetworkRankVisualResolver(configService));
     }
 
     private void unsubscribeMessageBus() {
