@@ -12,6 +12,7 @@ import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyFeature;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
+import sh.harold.fulcrum.velocity.fundamentals.motd.VelocityMotdFeature;
 import sh.harold.fulcrum.velocity.fundamentals.network.VelocityNetworkConfigFeature;
 import sh.harold.fulcrum.velocity.party.VelocityPartyFeature;
 
@@ -64,6 +65,7 @@ public class VelocityFeatureManager {
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
         registerFeature(new VelocityNetworkConfigFeature());
+        registerFeature(new VelocityMotdFeature());
         registerFeature(new VelocityDataAPIFeature());
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.session.VelocityPlayerSessionFeature());
         registerFeature(new SlotFamilyFeature());
