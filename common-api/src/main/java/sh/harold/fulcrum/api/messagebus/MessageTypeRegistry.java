@@ -3,6 +3,8 @@ package sh.harold.fulcrum.api.messagebus;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +29,8 @@ public class MessageTypeRegistry {
     private MessageTypeRegistry() {
         this.objectMapper = new ObjectMapper();
         this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper.registerModule(new JavaTimeModule());
+        this.objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         registerBuiltInTypes();
     }
 
@@ -92,6 +96,12 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.rank.RankSyncMessage.class);
             register(ChannelConstants.CHAT_CHANNEL_MESSAGE,
                     sh.harold.fulcrum.api.messagebus.messages.chat.ChatChannelMessage.class);
+            register(ChannelConstants.REGISTRY_NETWORK_CONFIG_UPDATED,
+                    sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigUpdatedMessage.class);
+            register(ChannelConstants.REGISTRY_NETWORK_CONFIG_REQUEST,
+                    sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigRequestMessage.class);
+            register(ChannelConstants.REGISTRY_NETWORK_CONFIG_RESPONSE,
+                    sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigResponseMessage.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {

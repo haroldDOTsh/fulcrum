@@ -12,6 +12,7 @@ import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyFeature;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
+import sh.harold.fulcrum.velocity.fundamentals.network.VelocityNetworkConfigFeature;
 import sh.harold.fulcrum.velocity.party.VelocityPartyFeature;
 
 import java.util.*;
@@ -62,6 +63,7 @@ public class VelocityFeatureManager {
         // Register features in dependency order
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
+        registerFeature(new VelocityNetworkConfigFeature());
         registerFeature(new VelocityDataAPIFeature());
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.session.VelocityPlayerSessionFeature());
         registerFeature(new SlotFamilyFeature());

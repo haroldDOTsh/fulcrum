@@ -4,6 +4,7 @@ import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
+import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
@@ -15,6 +16,9 @@ import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
+import sh.harold.fulcrum.registry.network.NetworkConfigCache;
+import sh.harold.fulcrum.registry.network.NetworkConfigManager;
+import sh.harold.fulcrum.registry.network.NetworkConfigRepository;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.rank.RankMutationService;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
@@ -54,6 +58,7 @@ public class RegistryService {
     private PlayerRoutingService playerRoutingService;
     private sh.harold.fulcrum.registry.session.DeadServerSessionSweeper sessionSweeper;
     private RankMutationService rankMutationService;
+    private NetworkConfigManager networkConfigManager;
 
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -197,6 +202,10 @@ public class RegistryService {
             }
 
             rankMutationService = createRankMutationService();
+            networkConfigManager = createNetworkConfigManager();
+            if (networkConfigManager != null) {
+                networkConfigManager.initialize();
+            }
 
             // Log which implementation was created
             String busClassName = messageBus.getClass().getSimpleName();
@@ -297,6 +306,9 @@ public class RegistryService {
             commandRegistry.register("provisionminigame", new ProvisionMinigameCommand(slotProvisionService));
         }
         commandRegistry.register("debugminigamepipeline", new DebugMinigamePipelineCommand(messageBus, proxyRegistry));
+        if (networkConfigManager != null) {
+            commandRegistry.register("networkconfig", new NetworkConfigCommand(networkConfigManager));
+        }
 
         // Start interactive console
         console = new InteractiveConsole(commandRegistry);
@@ -390,6 +402,9 @@ public class RegistryService {
             }
 
             LOGGER.info("Configuration reloaded successfully");
+            if (networkConfigManager != null) {
+                networkConfigManager.refreshProfiles();
+            }
         } catch (Exception e) {
             LOGGER.error("Failed to reload configuration", e);
         }
@@ -418,6 +433,54 @@ public class RegistryService {
      */
     public ProxyRegistry getProxyRegistry() {
         return proxyRegistry;
+    }
+
+    private NetworkConfigManager createNetworkConfigManager() {
+        if (messageBus == null) {
+            LOGGER.warn("MessageBus unavailable; network configuration manager disabled");
+            return null;
+        }
+
+        Map<String, Object> storage = (Map<String, Object>) config.get("storage");
+        if (storage == null) {
+            LOGGER.warn("Storage configuration missing; network configuration manager disabled");
+            return null;
+        }
+
+        Map<String, Object> mongoSection = (Map<String, Object>) storage.get("mongodb");
+        if (mongoSection == null) {
+            LOGGER.warn("MongoDB configuration missing; network configuration manager disabled");
+            return null;
+        }
+
+        Map<String, Object> redisSection = (Map<String, Object>) config.get("redis");
+        if (redisSection == null) {
+            LOGGER.warn("Redis configuration missing; network configuration manager disabled");
+            return null;
+        }
+
+        String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
+        String database = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
+
+        String redisHost = String.valueOf(redisSection.getOrDefault("host", "localhost"));
+        int redisPort = redisSection.get("port") instanceof Number
+                ? ((Number) redisSection.get("port")).intValue()
+                : Integer.parseInt(String.valueOf(redisSection.getOrDefault("port", 6379)));
+        String redisPassword = String.valueOf(redisSection.getOrDefault("password", ""));
+
+        MongoConnectionAdapter adapter = null;
+        try {
+            adapter = new MongoConnectionAdapter(connectionString, database);
+            NetworkConfigRepository repository = new NetworkConfigRepository(adapter);
+            NetworkConfigCache cache = new NetworkConfigCache(redisHost, redisPort, redisPassword, LOGGER);
+            return new NetworkConfigManager(repository, cache, messageBus, LOGGER);
+        } catch (Exception ex) {
+            LOGGER.error("Failed to initialise network configuration manager", ex);
+            if (adapter != null) {
+                adapter.close();
+            }
+            return null;
+        }
     }
 
     private DeadServerSessionSweeper createSessionSweeper() {
@@ -545,6 +608,14 @@ public class RegistryService {
                     sessionSweeper.close();
                 } catch (Exception sweeperClose) {
                     LOGGER.warn("Failed to close session sweeper", sweeperClose);
+                }
+            }
+
+            if (networkConfigManager != null) {
+                try {
+                    networkConfigManager.close();
+                } catch (Exception ex) {
+                    LOGGER.warn("Failed to close network configuration manager", ex);
                 }
             }
 

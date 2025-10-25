@@ -22,6 +22,7 @@ dependencies {
     // Redis client - using Lettuce for consistency with Paper servers
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.0")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.16.0")
     
     // Netty for network functionality
     implementation("io.netty:netty-all:4.1.100.Final")

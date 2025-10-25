@@ -142,6 +142,12 @@ public final class ChannelConstants {
     public static final String REGISTRY_RANK_MUTATION_RESPONSE = "fulcrum.registry.rank.mutation.response";
     public static final String REGISTRY_RANK_UPDATE = "fulcrum.registry.rank.update";
     /**
+     * Network configuration profile promotion and fetch channels
+     */
+    public static final String REGISTRY_NETWORK_CONFIG_UPDATED = "fulcrum.registry.network.config.updated";
+    public static final String REGISTRY_NETWORK_CONFIG_REQUEST = "fulcrum.registry.network.config.request";
+    public static final String REGISTRY_NETWORK_CONFIG_RESPONSE = "fulcrum.registry.network.config.response";
+    /**
      * Prefix for directed slot provision commands
      */
     public static final String SERVER_SLOT_PROVISION_PREFIX = "fulcrum.server.slot.provision.";

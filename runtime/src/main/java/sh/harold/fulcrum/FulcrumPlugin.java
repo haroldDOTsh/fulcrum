@@ -22,6 +22,7 @@ import sh.harold.fulcrum.fundamentals.lifecycle.JoinMessageFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
 import sh.harold.fulcrum.fundamentals.minigame.debug.DebugMinigameFeature;
+import sh.harold.fulcrum.fundamentals.network.NetworkConfigFeature;
 import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
@@ -79,6 +80,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.session.PlayerSessionFeature());
         FeatureManager.register(new PlayerDataFeature()); // Depends on DataAPI & sessions
         FeatureManager.register(new RankFeature()); // Register Rank system after DataAPI
+        FeatureManager.register(new NetworkConfigFeature());
         FeatureManager.register(new ChatFormatFeature()); // Register Chat formatting after Rank
         FeatureManager.register(new ChatChannelFeature());
         FeatureManager.register(new ModuleFeature());
