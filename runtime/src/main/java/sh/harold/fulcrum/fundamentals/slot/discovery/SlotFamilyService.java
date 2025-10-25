@@ -21,6 +21,7 @@ public class SlotFamilyService {
 
     private final ModuleManager moduleManager;
     private final AtomicReference<List<SlotFamilyDescriptor>> activeDescriptors = new AtomicReference<>(List.of());
+    private final AtomicReference<SlotFamilyFilter> lastFilter = new AtomicReference<>(SlotFamilyFilter.allowAll());
     private final CopyOnWriteArrayList<SlotFamilyProvider> dynamicProviders = new CopyOnWriteArrayList<>();
 
     public SlotFamilyService(ModuleManager moduleManager) {
@@ -51,7 +52,13 @@ public class SlotFamilyService {
         dynamicProviders.remove(provider);
     }
 
+    public List<SlotFamilyDescriptor> refreshDescriptors() {
+        return refreshDescriptors(lastFilter.get());
+    }
+
     public List<SlotFamilyDescriptor> refreshDescriptors(SlotFamilyFilter filter) {
+        SlotFamilyFilter effectiveFilter = filter == null ? SlotFamilyFilter.allowAll() : filter;
+        lastFilter.set(effectiveFilter);
         List<ModuleMetadata> modules = moduleManager.getLoadedModules();
         Map<String, SlotFamilyDescriptor> descriptors = new LinkedHashMap<>();
 
@@ -60,16 +67,16 @@ public class SlotFamilyService {
             if (provider == null) {
                 continue;
             }
-            collectDescriptors(descriptors, filter, provider, metadata.name());
+            collectDescriptors(descriptors, effectiveFilter, provider, metadata.name());
         }
 
         for (SlotFamilyProvider provider : dynamicProviders) {
-            collectDescriptors(descriptors, filter, provider, provider.getClass().getSimpleName());
+            collectDescriptors(descriptors, effectiveFilter, provider, provider.getClass().getSimpleName());
         }
 
         List<SlotFamilyDescriptor> snapshot = List.copyOf(descriptors.values());
         activeDescriptors.set(snapshot);
-        logSummary(snapshot, filter);
+        logSummary(snapshot, effectiveFilter);
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
             locator.findService(SimpleSlotOrchestrator.class)

@@ -33,8 +33,7 @@ import sh.harold.fulcrum.lifecycle.FeatureManager;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.MinigameEngineFeature;
-import sh.harold.fulcrum.minigame.MinigameModule;
-import sh.harold.fulcrum.minigame.MinigameRegistration;
+import sh.harold.fulcrum.minigame.MinigameModuleRegistrar;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private static final int CONFIG_VERSION = 2;
@@ -43,6 +42,7 @@ public final class FulcrumPlugin extends JavaPlugin {
     private SlotFamilyService slotFamilyService;
     private DependencyContainer container;
     private ModuleVerificationManager verificationManager;
+    private MinigameModuleRegistrar minigameModuleRegistrar;
 
     public ModuleManager getModuleManager() {
         return moduleManager;
@@ -102,7 +102,10 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.initializeAll(this, container);
 
         container.getOptional(MinigameEngine.class)
-                .ifPresent(this::registerMinigameModules);
+                .ifPresent(engine -> {
+                    this.minigameModuleRegistrar = new MinigameModuleRegistrar(this, moduleManager, slotFamilyService, engine);
+                    this.minigameModuleRegistrar.initialize();
+                });
 
         // Environment detection was handled during bootstrap phase
         getLogger().info("Fulcrum starting with role-based module detection");
@@ -163,20 +166,12 @@ public final class FulcrumPlugin extends JavaPlugin {
         return config;
     }
 
-    private void registerMinigameModules(MinigameEngine engine) {
-        moduleManager.getLoadedModules().forEach(metadata -> {
-            if (metadata.instance() instanceof MinigameModule minigameModule) {
-                for (MinigameRegistration registration : minigameModule.registerMinigames(engine)) {
-                    engine.registerRegistration(registration);
-                    getLogger().info(() -> "Registered minigame family " + registration.getFamilyId()
-                            + " from module " + metadata.name());
-                }
-            }
-        });
-    }
-
     @Override
     public void onDisable() {
+        if (minigameModuleRegistrar != null) {
+            minigameModuleRegistrar.shutdown();
+            minigameModuleRegistrar = null;
+        }
         if (moduleManager != null) {
             moduleManager.disableAll();
         }
