@@ -13,6 +13,20 @@ public interface NetworkConfigService {
     NetworkProfileView getActiveProfile();
 
     /**
+     * Convenience helper for retrieving string values by key from the active profile.
+     */
+    default Optional<String> getString(String path) {
+        return getActiveProfile().getString(path);
+    }
+
+    /**
+     * Generic helper for retrieving typed values from the active profile.
+     */
+    default <T> Optional<T> getValue(String path, Class<T> type) {
+        return getActiveProfile().getValue(path, type);
+    }
+
+    /**
      * Look up a specific rank visual by identifier.
      *
      * @param rankId canonical rank identifier (e.g. DEFAULT, HELPER)

@@ -18,7 +18,8 @@ record NetworkProfileDocument(
         String scoreboardTitle,
         String scoreboardFooter,
         Map<String, RankVisualDocument> ranks,
-        Instant updatedAt
+        Instant updatedAt,
+        Map<String, Object> rawData
 ) {
 
     NetworkProfileDocument {
@@ -30,11 +31,12 @@ record NetworkProfileDocument(
         scoreboardFooter = Objects.requireNonNullElse(scoreboardFooter, "");
         ranks = Map.copyOf(Objects.requireNonNull(ranks, "ranks"));
         updatedAt = Objects.requireNonNullElse(updatedAt, Instant.EPOCH);
+        rawData = Map.copyOf(Objects.requireNonNull(rawData, "rawData"));
     }
 
     NetworkProfileDocument withUpdatedAt(Instant newTimestamp) {
         return new NetworkProfileDocument(profileId, tag, serverIp, motd,
-                scoreboardTitle, scoreboardFooter, ranks, newTimestamp);
+                scoreboardTitle, scoreboardFooter, ranks, newTimestamp, rawData);
     }
 
     NetworkProfileView toView() {
@@ -55,7 +57,8 @@ record NetworkProfileDocument(
                 motd,
                 scoreboard,
                 visuals,
-                updatedAt
+                updatedAt,
+                rawData
         );
     }
 

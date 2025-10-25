@@ -129,16 +129,17 @@ public final class NetworkConfigRepository implements AutoCloseable {
 
     private Optional<NetworkProfileDocument> mapDocument(Document document) {
         Map<String, Object> raw = document.toMap();
-        String id = raw.containsKey("_id") ? Objects.toString(raw.get("_id")) : document.getId();
+        Map<String, Object> normalized = normalizeDocumentMap(raw);
+        String id = normalized.containsKey("_id") ? Objects.toString(normalized.get("_id")) : document.getId();
         if (id == null || id.isBlank()) {
             return Optional.empty();
         }
 
-        String tag = Objects.toString(raw.getOrDefault("tag", id));
-        String serverIp = Objects.toString(raw.getOrDefault("serverIp", ""));
+        String tag = Objects.toString(normalized.getOrDefault("tag", id));
+        String serverIp = Objects.toString(normalized.getOrDefault("serverIp", ""));
 
         List<String> motd = new ArrayList<>();
-        Object motdObj = raw.get("motd");
+        Object motdObj = normalized.get("motd");
         if (motdObj instanceof List<?> list) {
             for (Object value : list) {
                 if (value != null) {
@@ -147,12 +148,12 @@ public final class NetworkConfigRepository implements AutoCloseable {
             }
         }
 
-        Map<String, Object> scoreboard = getChildMap(raw, "scoreboard");
+        Map<String, Object> scoreboard = getChildMap(normalized, "scoreboard");
         String title = Objects.toString(scoreboard.getOrDefault("title", ""));
         String footer = Objects.toString(scoreboard.getOrDefault("footer", ""));
 
         Map<String, NetworkProfileDocument.RankVisualDocument> ranks = new LinkedHashMap<>();
-        Map<String, Object> ranksRaw = getChildMap(raw, "ranks");
+        Map<String, Object> ranksRaw = getChildMap(normalized, "ranks");
         for (Map.Entry<String, Object> entry : ranksRaw.entrySet()) {
             String rankId = entry.getKey();
             if (!(entry.getValue() instanceof Map<?, ?> visualMap)) {
@@ -175,7 +176,7 @@ public final class NetworkConfigRepository implements AutoCloseable {
             ranks.put(rankId, rankVisual);
         }
 
-        Instant updatedAt = parseInstant(raw.get("updatedAt"));
+        Instant updatedAt = parseInstant(normalized.get("updatedAt"));
 
         NetworkProfileDocument documentModel = new NetworkProfileDocument(
                 id,
@@ -185,7 +186,8 @@ public final class NetworkConfigRepository implements AutoCloseable {
                 title,
                 footer,
                 ranks,
-                updatedAt
+                updatedAt,
+                normalized
         );
 
         return Optional.of(documentModel);
@@ -218,5 +220,37 @@ public final class NetworkConfigRepository implements AutoCloseable {
     }
 
     record ActiveProfileMarker(String profileId, String tag, Instant updatedAt) {
+    }
+
+    private Map<String, Object> normalizeDocumentMap(Map<String, Object> source) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (key == null) {
+                return;
+            }
+            normalized.put(key, normalizeValue(value));
+        });
+        return normalized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object normalizeValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> child = new LinkedHashMap<>();
+            map.forEach((k, v) -> {
+                if (k != null) {
+                    child.put(k.toString(), normalizeValue(v));
+                }
+            });
+            return child;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list.size());
+            for (Object element : list) {
+                copy.add(normalizeValue(element));
+            }
+            return copy;
+        }
+        return value;
     }
 }

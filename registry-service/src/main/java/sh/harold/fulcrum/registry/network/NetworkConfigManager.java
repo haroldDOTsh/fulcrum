@@ -208,7 +208,8 @@ public final class NetworkConfigManager implements AutoCloseable {
                     view.scoreboard().title(),
                     view.scoreboard().footer(),
                     ranks,
-                    updatedAt
+                    updatedAt,
+                    view.data()
             );
 
             NetworkProfileValidator.validate(document);
