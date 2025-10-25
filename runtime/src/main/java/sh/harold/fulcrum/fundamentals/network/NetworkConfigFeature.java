@@ -24,8 +24,8 @@ public final class NetworkConfigFeature implements PluginFeature {
 
     @Override
     public int getPriority() {
-        // Load after message bus and rank features
-        return 85;
+        // Load after message bus but before rank feature (50)
+        return 45;
     }
 
     @Override
