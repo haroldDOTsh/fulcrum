@@ -57,6 +57,6 @@ public final class ActionFlagPresets {
                 ActionFlag.ITEM_DROP,
                 ActionFlag.ITEM_PICKUP
         );
-        return OverrideRequest.of(allows, denies).withGamemode(org.bukkit.GameMode.SPECTATOR);
+        return OverrideRequest.of(allows, denies).withGamemode(org.bukkit.GameMode.ADVENTURE);
     }
 }

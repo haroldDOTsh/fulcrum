@@ -34,6 +34,8 @@ import java.util.function.Supplier;
  * Runtime context passed to states. Provides access to players, scheduler, and shared attributes.
  */
 public final class StateContext {
+    private static final int RETURN_TO_LOBBY_SLOT = 8;
+    private static final int QUEUE_AGAIN_SLOT = 7;
     private final JavaPlugin plugin;
     private final UUID matchId;
     private final Set<UUID> activePlayers;
@@ -271,21 +273,8 @@ public final class StateContext {
         }
     }
 
-    /**
-     * Clears lingering spectator overrides/inventory when a player joins a fresh match.
-     */
-    public void resetPlayerStateForMatch(UUID playerId) {
-        if (actionFlags != null) {
-            actionFlags.clear(playerId);
-        }
-        findPlayer(playerId).ifPresent(player -> {
-            player.setAllowFlight(false);
-            player.setFlying(false);
-            player.getInventory().remove(Material.RED_BED);
-            if (player.getGameMode() == GameMode.SPECTATOR) {
-                player.setGameMode(GameMode.SURVIVAL);
-            }
-        });
+    private static ItemStack createReturnToLobbyItem() {
+        return createSpectatorItem(Material.RED_BED, ChatColor.RED, "Return to Lobby");
     }
 
     private void applySpectatorOverride(UUID playerId) {
@@ -309,23 +298,8 @@ public final class StateContext {
         setAttribute(MinigameAttributes.MATCH_COMPLETE, Boolean.TRUE);
     }
 
-    public void configureSpectator(Player player) {
-        if (player == null) {
-            return;
-        }
-        player.setGameMode(GameMode.ADVENTURE);
-        player.setAllowFlight(true);
-        player.setFlying(true);
-
-        ItemStack bed = new ItemStack(Material.RED_BED);
-        ItemMeta meta = bed.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(ChatColor.RED + "Return to Lobby");
-            meta.addItemFlags(ItemFlag.values());
-            bed.setItemMeta(meta);
-        }
-        player.getInventory().setItem(8, bed);
-        player.getInventory().setHeldItemSlot(8);
+    private static ItemStack createQueueAgainItem() {
+        return createSpectatorItem(Material.PAPER, ChatColor.GREEN, "Queue Again");
     }
 
     public void transitionPlayerToSpectator(UUID playerId) {
@@ -359,6 +333,54 @@ public final class StateContext {
     public boolean isRespawnAllowed(UUID playerId) {
         RosterManager.Entry entry = roster.get(playerId);
         return entry != null && entry.isRespawnAllowed();
+    }
+
+    private static ItemStack createSpectatorItem(Material material, ChatColor color, String label) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(color + label + ChatColor.GRAY + " (Right Click)");
+            meta.addItemFlags(ItemFlag.values());
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    /**
+     * Clears lingering spectator overrides/inventory when a player joins a fresh match.
+     */
+    public void resetPlayerStateForMatch(UUID playerId) {
+        if (actionFlags != null) {
+            actionFlags.clear(playerId);
+        }
+        findPlayer(playerId).ifPresent(player -> {
+            player.setAllowFlight(false);
+            player.setFlying(false);
+            player.getInventory().remove(Material.RED_BED);
+            player.getInventory().remove(Material.PAPER);
+            if (player.getGameMode() == GameMode.SPECTATOR) {
+                player.setGameMode(GameMode.SURVIVAL);
+            }
+        });
+    }
+
+    public void configureSpectator(Player player) {
+        if (player == null) {
+            return;
+        }
+        player.setGameMode(GameMode.ADVENTURE);
+        player.setAllowFlight(true);
+        player.setFlying(true);
+
+        player.getInventory().setItem(RETURN_TO_LOBBY_SLOT, createReturnToLobbyItem());
+
+        if (isRespawnAllowed(player.getUniqueId())) {
+            player.getInventory().setItem(QUEUE_AGAIN_SLOT, null);
+        } else {
+            player.getInventory().setItem(QUEUE_AGAIN_SLOT, createQueueAgainItem());
+        }
+
+        player.getInventory().setHeldItemSlot(RETURN_TO_LOBBY_SLOT);
     }
 
     private static ChatColor countdownColor(long seconds) {
