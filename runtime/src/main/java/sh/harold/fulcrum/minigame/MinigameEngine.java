@@ -342,8 +342,14 @@ public final class MinigameEngine {
             if (environment == null) {
                 plugin.getLogger().warning("Failed to prepare environment for slot " + slot.slotId()
                         + " (family=" + slot.familyId() + ", map=" + metadata.getOrDefault("mapId", "unknown") + ")");
+                if (slotOrchestrator != null) {
+                    slotOrchestrator.disableFamily(slot.familyId(), "environment-unavailable");
+                }
                 markSlotFault(slot.slotId(), "environment-unavailable");
                 return;
+            }
+            if (slotOrchestrator != null) {
+                slotOrchestrator.enableFamily(slot.familyId());
             }
 
             Location lobbySpawn = environment.lobbySpawn();

@@ -30,6 +30,7 @@ public class SimpleSlotOrchestrator {
     private final CopyOnWriteArrayList<Consumer<ProvisionedSlot>> provisionListeners = new CopyOnWriteArrayList<>();
 
     private final Map<String, FamilyProfile> families = new ConcurrentHashMap<>();
+    private final Set<String> disabledFamilies = ConcurrentHashMap.newKeySet();
     private volatile int serverSoftCap;
     private volatile int serverHardCap;
     private volatile String environment;
@@ -201,59 +202,12 @@ public class SimpleSlotOrchestrator {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    /**
-     * Handle a provision command from the registry.
-     */
-    public boolean handleProvisionCommand(SlotProvisionCommand command) {
-        if (!active.get()) {
-            LOGGER.fine("Ignoring provision command before activation");
-            return false;
+    private static String buildGameId(String family, String variant) {
+        String normalizedFamily = family != null ? family.toLowerCase(Locale.ROOT) : "unknown";
+        if (variant == null || variant.isBlank()) {
+            return normalizedFamily;
         }
-        if (!serverIdentifier.getServerId().equals(command.getServerId())) {
-            return false;
-        }
-
-        FamilyProfile profile = families.get(command.getFamily());
-        if (profile == null) {
-            LOGGER.warning(() -> "Provision command received for unsupported family " + command.getFamily());
-            return false;
-        }
-        double currentUsed = computeUsedPlayerBudget();
-        double playerCost = resolvePlayerCost(profile.descriptor);
-        double projected = currentUsed + playerCost;
-
-        if (serverHardCap > 0 && projected > serverHardCap) {
-            LOGGER.warning(() -> "Refusing provision for " + profile.name + " because projected budget "
-                    + String.format("%.1f", projected) + " exceeds hard cap " + serverHardCap);
-            return false;
-        }
-        if (serverSoftCap > 0 && projected > serverSoftCap) {
-            LOGGER.warning(() -> "Provision for " + profile.name + " exceeds soft cap " + serverSoftCap
-                    + " (projected=" + String.format("%.1f", projected) + ")");
-        }
-
-        double availablePlayers = Math.max(0.0, (serverSoftCap > 0 ? serverSoftCap : serverHardCap) - currentUsed);
-        int availableSlots = computeAvailableSlots(profile, availablePlayers);
-        if (availableSlots <= 0) {
-            LOGGER.warning(() -> "Family " + profile.name + " has no remaining budget (availablePlayers="
-                    + String.format("%.1f", availablePlayers) + ")");
-        }
-
-        Map<String, String> metadata = new HashMap<>(command.getReadOnlyMetadata());
-        metadata.putIfAbsent("requestId", command.getRequestId().toString());
-        metadata.putIfAbsent("family", profile.name);
-        if (command.getVariant() != null && !command.getVariant().isBlank()) {
-            metadata.putIfAbsent("variant", command.getVariant());
-        }
-
-        TrackedSlot slot = createSlot(profile, command.getVariant(), SlotLifecycleStatus.PROVISIONING, 0, metadata);
-        if (slot == null) {
-            return false;
-        }
-
-        broadcastSlotUpdate(slot);
-        notifyProvisioned(slot);
-        return true;
+        return normalizedFamily + "_" + variant.toLowerCase(Locale.ROOT);
     }
 
     public void addProvisionListener(Consumer<ProvisionedSlot> listener) {
@@ -328,31 +282,62 @@ public class SimpleSlotOrchestrator {
     }
 
     /**
-     * Broadcast the server's family capabilities to the registry.
+     * Handle a provision command from the registry.
      */
-    public void advertiseFamilies() {
-        if (!active.get() || families.isEmpty()) {
-            return;
+    public boolean handleProvisionCommand(SlotProvisionCommand command) {
+        if (!active.get()) {
+            LOGGER.fine("Ignoring provision command before activation");
+            return false;
         }
-        Map<String, Integer> payload = new LinkedHashMap<>();
-        Map<String, List<String>> variantPayload = new LinkedHashMap<>();
-        double availablePlayers = availablePlayerBudget();
-        families.forEach((name, profile) -> {
-            payload.put(name, computeAvailableSlots(profile, availablePlayers));
-            List<String> variants = profile.advertisedVariants();
-            if (!variants.isEmpty()) {
-                variantPayload.put(name, variants);
-            }
-        });
-        SlotFamilyAdvertisementMessage message = new SlotFamilyAdvertisementMessage(
-                serverIdentifier.getServerId(),
-                payload
-        );
-        if (!variantPayload.isEmpty()) {
-            message.setFamilyVariants(variantPayload);
+        if (!serverIdentifier.getServerId().equals(command.getServerId())) {
+            return false;
         }
-        messageBus.broadcast(ChannelConstants.REGISTRY_SLOT_FAMILY_ADVERTISEMENT, message);
-        LOGGER.fine(() -> "Advertised slot families for " + serverIdentifier.getServerId() + ": " + payload);
+
+        FamilyProfile profile = families.get(command.getFamily());
+        if (profile == null) {
+            LOGGER.warning(() -> "Provision command received for unsupported family " + command.getFamily());
+            return false;
+        }
+        if (isFamilyDisabled(profile.name)) {
+            LOGGER.warning(() -> "Provision command received for disabled family " + profile.name);
+            return false;
+        }
+        double currentUsed = computeUsedPlayerBudget();
+        double playerCost = resolvePlayerCost(profile.descriptor);
+        double projected = currentUsed + playerCost;
+
+        if (serverHardCap > 0 && projected > serverHardCap) {
+            LOGGER.warning(() -> "Refusing provision for " + profile.name + " because projected budget "
+                    + String.format("%.1f", projected) + " exceeds hard cap " + serverHardCap);
+            return false;
+        }
+        if (serverSoftCap > 0 && projected > serverSoftCap) {
+            LOGGER.warning(() -> "Provision for " + profile.name + " exceeds soft cap " + serverSoftCap
+                    + " (projected=" + String.format("%.1f", projected) + ")");
+        }
+
+        double availablePlayers = Math.max(0.0, (serverSoftCap > 0 ? serverSoftCap : serverHardCap) - currentUsed);
+        int availableSlots = computeAvailableSlots(profile, availablePlayers);
+        if (availableSlots <= 0) {
+            LOGGER.warning(() -> "Family " + profile.name + " has no remaining budget (availablePlayers="
+                    + String.format("%.1f", availablePlayers) + ")");
+        }
+
+        Map<String, String> metadata = new HashMap<>(command.getReadOnlyMetadata());
+        metadata.putIfAbsent("requestId", command.getRequestId().toString());
+        metadata.putIfAbsent("family", profile.name);
+        if (command.getVariant() != null && !command.getVariant().isBlank()) {
+            metadata.putIfAbsent("variant", command.getVariant());
+        }
+
+        TrackedSlot slot = createSlot(profile, command.getVariant(), SlotLifecycleStatus.PROVISIONING, 0, metadata);
+        if (slot == null) {
+            return false;
+        }
+
+        broadcastSlotUpdate(slot);
+        notifyProvisioned(slot);
+        return true;
     }
 
     /**
@@ -424,16 +409,45 @@ public class SimpleSlotOrchestrator {
         return true;
     }
 
+    /**
+     * Broadcast the server's family capabilities to the registry.
+     */
+    public void advertiseFamilies() {
+        if (!active.get() || families.isEmpty()) {
+            return;
+        }
+        Map<String, Integer> payload = new LinkedHashMap<>();
+        Map<String, List<String>> variantPayload = new LinkedHashMap<>();
+        double availablePlayers = availablePlayerBudget();
+        families.forEach((name, profile) -> {
+            if (isFamilyDisabled(name)) {
+                return;
+            }
+            payload.put(name, computeAvailableSlots(profile, availablePlayers));
+            List<String> variants = profile.advertisedVariants();
+            if (!variants.isEmpty()) {
+                variantPayload.put(name, variants);
+            }
+        });
+        SlotFamilyAdvertisementMessage message = new SlotFamilyAdvertisementMessage(
+                serverIdentifier.getServerId(),
+                payload
+        );
+        if (!variantPayload.isEmpty()) {
+            message.setFamilyVariants(variantPayload);
+        }
+        messageBus.broadcast(ChannelConstants.REGISTRY_SLOT_FAMILY_ADVERTISEMENT, message);
+        LOGGER.fine(() -> "Advertised slot families for " + serverIdentifier.getServerId() + ": " + payload);
+    }
+
     public Map<String, Integer> getFamilyCapacities() {
         Map<String, Integer> snapshot = new LinkedHashMap<>();
         double availablePlayers = availablePlayerBudget();
-        families.forEach((name, profile) -> snapshot.put(name, computeAvailableSlots(profile, availablePlayers)));
-        return Collections.unmodifiableMap(snapshot);
-    }
-
-    public Map<String, Integer> getActiveSlotsByFamily() {
-        Map<String, Integer> snapshot = new LinkedHashMap<>();
-        families.forEach((name, profile) -> snapshot.put(name, profile.slots.size()));
+        families.forEach((name, profile) -> {
+            if (!isFamilyDisabled(name)) {
+                snapshot.put(name, computeAvailableSlots(profile, availablePlayers));
+            }
+        });
         return Collections.unmodifiableMap(snapshot);
     }
 
@@ -500,14 +514,6 @@ public class SimpleSlotOrchestrator {
         }
         broadcastSlotUpdate(slot);
         return true;
-    }
-
-    private static String buildGameId(String family, String variant) {
-        String normalizedFamily = family != null ? family.toLowerCase(Locale.ROOT) : "unknown";
-        if (variant == null || variant.isBlank()) {
-            return normalizedFamily;
-        }
-        return normalizedFamily + "_" + variant.toLowerCase(Locale.ROOT);
     }
 
     private TrackedSlot findSlot(String slotId) {
@@ -629,11 +635,69 @@ public class SimpleSlotOrchestrator {
         }
     }
 
+    public Map<String, Integer> getActiveSlotsByFamily() {
+        Map<String, Integer> snapshot = new LinkedHashMap<>();
+        families.forEach((name, profile) -> {
+            if (!isFamilyDisabled(name)) {
+                snapshot.put(name, profile.slots.size());
+            }
+        });
+        return Collections.unmodifiableMap(snapshot);
+    }
+
+    public void disableFamily(String familyId, String reason) {
+        String key = normalizeFamilyId(familyId);
+        if (key == null) {
+            return;
+        }
+        if (disabledFamilies.add(key)) {
+            if (reason != null && !reason.isBlank()) {
+                LOGGER.warning(() -> "Disabling slot family " + key + " (" + reason + ")");
+            } else {
+                LOGGER.warning(() -> "Disabling slot family " + key);
+            }
+            advertiseFamilies();
+        }
+    }
+
+    public void enableFamily(String familyId) {
+        String key = normalizeFamilyId(familyId);
+        if (key == null) {
+            return;
+        }
+        if (disabledFamilies.remove(key)) {
+            LOGGER.info(() -> "Re-enabling slot family " + key);
+            advertiseFamilies();
+        }
+    }
+
+    private boolean isFamilyDisabled(String familyId) {
+        String key = normalizeFamilyId(familyId);
+        return key != null && disabledFamilies.contains(key);
+    }
+
+    private String normalizeFamilyId(String familyId) {
+        if (familyId == null) {
+            return null;
+        }
+        String trimmed = familyId.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.toLowerCase(Locale.ROOT);
+    }
+
     private TrackedSlot createSlot(FamilyProfile profile,
                                    String variant,
                                    SlotLifecycleStatus status,
                                    int onlinePlayers,
                                    Map<String, String> metadata) {
+        if (profile == null || isFamilyDisabled(profile.name)) {
+            if (profile != null) {
+                LOGGER.warning(() -> "Skipping slot creation for disabled family " + profile.name);
+            }
+            return null;
+        }
         String suffix = generateSuffix(profile.counter.getAndIncrement());
         SlotFamilyDescriptor descriptor = profile.descriptor;
         TrackedSlot slot = new TrackedSlot(serverIdentifier.getServerId() + suffix, suffix, profile.name, descriptor);
