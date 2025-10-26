@@ -50,11 +50,11 @@ public class MinigameEnvironmentService {
         }
 
         String requestedMapId = metadata != null ? metadata.get("mapId") : null;
-        String requestedPool = metadata != null ? metadata.getOrDefault("mapPool", metadata.get("gameId")) : null;
+        String requestedGameId = metadata != null ? metadata.get("gameId") : null;
 
         Optional<LoadedWorld> mapOptional = resolveMap(metadata);
         if (mapOptional.isEmpty()) {
-            logger.warning("No cached world found for mapId='" + requestedMapId + "' mapPool='" + requestedPool
+            logger.warning("No cached world found for mapId='" + requestedMapId + "' gameId='" + requestedGameId
                     + "'; falling back to '" + DEFAULT_MAP_ID + "'");
             mapOptional = resolveMapById(DEFAULT_MAP_ID);
             if (mapOptional.isEmpty()) {
@@ -121,11 +121,8 @@ public class MinigameEnvironmentService {
         if (byId.isPresent()) {
             return byId;
         }
-        String poolId = metadata != null ? metadata.get("mapPool") : null;
-        if (poolId == null || poolId.isBlank()) {
-            poolId = metadata != null ? metadata.get("gameId") : null;
-        }
-        return resolveMapByPool(poolId);
+        String gameId = metadata != null ? metadata.get("gameId") : null;
+        return resolveMapByGameId(gameId);
     }
 
     private Optional<LoadedWorld> resolveMapById(String mapId) {
@@ -139,11 +136,11 @@ public class MinigameEnvironmentService {
         return worldService.getWorldByName(mapId);
     }
 
-    private Optional<LoadedWorld> resolveMapByPool(String poolId) {
-        if (poolId == null || poolId.isBlank()) {
+    private Optional<LoadedWorld> resolveMapByGameId(String gameId) {
+        if (gameId == null || gameId.isBlank()) {
             return Optional.empty();
         }
-        return worldService.getWorldByGameId(poolId);
+        return worldService.getWorldByGameId(gameId);
     }
 
     private String generateWorldName(String slotId, String mapId) {
@@ -238,5 +235,4 @@ public class MinigameEnvironmentService {
                                    Location matchSpawn) {
     }
 }
-
 

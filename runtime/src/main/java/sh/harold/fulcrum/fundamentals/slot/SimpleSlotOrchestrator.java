@@ -502,45 +502,12 @@ public class SimpleSlotOrchestrator {
         return true;
     }
 
-    private TrackedSlot createSlot(FamilyProfile profile,
-                                   String variant,
-                                   SlotLifecycleStatus status,
-                                   int onlinePlayers,
-                                   Map<String, String> metadata) {
-        String suffix = generateSuffix(profile.counter.getAndIncrement());
-        SlotFamilyDescriptor descriptor = profile.descriptor;
-        TrackedSlot slot = new TrackedSlot(serverIdentifier.getServerId() + suffix, suffix, profile.name, descriptor);
-        String normalizedVariant = normalizeVariantId(variant);
-        slot.variant = normalizedVariant;
-        slot.status = status != null ? status : SlotLifecycleStatus.AVAILABLE;
-        slot.onlinePlayers = Math.max(0, onlinePlayers);
-        int maxPlayers = resolveMaxPlayers(descriptor);
-        slot.maxPlayers = maxPlayers;
-        if (metadata != null && !metadata.isEmpty()) {
-            slot.metadata.putAll(metadata);
+    private static String buildGameId(String family, String variant) {
+        String normalizedFamily = family != null ? family.toLowerCase(Locale.ROOT) : "unknown";
+        if (variant == null || variant.isBlank()) {
+            return normalizedFamily;
         }
-        slot.metadata.putIfAbsent("family", profile.name);
-        if (normalizedVariant != null) {
-            slot.metadata.put("variant", normalizedVariant);
-            profile.trackVariant(normalizedVariant);
-        } else {
-            String metaVariant = slot.metadata.get("variant");
-            String normalizedMetaVariant = normalizeVariantId(metaVariant);
-            if (normalizedMetaVariant != null) {
-                slot.metadata.put("variant", normalizedMetaVariant);
-                slot.variant = normalizedMetaVariant;
-                profile.trackVariant(normalizedMetaVariant);
-            } else {
-                slot.metadata.remove("variant");
-                slot.variant = null;
-            }
-        }
-        slot.metadata.putIfAbsent("familyMinPlayers", String.valueOf(descriptor.getMinPlayers()));
-        slot.metadata.putIfAbsent("familyMaxPlayers", String.valueOf(maxPlayers));
-        slot.metadata.putIfAbsent("playerEquivalentFactor", String.valueOf(descriptor.getPlayerEquivalentFactor()));
-        normalizeTeamMetadata(slot.metadata);
-        profile.slots.put(slot.suffix, slot);
-        return slot;
+        return normalizedFamily + "_" + variant.toLowerCase(Locale.ROOT);
     }
 
     private TrackedSlot findSlot(String slotId) {
@@ -662,4 +629,53 @@ public class SimpleSlotOrchestrator {
         }
     }
 
+    private TrackedSlot createSlot(FamilyProfile profile,
+                                   String variant,
+                                   SlotLifecycleStatus status,
+                                   int onlinePlayers,
+                                   Map<String, String> metadata) {
+        String suffix = generateSuffix(profile.counter.getAndIncrement());
+        SlotFamilyDescriptor descriptor = profile.descriptor;
+        TrackedSlot slot = new TrackedSlot(serverIdentifier.getServerId() + suffix, suffix, profile.name, descriptor);
+        String normalizedVariant = normalizeVariantId(variant);
+        slot.variant = normalizedVariant;
+        slot.status = status != null ? status : SlotLifecycleStatus.AVAILABLE;
+        slot.onlinePlayers = Math.max(0, onlinePlayers);
+        int maxPlayers = resolveMaxPlayers(descriptor);
+        slot.maxPlayers = maxPlayers;
+        if (metadata != null && !metadata.isEmpty()) {
+            slot.metadata.putAll(metadata);
+        }
+        Map<String, String> descriptorMetadata = descriptor.getMetadata();
+        if (descriptorMetadata != null && !descriptorMetadata.isEmpty()) {
+            descriptorMetadata.forEach((key, value) -> {
+                if (key != null && value != null) {
+                    slot.metadata.putIfAbsent(key, value);
+                }
+            });
+        }
+        slot.metadata.putIfAbsent("family", profile.name);
+        if (normalizedVariant != null) {
+            slot.metadata.put("variant", normalizedVariant);
+            profile.trackVariant(normalizedVariant);
+        } else {
+            String metaVariant = slot.metadata.get("variant");
+            String normalizedMetaVariant = normalizeVariantId(metaVariant);
+            if (normalizedMetaVariant != null) {
+                slot.metadata.put("variant", normalizedMetaVariant);
+                slot.variant = normalizedMetaVariant;
+                profile.trackVariant(normalizedMetaVariant);
+            } else {
+                slot.metadata.remove("variant");
+                slot.variant = null;
+            }
+        }
+        slot.metadata.putIfAbsent("gameId", buildGameId(profile.name, slot.variant != null ? slot.variant : slot.metadata.get("variant")));
+        slot.metadata.putIfAbsent("familyMinPlayers", String.valueOf(descriptor.getMinPlayers()));
+        slot.metadata.putIfAbsent("familyMaxPlayers", String.valueOf(maxPlayers));
+        slot.metadata.putIfAbsent("playerEquivalentFactor", String.valueOf(descriptor.getPlayerEquivalentFactor()));
+        normalizeTeamMetadata(slot.metadata);
+        profile.slots.put(slot.suffix, slot);
+        return slot;
+    }
 }
