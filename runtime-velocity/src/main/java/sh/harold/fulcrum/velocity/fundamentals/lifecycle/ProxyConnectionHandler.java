@@ -311,6 +311,9 @@ public class ProxyConnectionHandler {
         ServerMetrics metrics = serverMetricsCache.computeIfAbsent(serverId,
                 k -> new ServerMetrics(serverId, role));
 
+        // Role can change when ENVIRONMENT is updated; keep cache in sync
+        metrics.setRole(role);
+
         metrics.playerCount = playerCount;
         metrics.maxPlayers = maxPlayers;
         metrics.tps = tps;
@@ -365,7 +368,7 @@ public class ProxyConnectionHandler {
      */
     private static class ServerMetrics {
         private final String serverId;
-        private final String role;
+        private String role;
         private int playerCount = 0;
         private int maxPlayers = 100;
         private double tps = 20.0;
@@ -373,6 +376,10 @@ public class ProxyConnectionHandler {
 
         public ServerMetrics(String serverId, String role) {
             this.serverId = serverId;
+            this.role = role;
+        }
+
+        public void setRole(String role) {
             this.role = role;
         }
 
@@ -397,15 +404,8 @@ public class ProxyConnectionHandler {
     }
 
     /**
-     * Helper class to pair server with its metrics
-     */
-    private static class ServerWithMetrics {
-        final RegisteredServer server;
-        final ServerMetrics metrics;
-
-        ServerWithMetrics(RegisteredServer server, ServerMetrics metrics) {
-            this.server = server;
-            this.metrics = metrics;
-        }
+         * Helper class to pair server with its metrics
+         */
+        private record ServerWithMetrics(RegisteredServer server, ServerMetrics metrics) {
     }
 }

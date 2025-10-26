@@ -353,6 +353,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     // Remove from local tracking
                     backendServers.remove(serverId);
                     serverHeartbeats.remove(serverId);
+                    if (connectionHandler != null) {
+                        connectionHandler.removeServerMetrics(serverId);
+                    }
 
                     // Remove from Velocity
                     proxy.getServer(serverId).ifPresent(rs -> {
