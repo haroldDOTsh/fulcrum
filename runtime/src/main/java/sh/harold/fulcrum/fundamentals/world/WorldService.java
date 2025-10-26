@@ -22,6 +22,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -38,6 +39,7 @@ public class WorldService {
     private final Map<UUID, LoadedWorld> cacheById = new ConcurrentHashMap<>();
     private final Map<String, LoadedWorld> cacheByName = new ConcurrentHashMap<>();
     private final Map<String, LoadedWorld> cacheByMapId = new ConcurrentHashMap<>();
+    private final Map<String, List<LoadedWorld>> cacheByGameId = new ConcurrentHashMap<>();
 
     public WorldService(Plugin plugin, PostgresConnectionAdapter connectionAdapter) {
         this.plugin = plugin;
@@ -65,6 +67,7 @@ public class WorldService {
         cacheById.clear();
         cacheByName.clear();
         cacheByMapId.clear();
+        cacheByGameId.clear();
     }
 
     public List<LoadedWorld> getAllWorlds() {
@@ -87,6 +90,21 @@ public class WorldService {
             return Optional.empty();
         }
         return Optional.ofNullable(cacheByMapId.get(mapId.toLowerCase(Locale.ROOT)));
+    }
+
+    public Optional<LoadedWorld> getWorldByGameId(String gameId) {
+        if (gameId == null) {
+            return Optional.empty();
+        }
+        List<LoadedWorld> worlds = cacheByGameId.get(gameId.toLowerCase(Locale.ROOT));
+        if (worlds == null || worlds.isEmpty()) {
+            return Optional.empty();
+        }
+        if (worlds.size() == 1) {
+            return Optional.of(worlds.get(0));
+        }
+        int index = ThreadLocalRandom.current().nextInt(worlds.size());
+        return Optional.of(worlds.get(index));
     }
 
     public List<PoiDefinition> getWorldPois(String worldName) {
@@ -155,6 +173,7 @@ public class WorldService {
         Map<UUID, LoadedWorld> byId = new HashMap<>();
         Map<String, LoadedWorld> byName = new HashMap<>();
         Map<String, LoadedWorld> byMapId = new HashMap<>();
+        Map<String, List<LoadedWorld>> byGameId = new HashMap<>();
 
         String sql = "SELECT id, world_name, display_name, map_metadata, schematic_data, updated_at FROM world_maps";
 
@@ -176,6 +195,7 @@ public class WorldService {
                 }
 
                 String mapId = metadata.has("mapId") ? metadata.get("mapId").getAsString() : id.toString();
+                String gameId = metadata.has("gameId") ? metadata.get("gameId").getAsString() : null;
                 File schemFile = new File(cacheDirectory, mapId + ".schem");
 
                 try {
@@ -201,6 +221,9 @@ public class WorldService {
                         byName.put(worldName.toLowerCase(Locale.ROOT), loadedWorld);
                     }
                     byMapId.put(mapId.toLowerCase(Locale.ROOT), loadedWorld);
+                    if (gameId != null && !gameId.isBlank()) {
+                        byGameId.computeIfAbsent(gameId.toLowerCase(Locale.ROOT), key -> new ArrayList<>()).add(loadedWorld);
+                    }
                 } catch (IOException exception) {
                     logger.log(Level.SEVERE, "Failed to cache schematic for world " + worldName, exception);
                 }
@@ -216,6 +239,8 @@ public class WorldService {
         cacheByName.putAll(byName);
         cacheByMapId.clear();
         cacheByMapId.putAll(byMapId);
+        cacheByGameId.clear();
+        byGameId.forEach((key, value) -> cacheByGameId.put(key, List.copyOf(value)));
 
         logger.info("WorldService cached " + cacheById.size() + " world schematics");
     }
@@ -278,5 +303,4 @@ public class WorldService {
     public record MapSaveResult(UUID id, Instant updatedAt) {
     }
 }
-
 

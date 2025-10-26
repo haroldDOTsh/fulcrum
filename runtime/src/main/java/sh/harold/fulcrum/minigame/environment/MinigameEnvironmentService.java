@@ -49,17 +49,23 @@ public class MinigameEnvironmentService {
             return existing;
         }
 
-        String mapId = metadata != null && metadata.containsKey("mapId")
-                ? metadata.get("mapId") : DEFAULT_MAP_ID;
+        String requestedMapId = metadata != null ? metadata.get("mapId") : null;
+        String requestedPool = metadata != null ? metadata.getOrDefault("mapPool", metadata.get("gameId")) : null;
 
-        Optional<LoadedWorld> mapOptional = resolveMap(mapId);
+        Optional<LoadedWorld> mapOptional = resolveMap(metadata);
         if (mapOptional.isEmpty()) {
-            logger.warning("No cached world definition found for mapId '" + mapId + "'");
-            return null;
+            logger.warning("No cached world found for mapId='" + requestedMapId + "' mapPool='" + requestedPool
+                    + "'; falling back to '" + DEFAULT_MAP_ID + "'");
+            mapOptional = resolveMapById(DEFAULT_MAP_ID);
+            if (mapOptional.isEmpty()) {
+                logger.warning("Default world '" + DEFAULT_MAP_ID + "' unavailable; cannot prepare environment for slot " + slotId);
+                return null;
+            }
         }
 
         LoadedWorld map = mapOptional.get();
-        String worldName = generateWorldName(slotId, mapId);
+        String resolvedMapId = map.getMapId();
+        String worldName = generateWorldName(slotId, resolvedMapId);
         unloadIfPresent(worldName);
 
         World world = createVoidWorld(worldName);
@@ -74,13 +80,13 @@ public class MinigameEnvironmentService {
         try {
             pasteResult = worldManager.pasteWorld(map.getId(), world, pasteLocation).join();
         } catch (Exception exception) {
-            logger.log(Level.WARNING, "Failed to paste map '" + mapId + "' for slot " + slotId, exception);
+            logger.log(Level.WARNING, "Failed to paste map '" + resolvedMapId + "' for slot " + slotId, exception);
             cleanupWorld(worldName);
             return null;
         }
 
         if (pasteResult == null || !pasteResult.isSuccess()) {
-            logger.warning("Unable to prepare map '" + mapId + "' for slot " + slotId + ": "
+            logger.warning("Unable to prepare map '" + resolvedMapId + "' for slot " + slotId + ": "
                     + (pasteResult != null ? pasteResult.getMessage() : "unknown"));
             cleanupWorld(worldName);
             return null;
@@ -90,11 +96,11 @@ public class MinigameEnvironmentService {
         Location lobbySpawn = resolvePreLobbySpawn(map, pasteLocation, matchSpawn);
         world.setSpawnLocation(lobbySpawn);
 
-        MatchEnvironment environment = new MatchEnvironment(slotId, worldName, mapId,
+        MatchEnvironment environment = new MatchEnvironment(slotId, worldName, resolvedMapId,
                 lobbySpawn, matchSpawn);
         environments.put(slotId, environment);
         logger.info(() -> "Prepared match environment '" + worldName + "' for slot " + slotId
-                + " (mapId=" + mapId + ")");
+                + " (mapId=" + resolvedMapId + ")");
         return environment;
     }
 
@@ -109,12 +115,35 @@ public class MinigameEnvironmentService {
         }
     }
 
-    private Optional<LoadedWorld> resolveMap(String mapId) {
+    private Optional<LoadedWorld> resolveMap(Map<String, String> metadata) {
+        String mapId = metadata != null ? metadata.get("mapId") : null;
+        Optional<LoadedWorld> byId = resolveMapById(mapId);
+        if (byId.isPresent()) {
+            return byId;
+        }
+        String poolId = metadata != null ? metadata.get("mapPool") : null;
+        if (poolId == null || poolId.isBlank()) {
+            poolId = metadata != null ? metadata.get("gameId") : null;
+        }
+        return resolveMapByPool(poolId);
+    }
+
+    private Optional<LoadedWorld> resolveMapById(String mapId) {
+        if (mapId == null || mapId.isBlank()) {
+            return Optional.empty();
+        }
         Optional<LoadedWorld> byId = worldService.getWorldByMapId(mapId);
         if (byId.isPresent()) {
             return byId;
         }
         return worldService.getWorldByName(mapId);
+    }
+
+    private Optional<LoadedWorld> resolveMapByPool(String poolId) {
+        if (poolId == null || poolId.isBlank()) {
+            return Optional.empty();
+        }
+        return worldService.getWorldByGameId(poolId);
     }
 
     private String generateWorldName(String slotId, String mapId) {
@@ -209,6 +238,5 @@ public class MinigameEnvironmentService {
                                    Location matchSpawn) {
     }
 }
-
 
 
