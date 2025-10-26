@@ -36,4 +36,8 @@ public final class GameManager {
     public void handlePlayerQuit(Player player) {
         engine.handlePlayerQuit(player);
     }
+
+    public void handleLocalRoute(Player player) {
+        engine.handleLocalRoute(player);
+    }
 }

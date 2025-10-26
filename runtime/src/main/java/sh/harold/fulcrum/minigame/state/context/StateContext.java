@@ -271,6 +271,23 @@ public final class StateContext {
         }
     }
 
+    /**
+     * Clears lingering spectator overrides/inventory when a player joins a fresh match.
+     */
+    public void resetPlayerStateForMatch(UUID playerId) {
+        if (actionFlags != null) {
+            actionFlags.clear(playerId);
+        }
+        findPlayer(playerId).ifPresent(player -> {
+            player.setAllowFlight(false);
+            player.setFlying(false);
+            player.getInventory().remove(Material.RED_BED);
+            if (player.getGameMode() == GameMode.SPECTATOR) {
+                player.setGameMode(GameMode.SURVIVAL);
+            }
+        });
+    }
+
     private void applySpectatorOverride(UUID playerId) {
         if (actionFlags == null) {
             return;

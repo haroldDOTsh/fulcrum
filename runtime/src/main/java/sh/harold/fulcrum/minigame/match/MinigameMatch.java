@@ -78,6 +78,7 @@ public final class MinigameMatch {
 
     public void addPlayer(Player player, boolean respawnAllowed) {
         UUID playerId = player.getUniqueId();
+        context.resetPlayerStateForMatch(playerId);
         boolean firstConnection = connectedPlayers.add(playerId);
         roster.addPlayer(playerId, respawnAllowed);
         RosterManager.Entry entry = roster.get(playerId);

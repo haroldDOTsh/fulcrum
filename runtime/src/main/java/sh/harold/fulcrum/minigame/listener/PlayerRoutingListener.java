@@ -133,9 +133,11 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
 
         Map<String, String> commandMetadata = command.getMetadata() != null ? new HashMap<>(command.getMetadata()) : new HashMap<>();
         String reservationToken = commandMetadata.get("reservationToken");
+        boolean hasReservationToken = reservationToken != null && !reservationToken.isBlank();
         String partyReservationId = commandMetadata.get("partyReservationId");
         String partyTokenId = commandMetadata.get("partyTokenId");
         Player player = Bukkit.getPlayer(playerId);
+        boolean localRoute = isLocalRoute(command, player);
 
         if (partyReservationId != null && !partyReservationId.isBlank()
                 && partyTokenId != null && !partyTokenId.isBlank()) {
@@ -146,10 +148,10 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                 sendReservationFailure(command, "party-reservation-invalid");
                 return;
             }
-        } else if (reservationService != null) {
+        } else if (reservationService != null && hasReservationToken) {
             boolean consumed = reservationService.consumeReservation(reservationToken, playerId);
             if (!consumed) {
-                if (isLocalRoute(command, player)) {
+                if (localRoute) {
                     plugin.getLogger().fine(() -> "Bypassing reservation validation for local route to slot "
                             + command.getSlotId() + " (token missing or expired).");
                 } else {
@@ -158,6 +160,9 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                     return;
                 }
             }
+        } else if (reservationService != null && !hasReservationToken) {
+            plugin.getLogger().fine(() -> "Route command for " + command.getPlayerName()
+                    + " did not include a reservation token; proceeding without validation.");
         } else {
             plugin.getLogger().warning("PlayerReservationService unavailable; accepting route without reservation validation");
         }
@@ -178,6 +183,10 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             sessionService.updateMinigameContext(playerId, metadata, command.getSlotId());
         }
         command.setMetadata(metadata);
+
+        if (localRoute && gameManager != null && player != null) {
+            gameManager.handleLocalRoute(player);
+        }
 
         PlayerRouteRegistry.RouteAssignment assignment = new PlayerRouteRegistry.RouteAssignment(
                 playerId,

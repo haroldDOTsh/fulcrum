@@ -231,7 +231,20 @@ public final class MinigameEngine {
         if (player == null) {
             return;
         }
-        UUID playerId = player.getUniqueId();
+        detachPlayerFromMatch(player.getUniqueId());
+    }
+
+    public void handleLocalRoute(Player player) {
+        if (player == null) {
+            return;
+        }
+        detachPlayerFromMatch(player.getUniqueId());
+    }
+
+    private void detachPlayerFromMatch(UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
         UUID matchId = playerMatchIndex.remove(playerId);
         MinigameMatch match = matchId != null ? activeMatches.get(matchId) : null;
         if (match == null) {
