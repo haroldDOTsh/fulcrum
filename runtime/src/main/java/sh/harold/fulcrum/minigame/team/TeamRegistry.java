@@ -26,6 +26,9 @@ public final class TeamRegistry {
     }
 
     public Optional<MatchTeam> teamById(String teamId) {
+        if (teamId == null) {
+            return Optional.empty();
+        }
         return Optional.ofNullable(teams.get(teamId));
     }
 
@@ -34,6 +37,9 @@ public final class TeamRegistry {
             return Optional.empty();
         }
         String teamId = membership.get(playerId);
+        if (teamId == null) {
+            return Optional.empty();
+        }
         return teamById(teamId);
     }
 

@@ -83,7 +83,6 @@ tasks.named<ShadowJar>("shadowJar") {
     exclude("META-INF/native-image/**")
 
     relocate("org.yaml.snakeyaml", "sh.harold.libraries.snakeyaml")      // Actual package in SnakeYAML 2.2
-    relocate("com.google", "sh.harold.libraries.google")       // From gson 2.11.0
     relocate(
         "com.fasterxml.jackson",
         "sh.harold.libraries.jackson"
