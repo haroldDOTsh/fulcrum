@@ -9,6 +9,6 @@ import sh.harold.fulcrum.minigame.state.context.StateContext;
 public final class DefaultEndGameState extends AbstractMinigameState {
     @Override
     public void onEnter(StateContext context) {
-        context.broadcast("Match concluded. Thanks for playing!");
+
     }
 }

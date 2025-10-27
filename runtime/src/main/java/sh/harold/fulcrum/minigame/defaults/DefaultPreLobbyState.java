@@ -24,7 +24,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -51,7 +50,6 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
 
         Duration countdown = options.getCountdown();
         AtomicInteger remainingSeconds = new AtomicInteger((int) countdown.getSeconds());
-        AtomicBoolean accelerated = new AtomicBoolean(false);
         int maxPlayers = context.getRegistration()
                 .map(MinigameRegistration::getDescriptor)
                 .map(descriptor -> descriptor.getMaxPlayers())
@@ -71,10 +69,7 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
             }
 
             if (maxPlayers > 0 && context.roster().activeCount() >= maxPlayers) {
-                int reduced = remainingSeconds.updateAndGet(current -> Math.min(current, 10));
-                if (reduced == 10 && accelerated.compareAndSet(false, true)) {
-                    context.broadcast(ChatColor.YELLOW + "All slots filled! " + formatCountdownMessage(10));
-                }
+                remainingSeconds.updateAndGet(current -> Math.min(current, 10));
             }
 
             int seconds = remainingSeconds.getAndDecrement();
