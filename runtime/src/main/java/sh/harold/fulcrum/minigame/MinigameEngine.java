@@ -259,6 +259,27 @@ public final class MinigameEngine {
         removePlayer(matchId, playerId);
     }
 
+    private void ensureDetachedFromOtherSlots(UUID playerId, String targetSlotId) {
+        if (playerId == null) {
+            return;
+        }
+        UUID currentMatchId = playerMatchIndex.get(playerId);
+        if (currentMatchId == null) {
+            currentMatchId = findMatchByPlayer(playerId)
+                    .map(MinigameMatch::getMatchId)
+                    .orElse(null);
+        }
+        if (currentMatchId == null) {
+            return;
+        }
+        String currentSlotId = matchSlotIds.get(currentMatchId);
+        if (currentSlotId != null
+                && currentSlotId.equalsIgnoreCase(targetSlotId)) {
+            return;
+        }
+        removePlayer(currentMatchId, playerId);
+    }
+
     public void handleRoutedPlayer(Player player, PlayerRouteRegistry.RouteAssignment assignment) {
         if (player == null || assignment == null) {
             return;
@@ -270,6 +291,8 @@ public final class MinigameEngine {
                     + " missing slot id; ignoring match registration.");
             return;
         }
+
+        ensureDetachedFromOtherSlots(player.getUniqueId(), slotId);
 
         UUID existingMatch = slotMatches.get(slotId);
         if (existingMatch != null) {

@@ -4,6 +4,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
@@ -33,7 +34,7 @@ public final class SpectatorListener implements Listener {
     private static final String RETURN_TO_LOBBY_LABEL = "Return to Lobby (Right Click)";
     private static final String QUEUE_AGAIN_LABEL = "Queue Again (Right Click)";
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onInteract(PlayerInteractEvent event) {
         ItemStack item = event.getItem();
         if (item == null) {

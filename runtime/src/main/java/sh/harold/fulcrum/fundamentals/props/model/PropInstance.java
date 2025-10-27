@@ -5,6 +5,7 @@ import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.CuboidRegion;
+import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.world.block.BlockTypes;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -55,7 +56,7 @@ public final class PropInstance {
             com.sk89q.worldedit.world.World weWorld = BukkitAdapter.adapt(world);
             try (EditSession editSession = WorldEdit.getInstance().newEditSession(weWorld)) {
                 CuboidRegion region = new CuboidRegion(weWorld, regionMin, regionMax);
-                editSession.setBlocks(region, BlockTypes.AIR.getDefaultState());
+                editSession.setBlocks((Region) region, BlockTypes.AIR.getDefaultState());
                 editSession.flushQueue();
             }
         } catch (Exception exception) {

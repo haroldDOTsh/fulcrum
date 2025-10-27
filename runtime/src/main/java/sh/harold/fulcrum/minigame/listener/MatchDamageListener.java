@@ -10,6 +10,7 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import sh.harold.fulcrum.minigame.MinigameAttributes;
 import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameEngine;
+import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
 import sh.harold.fulcrum.minigame.match.MinigameMatch;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
 
@@ -69,6 +70,9 @@ public final class MatchDamageListener implements Listener {
 
         MinigameMatch match = matchOpt.get();
         StateContext context = match.getContext();
+        if (!isPlayerWithinMatchEnvironment(player, match)) {
+            return false;
+        }
 
         String stateId = context.currentStateId();
         boolean matchComplete = context.getAttributeOptional(MinigameAttributes.MATCH_COMPLETE, Boolean.class).orElse(Boolean.FALSE);
@@ -88,5 +92,25 @@ public final class MatchDamageListener implements Listener {
         boolean allowRespawn = context.isRespawnAllowed(playerId);
         context.eliminatePlayer(playerId, allowRespawn, 0L);
         return true;
+    }
+
+    private boolean isPlayerWithinMatchEnvironment(Player player, MinigameMatch match) {
+        if (player == null || match == null) {
+            return false;
+        }
+        StateContext context = match.getContext();
+        if (context == null) {
+            return true;
+        }
+        MatchEnvironment environment = context.getAttributeOptional(MinigameAttributes.MATCH_ENVIRONMENT, MatchEnvironment.class)
+                .orElse(null);
+        if (environment == null) {
+            return true;
+        }
+        String worldName = environment.worldName();
+        if (worldName == null || worldName.isBlank()) {
+            return true;
+        }
+        return player.getWorld() != null && worldName.equalsIgnoreCase(player.getWorld().getName());
     }
 }

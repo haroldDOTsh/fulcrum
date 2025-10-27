@@ -184,7 +184,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         }
         command.setMetadata(metadata);
 
-        if (localRoute && gameManager != null && player != null) {
+        if (gameManager != null && player != null) {
             gameManager.handleLocalRoute(player);
         }
 
