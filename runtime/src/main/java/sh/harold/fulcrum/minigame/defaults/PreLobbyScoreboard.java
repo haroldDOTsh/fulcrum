@@ -27,11 +27,19 @@ public final class PreLobbyScoreboard {
 
     private static final String SCOREBOARD_ATTRIBUTE = "minigame.preLobby.scoreboardId";
     private static final long DEFAULT_REFRESH_INTERVAL = Duration.ofSeconds(1).toMillis();
+    private static final long COUNTDOWN_REFRESH_INTERVAL = Duration.ofMillis(500).toMillis();
+    private static final long WAITING_FRAME_INTERVAL = Duration.ofMillis(1500).toMillis();
+    private static final String[] WAITING_FRAMES = {
+            "&fWaiting",
+            "&fWaiting.",
+            "&fWaiting..",
+            "&fWaiting..."
+    };
 
     private PreLobbyScoreboard() {
     }
 
-    public static void apply(StateContext context, AtomicInteger remainingSeconds) {
+    public static void apply(StateContext context, AtomicInteger remainingSeconds, int requiredPlayers) {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(remainingSeconds, "remainingSeconds");
 
@@ -51,13 +59,13 @@ public final class PreLobbyScoreboard {
 
         Optional<String> slotOpt = findSlotId(context);
         if (slotOpt.isEmpty()) {
-            context.scheduleTask(() -> apply(context, remainingSeconds), 10L);
+            context.scheduleTask(() -> apply(context, remainingSeconds, requiredPlayers), 10L);
             return;
         }
 
         String scoreboardId = buildScoreboardId(context.getMatchId());
         if (!scoreboardService.isScoreboardRegistered(scoreboardId)) {
-            ScoreboardDefinition definition = buildDefinition(scoreboardId, context, remainingSeconds);
+            ScoreboardDefinition definition = buildDefinition(scoreboardId, context, remainingSeconds, requiredPlayers);
             scoreboardService.registerScoreboard(scoreboardId, definition);
         }
 
@@ -163,13 +171,14 @@ public final class PreLobbyScoreboard {
 
     private static ScoreboardDefinition buildDefinition(String scoreboardId,
                                                         StateContext context,
-                                                        AtomicInteger remainingSeconds) {
+                                                        AtomicInteger remainingSeconds,
+                                                        int requiredPlayers) {
         ScoreboardBuilder builder = new ScoreboardBuilder(scoreboardId)
                 .title(resolveTitle(context))
                 .headerLabel(resolveServerLabel(context));
 
         builder.module(new InfoModule(context));
-        builder.module(new CountdownModule(remainingSeconds));
+        builder.module(new CountdownModule(context, remainingSeconds, requiredPlayers));
         builder.module(new ModeModule(context));
 
         return builder.build();
@@ -332,16 +341,38 @@ public final class PreLobbyScoreboard {
         }
 
     private static final class CountdownModule implements ScoreboardModule {
+        private final StateContext context;
         private final AtomicInteger remainingSeconds;
+        private final int requiredPlayers;
         private final DynamicContentProvider provider;
+        private int waitingFrameIndex;
+        private long lastWaitingFrameChange;
+        private boolean waitingActive;
 
-        private CountdownModule(AtomicInteger remainingSeconds) {
+        private CountdownModule(StateContext context, AtomicInteger remainingSeconds, int requiredPlayers) {
+            this.context = Objects.requireNonNull(context, "context");
             this.remainingSeconds = remainingSeconds;
-            this.provider = new DynamicContentProvider(playerId -> List.of(buildLine(this.remainingSeconds)),
-                    DEFAULT_REFRESH_INTERVAL);
+            this.requiredPlayers = Math.max(1, requiredPlayers);
+            this.provider = new DynamicContentProvider(playerId -> List.of(buildLine()),
+                    COUNTDOWN_REFRESH_INTERVAL);
         }
 
-        private static String buildLine(AtomicInteger remainingSeconds) {
+        private String buildLine() {
+            if (context.roster().activeCount() < requiredPlayers) {
+                long now = System.currentTimeMillis();
+                if (!waitingActive) {
+                    waitingActive = true;
+                    waitingFrameIndex = 0;
+                    lastWaitingFrameChange = now;
+                } else if (now - lastWaitingFrameChange >= WAITING_FRAME_INTERVAL) {
+                    waitingFrameIndex = (waitingFrameIndex + 1) % WAITING_FRAMES.length;
+                    lastWaitingFrameChange = now;
+                }
+                return WAITING_FRAMES[waitingFrameIndex];
+            }
+
+            waitingActive = false;
+            waitingFrameIndex = 0;
             int seconds = Math.max(remainingSeconds.get() + 1, 0);
             int minutesPart = seconds / 60;
             int secondsPart = seconds % 60;

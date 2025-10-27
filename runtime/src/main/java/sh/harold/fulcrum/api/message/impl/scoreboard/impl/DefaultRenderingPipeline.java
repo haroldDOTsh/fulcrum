@@ -389,7 +389,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
     private String buildHeaderLine(ScoreboardDefinition definition) {
         String datePart = HEADER_DATE_FORMATTER.format(LocalDate.now());
         String label = resolveHeaderLabel(definition);
-        return "&7[" + datePart + "] &8" + label;
+        return "&7" + datePart + " &8" + label;
     }
 
     private String resolveHeaderLabel(ScoreboardDefinition definition) {

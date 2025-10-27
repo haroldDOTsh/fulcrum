@@ -60,7 +60,7 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
             return;
         }
 
-        PreLobbyScoreboard.apply(context, remainingSeconds);
+        PreLobbyScoreboard.apply(context, remainingSeconds, options.getMinimumPlayers());
 
         countdownTask = context.scheduleRepeatingTask(() -> {
             if (context.roster().activeCount() < options.getMinimumPlayers()) {
