@@ -36,7 +36,7 @@ import sh.harold.fulcrum.minigame.MinigameEngineFeature;
 import sh.harold.fulcrum.minigame.MinigameModuleRegistrar;
 
 public final class FulcrumPlugin extends JavaPlugin {
-    private static final int CONFIG_VERSION = 2;
+    private static final int CONFIG_VERSION = 3;
 
     private ModuleManager moduleManager;
     private SlotFamilyService slotFamilyService;
@@ -134,10 +134,24 @@ public final class FulcrumPlugin extends JavaPlugin {
         FileConfiguration config = getConfig();
         int currentVersion = config.getInt("config-version", 1);
         boolean updated = false;
+        boolean removedLegacyModuleConfig = false;
 
         if (currentVersion < 2) {
             currentVersion = 2;
             updated = true;
+        }
+
+        if (currentVersion < 3) {
+            if (config.contains("module")) {
+                config.set("module", null); // Remove legacy module directory config
+                removedLegacyModuleConfig = true;
+            }
+            currentVersion = 3;
+            updated = true;
+        }
+
+        if (removedLegacyModuleConfig) {
+            getLogger().info("Removed legacy module configuration; modules now belong in the plugins directory.");
         }
 
         ConfigurationSection features = config.getConfigurationSection("features");

@@ -1,10 +1,12 @@
 package sh.harold.fulcrum.minigame.listener;
 
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import sh.harold.fulcrum.minigame.MinigameAttributes;
 import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameEngine;
@@ -19,6 +21,7 @@ import java.util.UUID;
  * instead of triggering the vanilla death flow.
  */
 public final class MatchDamageListener implements Listener {
+    private static final double VOID_ELIMINATION_Y = -64.0D;
     private final MinigameEngine engine;
 
     public MatchDamageListener(MinigameEngine engine) {
@@ -36,13 +39,33 @@ public final class MatchDamageListener implements Listener {
             return;
         }
 
-        UUID playerId = player.getUniqueId();
-        Optional<MinigameMatch> matchOpt = engine.findMatchByPlayer(playerId);
-        if (matchOpt.isEmpty()) {
+        if (handleElimination(player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onVoidFall(PlayerMoveEvent event) {
+        Location to = event.getTo();
+        if (to == null || to.getY() >= VOID_ELIMINATION_Y) {
             return;
         }
 
-        event.setCancelled(true);
+        Location from = event.getFrom();
+        if (from != null && from.getY() < VOID_ELIMINATION_Y) {
+            // Already below the threshold; avoid double-processing while falling.
+            return;
+        }
+
+        handleElimination(event.getPlayer());
+    }
+
+    private boolean handleElimination(Player player) {
+        UUID playerId = player.getUniqueId();
+        Optional<MinigameMatch> matchOpt = engine.findMatchByPlayer(playerId);
+        if (matchOpt.isEmpty()) {
+            return false;
+        }
 
         MinigameMatch match = matchOpt.get();
         StateContext context = match.getContext();
@@ -59,10 +82,11 @@ public final class MatchDamageListener implements Listener {
 
         if (inPreLobby || inPostGame) {
             context.teleportPlayerToDefaultSpawn(playerId);
-            return;
+            return true;
         }
 
         boolean allowRespawn = context.isRespawnAllowed(playerId);
         context.eliminatePlayer(playerId, allowRespawn, 0L);
+        return true;
     }
 }

@@ -2,7 +2,7 @@
 # This file contains the main configuration for Fulcrum
 
 # Configuration file version
-config-version: 2
+config-version: 3
 
 # Development mode enables additional debugging features
 # and relaxed security checks for development environments
@@ -11,11 +11,6 @@ development-mode: true
 # Feature toggles
 features:
   debug-minigame: false
-
-# Module System Configuration
-module:
-  # Directory where modules are stored
-  directory: modules
 
 # Slot family host filters (docs/slot-family-discovery-notes.md)
 # allow: optional whitelist of familyIds; when empty all families are permitted
