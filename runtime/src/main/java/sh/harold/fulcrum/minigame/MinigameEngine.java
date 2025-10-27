@@ -37,6 +37,10 @@ import java.util.stream.Collectors;
 public final class MinigameEngine {
     private static final long MATCH_TEARDOWN_DELAY_TICKS = 600L;
     private static final long MATCH_IDLE_TEARDOWN_DELAY_TICKS = 1_200L;
+    private static final long LOBBY_ROUTE_RETRY_INTERVAL_TICKS = 60L;
+    private static final int LOBBY_ROUTE_MAX_ATTEMPTS = 3;
+    private static final long POST_MATCH_CLEANUP_DELAY_TICKS =
+            LOBBY_ROUTE_RETRY_INTERVAL_TICKS * (LOBBY_ROUTE_MAX_ATTEMPTS + 1L);
     private final JavaPlugin plugin;
     private final PlayerRouteRegistry routeRegistry;
     private final MinigameEnvironmentService environmentService;
@@ -65,6 +69,7 @@ public final class MinigameEngine {
     private final Set<UUID> recordedMatches = ConcurrentHashMap.newKeySet();
     private final Set<UUID> publishedRosters = ConcurrentHashMap.newKeySet();
     private final Map<UUID, BukkitTask> idleTeardownTasks = new ConcurrentHashMap<>();
+    private final Set<String> cleaningSlots = ConcurrentHashMap.newKeySet();
     private BukkitTask tickTask;
 
     public MinigameEngine(JavaPlugin plugin,
@@ -159,9 +164,7 @@ public final class MinigameEngine {
                 slotOrchestrator.removeSlot(slotId, SlotLifecycleStatus.AVAILABLE, removalMetadata);
             }
 
-            if (environmentService != null) {
-                environmentService.cleanup(slotId);
-            }
+            scheduleEnvironmentCleanup(slotId);
 
             publishRosterEnded(matchId, slotId);
         }
@@ -292,6 +295,23 @@ public final class MinigameEngine {
             return;
         }
 
+        if (cleaningSlots.contains(slotId)) {
+            plugin.getLogger().severe("Received route for slot " + slotId
+                    + " while cleanup is still running; rerouting " + player.getName() + " to lobby.");
+            if (environmentRoutingService != null) {
+                environmentRoutingService.routePlayer(
+                        player,
+                        "lobby",
+                        RouteOptions.builder()
+                                .failureMode(RouteOptions.FailureMode.FAIL_WITH_KICK)
+                                .reason("minigame:slot-cleaning")
+                                .metadata("source", "engine-slot-cleanup")
+                                .build()
+                );
+            }
+            return;
+        }
+
         ensureDetachedFromOtherSlots(player.getUniqueId(), slotId);
 
         UUID existingMatch = slotMatches.get(slotId);
@@ -320,6 +340,7 @@ public final class MinigameEngine {
         }
         activeMatches.clear();
         provisioningSlots.clear();
+        cleaningSlots.clear();
         ticking.set(false);
     }
 
@@ -480,6 +501,11 @@ public final class MinigameEngine {
         if (players.isEmpty()) {
             return;
         }
+        Map<UUID, String> originalWorlds = new LinkedHashMap<>();
+        for (Player player : players) {
+            String worldName = player.getWorld() != null ? player.getWorld().getName() : "";
+            originalWorlds.put(player.getUniqueId(), worldName);
+        }
         environmentRoutingService.routePlayers(
                 players,
                 "lobby",
@@ -489,6 +515,87 @@ public final class MinigameEngine {
                         .metadata("source", "engine-teardown")
                         .build()
         );
+        scheduleLobbyRetry(originalWorlds, 1);
+    }
+
+    private void scheduleLobbyRetry(Map<UUID, String> originalWorlds, int attempt) {
+        if (environmentRoutingService == null || originalWorlds == null || originalWorlds.isEmpty()) {
+            return;
+        }
+        if (attempt > LOBBY_ROUTE_MAX_ATTEMPTS) {
+            originalWorlds.forEach((playerId, originalWorld) -> {
+                Player player = plugin.getServer().getPlayer(playerId);
+                if (player == null || !player.isOnline() || playerMatchIndex.containsKey(playerId)) {
+                    return;
+                }
+                String currentWorld = player.getWorld() != null ? player.getWorld().getName() : "";
+                if (originalWorld != null && !originalWorld.isBlank()
+                        && currentWorld != null && !currentWorld.isBlank()
+                        && currentWorld.equalsIgnoreCase(originalWorld)) {
+                    player.kickPlayer("Routing to lobby failed. Please reconnect.");
+                }
+            });
+            return;
+        }
+
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            Map<UUID, String> remaining = new LinkedHashMap<>();
+            for (Map.Entry<UUID, String> entry : originalWorlds.entrySet()) {
+                UUID playerId = entry.getKey();
+                Player player = plugin.getServer().getPlayer(playerId);
+                if (player == null || !player.isOnline()) {
+                    continue;
+                }
+                if (playerMatchIndex.containsKey(playerId)) {
+                    continue;
+                }
+                String originalWorld = entry.getValue() != null ? entry.getValue() : "";
+                String currentWorld = player.getWorld() != null ? player.getWorld().getName() : "";
+                if (!originalWorld.isBlank() && !currentWorld.isBlank()
+                        && !currentWorld.equalsIgnoreCase(originalWorld)) {
+                    continue;
+                }
+                RouteOptions options = RouteOptions.builder()
+                        .failureMode(RouteOptions.FailureMode.REPORT_ONLY)
+                        .reason("minigame:auto-teardown-retry")
+                        .metadata("source", "engine-teardown")
+                        .metadata("attempt", Integer.toString(attempt))
+                        .build();
+                environmentRoutingService.routePlayer(player, "lobby", options);
+                remaining.put(playerId, originalWorld);
+            }
+            if (!remaining.isEmpty()) {
+                scheduleLobbyRetry(remaining, attempt + 1);
+            }
+        }, LOBBY_ROUTE_RETRY_INTERVAL_TICKS);
+    }
+
+    private void scheduleEnvironmentCleanup(String slotId) {
+        if (environmentService == null || slotId == null || slotId.isBlank()) {
+            return;
+        }
+        cleaningSlots.add(slotId);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            try {
+                if (slotMatches.containsKey(slotId)) {
+                    plugin.getLogger().severe(() -> "Slot " + slotId + " was reused before cleanup finished. "
+                            + "Routing players away and marking environment for reprovision.");
+                    UUID conflictingMatchId = slotMatches.get(slotId);
+                    if (conflictingMatchId != null) {
+                        MinigameMatch conflicting = activeMatches.get(conflictingMatchId);
+                        if (conflicting != null) {
+                            routePlayersToLobby(conflicting);
+                            endMatch(conflictingMatchId);
+                        }
+                    }
+                    markSlotFault(slotId, "cleanup-interrupted");
+                    return;
+                }
+                environmentService.cleanup(slotId);
+            } finally {
+                cleaningSlots.remove(slotId);
+            }
+        }, POST_MATCH_CLEANUP_DELAY_TICKS);
     }
 
     public void refreshSlotMetadata(String slotId, Map<String, String> metadata) {
