@@ -27,8 +27,6 @@ public final class ActionFlagPresets {
         flags.add(ActionFlag.INTERACT_BLOCK);
         flags.add(ActionFlag.INTERACT_ENTITY);
         flags.add(ActionFlag.GENERAL_USE);
-        flags.add(ActionFlag.HEALTH);
-        flags.add(ActionFlag.HUNGER);
         flags.add(ActionFlag.GAMEMODE);
         return FlagBundle.of(ActionFlagContexts.MATCH_PREGAME_DEFAULT, flags).withGamemode(org.bukkit.GameMode.ADVENTURE);
     }
