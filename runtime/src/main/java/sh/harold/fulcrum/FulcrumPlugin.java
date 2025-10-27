@@ -24,6 +24,7 @@ import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
 import sh.harold.fulcrum.fundamentals.minigame.debug.DebugMinigameFeature;
 import sh.harold.fulcrum.fundamentals.network.NetworkConfigFeature;
 import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
+import sh.harold.fulcrum.fundamentals.props.PropFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 import sh.harold.fulcrum.fundamentals.world.WorldFeature;
@@ -89,6 +90,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new MenuFeature());
         FeatureManager.register(new ActionFlagFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
+        FeatureManager.register(new PropFeature()); // Prop catalog (cages, pre-lobbies, etc.)
         FeatureManager.register(new MinigameEngineFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.routing.EnvironmentRoutingFeature());
         if (debugMinigameEnabled) {

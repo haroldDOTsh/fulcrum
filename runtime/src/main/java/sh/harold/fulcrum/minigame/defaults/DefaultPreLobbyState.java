@@ -5,6 +5,9 @@ import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.scheduler.BukkitTask;
+import sh.harold.fulcrum.fundamentals.props.PropManager;
+import sh.harold.fulcrum.fundamentals.props.model.PropInstance;
+import sh.harold.fulcrum.fundamentals.props.model.PropPlacementOptions;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.minigame.MinigameAttributes;
@@ -12,8 +15,6 @@ import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
-import sh.harold.fulcrum.minigame.pregame.PregameLobbyManager;
-import sh.harold.fulcrum.minigame.pregame.PregameLobbyManager.PregameLobbyInstance;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.state.AbstractMinigameState;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
@@ -96,7 +97,7 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
     public void onExit(StateContext context) {
         cancelTask();
         PreLobbyScoreboard.teardown(context);
-        context.getAttributeOptional(LOBBY_ATTRIBUTE, PregameLobbyInstance.class).ifPresent(instance -> {
+        context.getAttributeOptional(LOBBY_ATTRIBUTE, PropInstance.class).ifPresent(instance -> {
             instance.remove();
             context.removeAttribute(LOBBY_ATTRIBUTE);
         });
@@ -128,17 +129,19 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
 
     @SuppressWarnings("unchecked")
     private void spawnPreLobby(StateContext context) {
-        if (context.getAttributeOptional(LOBBY_ATTRIBUTE, PregameLobbyInstance.class).isPresent()) {
+        if (context.getAttributeOptional(LOBBY_ATTRIBUTE, PropInstance.class).isPresent()) {
             return;
         }
 
         Optional<MinigameRegistration> registrationOpt = context.getRegistration();
-        Optional<String> schematicIdOpt = registrationOpt.flatMap(MinigameRegistration::getPreLobbySchematicId);
+        Optional<String> propNameOpt = registrationOpt.flatMap(MinigameRegistration::getPreLobbyPropName);
 
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator == null) {
             return;
         }
+
+        PropManager propManager = locator.findService(PropManager.class).orElse(null);
 
         MinigameEnvironmentService environmentService = locator.findService(MinigameEnvironmentService.class)
                 .orElse(null);
@@ -180,13 +183,25 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         Location[] spawnHolder = new Location[]{lobbySpawn.clone()};
         context.setAttribute(MinigameAttributes.SLOT_ID, slotId);
 
-        if (schematicIdOpt.isPresent()) {
-            int offset = registrationOpt.map(MinigameRegistration::getPreLobbyHeightOffset).orElse(50);
-            PregameLobbyManager.spawn(context.getPlugin(), world, lobbySpawn, schematicIdOpt.get(), offset)
-                    .ifPresent(instance -> {
-                        context.setAttribute(LOBBY_ATTRIBUTE, instance);
-                        spawnHolder[0] = instance.getSpawnLocation();
-                    });
+        if (propNameOpt.isPresent()) {
+            if (propManager == null) {
+                context.getPlugin().getLogger().warning("Pre-lobby prop '" + propNameOpt.get() + "' requested but PropManager unavailable.");
+            } else {
+                int offset = registrationOpt.map(MinigameRegistration::getPreLobbyHeightOffset).orElse(50);
+                PropPlacementOptions options = PropPlacementOptions.builder()
+                        .verticalOffset(offset)
+                        .build();
+                boolean placed = propManager.pasteProp(propNameOpt.get(), world, lobbySpawn, options)
+                        .map(instance -> {
+                            context.setAttribute(LOBBY_ATTRIBUTE, instance);
+                            spawnHolder[0] = instance.spawnLocation();
+                            return true;
+                        })
+                        .orElse(false);
+                if (!placed) {
+                    context.getPlugin().getLogger().warning("Failed to paste pre-lobby prop '" + propNameOpt.get() + "'.");
+                }
+            }
         }
 
         context.setAttribute(SPAWN_ATTRIBUTE, spawnHolder[0]);
@@ -274,4 +289,3 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         return Optional.empty();
     }
 }
-

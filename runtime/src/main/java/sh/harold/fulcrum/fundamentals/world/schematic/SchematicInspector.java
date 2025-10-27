@@ -251,22 +251,6 @@ public class SchematicInspector {
             }
 
 
-            if ("[PREORIGIN]".equalsIgnoreCase(header)) {
-
-                Map<String, String> attributes = parseAttributes(lines.subList(1, lines.size()));
-                String id = attributes.remove("id");
-                JsonObject metadata = new JsonObject();
-                attributes.forEach(metadata::addProperty);
-                if (id == null || id.isBlank()) {
-                    id = "preorigin";
-                }
-                rawPois.add(new RawPoi(id, "preorigin", current, metadata));
-
-                removeBlock(clipboard, current);
-
-                continue;
-
-            }
             if ("[POI]".equalsIgnoreCase(header)) {
 
                 Map<String, String> attributes = parseAttributes(lines.subList(1, lines.size()));
@@ -472,7 +456,6 @@ public class SchematicInspector {
     public record InspectionResult(BlockArrayClipboard clipboard, List<PoiDefinition> pois, boolean originDetected) {
     }
 }
-
 
 
 

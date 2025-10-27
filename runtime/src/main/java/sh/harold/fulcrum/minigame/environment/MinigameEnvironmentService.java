@@ -93,7 +93,7 @@ public class MinigameEnvironmentService {
         }
 
         Location matchSpawn = resolveMatchSpawn(map, pasteLocation);
-        Location lobbySpawn = resolvePreLobbySpawn(map, pasteLocation, matchSpawn);
+        Location lobbySpawn = matchSpawn.clone();
         world.setSpawnLocation(lobbySpawn);
 
         MatchEnvironment environment = new MatchEnvironment(slotId, worldName, resolvedMapId,
@@ -186,17 +186,6 @@ public class MinigameEnvironmentService {
                 .orElseGet(() -> pasteLocation.clone().add(0.5D, 1.0D, 0.5D));
     }
 
-    private Location resolvePreLobbySpawn(LoadedWorld map, Location pasteLocation, Location matchSpawn) {
-        return map.getPois().stream()
-                .filter(poi -> "preorigin".equalsIgnoreCase(poi.type()))
-                .findFirst()
-                .map(poi -> pasteLocation.clone().add(
-                        poi.position().x() + 0.5D,
-                        poi.position().y(),
-                        poi.position().z() + 0.5D))
-                .orElse(matchSpawn.clone());
-    }
-
     private void cleanupWorld(String worldName) {
         World world = Bukkit.getWorld(worldName);
         if (world != null) {
@@ -235,4 +224,3 @@ public class MinigameEnvironmentService {
                                    Location matchSpawn) {
     }
 }
-

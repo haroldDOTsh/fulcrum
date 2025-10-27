@@ -13,9 +13,9 @@ import java.util.function.Consumer;
  * Metadata binding a slot family to a blueprint and configuration.
  */
 public final class MinigameRegistration {
-    private static final String PRE_LOBBY_SCHEMATIC_KEY = "preLobbySchematic";
+    private static final String PRE_LOBBY_PROP_KEY = "preLobbyProp";
     private static final String PRE_LOBBY_OFFSET_KEY = "preLobbyOffset";
-    private static final String DEFAULT_PRE_LOBBY_SCHEMATIC = "prelobby";
+    private static final String DEFAULT_PRE_LOBBY_PROP = "prelobby";
     private static final int DEFAULT_PRE_LOBBY_OFFSET = 50;
 
     private final String familyId;
@@ -56,13 +56,13 @@ public final class MinigameRegistration {
     }
 
     /**
-     * Resolve the schematic identifier to use for the pre-game lobby cage.
+     * Resolve the prop identifier to use for the pre-game lobby cage.
      * Providers can disable the lobby by setting the metadata value to "none" or "disabled".
      */
-    public Optional<String> getPreLobbySchematicId() {
-        String value = descriptor.getMetadata().get(PRE_LOBBY_SCHEMATIC_KEY);
+    public Optional<String> getPreLobbyPropName() {
+        String value = descriptor.getMetadata().get(PRE_LOBBY_PROP_KEY);
         if (value == null || value.isBlank()) {
-            return Optional.of(DEFAULT_PRE_LOBBY_SCHEMATIC);
+            return Optional.of(DEFAULT_PRE_LOBBY_PROP);
         }
         String normalised = value.trim();
         String lower = normalised.toLowerCase(Locale.ROOT);

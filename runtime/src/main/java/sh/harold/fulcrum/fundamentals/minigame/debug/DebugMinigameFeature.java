@@ -44,7 +44,7 @@ public final class DebugMinigameFeature implements PluginFeature {
             .putMetadata("description", "Debug minigame pipeline verification")
             .putMetadata("mapId", "test")
             .putMetadata("variant", VARIANT_ID)
-            .putMetadata("preLobbySchematic", "prelobby")
+            .putMetadata("preLobbyProp", "prelobby")
             .putMetadata("preLobbyOffset", "120")
             .build();
     private static final SlotFamilyProvider PROVIDER = () -> List.of(DESCRIPTOR);
