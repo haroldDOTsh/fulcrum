@@ -304,7 +304,7 @@ public class RegistryService {
         }
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
-            commandRegistry.register("provisionminigame", new ProvisionMinigameCommand(slotProvisionService));
+            commandRegistry.register("provisionminigame", new ProvisionMinigameCommand(slotProvisionService, serverRegistry));
         }
         commandRegistry.register("debugminigamepipeline", new DebugMinigamePipelineCommand(messageBus, proxyRegistry));
         if (networkConfigManager != null) {
