@@ -154,8 +154,14 @@ public class PlayerRoutingService {
                 return;
             }
 
-            PlayerRequestContext context = new PlayerRequestContext(request, resolveBlockedSlotId(request));
-            Optional<LogicalSlotRecord> available = findAvailableSlot(request.getFamilyId(), context.blockedSlotId());
+            PlayerRequestContext context = new PlayerRequestContext(
+                    request,
+                    resolveBlockedSlotId(request),
+                    resolveVariantId(request));
+            Optional<LogicalSlotRecord> available = findAvailableSlot(
+                    request.getFamilyId(),
+                    context.variantId(),
+                    context.blockedSlotId());
             if (available.isPresent()) {
                 routePlayer(context, available.get());
                 return;
@@ -170,7 +176,10 @@ public class PlayerRoutingService {
 
     private void handlePartyPlayerRequest(PlayerSlotRequest request, String reservationId) {
         PartyReservationAllocation allocation = activePartyReservations.get(reservationId);
-        PlayerRequestContext context = new PlayerRequestContext(request, resolveBlockedSlotId(request));
+        PlayerRequestContext context = new PlayerRequestContext(
+                request,
+                resolveBlockedSlotId(request),
+                resolveVariantId(request));
 
         if (allocation == null || allocation.isReleased()) {
             Queue<PlayerRequestContext> queue = pendingPartyPlayerRequests.computeIfAbsent(reservationId, key -> new ConcurrentLinkedQueue<>());
@@ -659,6 +668,33 @@ public class PlayerRoutingService {
         return null;
     }
 
+    private String resolveVariantId(PlayerSlotRequest request) {
+        if (request == null) {
+            return null;
+        }
+        Map<String, String> metadata = request.getMetadata();
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+
+        String variant = metadata.get("variant");
+        if (variant != null && !variant.isBlank()) {
+            return variant.trim();
+        }
+
+        String familyVariant = metadata.get("familyVariant");
+        if (familyVariant != null && !familyVariant.isBlank()) {
+            return familyVariant.trim();
+        }
+
+        String gameType = metadata.get("gameType");
+        if (gameType != null && !gameType.isBlank()) {
+            return gameType.trim();
+        }
+
+        return null;
+    }
+
     private void enqueueContext(PlayerRequestContext context) {
         if (context == null) {
             return;
@@ -688,7 +724,7 @@ public class PlayerRoutingService {
         });
     }
 
-    private Optional<LogicalSlotRecord> findAvailableSlot(String familyId, String blockedSlotId) {
+    private Optional<LogicalSlotRecord> findAvailableSlot(String familyId, String variantId, String blockedSlotId) {
         if (familyId == null) {
             return Optional.empty();
         }
@@ -704,6 +740,9 @@ public class PlayerRoutingService {
                 }
                 String slotFamily = slot.getMetadata().get("family");
                 if (!familyId.equalsIgnoreCase(slotFamily)) {
+                    continue;
+                }
+                if (!variantMatches(slot, variantId)) {
                     continue;
                 }
                 int pending = pendingOccupancy.getOrDefault(slot.getSlotId(), 0);
@@ -808,6 +847,10 @@ public class PlayerRoutingService {
             inspected++;
 
             if (context.isBlockedSlot(slotId)) {
+                queue.addLast(context);
+                continue;
+            }
+            if (!variantMatches(slot, context.variantId())) {
                 queue.addLast(context);
                 continue;
             }
@@ -1444,12 +1487,14 @@ public class PlayerRoutingService {
         final PlayerSlotRequest request;
         private final long createdAt = System.currentTimeMillis();
         private final String blockedSlotId;
+        private final String variantId;
         private volatile long lastEnqueuedAt = createdAt;
         private int retries;
 
-        PlayerRequestContext(PlayerSlotRequest request, String blockedSlotId) {
+        PlayerRequestContext(PlayerSlotRequest request, String blockedSlotId, String variantId) {
             this.request = request;
             this.blockedSlotId = blockedSlotId;
+            this.variantId = variantId;
         }
 
         void markEnqueued() {
@@ -1471,6 +1516,10 @@ public class PlayerRoutingService {
 
         boolean isBlockedSlot(String slotId) {
             return slotId != null && slotId.equalsIgnoreCase(blockedSlotId);
+        }
+
+        String variantId() {
+            return variantId;
         }
     }
 
