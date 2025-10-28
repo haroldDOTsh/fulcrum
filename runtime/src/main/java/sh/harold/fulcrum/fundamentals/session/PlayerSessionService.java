@@ -442,30 +442,113 @@ public class PlayerSessionService {
     public void updateMinigameContext(UUID playerId, Map<String, String> metadata, String slotId) {
         withActiveSession(playerId, record -> {
             ensureEnvironment(record);
-            record.getMinigames().remove("active");
-            record.getMinigames().remove("lastSlotId");
+            Map<String, Object> minigames = record.getMinigames();
+
+            Map<String, Object> active = mutableCopy(minigames.get("active"));
+            Map<String, Object> rejoin = mutableCopy(minigames.get("rejoin"));
+
+            active.clear();
+
+            if (metadata != null && metadata.containsKey("family")) {
+                String family = metadata.get("family");
+                String variant = metadata.getOrDefault("variant", "");
+                String matchId = metadata.get("matchId");
+                String proxy = currentServerId();
+
+                active.put("family", family);
+                if (variant != null && !variant.isBlank()) {
+                    active.put("variant", variant);
+                }
+                if (slotId != null && !slotId.isBlank()) {
+                    active.put("slotId", slotId);
+                }
+                if (proxy != null && !proxy.isBlank()) {
+                    active.put("proxyId", proxy);
+                }
+                active.put("queuedAt", System.currentTimeMillis());
+
+                rejoin.putAll(active);
+                rejoin.put("state", "pre_lobby");
+                rejoin.put("updatedAt", System.currentTimeMillis());
+                if (matchId != null && !matchId.isBlank()) {
+                    rejoin.put("matchId", matchId);
+                }
+
+                minigames.put("active", active);
+                minigames.put("rejoin", rejoin);
+
+                if (slotId != null && !slotId.isBlank()) {
+                    minigames.put("lastSlotId", slotId);
+                }
+                if (family != null && !family.isBlank()) {
+                    minigames.put("lastFamilyId", family);
+                }
+                if (variant != null && !variant.isBlank()) {
+                    minigames.put("lastVariantId", variant);
+                }
+            } else {
+                minigames.remove("active");
+                if (slotId != null && !slotId.isBlank()) {
+                    minigames.put("lastSlotId", slotId);
+                }
+                if (!rejoin.isEmpty()) {
+                    rejoin.put("updatedAt", System.currentTimeMillis());
+                    minigames.put("rejoin", rejoin);
+                }
+            }
         });
     }
 
     public void clearMinigameContext(UUID playerId) {
         withActiveSession(playerId, record -> {
             record.getMinigames().remove("active");
-            record.getMinigames().remove("lastSlotId");
         });
     }
 
     public void setActiveMatchId(UUID playerId, UUID matchId) {
         withActiveSession(playerId, record -> {
+            Map<String, Object> minigames = record.getMinigames();
             if (matchId != null) {
-                record.getMinigames().put("lastMatchId", matchId.toString());
+                String matchIdValue = matchId.toString();
+                minigames.put("lastMatchId", matchIdValue);
+                Map<String, Object> rejoin = mutableCopy(minigames.get("rejoin"));
+                if (!rejoin.isEmpty()) {
+                    rejoin.put("matchId", matchIdValue);
+                    rejoin.put("updatedAt", System.currentTimeMillis());
+                    minigames.put("rejoin", rejoin);
+                }
             } else {
-                record.getMinigames().remove("lastMatchId");
+                minigames.remove("lastMatchId");
             }
         });
     }
 
     public void clearTrackedMatch(UUID playerId) {
-        withActiveSession(playerId, record -> record.getMinigames().remove("lastMatchId"));
+        withActiveSession(playerId, record -> {
+            Map<String, Object> minigames = record.getMinigames();
+            minigames.remove("lastMatchId");
+            minigames.remove("rejoin");
+        });
+    }
+
+    public void updateRejoinStage(UUID playerId, String stage) {
+        if (playerId == null || stage == null || stage.isBlank()) {
+            return;
+        }
+        withActiveSession(playerId, record -> {
+            Map<String, Object> minigames = record.getMinigames();
+            Map<String, Object> rejoin = mutableCopy(minigames.get("rejoin"));
+            if (rejoin.isEmpty()) {
+                return;
+            }
+            rejoin.put("state", stage);
+            rejoin.put("updatedAt", System.currentTimeMillis());
+            minigames.put("rejoin", rejoin);
+        });
+    }
+
+    public void clearRejoinState(UUID playerId) {
+        withActiveSession(playerId, record -> record.getMinigames().remove("rejoin"));
     }
 
     private String stateKey(UUID playerId) {
@@ -501,6 +584,16 @@ public class PlayerSessionService {
         if (environment != null && !environment.isBlank()) {
             record.getCore().put("environment", environment);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mutableCopy(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new LinkedHashMap<>();
+            map.forEach((key, entryValue) -> copy.put(String.valueOf(key), entryValue));
+            return copy;
+        }
+        return new LinkedHashMap<>();
     }
 
     public record PlayerSessionHandle(UUID playerId, String sessionId, boolean createdNew) {

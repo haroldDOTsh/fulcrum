@@ -51,7 +51,7 @@ public final class MinigameEngine {
     private final MatchHistoryWriter matchHistoryWriter;
     private final MatchLogWriter matchLogWriter;
     private final MessageBus messageBus;
-    private final EnvironmentRoutingService environmentRoutingService;
+    private final Map<String, Set<UUID>> rejoinWatchers = new ConcurrentHashMap<>();
     private final Set<String> provisioningSlots = ConcurrentHashMap.newKeySet();
     private final Map<String, MinigameRegistration> registrations = new ConcurrentHashMap<>();
     private final Map<UUID, MinigameMatch> activeMatches = new ConcurrentHashMap<>();
@@ -73,6 +73,7 @@ public final class MinigameEngine {
     private final Set<UUID> publishedRosters = ConcurrentHashMap.newKeySet();
     private final Map<UUID, BukkitTask> idleTeardownTasks = new ConcurrentHashMap<>();
     private final Set<String> cleaningSlots = ConcurrentHashMap.newKeySet();
+    private volatile EnvironmentRoutingService environmentRoutingService;
     private BukkitTask tickTask;
 
     public MinigameEngine(JavaPlugin plugin,
@@ -96,6 +97,10 @@ public final class MinigameEngine {
         this.matchHistoryWriter = matchHistoryWriter;
         this.matchLogWriter = matchLogWriter;
         this.messageBus = messageBus;
+        this.environmentRoutingService = environmentRoutingService;
+    }
+
+    public void setEnvironmentRoutingService(EnvironmentRoutingService environmentRoutingService) {
         this.environmentRoutingService = environmentRoutingService;
     }
 
@@ -238,11 +243,17 @@ public final class MinigameEngine {
                     refreshSlotVisibility();
                 }
             }
+            if (slotId != null && !slotId.isBlank() && MinigameBlueprint.STATE_PRE_LOBBY.equals(match.getContext().currentStateId())) {
+                trackRejoinWatcher(slotId, playerId);
+                if (sessionService != null) {
+                    sessionService.updateRejoinStage(playerId, "pre_lobby");
+                }
+            }
             cancelIdleTeardown(matchId);
 
             if (MinigameBlueprint.STATE_PRE_LOBBY.equals(match.getContext().currentStateId())) {
                 publishedRosters.remove(matchId);
-                publishMatchRoster(matchId, match);
+                publishMatchRoster(matchId, match, true);
             }
         }
     }
@@ -252,22 +263,30 @@ public final class MinigameEngine {
         boolean slotUnregistered = playerSlotIndex.remove(playerId) != null;
         playerNameIndex.remove(playerId);
         if (match != null) {
+            String slotId = matchSlotIds.get(matchId);
             match.removePlayer(playerId);
             playerMatchIndex.remove(playerId);
             if (slotUnregistered) {
                 refreshSlotVisibility();
             }
             long activePlayers = match.getRoster().activeCount();
+            if (activePlayers > 0 && MinigameBlueprint.STATE_PRE_LOBBY.equals(match.getContext().currentStateId())) {
+                publishMatchRoster(matchId, match, true);
+            }
             if (activePlayers <= 0) {
                 if (MinigameBlueprint.STATE_PRE_LOBBY.equals(match.getContext().currentStateId())) {
                     match.resetPreLobbyCountdown();
-                    String slotId = matchSlotIds.get(matchId);
                     if (slotId != null && !slotId.isBlank()) {
                         publishRosterEnded(matchId, slotId);
                         publishedRosters.remove(matchId);
                     }
                 }
                 scheduleIdleTeardown(matchId);
+            } else if (slotId != null && !slotId.isBlank() && MinigameBlueprint.STATE_PRE_LOBBY.equals(match.getContext().currentStateId())) {
+                trackRejoinWatcher(slotId, playerId);
+                if (sessionService != null) {
+                    sessionService.updateRejoinStage(playerId, "pre_lobby");
+                }
             }
         } else if (slotUnregistered) {
             refreshSlotVisibility();
@@ -333,6 +352,34 @@ public final class MinigameEngine {
         removePlayer(currentMatchId, playerId);
     }
 
+    private void trackRejoinWatcher(String slotId, UUID playerId) {
+        if (slotId == null || slotId.isBlank() || playerId == null) {
+            return;
+        }
+        rejoinWatchers.computeIfAbsent(slotId, key -> ConcurrentHashMap.newKeySet()).add(playerId);
+    }
+
+    private void updateRejoinStage(String slotId, String stage, boolean clear) {
+        if (sessionService == null || slotId == null || slotId.isBlank() || stage == null || stage.isBlank()) {
+            if (clear) {
+                rejoinWatchers.remove(slotId);
+            }
+            return;
+        }
+        Set<UUID> watchers = rejoinWatchers.get(slotId);
+        if (watchers != null) {
+            for (UUID watcher : watchers) {
+                sessionService.updateRejoinStage(watcher, stage);
+                if ("closed".equalsIgnoreCase(stage)) {
+                    sessionService.clearRejoinState(watcher);
+                }
+            }
+        }
+        if (clear) {
+            rejoinWatchers.remove(slotId);
+        }
+    }
+
     public void handleRoutedPlayer(Player player, PlayerRouteRegistry.RouteAssignment assignment) {
         if (player == null || assignment == null) {
             return;
@@ -348,8 +395,9 @@ public final class MinigameEngine {
         if (cleaningSlots.contains(slotId)) {
             plugin.getLogger().severe("Received route for slot " + slotId
                     + " while cleanup is still running; rerouting " + player.getName() + " to lobby.");
-            if (environmentRoutingService != null) {
-                environmentRoutingService.routePlayer(
+            EnvironmentRoutingService routingService = this.environmentRoutingService;
+            if (routingService != null) {
+                routingService.routePlayer(
                         player,
                         "lobby",
                         RouteOptions.builder()
@@ -367,6 +415,9 @@ public final class MinigameEngine {
         UUID existingMatch = slotMatches.get(slotId);
         if (existingMatch != null) {
             addPlayer(existingMatch, player, false);
+            if (sessionService != null) {
+                sessionService.updateRejoinStage(player.getUniqueId(), "pre_lobby");
+            }
             return;
         }
 
@@ -544,7 +595,8 @@ public final class MinigameEngine {
     }
 
     private void routePlayersToLobby(MinigameMatch match) {
-        if (match == null || environmentRoutingService == null) {
+        EnvironmentRoutingService routingService = this.environmentRoutingService;
+        if (match == null || routingService == null) {
             return;
         }
         List<Player> players = match.getContext().getActivePlayers().stream()
@@ -559,7 +611,7 @@ public final class MinigameEngine {
             String worldName = player.getWorld() != null ? player.getWorld().getName() : "";
             originalWorlds.put(player.getUniqueId(), worldName);
         }
-        environmentRoutingService.routePlayers(
+        routingService.routePlayers(
                 players,
                 "lobby",
                 RouteOptions.builder()
@@ -572,7 +624,8 @@ public final class MinigameEngine {
     }
 
     private void scheduleLobbyRetry(Map<UUID, String> originalWorlds, int attempt) {
-        if (environmentRoutingService == null || originalWorlds == null || originalWorlds.isEmpty()) {
+        EnvironmentRoutingService routingService = this.environmentRoutingService;
+        if (routingService == null || originalWorlds == null || originalWorlds.isEmpty()) {
             return;
         }
         if (attempt > LOBBY_ROUTE_MAX_ATTEMPTS) {
@@ -614,7 +667,7 @@ public final class MinigameEngine {
                         .metadata("source", "engine-teardown")
                         .metadata("attempt", Integer.toString(attempt))
                         .build();
-                environmentRoutingService.routePlayer(player, "lobby", options);
+                routingService.routePlayer(player, "lobby", options);
                 remaining.put(playerId, originalWorld);
             }
             if (!remaining.isEmpty()) {
@@ -808,8 +861,9 @@ public final class MinigameEngine {
                     slotOrchestrator.updateSlotStatus(slotId, SlotLifecycleStatus.IN_GAME, activePlayers, metadataSnapshot);
                     matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(metadataSnapshot));
                     if (match != null) {
-                        publishMatchRoster(matchId, match);
+                        publishMatchRoster(matchId, match, true);
                     }
+                    updateRejoinStage(slotId, "in_game", false);
                 }
                 case MinigameBlueprint.STATE_END_GAME -> {
                     slotOrchestrator.updateSlotStatus(slotId, SlotLifecycleStatus.COOLDOWN, 0, metadataSnapshot);
@@ -821,6 +875,7 @@ public final class MinigameEngine {
                     slotOrchestrator.updateSlotStatus(slotId, SlotLifecycleStatus.ALLOCATED, rosterCount, metadataSnapshot);
                     matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(metadataSnapshot));
                     publishMatchRoster(matchId, match);
+                    updateRejoinStage(slotId, "pre_lobby", false);
                 }
                 default -> matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(metadataSnapshot));
             }
@@ -863,16 +918,26 @@ public final class MinigameEngine {
     }
 
     private void publishMatchRoster(UUID matchId, MinigameMatch match) {
+        publishMatchRoster(matchId, match, false);
+    }
+
+    private void publishMatchRoster(UUID matchId, MinigameMatch match, boolean force) {
         if (messageBus == null || match == null) {
             return;
         }
-        if (!publishedRosters.add(matchId)) {
+        if (!force && !publishedRosters.add(matchId)) {
             return;
+        }
+
+        if (force) {
+            publishedRosters.add(matchId);
         }
 
         String slotId = matchSlotIds.get(matchId);
         if (slotId == null || slotId.isBlank()) {
-            publishedRosters.remove(matchId);
+            if (!force) {
+                publishedRosters.remove(matchId);
+            }
             return;
         }
 
@@ -911,6 +976,7 @@ public final class MinigameEngine {
         if (messageBus == null || slotId == null || slotId.isBlank()) {
             return;
         }
+        updateRejoinStage(slotId, "closed", true);
         try {
             MatchRosterEndedMessage message = new MatchRosterEndedMessage();
             message.setMatchId(matchId);

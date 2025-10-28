@@ -7,6 +7,7 @@ import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 
 /**
@@ -14,6 +15,7 @@ import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
  */
 public final class EnvironmentRoutingFeature implements PluginFeature {
     private EnvironmentRoutingService service;
+    private DependencyContainer containerRef;
 
     @Override
     public int getPriority() {
@@ -23,6 +25,7 @@ public final class EnvironmentRoutingFeature implements PluginFeature {
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
+        this.containerRef = container;
         MessageBus messageBus = container.getOptional(MessageBus.class).orElse(null);
         PlayerRouteRegistry routeRegistry = container.getOptional(PlayerRouteRegistry.class).orElse(null);
         ServerLifecycleFeature lifecycleFeature = container.getOptional(ServerLifecycleFeature.class).orElse(null);
@@ -35,8 +38,11 @@ public final class EnvironmentRoutingFeature implements PluginFeature {
 
         service = new EnvironmentRoutingService(plugin, messageBus, routeRegistry, lifecycleFeature, serverIdentifier);
         container.register(EnvironmentRoutingService.class, service);
+        container.getOptional(MinigameEngine.class).ifPresent(engine -> engine.setEnvironmentRoutingService(service));
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(EnvironmentRoutingService.class, service);
+            ServiceLocatorImpl.getInstance().findService(MinigameEngine.class)
+                    .ifPresent(engine -> engine.setEnvironmentRoutingService(service));
         }
     }
 
@@ -45,7 +51,10 @@ public final class EnvironmentRoutingFeature implements PluginFeature {
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().unregisterService(EnvironmentRoutingService.class);
         }
+        if (service != null && containerRef != null) {
+            containerRef.getOptional(MinigameEngine.class).ifPresent(engine -> engine.setEnvironmentRoutingService(null));
+        }
         service = null;
+        containerRef = null;
     }
 }
-

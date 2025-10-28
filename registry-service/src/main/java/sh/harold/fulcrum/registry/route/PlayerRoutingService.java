@@ -298,10 +298,26 @@ public class PlayerRoutingService {
             }
 
             BlockedSlotContext blockedSlotContext = resolveBlockedSlotContext(request);
+            String preferredSlotId = requestMetadata != null ? sanitizeSlotId(requestMetadata.get("rejoinSlotId")) : null;
+            boolean rejoinRequest = preferredSlotId != null;
             PlayerRequestContext context = new PlayerRequestContext(
                     request,
                     blockedSlotContext,
-                    resolveVariantId(request));
+                    resolveVariantId(request),
+                    preferredSlotId,
+                    rejoinRequest);
+
+            if (context.isRejoin()) {
+                Optional<LogicalSlotRecord> rejoinSlot = findSlotById(context.preferredSlotId());
+                if (rejoinSlot.isPresent() && isSlotEligibleForRejoin(rejoinSlot.get())) {
+                    routePlayer(context, rejoinSlot.get());
+                } else {
+                    LOGGER.debug("Rejoin request for player {} rejected; slot {} unavailable",
+                            request.getPlayerName(), context.preferredSlotId());
+                    sendRejoinUnavailableAck(request);
+                }
+                return;
+            }
             Optional<LogicalSlotRecord> available = findAvailableSlot(
                     request.getFamilyId(),
                     context.variantId(),
@@ -324,7 +340,9 @@ public class PlayerRoutingService {
         PlayerRequestContext context = new PlayerRequestContext(
                 request,
                 blockedSlotContext,
-                resolveVariantId(request));
+                resolveVariantId(request),
+                null,
+                false);
 
         if (allocation == null || allocation.isReleased()) {
             Queue<PlayerRequestContext> queue = pendingPartyPlayerRequests.computeIfAbsent(reservationId, key -> new ConcurrentLinkedQueue<>());
@@ -902,6 +920,48 @@ public class PlayerRoutingService {
             }
         }
         return Optional.empty();
+    }
+
+    private Optional<LogicalSlotRecord> findSlotById(String slotId) {
+        if (slotId == null || slotId.isBlank()) {
+            return Optional.empty();
+        }
+        String normalized = normalizeSlotId(slotId);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+        for (RegisteredServerData server : serverRegistry.getAllServers()) {
+            for (LogicalSlotRecord slot : server.getSlots()) {
+                if (normalized.equalsIgnoreCase(normalizeSlotId(slot.getSlotId()))) {
+                    return Optional.of(slot);
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean isSlotEligibleForRejoin(LogicalSlotRecord slot) {
+        if (slot == null) {
+            return false;
+        }
+        SlotLifecycleStatus status = slot.getStatus();
+        if (status != SlotLifecycleStatus.ALLOCATED) {
+            return false;
+        }
+        return slotCapacityRemaining(slot) > 0;
+    }
+
+    private void sendRejoinUnavailableAck(PlayerSlotRequest request) {
+        if (request == null) {
+            return;
+        }
+        PlayerRouteAck ack = new PlayerRouteAck();
+        ack.setRequestId(request.getRequestId());
+        ack.setPlayerId(request.getPlayerId());
+        ack.setProxyId(request.getProxyId());
+        ack.setStatus(PlayerRouteAck.Status.FAILED);
+        ack.setReason("rejoin-slot-unavailable");
+        messageBus.broadcast(ChannelConstants.PLAYER_ROUTE_ACK, ack);
     }
 
     private LogicalSlotRecord findSlotOnServer(RegisteredServerData server,
@@ -1625,16 +1685,30 @@ public class PlayerRoutingService {
         private final String currentSlotId;
         private final Set<String> blockedSlotIds;
         private final String variantId;
+        private final String preferredSlotId;
+        private final boolean rejoin;
         private volatile long lastEnqueuedAt = createdAt;
         private int retries;
 
         PlayerRequestContext(PlayerSlotRequest request,
                              BlockedSlotContext blockedContext,
-                             String variantId) {
+                             String variantId,
+                             String preferredSlotId,
+                             boolean rejoin) {
             this.request = request;
             this.currentSlotId = blockedContext != null ? blockedContext.currentSlotId() : null;
-            this.blockedSlotIds = blockedContext != null ? blockedContext.blockedSlotIds() : Collections.emptySet();
+            Set<String> blocked = blockedContext != null ? blockedContext.blockedSlotIds() : Collections.emptySet();
+            String normalizedPreferred = normalizeSlotId(preferredSlotId);
+            if (normalizedPreferred != null && !blocked.isEmpty()) {
+                Set<String> filtered = new LinkedHashSet<>(blocked);
+                filtered.remove(normalizedPreferred);
+                this.blockedSlotIds = Collections.unmodifiableSet(filtered);
+            } else {
+                this.blockedSlotIds = blocked;
+            }
             this.variantId = variantId;
+            this.preferredSlotId = normalizedPreferred;
+            this.rejoin = rejoin && normalizedPreferred != null;
         }
 
         void markEnqueued() {
@@ -1652,7 +1726,13 @@ public class PlayerRoutingService {
 
         boolean isBlockedSlot(String slotId) {
             String normalized = normalizeSlotId(slotId);
-            return normalized != null && blockedSlotIds.contains(normalized);
+            if (normalized == null) {
+                return false;
+            }
+            if (rejoin && normalized.equalsIgnoreCase(preferredSlotId)) {
+                return false;
+            }
+            return blockedSlotIds.contains(normalized);
         }
 
         Set<String> blockedSlots() {
@@ -1665,6 +1745,14 @@ public class PlayerRoutingService {
 
         String variantId() {
             return variantId;
+        }
+
+        boolean isRejoin() {
+            return rejoin;
+        }
+
+        String preferredSlotId() {
+            return preferredSlotId;
         }
     }
 

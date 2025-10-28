@@ -68,6 +68,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         registerPlayCommand();
         registerLocatePlayerCommand();
         registerLobbyCommand();
+        registerRejoinCommand();
 
         logger.info("VelocityCommandFeature initialized");
     }
@@ -108,6 +109,22 @@ public class VelocityCommandFeature implements VelocityFeature {
                 messageBusFeature,
                 playerRoutingFeature,
                 lifecycleFeature,
+                logger
+        );
+
+        commandManager.register(meta, command);
+    }
+
+    private void registerRejoinCommand() {
+        CommandMeta meta = commandManager.metaBuilder("rejoin")
+                .aliases("rj")
+                .plugin(plugin)
+                .build();
+
+        ProxyRejoinCommand command = new ProxyRejoinCommand(
+                proxy,
+                playerRoutingFeature,
+                sessionService,
                 logger
         );
 

@@ -58,6 +58,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
     private String subscribedChannel;
     private MessageHandler routeHandler;
     private MessageHandler locateHandler;
+    private MessageHandler routeAckHandler;
 
     @Override
     public String getName() {
@@ -85,6 +86,8 @@ public class PlayerRoutingFeature implements VelocityFeature {
         routeHandler = this::handleRouteEnvelope;
         locateHandler = this::handleLocateEnvelope;
         messageBus.subscribe(ChannelConstants.REGISTRY_PLAYER_LOCATE_REQUEST, locateHandler);
+        routeAckHandler = this::handleRouteAckEnvelope;
+        messageBus.subscribe(ChannelConstants.PLAYER_ROUTE_ACK, routeAckHandler);
         subscribeToProxyChannel(messageBusFeature.getCurrentProxyId());
 
         registerRouteCommand();
@@ -99,6 +102,9 @@ public class PlayerRoutingFeature implements VelocityFeature {
         }
         if (locateHandler != null) {
             messageBus.unsubscribe(ChannelConstants.REGISTRY_PLAYER_LOCATE_REQUEST, locateHandler);
+        }
+        if (routeAckHandler != null) {
+            messageBus.unsubscribe(ChannelConstants.PLAYER_ROUTE_ACK, routeAckHandler);
         }
         proxy.getChannelRegistrar().unregister(ROUTE_CHANNEL);
         proxy.getEventManager().unregisterListener(plugin, this);
@@ -192,6 +198,40 @@ public class PlayerRoutingFeature implements VelocityFeature {
                 logger.error("Failed to handle player route command", exception);
             }
         }).schedule();
+    }
+
+    private void handleRouteAckEnvelope(MessageEnvelope envelope) {
+        try {
+            PlayerRouteAck ack = convert(envelope.payload(), PlayerRouteAck.class);
+            if (ack == null) {
+                return;
+            }
+            String proxyId = ack.getProxyId();
+            if (proxyId == null || !proxyId.equalsIgnoreCase(currentProxyId())) {
+                return;
+            }
+            if (ack.getStatus() != PlayerRouteAck.Status.FAILED) {
+                return;
+            }
+            UUID playerId = ack.getPlayerId();
+            if (playerId == null) {
+                return;
+            }
+            Optional<Player> playerOpt = proxy.getPlayer(playerId);
+            if (playerOpt.isEmpty()) {
+                return;
+            }
+            Player player = playerOpt.get();
+            String reason = ack.getReason();
+            if (reason == null) {
+                return;
+            }
+            if ("rejoin-slot-unavailable".equalsIgnoreCase(reason)) {
+                player.sendMessage(Component.text("Your previous match is no longer available to rejoin.", NamedTextColor.RED));
+            }
+        } catch (Exception exception) {
+            logger.warn("Failed to handle player route ack", exception);
+        }
     }
 
     private void handleRouteCommand(PlayerRouteCommand command) {
