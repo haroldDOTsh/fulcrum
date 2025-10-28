@@ -208,7 +208,9 @@ public class PlayerRoutingFeature implements VelocityFeature {
             return;
         }
 
-        player.sendMessage(Component.text("Sending you to " + command.getSlotId() + "...", NamedTextColor.GRAY));
+        if (shouldSendRouteNotice(command)) {
+            player.sendMessage(Component.text("Sending you to " + command.getSlotId() + "...", NamedTextColor.GRAY));
+        }
 
         if (player.getCurrentServer()
                 .map(current -> current.getServerInfo().getName().equalsIgnoreCase(command.getServerId()))
@@ -257,6 +259,15 @@ public class PlayerRoutingFeature implements VelocityFeature {
             player.disconnect(Component.text(reason, TextColor.color(0xFF5555)));
         });
         forgetPlayerLocation(command.getPlayerId());
+    }
+
+    private boolean shouldSendRouteNotice(PlayerRouteCommand command) {
+        Map<String, String> metadata = command.getMetadata();
+        if (metadata == null || metadata.isEmpty()) {
+            return true;
+        }
+        String reason = metadata.get("reason");
+        return reason == null || !reason.equalsIgnoreCase("command:lobby");
     }
 
     private void sendRoutePluginMessage(Player player, PlayerRouteCommand command) {

@@ -70,7 +70,6 @@ final class LobbyCommand implements SimpleCommand {
             return;
         }
 
-        player.sendMessage(Component.text("Sending you to the lobby...", NamedTextColor.GRAY));
         messageBus.broadcast(ChannelConstants.REGISTRY_ENVIRONMENT_ROUTE_REQUEST, request);
     }
 
