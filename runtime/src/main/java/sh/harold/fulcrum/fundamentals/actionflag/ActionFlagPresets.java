@@ -10,16 +10,8 @@ public final class ActionFlagPresets {
     }
 
     public static FlagBundle lobbyDefault() {
-        EnumSet<ActionFlag> flags = EnumSet.noneOf(ActionFlag.class);
-        flags.add(ActionFlag.INTERACT_BLOCK);
-        flags.add(ActionFlag.INTERACT_ENTITY);
-        flags.add(ActionFlag.GENERAL_USE);
-        flags.add(ActionFlag.ITEM_DROP);
-        flags.add(ActionFlag.ITEM_PICKUP);
-        flags.add(ActionFlag.HEALTH);
-        flags.add(ActionFlag.HUNGER);
-        flags.add(ActionFlag.GAMEMODE);
-        return FlagBundle.of(ActionFlagContexts.LOBBY_DEFAULT, flags).withGamemode(org.bukkit.GameMode.SURVIVAL);
+        EnumSet<ActionFlag> flags = EnumSet.of(ActionFlag.GAMEMODE);
+        return FlagBundle.of(ActionFlagContexts.LOBBY_DEFAULT, flags).withGamemode(org.bukkit.GameMode.ADVENTURE);
     }
 
     public static FlagBundle matchPregameDefault() {
