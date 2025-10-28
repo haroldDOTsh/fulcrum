@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class PlayerRoutingListener implements Listener, PluginMessageListener {
     private static final String CHANNEL = "fulcrum:route";
+    private static final Duration PROCESSED_REQUEST_TTL = Duration.ofSeconds(30);
 
     private final Plugin plugin;
     private final PlayerRouteRegistry routeRegistry;
@@ -113,21 +114,15 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                 + " (slot=" + command.getSlotId() + ", world=" + command.getTargetWorld() + ")");
 
         UUID requestId = command.getRequestId();
-        if (requestId != null) {
-            Long previous = processedRequests.putIfAbsent(requestId, System.currentTimeMillis());
-            if (previous != null) {
-                plugin.getLogger().fine("Ignoring duplicate route command " + requestId);
-                return;
-            }
+        if (requestId != null && isDuplicateRequest(requestId)) {
+            plugin.getLogger().fine("Ignoring duplicate route command " + requestId);
+            return;
         }
 
         UUID playerId = command.getPlayerId();
         Location target = resolveLocation(command);
         if (target == null) {
             plugin.getLogger().warning("Route command missing valid target location for player " + command.getPlayerName());
-            if (requestId != null) {
-                processedRequests.remove(requestId);
-            }
             return;
         }
 
@@ -231,9 +226,6 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             sessionService.clearHandoff(command.getPlayerId());
             sessionService.clearMinigameContext(command.getPlayerId());
         }
-        if (command.getRequestId() != null) {
-            processedRequests.remove(command.getRequestId());
-        }
     }
 
     private boolean isLocalRoute(PlayerRouteCommand command, Player player) {
@@ -276,18 +268,12 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                     metadata,
                     command.getSlotId());
         }
-        if (command.getRequestId() != null) {
-            processedRequests.remove(command.getRequestId());
-        }
     }
 
     private void handleDisconnect(PlayerRouteCommand command) {
         UUID playerId = command.getPlayerId();
         pendingTeleports.remove(playerId);
         routeRegistry.remove(playerId);
-        if (command.getRequestId() != null) {
-            processedRequests.remove(command.getRequestId());
-        }
 
         if (sessionService != null) {
             sessionService.endActiveSegment(playerId);
@@ -349,6 +335,28 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                 }
             });
         });
+    }
+
+    private boolean isDuplicateRequest(UUID requestId) {
+        long now = System.currentTimeMillis();
+        Long previous = processedRequests.putIfAbsent(requestId, now);
+        if (previous == null) {
+            cleanupProcessedRequests(now);
+            return false;
+        }
+        if (now - previous <= PROCESSED_REQUEST_TTL.toMillis()) {
+            return true;
+        }
+        processedRequests.put(requestId, now);
+        cleanupProcessedRequests(now);
+        return false;
+    }
+
+    private void cleanupProcessedRequests(long now) {
+        if (processedRequests.isEmpty()) {
+            return;
+        }
+        processedRequests.entrySet().removeIf(entry -> now - entry.getValue() > PROCESSED_REQUEST_TTL.toMillis());
     }
 
     private Location resolveLocation(PlayerRouteCommand command) {
