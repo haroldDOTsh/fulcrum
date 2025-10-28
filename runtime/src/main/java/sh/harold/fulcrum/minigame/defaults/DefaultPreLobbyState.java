@@ -38,6 +38,9 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
     private final String nextStateId;
 
     private BukkitTask countdownTask;
+    private AtomicInteger remainingSeconds;
+    private int initialSeconds;
+    private int requiredPlayers;
 
     public DefaultPreLobbyState(PreLobbyOptions options, String nextStateId) {
         this.options = options;
@@ -49,21 +52,30 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         spawnPreLobby(context);
 
         Duration countdown = options.getCountdown();
-        AtomicInteger remainingSeconds = new AtomicInteger((int) countdown.getSeconds());
+        initialSeconds = Math.max(0, (int) countdown.getSeconds());
+        requiredPlayers = options.getMinimumPlayers();
+        remainingSeconds = new AtomicInteger(initialSeconds);
         int maxPlayers = context.getRegistration()
                 .map(MinigameRegistration::getDescriptor)
                 .map(descriptor -> descriptor.getMaxPlayers())
                 .orElse(0);
 
-        if (remainingSeconds.get() <= 0) {
+        if (initialSeconds <= 0) {
             context.requestTransition(nextStateId);
             return;
         }
 
-        PreLobbyScoreboard.apply(context, remainingSeconds, options.getMinimumPlayers());
+        PreLobbyScoreboard.apply(context, remainingSeconds, requiredPlayers);
 
         countdownTask = context.scheduleRepeatingTask(() -> {
-            if (context.roster().activeCount() < options.getMinimumPlayers()) {
+            if (remainingSeconds == null) {
+                return;
+            }
+            long activePlayers = context.roster().activeCount();
+            if (activePlayers < requiredPlayers) {
+                if (activePlayers == 0) {
+                    remainingSeconds.set(initialSeconds);
+                }
                 PreLobbyScoreboard.refresh(context);
                 return; // wait for players
             }
@@ -103,6 +115,9 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         }
         context.removeAttribute(SPAWN_ATTRIBUTE);
         context.removeAttribute(MinigameAttributes.SLOT_METADATA);
+        remainingSeconds = null;
+        initialSeconds = 0;
+        requiredPlayers = 0;
     }
 
     private static boolean shouldAnnounceCountdown(int seconds) {
@@ -205,6 +220,15 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
         updateSlotSpawnMetadata(context, spawnHolder[0]);
         Location teleportTarget = spawnHolder[0].clone();
         context.forEachPlayer(player -> player.teleportAsync(teleportTarget.clone()));
+    }
+
+    public void resetCountdown(StateContext context) {
+        if (remainingSeconds == null || initialSeconds <= 0) {
+            return;
+        }
+        remainingSeconds.set(initialSeconds);
+        PreLobbyScoreboard.apply(context, remainingSeconds, requiredPlayers);
+        PreLobbyScoreboard.refresh(context);
     }
 
     private void cancelTask() {

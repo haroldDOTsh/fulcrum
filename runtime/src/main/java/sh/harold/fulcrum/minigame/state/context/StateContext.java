@@ -50,6 +50,7 @@ public final class StateContext {
     private final Set<UUID> registeredPlayers = ConcurrentHashMap.newKeySet();
     private final Queue<Runnable> pendingTasks = new ConcurrentLinkedQueue<>();
     private volatile String currentFlagContext;
+    private volatile String slotId;
     private StateMachine stateMachine;
     private volatile boolean frozen;
     private String queuedTransition;
@@ -202,6 +203,22 @@ public final class StateContext {
 
     public void removeAttribute(String key) {
         attributes.remove(key);
+    }
+
+    public Optional<String> getSlotId() {
+        return Optional.ofNullable(slotId);
+    }
+
+    public void setSlotId(String slotId) {
+        this.slotId = slotId;
+    }
+
+    public String getSlotIdOrNull() {
+        return slotId;
+    }
+
+    public void clearSlotId() {
+        this.slotId = null;
     }
 
     public void applyFlagContext(String contextId) {

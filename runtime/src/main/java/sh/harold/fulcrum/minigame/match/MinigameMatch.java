@@ -9,8 +9,10 @@ import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagContexts;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.minigame.MinigameAttributes;
 import sh.harold.fulcrum.minigame.MinigameBlueprint;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
+import sh.harold.fulcrum.minigame.defaults.DefaultPreLobbyState;
 import sh.harold.fulcrum.minigame.defaults.PreLobbyScoreboard;
 import sh.harold.fulcrum.minigame.state.context.StateContext;
 import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
@@ -43,7 +45,9 @@ public final class MinigameMatch {
                          Collection<Player> initialPlayers,
                          Consumer<String> stateListener,
                          ActionFlagService actionFlags,
-                         TeamPlanner.TeamPlan teamPlan) {
+                         TeamPlanner.TeamPlan teamPlan,
+                         String slotId,
+                         Map<String, String> slotMetadata) {
         this.matchId = Objects.requireNonNull(matchId, "matchId");
         this.blueprint = Objects.requireNonNull(blueprint, "blueprint");
         this.registration = registration;
@@ -54,6 +58,14 @@ public final class MinigameMatch {
         this.machine = new StateMachine(plugin, matchId, blueprint.getStateGraph(), context, blueprint.getStartStateId(), stateListener);
         this.context.bind(machine);
         this.context.applyFlagContext(ActionFlagContexts.MATCH_PREGAME_DEFAULT);
+
+        if (slotId != null && !slotId.isBlank()) {
+            this.context.setSlotId(slotId);
+            this.context.setAttribute(MinigameAttributes.SLOT_ID, slotId);
+        }
+        if (slotMetadata != null && !slotMetadata.isEmpty()) {
+            this.context.setAttribute(MinigameAttributes.SLOT_METADATA, new HashMap<>(slotMetadata));
+        }
 
         if (teamPlan != null) {
             this.teamService.initialize(teamPlan);
@@ -148,6 +160,15 @@ public final class MinigameMatch {
         if (teamService != null) {
             teamService.teardown();
         }
+    }
+
+    public void resetPreLobbyCountdown() {
+        if (!isInPreLobby() || machine == null) {
+            return;
+        }
+        machine.getCurrentState(DefaultPreLobbyState.class)
+                .ifPresent(state -> state.resetCountdown(context));
+        PreLobbyScoreboard.refresh(context);
     }
 
     private void announcePreLobbyJoin(Player player) {

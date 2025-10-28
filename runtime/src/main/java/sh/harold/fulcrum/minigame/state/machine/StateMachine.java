@@ -81,6 +81,13 @@ public final class StateMachine {
         return graph.get(stateId);
     }
 
+    public <T extends MinigameState> Optional<T> getCurrentState(Class<T> type) {
+        if (type.isInstance(currentState)) {
+            return Optional.of(type.cast(currentState));
+        }
+        return Optional.empty();
+    }
+
     private void evaluateTransitions() {
         StateDefinition definition = graph.get(currentStateId);
         if (definition == null) {
