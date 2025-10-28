@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.minigame;
 
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -20,7 +21,9 @@ import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEn
 import sh.harold.fulcrum.minigame.match.MatchHistoryWriter;
 import sh.harold.fulcrum.minigame.match.MatchLogWriter;
 import sh.harold.fulcrum.minigame.match.MinigameMatch;
+import sh.harold.fulcrum.minigame.match.RosterManager;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
+import sh.harold.fulcrum.minigame.state.context.StateContext;
 import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
 import sh.harold.fulcrum.minigame.team.TeamPlanner;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
@@ -35,7 +38,10 @@ import java.util.stream.Collectors;
  * Runtime engine that manages active minigame matches.
  */
 public final class MinigameEngine {
-    private static final long MATCH_TEARDOWN_DELAY_TICKS = 600L;
+    private static final long POST_MATCH_VICTORY_DELAY_TICKS = 15L * 20L;
+    private static final long POST_MATCH_SPECTATOR_DURATION_TICKS = 15L * 20L;
+    private static final long MATCH_TEARDOWN_DELAY_TICKS =
+            POST_MATCH_VICTORY_DELAY_TICKS + POST_MATCH_SPECTATOR_DURATION_TICKS;
     private static final long MATCH_IDLE_TEARDOWN_DELAY_TICKS = 1_200L;
     private static final long LOBBY_ROUTE_RETRY_INTERVAL_TICKS = 60L;
     private static final int LOBBY_ROUTE_MAX_ATTEMPTS = 3;
@@ -71,6 +77,7 @@ public final class MinigameEngine {
     private final Map<UUID, List<MatchLogWriter.Event>> matchEvents = new ConcurrentHashMap<>();
     private final Set<UUID> recordedMatches = ConcurrentHashMap.newKeySet();
     private final Set<UUID> publishedRosters = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, PostMatchTimeline> postMatchTimelines = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> idleTeardownTasks = new ConcurrentHashMap<>();
     private final Set<String> cleaningSlots = ConcurrentHashMap.newKeySet();
     private volatile EnvironmentRoutingService environmentRoutingService;
@@ -138,6 +145,11 @@ public final class MinigameEngine {
     }
 
     public void endMatch(UUID matchId) {
+        PostMatchTimeline timeline = postMatchTimelines.remove(matchId);
+        if (timeline != null) {
+            timeline.cancel();
+        }
+
         BukkitTask pending = teardownTasks.remove(matchId);
         if (pending != null) {
             pending.cancel();
@@ -556,19 +568,51 @@ public final class MinigameEngine {
     }
 
     private void scheduleMatchTeardown(UUID matchId, String slotId) {
-        if (teardownTasks.containsKey(matchId)) {
+        if (teardownTasks.containsKey(matchId) || postMatchTimelines.containsKey(matchId)) {
             return;
         }
-        if (slotId == null || slotId.isBlank()) {
+
+        MinigameMatch match = activeMatches.get(matchId);
+        if (match == null) {
             endMatch(matchId);
             return;
         }
 
-        BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            teardownTasks.remove(matchId);
-            endMatch(matchId);
-        }, MATCH_TEARDOWN_DELAY_TICKS);
-        teardownTasks.put(matchId, task);
+        PostMatchTimeline timeline = new PostMatchTimeline();
+        BukkitTask victoryTask = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (!postMatchTimelines.containsKey(matchId)) {
+                return;
+            }
+            beginPostMatchSpectatorPhase(matchId);
+        }, POST_MATCH_VICTORY_DELAY_TICKS);
+        timeline.setVictoryTask(victoryTask);
+
+        long teardownDelay = MATCH_TEARDOWN_DELAY_TICKS;
+        BukkitTask finalTask = plugin.getServer().getScheduler().runTaskLater(plugin, () -> endMatch(matchId), teardownDelay);
+        timeline.setTeardownTask(finalTask);
+
+        postMatchTimelines.put(matchId, timeline);
+        teardownTasks.put(matchId, finalTask);
+    }
+
+    private void beginPostMatchSpectatorPhase(UUID matchId) {
+        MinigameMatch match = activeMatches.get(matchId);
+        if (match == null) {
+            return;
+        }
+        StateContext context = match.getContext();
+        if (context == null) {
+            return;
+        }
+        RosterManager roster = match.getRoster();
+        roster.all().forEach(entry -> {
+            UUID playerId = entry.getPlayerId();
+            context.setRespawnAllowed(playerId, false);
+            context.transitionPlayerToSpectator(playerId);
+        });
+        context.broadcast(ChatColor.GOLD + "Match complete! " + ChatColor.YELLOW
+                + "Right click the paper to queue again or the bed to head back to the lobby."
+                + ChatColor.RESET);
     }
 
     private void scheduleIdleTeardown(UUID matchId) {
@@ -1269,6 +1313,28 @@ public final class MinigameEngine {
         }
         slotHiddenPairs.removeIf(key -> plugin.getServer().getPlayer(key.viewer()) == null
                 || plugin.getServer().getPlayer(key.target()) == null);
+    }
+
+    private static final class PostMatchTimeline {
+        private BukkitTask victoryTask;
+        private BukkitTask teardownTask;
+
+        void setVictoryTask(BukkitTask victoryTask) {
+            this.victoryTask = victoryTask;
+        }
+
+        void setTeardownTask(BukkitTask teardownTask) {
+            this.teardownTask = teardownTask;
+        }
+
+        void cancel() {
+            if (victoryTask != null) {
+                victoryTask.cancel();
+            }
+            if (teardownTask != null) {
+                teardownTask.cancel();
+            }
+        }
     }
 
     private record SlotContext(String slotId, Map<String, String> metadata) {
