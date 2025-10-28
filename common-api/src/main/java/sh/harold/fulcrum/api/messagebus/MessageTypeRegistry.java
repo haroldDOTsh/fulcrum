@@ -102,6 +102,12 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigRequestMessage.class);
             register(ChannelConstants.REGISTRY_NETWORK_CONFIG_RESPONSE,
                     sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigResponseMessage.class);
+            register(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND,
+                    sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentCommandMessage.class);
+            register(ChannelConstants.REGISTRY_PUNISHMENT_APPLIED,
+                    sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentAppliedMessage.class);
+            register(ChannelConstants.REGISTRY_PUNISHMENT_STATUS,
+                    sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusMessage.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {

@@ -10,6 +10,10 @@
     "title": "&6&lHAROLD",
     "footer": "&eplay.harold.sh"
   },
+  "punishmentLinks": {
+    "mute": "https://fulcrum.gg/mutes",
+    "ban": "https://fulcrum.gg/appeals"
+  },
   "ranks": {
     "DEFAULT": {
       "displayName": "Default",

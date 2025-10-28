@@ -73,6 +73,7 @@ public class VelocityFeatureManager {
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature());
         registerFeature(new VelocityPlayerDataFeature());
         registerFeature(new VelocityPartyFeature());
+        registerFeature(new sh.harold.fulcrum.velocity.punishment.VelocityPunishmentFeature());
         registerFeature(new VelocityCommandFeature());
     }
 

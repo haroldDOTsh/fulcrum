@@ -152,6 +152,12 @@ public final class ChannelConstants {
      */
     public static final String SERVER_SLOT_PROVISION_PREFIX = "fulcrum.server.slot.provision.";
     /**
+     * Punishment command and broadcast channels
+     */
+    public static final String REGISTRY_PUNISHMENT_COMMAND = "fulcrum.registry.punishment.command";
+    public static final String REGISTRY_PUNISHMENT_APPLIED = "fulcrum.registry.punishment.applied";
+    public static final String REGISTRY_PUNISHMENT_STATUS = "fulcrum.registry.punishment.status";
+    /**
      * Proxy registration response
      */
     public static final String PROXY_REGISTRATION_RESPONSE = "fulcrum.proxy.registration.response";

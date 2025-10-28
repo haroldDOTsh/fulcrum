@@ -13,6 +13,7 @@ import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeat
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
+import sh.harold.fulcrum.velocity.punishment.PunishCommand;
 import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 /**
@@ -69,6 +70,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         registerLocatePlayerCommand();
         registerLobbyCommand();
         registerRejoinCommand();
+        registerPunishCommand();
 
         logger.info("VelocityCommandFeature initialized");
     }
@@ -126,6 +128,23 @@ public class VelocityCommandFeature implements VelocityFeature {
                 playerRoutingFeature,
                 sessionService,
                 logger
+        );
+
+        commandManager.register(meta, command);
+    }
+
+    private void registerPunishCommand() {
+        CommandMeta meta = commandManager.metaBuilder("punish")
+                .plugin(plugin)
+                .build();
+
+        PunishCommand command = new PunishCommand(
+                proxy,
+                messageBus,
+                dataAPI,
+                sessionService,
+                logger,
+                plugin
         );
 
         commandManager.register(meta, command);

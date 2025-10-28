@@ -4,7 +4,9 @@ import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
+import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
@@ -20,6 +22,9 @@ import sh.harold.fulcrum.registry.network.NetworkConfigCache;
 import sh.harold.fulcrum.registry.network.NetworkConfigManager;
 import sh.harold.fulcrum.registry.network.NetworkConfigRepository;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
+import sh.harold.fulcrum.registry.punishment.PunishmentRepository;
+import sh.harold.fulcrum.registry.punishment.PunishmentService;
+import sh.harold.fulcrum.registry.punishment.PunishmentSnapshotWriter;
 import sh.harold.fulcrum.registry.rank.RankMutationService;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
@@ -58,6 +63,7 @@ public class RegistryService {
     private PlayerRoutingService playerRoutingService;
     private sh.harold.fulcrum.registry.session.DeadServerSessionSweeper sessionSweeper;
     private RankMutationService rankMutationService;
+    private PunishmentService punishmentService;
     private NetworkConfigManager networkConfigManager;
 
     public RegistryService() {
@@ -202,6 +208,7 @@ public class RegistryService {
             }
 
             rankMutationService = createRankMutationService();
+            punishmentService = createPunishmentService();
             networkConfigManager = createNetworkConfigManager();
             if (networkConfigManager != null) {
                 networkConfigManager.initialize();
@@ -560,6 +567,51 @@ public class RegistryService {
         }
     }
 
+    private PunishmentService createPunishmentService() {
+        if (messageBus == null) {
+            LOGGER.warn("MessageBus unavailable; punishment service disabled");
+            return null;
+        }
+        Map<String, Object> storage = (Map<String, Object>) config.get("storage");
+        if (storage == null) {
+            LOGGER.warn("Storage configuration missing; punishment service disabled");
+            return null;
+        }
+
+        Map<String, Object> postgresSection = (Map<String, Object>) storage.get("postgres");
+        if (postgresSection == null || !Boolean.parseBoolean(String.valueOf(postgresSection.getOrDefault("enabled", true)))) {
+            LOGGER.warn("PostgreSQL configuration missing or disabled; punishment service requires relational storage");
+            return null;
+        }
+
+        Map<String, Object> mongoSection = (Map<String, Object>) storage.get("mongodb");
+        if (mongoSection == null) {
+            LOGGER.warn("MongoDB configuration missing; punishment service cannot update player documents");
+            return null;
+        }
+
+        String jdbcUrl = String.valueOf(postgresSection.getOrDefault("jdbc-url", "jdbc:postgresql://localhost:5432/fulcrum"));
+        String username = String.valueOf(postgresSection.getOrDefault("username", "fulcrum"));
+        String password = String.valueOf(postgresSection.getOrDefault("password", ""));
+        String database = String.valueOf(postgresSection.getOrDefault("database", "fulcrum"));
+
+        String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
+        String mongoDatabase = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
+
+        try {
+            PostgresConnectionAdapter postgresAdapter = new PostgresConnectionAdapter(jdbcUrl, username, password, database);
+            MongoConnectionAdapter mongoAdapter = new MongoConnectionAdapter(connectionString, mongoDatabase);
+            DataAPI dataAPI = DataAPI.create(mongoAdapter);
+
+            PunishmentRepository repository = new PunishmentRepository(postgresAdapter, LOGGER);
+            PunishmentSnapshotWriter snapshotWriter = new PunishmentSnapshotWriter(mongoAdapter, dataAPI, LOGGER);
+            return new PunishmentService(messageBus, LOGGER, scheduler, repository, snapshotWriter);
+        } catch (Exception ex) {
+            LOGGER.error("Failed to initialise punishment service", ex);
+            return null;
+        }
+    }
+
     /**
      * Check if debug mode is enabled
      */
@@ -601,6 +653,14 @@ public class RegistryService {
                     rankMutationService.close();
                 } catch (Exception closeEx) {
                     LOGGER.warn("Failed to close rank mutation service", closeEx);
+                }
+            }
+
+            if (punishmentService != null) {
+                try {
+                    punishmentService.close();
+                } catch (Exception closeEx) {
+                    LOGGER.warn("Failed to close punishment service", closeEx);
                 }
             }
 
