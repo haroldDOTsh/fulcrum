@@ -55,18 +55,8 @@ public final class EnvironmentRoutingService {
         }
 
         if (!isEnvironmentAvailable(normalizedEnvironment, effective.targetServerId())) {
-            switch (effective.failureMode()) {
-                case FAIL_WITH_KICK -> {
-                    // TODO: Replace with limbo transfer when implemented.
-                    plugin.getLogger().warning(() -> "Environment '" + normalizedEnvironment + "' unavailable; kicking "
-                            + player.getName() + " until limbo support is implemented.");
-                    player.kickPlayer("No available servers for " + normalizedEnvironment + ". Please try again.");
-                }
-                case REPORT_ONLY -> {
-                    // Command handlers will surface the message themselves.
-                }
-            }
-            return EnvironmentRouteResult.failure("No available servers for environment '" + normalizedEnvironment + "'");
+            plugin.getLogger().fine(() -> "Environment '" + normalizedEnvironment
+                    + "' not found in local cache; forwarding request to registry for final validation.");
         }
 
         EnvironmentRouteRequestMessage message = buildMessage(player, proxyId, normalizedEnvironment, targetLocation, effective);
