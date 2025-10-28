@@ -26,6 +26,7 @@ import sh.harold.fulcrum.minigame.data.MongoMinigameDataRegistry;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
 import sh.harold.fulcrum.minigame.listener.MatchDamageListener;
 import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
+import sh.harold.fulcrum.minigame.listener.SlotTabCompletionListener;
 import sh.harold.fulcrum.minigame.listener.SpectatorListener;
 import sh.harold.fulcrum.minigame.match.MatchHistoryWriter;
 import sh.harold.fulcrum.minigame.match.MatchLogWriter;
@@ -153,6 +154,7 @@ public class MinigameEngineFeature implements PluginFeature {
         }
         Bukkit.getPluginManager().registerEvents(new SpectatorListener(), plugin);
         Bukkit.getPluginManager().registerEvents(new MatchDamageListener(engine), plugin);
+        Bukkit.getPluginManager().registerEvents(new SlotTabCompletionListener(engine), plugin);
         PlayerReservationService reservationService = container.getOptional(PlayerReservationService.class)
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(PlayerReservationService.class).orElse(null)

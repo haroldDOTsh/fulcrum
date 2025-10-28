@@ -18,6 +18,7 @@ import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
 import java.util.Optional;
@@ -47,8 +48,16 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
         ChatFormatService chatFormatService = container.getOptional(ChatFormatService.class).orElse(null);
         RankService rankService = container.getOptional(RankService.class).orElse(null);
         LettuceRedisOperations redis = container.getOptional(LettuceRedisOperations.class).orElse(null);
+        java.util.function.Supplier<MinigameEngine> engineSupplier = () -> container.getOptional(MinigameEngine.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(MinigameEngine.class).orElse(null)
+                        : null);
 
-        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis);
+        if (engineSupplier.get() == null) {
+            logger.warning("MinigameEngine unavailable; chat isolation will fall back to global delivery.");
+        }
+
+        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, engineSupplier);
 
         container.register(ChatChannelService.class, service);
         Optional.ofNullable(ServiceLocatorImpl.getInstance())

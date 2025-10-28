@@ -23,11 +23,13 @@ import sh.harold.fulcrum.api.party.PartyRedisKeys;
 import sh.harold.fulcrum.api.party.PartySnapshot;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 final class ChatChannelServiceImpl implements ChatChannelService {
@@ -41,6 +43,8 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     private final ChatFormatService chatFormatService;
     private final RankService rankService;
     private final LettuceRedisOperations redisOperations;
+    private final Supplier<MinigameEngine> engineSupplier;
+    private volatile MinigameEngine cachedEngine;
     private final ObjectMapper mapper;
 
     private final Map<UUID, ChatChannelRef> activeChannels = new ConcurrentHashMap<>();
@@ -54,13 +58,15 @@ final class ChatChannelServiceImpl implements ChatChannelService {
                            MessageBus messageBus,
                            ChatFormatService chatFormatService,
                            RankService rankService,
-                           LettuceRedisOperations redisOperations) {
+                           LettuceRedisOperations redisOperations,
+                           Supplier<MinigameEngine> engineSupplier) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.messageBus = messageBus;
         this.chatFormatService = chatFormatService;
         this.rankService = rankService;
         this.redisOperations = redisOperations;
+        this.engineSupplier = engineSupplier;
         this.mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
@@ -127,6 +133,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         ChatChannelRef current = getActiveChannel(player.getUniqueId());
 
         if (current.type() == ChatChannelType.ALL) {
+            restrictViewersToSlot(event);
             if (!checkSlowMode(player.getUniqueId(), ChatChannelType.ALL, lastAllMessage)) {
                 event.setCancelled(true);
                 notifySlowMode(player);
@@ -138,6 +145,37 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         Component message = event.message();
         String plain = PLAIN.serialize(message);
         runSync(() -> sendChannelMessage(player, current, message, plain));
+    }
+
+    private void restrictViewersToSlot(AsyncChatEvent event) {
+        MinigameEngine minigameEngine = resolveEngine();
+        if (minigameEngine == null) {
+            return;
+        }
+        UUID senderId = event.getPlayer().getUniqueId();
+        Optional<String> slotId = minigameEngine.resolveSlotId(senderId);
+        if (slotId.isEmpty()) {
+            return;
+        }
+        Set<UUID> allowed = new HashSet<>(minigameEngine.getPlayerIdsInSlot(slotId.get()));
+        allowed.add(senderId);
+        event.viewers().removeIf(audience -> audience instanceof Player viewer
+                && !allowed.contains(viewer.getUniqueId()));
+    }
+
+    private MinigameEngine resolveEngine() {
+        MinigameEngine engine = cachedEngine;
+        if (engine != null) {
+            return engine;
+        }
+        if (engineSupplier == null) {
+            return null;
+        }
+        engine = engineSupplier.get();
+        if (engine != null) {
+            cachedEngine = engine;
+        }
+        return engine;
     }
 
     @Override

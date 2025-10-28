@@ -62,6 +62,9 @@ public final class MinigameEngine {
     private final Map<UUID, BukkitTask> teardownTasks = new ConcurrentHashMap<>();
     private final AtomicBoolean ticking = new AtomicBoolean(false);
     private final Map<UUID, UUID> playerMatchIndex = new ConcurrentHashMap<>();
+    private final Map<UUID, String> playerSlotIndex = new ConcurrentHashMap<>();
+    private final Map<UUID, String> playerNameIndex = new ConcurrentHashMap<>();
+    private final Set<VisibilityKey> slotHiddenPairs = ConcurrentHashMap.newKeySet();
     private final Map<UUID, MatchContext> matchContexts = new ConcurrentHashMap<>();
     private final Map<UUID, Long> matchStartTimes = new ConcurrentHashMap<>();
     private final Map<UUID, Map<UUID, UUID>> matchPlayerSessions = new ConcurrentHashMap<>();
@@ -142,9 +145,17 @@ public final class MinigameEngine {
 
         MinigameMatch removedMatch = activeMatches.remove(matchId);
         matchStates.remove(matchId);
+        boolean visibilityRefreshNeeded = false;
 
         if (removedMatch != null) {
             routePlayersToLobby(removedMatch);
+            for (UUID playerId : new ArrayList<>(removedMatch.getContext().getActivePlayers())) {
+                playerMatchIndex.remove(playerId);
+                if (playerSlotIndex.remove(playerId) != null) {
+                    visibilityRefreshNeeded = true;
+                }
+                playerNameIndex.remove(playerId);
+            }
         }
 
         String slotId = matchSlotIds.remove(matchId);
@@ -171,7 +182,7 @@ public final class MinigameEngine {
 
         if (removedMatch != null) {
             removedMatch.shutdown();
-            removedMatch.getContext().getActivePlayers().forEach(playerMatchIndex::remove);
+            removedMatch.getContext().clearSlotId();
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_ID);
             removedMatch.getContext().removeAttribute(MinigameAttributes.SLOT_METADATA);
             removedMatch.getContext().removeAttribute(MinigameAttributes.MATCH_ENVIRONMENT);
@@ -180,6 +191,9 @@ public final class MinigameEngine {
                 removedMatch.getRoster().all().forEach(entry ->
                         sessionService.clearTrackedMatch(entry.getPlayerId()));
             }
+        }
+        if (visibilityRefreshNeeded) {
+            refreshSlotVisibility();
         }
         matchContexts.remove(matchId);
         matchStartTimes.remove(matchId);
@@ -209,18 +223,54 @@ public final class MinigameEngine {
             if (sessionService != null) {
                 sessionService.setActiveMatchId(playerId, matchId);
             }
+            playerNameIndex.put(playerId, player.getName());
+            String slotId = matchSlotIds.get(matchId);
+            if (slotId == null) {
+                match.getContext().getSlotId().ifPresent(id -> {
+                    String previous = playerSlotIndex.put(playerId, id);
+                    if (!id.equals(previous)) {
+                        refreshSlotVisibility();
+                    }
+                });
+            } else {
+                String previous = playerSlotIndex.put(playerId, slotId);
+                if (!slotId.equals(previous)) {
+                    refreshSlotVisibility();
+                }
+            }
             cancelIdleTeardown(matchId);
+
+            if (MinigameBlueprint.STATE_PRE_LOBBY.equals(match.getContext().currentStateId())) {
+                publishedRosters.remove(matchId);
+                publishMatchRoster(matchId, match);
+            }
         }
     }
 
     public void removePlayer(UUID matchId, UUID playerId) {
         MinigameMatch match = activeMatches.get(matchId);
+        boolean slotUnregistered = playerSlotIndex.remove(playerId) != null;
+        playerNameIndex.remove(playerId);
         if (match != null) {
             match.removePlayer(playerId);
             playerMatchIndex.remove(playerId);
-            if (match.getRoster().activeCount() <= 0) {
+            if (slotUnregistered) {
+                refreshSlotVisibility();
+            }
+            long activePlayers = match.getRoster().activeCount();
+            if (activePlayers <= 0) {
+                if (MinigameBlueprint.STATE_PRE_LOBBY.equals(match.getContext().currentStateId())) {
+                    match.resetPreLobbyCountdown();
+                    String slotId = matchSlotIds.get(matchId);
+                    if (slotId != null && !slotId.isBlank()) {
+                        publishRosterEnded(matchId, slotId);
+                        publishedRosters.remove(matchId);
+                    }
+                }
                 scheduleIdleTeardown(matchId);
             }
+        } else if (slotUnregistered) {
+            refreshSlotVisibility();
         }
     }
 
@@ -341,6 +391,9 @@ public final class MinigameEngine {
         activeMatches.clear();
         provisioningSlots.clear();
         cleaningSlots.clear();
+        playerSlotIndex.clear();
+        playerNameIndex.clear();
+        slotHiddenPairs.clear();
         ticking.set(false);
     }
 
@@ -646,10 +699,13 @@ public final class MinigameEngine {
             teamPlan = TeamPlanner.plan(matchId, initialPlayers, fallbackMetadata, playerMetadata);
         }
 
+        String slotId = slotContext != null ? slotContext.slotId : null;
         MinigameMatch match = new MinigameMatch(plugin, matchId, blueprint, registration, initialPlayers,
                 stateId -> onStateChange(matchId, familyId, stateId),
                 actionFlags,
-                teamPlan);
+                teamPlan,
+                slotId,
+                metadataSnapshot);
         activeMatches.put(matchId, match);
         matchStates.put(matchId, blueprint.getStartStateId());
         for (Player player : initialPlayers) {
@@ -660,27 +716,28 @@ public final class MinigameEngine {
             if (sessionService != null) {
                 sessionService.setActiveMatchId(playerId, matchId);
             }
+            playerNameIndex.put(playerId, player.getName());
+            if (slotId != null) {
+                playerSlotIndex.put(playerId, slotId);
+            }
+        }
+        if (slotId != null) {
+            matchSlotIds.put(matchId, slotId);
+            slotMatches.put(slotId, matchId);
+            publishedRosters.remove(matchId);
+            refreshSlotVisibility();
         }
         if (slotContext != null) {
-            match.getContext().setAttribute(MinigameAttributes.SLOT_ID, slotContext.slotId);
-
-            if (!metadataSnapshot.isEmpty()) {
-                match.getContext().setAttribute(MinigameAttributes.SLOT_METADATA, new HashMap<>(metadataSnapshot));
-            }
-
-            matchSlotIds.put(matchId, slotContext.slotId);
-            slotMatches.put(slotContext.slotId, matchId);
-            publishedRosters.remove(matchId);
 
             if (environmentService != null) {
-                environmentService.getEnvironment(slotContext.slotId)
+                environmentService.getEnvironment(slotId)
                         .ifPresent(env -> match.getContext().setAttribute(MinigameAttributes.MATCH_ENVIRONMENT, env));
             }
 
             if (slotOrchestrator != null) {
                 Map<String, String> statusMetadata = new HashMap<>(metadataSnapshot);
                 statusMetadata.putIfAbsent("phase", "pre_lobby");
-                slotOrchestrator.updateSlotStatus(slotContext.slotId,
+                slotOrchestrator.updateSlotStatus(slotId,
                         SlotLifecycleStatus.ALLOCATED,
                         initialPlayers.size(),
                         statusMetadata);
@@ -763,6 +820,7 @@ public final class MinigameEngine {
                     int rosterCount = match != null ? (int) match.getRoster().activeCount() : 0;
                     slotOrchestrator.updateSlotStatus(slotId, SlotLifecycleStatus.ALLOCATED, rosterCount, metadataSnapshot);
                     matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(metadataSnapshot));
+                    publishMatchRoster(matchId, match);
                 }
                 default -> matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(metadataSnapshot));
             }
@@ -1029,10 +1087,131 @@ public final class MinigameEngine {
         );
     }
 
+    public Optional<String> resolveSlotId(UUID playerId) {
+        if (playerId == null) {
+            return Optional.empty();
+        }
+        String slotId = playerSlotIndex.get(playerId);
+        if (slotId != null) {
+            return Optional.of(slotId);
+        }
+        UUID matchId = playerMatchIndex.get(playerId);
+        if (matchId != null) {
+            String matchSlot = matchSlotIds.get(matchId);
+            if (matchSlot != null) {
+                return Optional.of(matchSlot);
+            }
+            MinigameMatch match = activeMatches.get(matchId);
+            if (match != null) {
+                return match.getContext().getSlotId();
+            }
+        }
+        return Optional.empty();
+    }
+
+    public Set<UUID> getPlayerIdsInSlot(String slotId) {
+        if (slotId == null || slotId.isBlank()) {
+            return Set.of();
+        }
+        Set<UUID> result = new HashSet<>();
+        for (Map.Entry<UUID, String> entry : playerSlotIndex.entrySet()) {
+            if (entry.getValue() != null && slotId.equalsIgnoreCase(entry.getValue())) {
+                result.add(entry.getKey());
+            }
+        }
+        if (result.isEmpty()) {
+            UUID matchId = slotMatches.get(slotId);
+            if (matchId != null) {
+                MinigameMatch match = activeMatches.get(matchId);
+                if (match != null) {
+                    result.addAll(match.getContext().getActivePlayers());
+                }
+            }
+        }
+        return result;
+    }
+
+    public Collection<Player> getPlayersInSlot(String slotId) {
+        if (slotId == null || slotId.isBlank()) {
+            return List.of();
+        }
+        List<Player> players = new ArrayList<>();
+        for (UUID playerId : getPlayerIdsInSlot(slotId)) {
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player != null && player.isOnline()) {
+                players.add(player);
+            }
+        }
+        return players;
+    }
+
+    public List<String> getPlayerNamesInSlot(String slotId) {
+        return getPlayersInSlot(slotId).stream()
+                .map(Player::getName)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    public Set<String> getPlayerNameSnapshotInSlot(String slotId) {
+        if (slotId == null || slotId.isBlank()) {
+            return Set.of();
+        }
+        Set<UUID> ids = getPlayerIdsInSlot(slotId);
+        if (ids.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> names = new HashSet<>();
+        for (UUID id : ids) {
+            String name = playerNameIndex.get(id);
+            if (name != null && !name.isBlank()) {
+                names.add(name);
+            }
+        }
+        return names;
+    }
+
+    private void refreshSlotVisibility() {
+        if (!plugin.getServer().isPrimaryThread()) {
+            plugin.getServer().getScheduler().runTask(plugin, this::refreshSlotVisibilitySync);
+        } else {
+            refreshSlotVisibilitySync();
+        }
+    }
+
+    private void refreshSlotVisibilitySync() {
+        List<Player> players = new ArrayList<>(plugin.getServer().getOnlinePlayers());
+        for (Player viewer : players) {
+            UUID viewerId = viewer.getUniqueId();
+            String viewerSlot = playerSlotIndex.get(viewerId);
+            for (Player target : players) {
+                if (viewer == target) {
+                    continue;
+                }
+                UUID targetId = target.getUniqueId();
+                String targetSlot = playerSlotIndex.get(targetId);
+                VisibilityKey key = new VisibilityKey(viewerId, targetId);
+                if (viewerSlot != null && targetSlot != null && !viewerSlot.equalsIgnoreCase(targetSlot)) {
+                    if (slotHiddenPairs.add(key)) {
+                        viewer.hidePlayer(plugin, target);
+                    }
+                } else {
+                    if (slotHiddenPairs.remove(key)) {
+                        viewer.showPlayer(plugin, target);
+                    }
+                }
+            }
+        }
+        slotHiddenPairs.removeIf(key -> plugin.getServer().getPlayer(key.viewer()) == null
+                || plugin.getServer().getPlayer(key.target()) == null);
+    }
+
     private record SlotContext(String slotId, Map<String, String> metadata) {
     }
 
     private record MatchContext(String family, String variant, String mapId, String environment, String slotId) {
+    }
+
+    private record VisibilityKey(UUID viewer, UUID target) {
     }
 
     public void logMatchEvent(UUID matchId, MatchLogWriter.Event event) {
