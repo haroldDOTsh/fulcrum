@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentAppliedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentCommandMessage;
-import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentExpireRequestMessage;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusMessage;
 import sh.harold.fulcrum.api.punishment.*;
 
@@ -25,7 +24,6 @@ public final class PunishmentService implements AutoCloseable {
     private final ConcurrentMap<UUID, PlayerPunishmentState> playerStates = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, ScheduledFuture<?>> scheduledExpiryTasks = new ConcurrentHashMap<>();
     private final MessageHandler commandHandler;
-    private final MessageHandler expiryHandler;
 
     public PunishmentService(MessageBus messageBus,
                              Logger logger,
@@ -38,9 +36,7 @@ public final class PunishmentService implements AutoCloseable {
         this.repository = repository;
         this.snapshotWriter = snapshotWriter;
         this.commandHandler = this::handleCommand;
-        this.expiryHandler = this::handleExpiry;
         this.messageBus.subscribe(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND, commandHandler);
-        this.messageBus.subscribe(ChannelConstants.REGISTRY_PUNISHMENT_EXPIRE_REQUEST, expiryHandler);
         logger.info("PunishmentService subscribed to {}", ChannelConstants.REGISTRY_PUNISHMENT_COMMAND);
         loadExistingData();
     }
@@ -138,35 +134,6 @@ public final class PunishmentService implements AutoCloseable {
 
         broadcastApplied(record);
         scheduleExpiryTasks(record);
-    }
-
-    private void handleExpiry(MessageEnvelope envelope) {
-        PunishmentExpireRequestMessage request;
-        try {
-            request = MessageTypeRegistry.getInstance()
-                    .deserializeToClass(envelope.payload(), PunishmentExpireRequestMessage.class);
-        } catch (Exception ex) {
-            logger.warn("Failed to deserialize punishment expiry request", ex);
-            return;
-        }
-        if (request == null) {
-            return;
-        }
-
-        try {
-            processExpiry(request);
-        } catch (Exception ex) {
-            logger.error("Failed to process punishment expiry request {}", request.getRequestId(), ex);
-        }
-    }
-
-    private void processExpiry(PunishmentExpireRequestMessage message) {
-        UUID punishmentId = message.getPunishmentId();
-        if (punishmentId == null) {
-            return;
-        }
-        Instant observedAt = message.getObservedAt() != null ? message.getObservedAt() : Instant.now();
-        markInactive(punishmentId, PunishmentStatus.INACTIVE, observedAt);
     }
 
     private List<PunishmentRecordEffect> convertEffects(List<PunishmentEffect> effects, Instant issuedAt) {
@@ -336,7 +303,6 @@ public final class PunishmentService implements AutoCloseable {
     @Override
     public void close() {
         messageBus.unsubscribe(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND, commandHandler);
-        messageBus.unsubscribe(ChannelConstants.REGISTRY_PUNISHMENT_EXPIRE_REQUEST, expiryHandler);
         scheduledExpiryTasks.values().forEach(future -> future.cancel(false));
         scheduledExpiryTasks.clear();
         try {

@@ -157,7 +157,6 @@ public final class ChannelConstants {
     public static final String REGISTRY_PUNISHMENT_COMMAND = "fulcrum.registry.punishment.command";
     public static final String REGISTRY_PUNISHMENT_APPLIED = "fulcrum.registry.punishment.applied";
     public static final String REGISTRY_PUNISHMENT_STATUS = "fulcrum.registry.punishment.status";
-    public static final String REGISTRY_PUNISHMENT_EXPIRE_REQUEST = "fulcrum.registry.punishment.expire-request";
     /**
      * Proxy registration response
      */

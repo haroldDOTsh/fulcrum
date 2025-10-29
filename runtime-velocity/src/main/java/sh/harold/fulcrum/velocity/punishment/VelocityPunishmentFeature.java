@@ -15,19 +15,21 @@ import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.data.DocumentPatch;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentAppliedMessage;
-import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentExpireRequestMessage;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusMessage;
 import sh.harold.fulcrum.api.network.NetworkConfigService;
 import sh.harold.fulcrum.api.network.NetworkProfileView;
 import sh.harold.fulcrum.api.punishment.PunishmentEffectType;
+import sh.harold.fulcrum.api.punishment.PunishmentLadder;
 import sh.harold.fulcrum.api.punishment.PunishmentReason;
 import sh.harold.fulcrum.api.punishment.PunishmentStatus;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 
+import java.sql.*;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -45,6 +47,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
     private Logger logger;
     private NetworkConfigService networkConfigService;
     private DataAPI dataAPI;
+    private PostgresConnectionAdapter postgresAdapter;
 
     private MessageHandler appliedHandler;
     private MessageHandler statusHandler;
@@ -67,6 +70,10 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         this.messageBus = serviceLocator.getRequiredService(MessageBus.class);
         this.networkConfigService = serviceLocator.getRequiredService(NetworkConfigService.class);
         this.dataAPI = serviceLocator.getRequiredService(DataAPI.class);
+        this.postgresAdapter = serviceLocator.getService(PostgresConnectionAdapter.class).orElse(null);
+        if (postgresAdapter == null) {
+            logger.warn("PostgreSQL adapter unavailable; punishment expirations will not update relational ladder state.");
+        }
 
         this.appliedHandler = this::handleApplied;
         this.statusHandler = this::handleStatus;
@@ -133,7 +140,8 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
 
         Object raw = document.get("punishments.activePunishments");
         Instant now = Instant.now();
-        Set<UUID> expiredPunishments = new LinkedHashSet<>();
+        Map<UUID, PunishmentLadder> expiredPunishments = new LinkedHashMap<>();
+        Map<UUID, PunishmentLadder> activeLadders = new HashMap<>();
         List<Map<String, Object>> retainedEntries = new ArrayList<>();
         List<PunishmentEffectInstance> effects = new ArrayList<>();
 
@@ -148,10 +156,13 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                     continue;
                 }
 
+                PunishmentLadder ladderEnum = parseLadder(stringValue(map.get("ladder")));
                 Instant expiresAt = parseInstant(stringValue(map.get("expiresAt")));
                 boolean expired = expiresAt != null && expiresAt.isBefore(now) && isEnforcement(type);
                 if (expired) {
-                    expiredPunishments.add(punishmentId);
+                    if (ladderEnum != null) {
+                        expiredPunishments.put(punishmentId, ladderEnum);
+                    }
                     continue;
                 }
 
@@ -167,14 +178,17 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                         expiresAt,
                         message != null ? message : resolveReasonDisplay(reasonId)
                 ));
+                if (ladderEnum != null) {
+                    activeLadders.put(punishmentId, ladderEnum);
+                }
             }
         }
 
         if (!expiredPunishments.isEmpty()) {
             LinkedHashSet<String> history = extractHistory(document);
-            expiredPunishments.stream().map(UUID::toString).forEach(history::add);
+            expiredPunishments.keySet().stream().map(UUID::toString).forEach(history::add);
             applySnapshotUpdate(playerId, document, retainedEntries, history);
-            notifyExpiredPunishments(playerId, expiredPunishments);
+            markRelationalExpired(playerId, expiredPunishments);
         }
 
         if (effects.isEmpty()) {
@@ -183,7 +197,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         }
 
         PlayerPunishmentTracker tracker = trackers.computeIfAbsent(playerId, PlayerPunishmentTracker::new);
-        tracker.replaceAll(effects);
+        tracker.replaceAll(effects, activeLadders);
         return tracker;
     }
 
@@ -226,7 +240,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         if (tracker == null) {
             return;
         }
-        Set<UUID> expired = tracker.pruneExpired(Instant.now());
+        Map<UUID, PunishmentLadder> expired = tracker.pruneExpired(Instant.now());
         if (!expired.isEmpty()) {
             synchronizeExpiredPunishments(playerId, expired);
             if (tracker.isEmpty()) {
@@ -247,7 +261,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         if (tracker == null) {
             return;
         }
-        Set<UUID> expired = tracker.pruneExpired(Instant.now());
+        Map<UUID, PunishmentLadder> expired = tracker.pruneExpired(Instant.now());
         if (!expired.isEmpty()) {
             synchronizeExpiredPunishments(player.getUniqueId(), expired);
             if (tracker.isEmpty()) {
@@ -267,7 +281,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
     public void onDisconnect(DisconnectEvent event) {
         PlayerPunishmentTracker tracker = trackers.get(event.getPlayer().getUniqueId());
         if (tracker != null) {
-            Set<UUID> expired = tracker.pruneExpired(Instant.now());
+            Map<UUID, PunishmentLadder> expired = tracker.pruneExpired(Instant.now());
             if (!expired.isEmpty()) {
                 synchronizeExpiredPunishments(event.getPlayer().getUniqueId(), expired);
             }
@@ -391,7 +405,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         player.sendMessage(body);
     }
 
-    private void synchronizeExpiredPunishments(UUID playerId, Set<UUID> expiredPunishmentIds) {
+    private void synchronizeExpiredPunishments(UUID playerId, Map<UUID, PunishmentLadder> expiredPunishmentIds) {
         if (expiredPunishmentIds.isEmpty()) {
             return;
         }
@@ -401,12 +415,10 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
             document = dataAPI.player(playerId);
         } catch (Exception ex) {
             logger.warn("Failed to fetch punishment snapshot for {} while pruning", playerId, ex);
-            notifyExpiredPunishments(playerId, expiredPunishmentIds);
             return;
         }
 
         if (document == null || !document.exists()) {
-            notifyExpiredPunishments(playerId, expiredPunishmentIds);
             return;
         }
 
@@ -422,7 +434,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                 if (punishmentId == null || type == null) {
                     continue;
                 }
-                if (expiredPunishmentIds.contains(punishmentId) && isEnforcement(type)) {
+                if (expiredPunishmentIds.containsKey(punishmentId) && isEnforcement(type)) {
                     continue;
                 }
                 String reasonId = stringValue(map.get("reason"));
@@ -435,27 +447,77 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         }
 
         LinkedHashSet<String> history = extractHistory(document);
-        expiredPunishmentIds.stream().map(UUID::toString).forEach(history::add);
+        expiredPunishmentIds.keySet().stream().map(UUID::toString).forEach(history::add);
 
         applySnapshotUpdate(playerId, document, retainedEntries, history);
-        notifyExpiredPunishments(playerId, expiredPunishmentIds);
+        markRelationalExpired(playerId, expiredPunishmentIds);
     }
 
-    private void notifyExpiredPunishments(UUID playerId, Set<UUID> expiredPunishmentIds) {
-        if (expiredPunishmentIds.isEmpty()) {
+    private void markRelationalExpired(UUID playerId, Map<UUID, PunishmentLadder> expiredPunishments) {
+        if (postgresAdapter == null || expiredPunishments.isEmpty()) {
             return;
         }
-        Instant observedAt = Instant.now();
-        for (UUID punishmentId : expiredPunishmentIds) {
-            PunishmentExpireRequestMessage message = new PunishmentExpireRequestMessage();
-            message.setPlayerId(playerId);
-            message.setPunishmentId(punishmentId);
-            message.setObservedAt(observedAt);
-            try {
-                messageBus.broadcast(ChannelConstants.REGISTRY_PUNISHMENT_EXPIRE_REQUEST, message);
-            } catch (Exception ex) {
-                logger.warn("Failed to publish punishment expiry request for {} (player {})", punishmentId, playerId, ex);
+
+        Instant now = Instant.now();
+        String updateSql = "UPDATE punishments SET status = ?, updated_at = ? WHERE punishment_id = ? AND status <> ?";
+        String countSql = "SELECT COUNT(*) FROM punishments WHERE player_uuid = ? AND ladder = ? AND status = ?";
+        String upsertSql = "INSERT INTO ladder_state(player_uuid, ladder, rung, updated_at) VALUES (?, ?, ?, ?) " +
+                "ON CONFLICT (player_uuid, ladder) DO UPDATE SET rung = EXCLUDED.rung, updated_at = EXCLUDED.updated_at";
+        String deleteSql = "DELETE FROM ladder_state WHERE player_uuid = ? AND ladder = ?";
+
+        try (Connection connection = postgresAdapter.getConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement update = connection.prepareStatement(updateSql);
+                 PreparedStatement count = connection.prepareStatement(countSql);
+                 PreparedStatement upsert = connection.prepareStatement(upsertSql);
+                 PreparedStatement delete = connection.prepareStatement(deleteSql)) {
+
+                for (Map.Entry<UUID, PunishmentLadder> entry : expiredPunishments.entrySet()) {
+                    UUID punishmentId = entry.getKey();
+                    PunishmentLadder ladder = entry.getValue();
+                    if (ladder == null) {
+                        continue;
+                    }
+
+                    update.setString(1, PunishmentStatus.INACTIVE.name());
+                    update.setTimestamp(2, Timestamp.from(now));
+                    update.setObject(3, punishmentId);
+                    update.setString(4, PunishmentStatus.INACTIVE.name());
+                    int rows = update.executeUpdate();
+                    if (rows == 0) {
+                        continue;
+                    }
+
+                    count.setObject(1, playerId);
+                    count.setString(2, ladder.name());
+                    count.setString(3, PunishmentStatus.ACTIVE.name());
+                    int active = 0;
+                    try (ResultSet rs = count.executeQuery()) {
+                        if (rs.next()) {
+                            active = rs.getInt(1);
+                        }
+                    }
+
+                    if (active > 0) {
+                        upsert.setObject(1, playerId);
+                        upsert.setString(2, ladder.name());
+                        upsert.setInt(3, active);
+                        upsert.setTimestamp(4, Timestamp.from(now));
+                        upsert.executeUpdate();
+                    } else {
+                        delete.setObject(1, playerId);
+                        delete.setString(2, ladder.name());
+                        delete.executeUpdate();
+                    }
+                }
+
+                connection.commit();
+            } catch (SQLException ex) {
+                connection.rollback();
+                logger.warn("Failed to update relational punishment state for {}", playerId, ex);
             }
+        } catch (SQLException ex) {
+            logger.warn("Failed to acquire PostgreSQL connection for punishment expiry", ex);
         }
     }
 
@@ -550,6 +612,17 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         }
     }
 
+    private PunishmentLadder parseLadder(String ladder) {
+        if (ladder == null || ladder.isBlank()) {
+            return null;
+        }
+        try {
+            return PunishmentLadder.valueOf(ladder);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
     private Instant parseInstant(String value) {
         if (value == null) {
             return null;
@@ -609,6 +682,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
     private static final class PlayerPunishmentTracker {
         private final UUID playerId;
         private final Map<UUID, List<PunishmentEffectInstance>> effectIndex = new ConcurrentHashMap<>();
+        private final Map<UUID, PunishmentLadder> ladders = new ConcurrentHashMap<>();
 
         PlayerPunishmentTracker(UUID playerId) {
             this.playerId = playerId;
@@ -627,36 +701,40 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                         effect.getMessage() != null ? effect.getMessage() : message.getReason().getDisplayName());
                 effectIndex.computeIfAbsent(instance.punishmentId(), id -> new ArrayList<>()).add(instance);
             }
+            if (message.getLadder() != null) {
+                ladders.put(message.getPunishmentId(), message.getLadder());
+            }
         }
 
         void markStatus(UUID punishmentId, PunishmentStatus status) {
             if (status != PunishmentStatus.ACTIVE) {
                 effectIndex.remove(punishmentId);
+                ladders.remove(punishmentId);
             }
         }
 
-        void replaceAll(List<PunishmentEffectInstance> effects) {
+        void replaceAll(List<PunishmentEffectInstance> effects, Map<UUID, PunishmentLadder> ladderIndex) {
             effectIndex.clear();
+            ladders.clear();
             for (PunishmentEffectInstance instance : effects) {
                 effectIndex.computeIfAbsent(instance.punishmentId(), id -> new ArrayList<>()).add(instance);
             }
+            ladders.putAll(ladderIndex);
         }
 
-        Set<UUID> pruneExpired(Instant now) {
-            Set<UUID> expired = new HashSet<>();
+        Map<UUID, PunishmentLadder> pruneExpired(Instant now) {
+            Map<UUID, PunishmentLadder> expired = new HashMap<>();
             Iterator<Map.Entry<UUID, List<PunishmentEffectInstance>>> iterator = effectIndex.entrySet().iterator();
             while (iterator.hasNext()) {
                 Map.Entry<UUID, List<PunishmentEffectInstance>> entry = iterator.next();
                 List<PunishmentEffectInstance> effects = entry.getValue();
-                effects.removeIf(effect -> {
-                    if (effect.expiresAt() != null && effect.expiresAt().isBefore(now)) {
-                        expired.add(effect.punishmentId());
-                        return true;
-                    }
-                    return false;
-                });
+                effects.removeIf(effect -> effect.expiresAt() != null && effect.expiresAt().isBefore(now));
                 if (effects.isEmpty()) {
                     iterator.remove();
+                    PunishmentLadder ladder = ladders.remove(entry.getKey());
+                    if (ladder != null) {
+                        expired.put(entry.getKey(), ladder);
+                    }
                 }
             }
             return expired;

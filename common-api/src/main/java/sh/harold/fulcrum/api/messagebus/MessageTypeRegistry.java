@@ -108,8 +108,6 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentAppliedMessage.class);
             register(ChannelConstants.REGISTRY_PUNISHMENT_STATUS,
                     sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusMessage.class);
-            register(ChannelConstants.REGISTRY_PUNISHMENT_EXPIRE_REQUEST,
-                    sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentExpireRequestMessage.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {
