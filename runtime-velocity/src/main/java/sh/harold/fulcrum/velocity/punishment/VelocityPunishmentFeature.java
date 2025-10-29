@@ -318,10 +318,6 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         }
 
         String banLink = resolveLink("ban", "https://fulcrum.gg/appeals");
-        Component frame = Component.text("-----------------------------------------------------", NamedTextColor.RED)
-                .decorate(TextDecoration.STRIKETHROUGH);
-        Component newline = Component.newline();
-
         Component header = text("You are temporarily banned for ", NamedTextColor.RED)
                 .append(text(durationText, NamedTextColor.WHITE))
                 .append(text(" from this server!", NamedTextColor.RED));
@@ -334,7 +330,8 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         Component reasonComponent = text("Reason: ", NamedTextColor.GRAY)
                 .append(text(reasonLine, NamedTextColor.WHITE));
         if (message != null) {
-            reasonComponent = reasonComponent.append(text(" (" + ladderLine + ")", NamedTextColor.GRAY));
+            String ladderDisplay = ladderLine.toUpperCase(Locale.ROOT);
+            reasonComponent = reasonComponent.append(text(" (" + ladderDisplay + ")", NamedTextColor.GRAY));
         }
 
         Component infoLink = text("Find out more: ", NamedTextColor.GRAY)
@@ -346,16 +343,17 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         Component banIdLine = text("Ban ID: ", NamedTextColor.GRAY)
                 .append(text("#" + banId, NamedTextColor.WHITE));
 
-        Component warning = text("Sharing your Ban ID may affect the processing of your appeal!", NamedTextColor.RED);
+        Component warning = text(" Sharing your Ban ID may affect the processing of your appeal!", NamedTextColor.GRAY);
 
         return Component.text()
-                .append(frame).append(newline)
-                .append(header).append(newline)
-                .append(reasonComponent).append(newline)
-                .append(infoLink).append(newline)
-                .append(banIdLine).append(newline)
-                .append(warning).append(newline)
-                .append(frame)
+                .append(header)
+                .append(Component.newline())
+                .append(reasonComponent)
+                .append(Component.text(" "))
+                .append(infoLink)
+                .append(Component.newline())
+                .append(banIdLine)
+                .append(warning)
                 .build();
     }
 
@@ -484,10 +482,10 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
 
                     Instant effectiveUpdate = info != null && info.expiresAt() != null ? info.expiresAt() : now;
 
-                    update.setString(1, PunishmentStatus.INACTIVE.name());
+                    update.setString(1, PunishmentStatus.EXPIRED.name());
                     update.setTimestamp(2, Timestamp.from(effectiveUpdate));
                     update.setObject(3, punishmentId);
-                    update.setString(4, PunishmentStatus.INACTIVE.name());
+                    update.setString(4, PunishmentStatus.EXPIRED.name());
                     int rows = update.executeUpdate();
                     if (rows == 0) {
                         continue;
