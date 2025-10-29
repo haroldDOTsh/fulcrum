@@ -317,7 +317,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
             reasonLine = primary.message();
         }
 
-        String banLink = resolveLink("ban", "https://fulcrum.gg/appeals");
+        String banLink = resolveLink("ban", "https://harold.sh/appeals");
         Component header = text("You are temporarily banned for ", NamedTextColor.RED)
                 .append(text(durationText, NamedTextColor.WHITE))
                 .append(text(" from this server!", NamedTextColor.RED));
@@ -346,13 +346,12 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         Component warning = text(" Sharing your Ban ID may affect the processing of your appeal!", NamedTextColor.GRAY);
 
         return Component.text()
-                .append(header)
+                .append(header).append(Component.newline())
                 .append(Component.newline())
-                .append(reasonComponent)
-                .append(Component.text(" "))
-                .append(infoLink)
+                .append(reasonComponent).append(Component.newline())
+                .append(infoLink).append(Component.newline())
                 .append(Component.newline())
-                .append(banIdLine)
+                .append(banIdLine).append(Component.newline())
                 .append(warning)
                 .build();
     }
@@ -362,7 +361,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                 .decorate(TextDecoration.STRIKETHROUGH);
         Duration remaining = effect.expiresAt() != null ? Duration.between(Instant.now(), effect.expiresAt()) : null;
         String remainingText = remaining == null || remaining.isNegative() ? "Permanent" : formatDuration(remaining);
-        String link = resolveLink("mute", "https://fulcrum.gg/mutes");
+        String link = resolveLink("mute", "https://harold.sh/mutes");
 
         Component body = Component.text()
                 .append(frame).append(Component.newline())
@@ -385,7 +384,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
     private void sendMuteReminder(Player player, String reason, PunishmentEffectInstance effect) {
         Duration remaining = effect.expiresAt() != null ? Duration.between(Instant.now(), effect.expiresAt()) : null;
         String remainingText = remaining == null || remaining.isNegative() ? "Permanent" : formatDuration(remaining);
-        String link = resolveLink("mute", "https://fulcrum.gg/mutes");
+        String link = resolveLink("mute", "https://harold.sh/mutes");
         Component frame = Component.text("-----------------------------------------------------", NamedTextColor.RED)
                 .decorate(TextDecoration.STRIKETHROUGH);
         Component body = Component.text()
