@@ -51,7 +51,7 @@ final class PlayerPunishmentState {
         activePunishments.remove(punishmentId);
     }
 
-    Set<UUID> getActivePunishments() {
+    Set<UUID> getActivePunishmentIds() {
         return Set.copyOf(activePunishments);
     }
 }

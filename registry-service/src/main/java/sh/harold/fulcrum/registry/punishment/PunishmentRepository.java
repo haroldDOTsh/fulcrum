@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -197,50 +198,37 @@ public final class PunishmentRepository implements AutoCloseable {
              PreparedStatement ps = connection.prepareStatement(query);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
-                UUID punishmentId = rs.getObject("punishment_id", UUID.class);
-                UUID playerId = rs.getObject("player_uuid", UUID.class);
-                String playerName = rs.getString("player_name");
-                UUID staffId = rs.getObject("staff_uuid", UUID.class);
-                String staffName = rs.getString("staff_name");
-                String ladderId = rs.getString("ladder");
-                String reasonId = rs.getString("reason");
-                PunishmentReason reason = PunishmentReason.fromId(reasonId);
-                PunishmentLadder ladder = null;
-                try {
-                    ladder = PunishmentLadder.valueOf(ladderId);
-                } catch (Exception ignored) {
+                PunishmentRecord record = mapRecord(connection, rs);
+                if (record != null) {
+                    records.add(record);
                 }
-                if (reason == null || ladder == null) {
-                    logger.warn("Skipping punishment {} due to unknown reason/ladder.", punishmentId);
-                    continue;
-                }
-                int rungBefore = rs.getInt("rung_before");
-                int rungAfter = rs.getInt("rung_after");
-                Instant issuedAt = rs.getTimestamp("created_at").toInstant();
-                Instant updatedAt = rs.getTimestamp("updated_at").toInstant();
-                PunishmentStatus status = PunishmentStatus.valueOf(rs.getString("status"));
-
-                List<PunishmentRecordEffect> effects = loadEffects(connection, punishmentId);
-                PunishmentRecord record = new PunishmentRecord(
-                        punishmentId,
-                        playerId,
-                        playerName,
-                        reason,
-                        ladder,
-                        rungBefore,
-                        rungAfter,
-                        staffId,
-                        staffName,
-                        issuedAt,
-                        effects
-                );
-                record.setStatus(status, updatedAt);
-                records.add(record);
             }
         } catch (SQLException ex) {
             logger.warn("Failed to load punishments: {}", ex.getMessage());
         }
         return records;
+    }
+
+    Optional<PunishmentRecord> loadPunishment(UUID punishmentId) {
+        String query = """
+                SELECT punishment_id, player_uuid, player_name, staff_uuid, staff_name, ladder, reason,
+                       rung_before, rung_after, created_at, expires_at, status, updated_at
+                FROM punishments
+                WHERE punishment_id = ?
+                """;
+        try (Connection connection = adapter.getConnection();
+             PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setObject(1, punishmentId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    PunishmentRecord record = mapRecord(connection, rs);
+                    return Optional.ofNullable(record);
+                }
+            }
+        } catch (SQLException ex) {
+            logger.warn("Failed to load punishment {}: {}", punishmentId, ex.getMessage());
+        }
+        return Optional.empty();
     }
 
     private List<PunishmentRecordEffect> loadEffects(Connection connection, UUID punishmentId) throws SQLException {
@@ -318,6 +306,48 @@ public final class PunishmentRepository implements AutoCloseable {
             }
         }
         return max;
+    }
+
+    private PunishmentRecord mapRecord(Connection connection, ResultSet rs) throws SQLException {
+        UUID punishmentId = rs.getObject("punishment_id", UUID.class);
+        UUID playerId = rs.getObject("player_uuid", UUID.class);
+        String playerName = rs.getString("player_name");
+        UUID staffId = rs.getObject("staff_uuid", UUID.class);
+        String staffName = rs.getString("staff_name");
+        String ladderId = rs.getString("ladder");
+        String reasonId = rs.getString("reason");
+        PunishmentReason reason = PunishmentReason.fromId(reasonId);
+        PunishmentLadder ladder = null;
+        try {
+            ladder = PunishmentLadder.valueOf(ladderId);
+        } catch (Exception ignored) {
+        }
+        if (reason == null || ladder == null) {
+            logger.warn("Skipping punishment {} due to unknown reason/ladder.", punishmentId);
+            return null;
+        }
+        int rungBefore = rs.getInt("rung_before");
+        int rungAfter = rs.getInt("rung_after");
+        Instant issuedAt = rs.getTimestamp("created_at").toInstant();
+        Instant updatedAt = rs.getTimestamp("updated_at").toInstant();
+        PunishmentStatus status = PunishmentStatus.valueOf(rs.getString("status"));
+
+        List<PunishmentRecordEffect> effects = loadEffects(connection, punishmentId);
+        PunishmentRecord record = new PunishmentRecord(
+                punishmentId,
+                playerId,
+                playerName,
+                reason,
+                ladder,
+                rungBefore,
+                rungAfter,
+                staffId,
+                staffName,
+                issuedAt,
+                effects
+        );
+        record.setStatus(status, updatedAt);
+        return record;
     }
 
     @Override
