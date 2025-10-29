@@ -3,6 +3,7 @@ package sh.harold.fulcrum.fundamentals.chat;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.papermc.paper.event.player.AsyncChatEvent;
+import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
@@ -23,6 +24,7 @@ import sh.harold.fulcrum.api.party.PartyRedisKeys;
 import sh.harold.fulcrum.api.party.PartySnapshot;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
@@ -53,13 +55,15 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     private final Map<UUID, Long> lastAllMessage = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastPartyMessage = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> lastDeliveredMessage = new ConcurrentHashMap<>();
+    private final RuntimePunishmentFeature.RuntimePunishmentManager punishmentManager;
 
     ChatChannelServiceImpl(JavaPlugin plugin,
                            MessageBus messageBus,
                            ChatFormatService chatFormatService,
                            RankService rankService,
                            LettuceRedisOperations redisOperations,
-                           Supplier<MinigameEngine> engineSupplier) {
+                           Supplier<MinigameEngine> engineSupplier,
+                           RuntimePunishmentFeature.RuntimePunishmentManager punishmentManager) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.messageBus = messageBus;
@@ -68,6 +72,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         this.redisOperations = redisOperations;
         this.engineSupplier = engineSupplier;
         this.mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.punishmentManager = punishmentManager;
     }
 
     @Override
@@ -93,6 +98,10 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         Objects.requireNonNull(type, "type");
         if (rawMessage == null || rawMessage.isBlank()) {
             player.sendMessage(Component.text("You must include a message.", NamedTextColor.RED));
+            return;
+        }
+
+        if (enforceMute(player)) {
             return;
         }
 
@@ -130,6 +139,10 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     @Override
     public void handleAsyncChat(AsyncChatEvent event) {
         Player player = event.getPlayer();
+        if (enforceMute(player)) {
+            suppressChatEvent(event);
+            return;
+        }
         ChatChannelRef current = getActiveChannel(player.getUniqueId());
 
         if (current.type() == ChatChannelType.ALL) {
@@ -137,7 +150,24 @@ final class ChatChannelServiceImpl implements ChatChannelService {
             if (!checkSlowMode(player.getUniqueId(), ChatChannelType.ALL, lastAllMessage)) {
                 suppressChatEvent(event);
                 notifySlowMode(player);
+                return;
             }
+            Set<Player> recipients = new HashSet<>();
+            for (Audience audience : event.viewers()) {
+                if (audience instanceof Player viewer) {
+                    recipients.add(viewer);
+                }
+            }
+            recipients.add(player);
+
+            Component message = event.message();
+            String plain = PLAIN.serialize(message);
+            UUID messageId = UUID.randomUUID();
+            Component formatted = buildFormattedMessage(player, current, message);
+
+            suppressChatEvent(event);
+            deliverToAll(recipients, formatted, messageId);
+            publish(current, player.getUniqueId(), formatted, plain, messageId);
             return;
         }
 
@@ -311,9 +341,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         switch (channel.type()) {
             case STAFF -> deliverToStaff(message, messageId);
             case PARTY -> deliverToParty(channel.partyId(), message, messageId);
-            case ALL -> {
-                // no-op; handled by Paper pipeline
-            }
+            case ALL -> deliverToAll(Collections.emptySet(), message, messageId);
         }
     }
 
@@ -343,6 +371,18 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         lastDeliveredMessage.put(player.getUniqueId(), messageId);
     }
 
+    private void deliverToAll(Collection<Player> recipients, Component message, UUID messageId) {
+        if (recipients == null || recipients.isEmpty()) {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                deliverIfNew(player, message, messageId);
+            }
+            return;
+        }
+        for (Player player : recipients) {
+            deliverIfNew(player, message, messageId);
+        }
+    }
+
     private void publish(ChatChannelRef channel,
                          UUID senderId,
                          Component message,
@@ -359,6 +399,18 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         payload.setPlainText(plainText != null ? plainText : PLAIN.serialize(message));
         payload.setTimestamp(Instant.now().toEpochMilli());
         messageBus.broadcast(ChannelConstants.CHAT_CHANNEL_MESSAGE, payload);
+    }
+
+    private boolean enforceMute(Player player) {
+        if (punishmentManager == null) {
+            return false;
+        }
+        Optional<RuntimePunishmentFeature.MuteEffect> mute = punishmentManager.activeMute(player.getUniqueId());
+        if (mute.isEmpty()) {
+            return false;
+        }
+        punishmentManager.handleMutedChat(player);
+        return true;
     }
 
     private Component decodeComponent(ChatChannelMessage message) {

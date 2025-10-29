@@ -82,6 +82,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new PlayerDataFeature()); // Depends on DataAPI & sessions
         FeatureManager.register(new NetworkConfigFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.punishment.PunishmentBroadcastFeature());
+        FeatureManager.register(new sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature());
         FeatureManager.register(new RankFeature()); // Register Rank system after DataAPI
         FeatureManager.register(new ChatFormatFeature()); // Register Chat formatting after Rank
         FeatureManager.register(new ChatChannelFeature());

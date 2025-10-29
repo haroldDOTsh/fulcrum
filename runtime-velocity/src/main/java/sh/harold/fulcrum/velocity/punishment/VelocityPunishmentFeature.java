@@ -273,10 +273,8 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         }
         PunishmentEffectInstance mute = tracker.getActiveMuteEffect();
         if (mute == null) {
-            return;
         }
-        event.setResult(PlayerChatEvent.ChatResult.denied());
-        sendMuteReminder(player, mute.message(), mute);
+        // Runtime layer enforces mute; proxy only keeps state fresh.
     }
 
     @Subscribe

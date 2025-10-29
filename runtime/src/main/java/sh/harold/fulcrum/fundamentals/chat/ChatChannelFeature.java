@@ -14,6 +14,7 @@ import sh.harold.fulcrum.api.messagebus.messages.chat.ChatChannelMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyUpdateMessage;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.chat.command.ChatCommands;
+import sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -57,7 +58,13 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
             logger.warning("MinigameEngine unavailable; chat isolation will fall back to global delivery.");
         }
 
-        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, engineSupplier);
+        RuntimePunishmentFeature.RuntimePunishmentManager punishmentManager =
+                container.getOptional(RuntimePunishmentFeature.RuntimePunishmentManager.class)
+                        .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                                ? ServiceLocatorImpl.getInstance().findService(RuntimePunishmentFeature.RuntimePunishmentManager.class).orElse(null)
+                                : null);
+
+        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, engineSupplier, punishmentManager);
 
         container.register(ChatChannelService.class, service);
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
