@@ -140,8 +140,8 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
 
         Object raw = document.get("punishments.activePunishments");
         Instant now = Instant.now();
-        Map<UUID, PunishmentLadder> expiredPunishments = new LinkedHashMap<>();
-        Map<UUID, PunishmentLadder> activeLadders = new HashMap<>();
+        Map<UUID, ExpiredPunishmentInfo> expiredPunishments = new LinkedHashMap<>();
+        Map<UUID, ExpiredPunishmentInfo> activeInfo = new HashMap<>();
         List<Map<String, Object>> retainedEntries = new ArrayList<>();
         List<PunishmentEffectInstance> effects = new ArrayList<>();
 
@@ -161,7 +161,8 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                 boolean expired = expiresAt != null && expiresAt.isBefore(now) && isEnforcement(type);
                 if (expired) {
                     if (ladderEnum != null) {
-                        expiredPunishments.put(punishmentId, ladderEnum);
+                        ExpiredPunishmentInfo info = new ExpiredPunishmentInfo(ladderEnum, expiresAt);
+                        expiredPunishments.merge(punishmentId, info, ExpiredPunishmentInfo::mergeLatest);
                     }
                     continue;
                 }
@@ -179,7 +180,8 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                         message != null ? message : resolveReasonDisplay(reasonId)
                 ));
                 if (ladderEnum != null) {
-                    activeLadders.put(punishmentId, ladderEnum);
+                    ExpiredPunishmentInfo info = new ExpiredPunishmentInfo(ladderEnum, isEnforcement(type) ? expiresAt : null);
+                    activeInfo.merge(punishmentId, info, ExpiredPunishmentInfo::mergeLatest);
                 }
             }
         }
@@ -197,7 +199,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         }
 
         PlayerPunishmentTracker tracker = trackers.computeIfAbsent(playerId, PlayerPunishmentTracker::new);
-        tracker.replaceAll(effects, activeLadders);
+        tracker.replaceAll(effects, activeInfo);
         return tracker;
     }
 
@@ -240,7 +242,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         if (tracker == null) {
             return;
         }
-        Map<UUID, PunishmentLadder> expired = tracker.pruneExpired(Instant.now());
+        Map<UUID, ExpiredPunishmentInfo> expired = tracker.pruneExpired(Instant.now());
         if (!expired.isEmpty()) {
             synchronizeExpiredPunishments(playerId, expired);
             if (tracker.isEmpty()) {
@@ -261,7 +263,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         if (tracker == null) {
             return;
         }
-        Map<UUID, PunishmentLadder> expired = tracker.pruneExpired(Instant.now());
+        Map<UUID, ExpiredPunishmentInfo> expired = tracker.pruneExpired(Instant.now());
         if (!expired.isEmpty()) {
             synchronizeExpiredPunishments(player.getUniqueId(), expired);
             if (tracker.isEmpty()) {
@@ -281,7 +283,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
     public void onDisconnect(DisconnectEvent event) {
         PlayerPunishmentTracker tracker = trackers.get(event.getPlayer().getUniqueId());
         if (tracker != null) {
-            Map<UUID, PunishmentLadder> expired = tracker.pruneExpired(Instant.now());
+            Map<UUID, ExpiredPunishmentInfo> expired = tracker.pruneExpired(Instant.now());
             if (!expired.isEmpty()) {
                 synchronizeExpiredPunishments(event.getPlayer().getUniqueId(), expired);
             }
@@ -405,7 +407,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         player.sendMessage(body);
     }
 
-    private void synchronizeExpiredPunishments(UUID playerId, Map<UUID, PunishmentLadder> expiredPunishmentIds) {
+    private void synchronizeExpiredPunishments(UUID playerId, Map<UUID, ExpiredPunishmentInfo> expiredPunishmentIds) {
         if (expiredPunishmentIds.isEmpty()) {
             return;
         }
@@ -453,7 +455,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         markRelationalExpired(playerId, expiredPunishmentIds);
     }
 
-    private void markRelationalExpired(UUID playerId, Map<UUID, PunishmentLadder> expiredPunishments) {
+    private void markRelationalExpired(UUID playerId, Map<UUID, ExpiredPunishmentInfo> expiredPunishments) {
         if (postgresAdapter == null || expiredPunishments.isEmpty()) {
             return;
         }
@@ -472,15 +474,18 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                  PreparedStatement upsert = connection.prepareStatement(upsertSql);
                  PreparedStatement delete = connection.prepareStatement(deleteSql)) {
 
-                for (Map.Entry<UUID, PunishmentLadder> entry : expiredPunishments.entrySet()) {
+                for (Map.Entry<UUID, ExpiredPunishmentInfo> entry : expiredPunishments.entrySet()) {
                     UUID punishmentId = entry.getKey();
-                    PunishmentLadder ladder = entry.getValue();
+                    ExpiredPunishmentInfo info = entry.getValue();
+                    PunishmentLadder ladder = info != null ? info.ladder() : null;
                     if (ladder == null) {
                         continue;
                     }
 
+                    Instant effectiveUpdate = info != null && info.expiresAt() != null ? info.expiresAt() : now;
+
                     update.setString(1, PunishmentStatus.INACTIVE.name());
-                    update.setTimestamp(2, Timestamp.from(now));
+                    update.setTimestamp(2, Timestamp.from(effectiveUpdate));
                     update.setObject(3, punishmentId);
                     update.setString(4, PunishmentStatus.INACTIVE.name());
                     int rows = update.executeUpdate();
@@ -502,7 +507,7 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                         upsert.setObject(1, playerId);
                         upsert.setString(2, ladder.name());
                         upsert.setInt(3, active);
-                        upsert.setTimestamp(4, Timestamp.from(now));
+                        upsert.setTimestamp(4, Timestamp.from(effectiveUpdate));
                         upsert.executeUpdate();
                     } else {
                         delete.setObject(1, playerId);
@@ -679,16 +684,47 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         return builder.toString().trim();
     }
 
-    private static final class PlayerPunishmentTracker {
+    private record ExpiredPunishmentInfo(PunishmentLadder ladder, Instant expiresAt) {
+        static ExpiredPunishmentInfo mergeLatest(ExpiredPunishmentInfo existing, ExpiredPunishmentInfo incoming) {
+            if (existing == null) {
+                return incoming;
+            }
+            if (incoming == null) {
+                return existing;
+            }
+            PunishmentLadder ladder = existing.ladder != null ? existing.ladder : incoming.ladder;
+            if (ladder == null) {
+                ladder = incoming.ladder;
+            }
+            Instant bestExpiry = existing.expiresAt;
+            if (incoming.expiresAt != null && (bestExpiry == null || incoming.expiresAt.isAfter(bestExpiry))) {
+                bestExpiry = incoming.expiresAt;
+            }
+            return new ExpiredPunishmentInfo(ladder, bestExpiry);
+        }
+    }
+
+    private record PunishmentEffectInstance(UUID punishmentId, PunishmentEffectType type, Instant expiresAt,
+                                            String message) {
+    }
+
+    private final class PlayerPunishmentTracker {
         private final UUID playerId;
         private final Map<UUID, List<PunishmentEffectInstance>> effectIndex = new ConcurrentHashMap<>();
-        private final Map<UUID, PunishmentLadder> ladders = new ConcurrentHashMap<>();
+        private final Map<UUID, ExpiredPunishmentInfo> infoIndex = new ConcurrentHashMap<>();
 
         PlayerPunishmentTracker(UUID playerId) {
             this.playerId = playerId;
         }
 
         void apply(PunishmentAppliedMessage message) {
+            if (message.getLadder() != null) {
+                infoIndex.merge(
+                        message.getPunishmentId(),
+                        new ExpiredPunishmentInfo(message.getLadder(), null),
+                        ExpiredPunishmentInfo::mergeLatest
+                );
+            }
             for (PunishmentAppliedMessage.Effect effect : message.getEffects()) {
                 if (effect.getType() == PunishmentEffectType.WARNING || effect.getType() == PunishmentEffectType.APPEAL_REQUIRED
                         || effect.getType() == PunishmentEffectType.MANUAL_REVIEW) {
@@ -700,40 +736,55 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                         effect.getExpiresAt(),
                         effect.getMessage() != null ? effect.getMessage() : message.getReason().getDisplayName());
                 effectIndex.computeIfAbsent(instance.punishmentId(), id -> new ArrayList<>()).add(instance);
-            }
-            if (message.getLadder() != null) {
-                ladders.put(message.getPunishmentId(), message.getLadder());
+                if (VelocityPunishmentFeature.this.isEnforcement(effect.getType())) {
+                    infoIndex.merge(
+                            message.getPunishmentId(),
+                            new ExpiredPunishmentInfo(message.getLadder(), effect.getExpiresAt()),
+                            ExpiredPunishmentInfo::mergeLatest
+                    );
+                }
             }
         }
 
         void markStatus(UUID punishmentId, PunishmentStatus status) {
             if (status != PunishmentStatus.ACTIVE) {
                 effectIndex.remove(punishmentId);
-                ladders.remove(punishmentId);
+                infoIndex.remove(punishmentId);
             }
         }
 
-        void replaceAll(List<PunishmentEffectInstance> effects, Map<UUID, PunishmentLadder> ladderIndex) {
+        void replaceAll(List<PunishmentEffectInstance> effects, Map<UUID, ExpiredPunishmentInfo> infoMap) {
             effectIndex.clear();
-            ladders.clear();
+            infoIndex.clear();
             for (PunishmentEffectInstance instance : effects) {
                 effectIndex.computeIfAbsent(instance.punishmentId(), id -> new ArrayList<>()).add(instance);
             }
-            ladders.putAll(ladderIndex);
+            infoIndex.putAll(infoMap);
         }
 
-        Map<UUID, PunishmentLadder> pruneExpired(Instant now) {
-            Map<UUID, PunishmentLadder> expired = new HashMap<>();
+        Map<UUID, ExpiredPunishmentInfo> pruneExpired(Instant now) {
+            Map<UUID, ExpiredPunishmentInfo> expired = new HashMap<>();
             Iterator<Map.Entry<UUID, List<PunishmentEffectInstance>>> iterator = effectIndex.entrySet().iterator();
             while (iterator.hasNext()) {
                 Map.Entry<UUID, List<PunishmentEffectInstance>> entry = iterator.next();
                 List<PunishmentEffectInstance> effects = entry.getValue();
-                effects.removeIf(effect -> effect.expiresAt() != null && effect.expiresAt().isBefore(now));
+                Instant latestExpired = null;
+                Iterator<PunishmentEffectInstance> effectIterator = effects.iterator();
+                while (effectIterator.hasNext()) {
+                    PunishmentEffectInstance effect = effectIterator.next();
+                    if (effect.expiresAt() != null && effect.expiresAt().isBefore(now)) {
+                        if (latestExpired == null || effect.expiresAt().isAfter(latestExpired)) {
+                            latestExpired = effect.expiresAt();
+                        }
+                        effectIterator.remove();
+                    }
+                }
                 if (effects.isEmpty()) {
                     iterator.remove();
-                    PunishmentLadder ladder = ladders.remove(entry.getKey());
-                    if (ladder != null) {
-                        expired.put(entry.getKey(), ladder);
+                    ExpiredPunishmentInfo info = infoIndex.remove(entry.getKey());
+                    if (info != null) {
+                        Instant finalExpiry = latestExpired != null ? latestExpired : info.expiresAt();
+                        expired.put(entry.getKey(), new ExpiredPunishmentInfo(info.ladder(), finalExpiry));
                     }
                 }
             }
@@ -773,9 +824,5 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         boolean isEmpty() {
             return effectIndex.isEmpty();
         }
-    }
-
-    private record PunishmentEffectInstance(UUID punishmentId, PunishmentEffectType type, Instant expiresAt,
-                                            String message) {
     }
 }
