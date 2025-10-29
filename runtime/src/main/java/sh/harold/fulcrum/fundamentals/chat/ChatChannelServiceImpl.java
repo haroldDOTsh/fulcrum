@@ -135,13 +135,13 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         if (current.type() == ChatChannelType.ALL) {
             restrictViewersToSlot(event);
             if (!checkSlowMode(player.getUniqueId(), ChatChannelType.ALL, lastAllMessage)) {
-                event.setCancelled(true);
+                suppressChatEvent(event);
                 notifySlowMode(player);
             }
             return;
         }
 
-        event.setCancelled(true);
+        suppressChatEvent(event);
         Component message = event.message();
         String plain = PLAIN.serialize(message);
         runSync(() -> sendChannelMessage(player, current, message, plain));
@@ -176,6 +176,12 @@ final class ChatChannelServiceImpl implements ChatChannelService {
             cachedEngine = engine;
         }
         return engine;
+    }
+
+    private void suppressChatEvent(AsyncChatEvent event) {
+        // Paper forbids cancelling signed chat; clearing viewers stops delivery without disconnecting players.
+        event.viewers().clear();
+        event.message(Component.empty());
     }
 
     @Override
