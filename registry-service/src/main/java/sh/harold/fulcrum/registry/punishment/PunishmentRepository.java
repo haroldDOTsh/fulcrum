@@ -2,6 +2,8 @@ package sh.harold.fulcrum.registry.punishment;
 
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
+import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
 import sh.harold.fulcrum.api.punishment.PunishmentEffectType;
 import sh.harold.fulcrum.api.punishment.PunishmentLadder;
 import sh.harold.fulcrum.api.punishment.PunishmentReason;
@@ -23,58 +25,22 @@ public final class PunishmentRepository implements AutoCloseable {
     public PunishmentRepository(PostgresConnectionAdapter adapter, Logger logger) {
         this.adapter = adapter;
         this.logger = logger;
-        initializeSchema();
+        ensureSchema();
     }
 
-    private void initializeSchema() {
-        String punishments = """
-                CREATE TABLE IF NOT EXISTS punishments (
-                    punishment_id UUID PRIMARY KEY,
-                    player_uuid UUID NOT NULL,
-                    player_name TEXT,
-                    staff_uuid UUID NOT NULL,
-                    staff_name TEXT,
-                    ladder VARCHAR(32) NOT NULL,
-                    reason VARCHAR(64) NOT NULL,
-                    rung_before INTEGER NOT NULL,
-                    rung_after INTEGER NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL,
-                    expires_at TIMESTAMPTZ,
-                    status VARCHAR(16) NOT NULL,
-                    updated_at TIMESTAMPTZ NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_punishments_player ON punishments (player_uuid);
-                """;
-
-        String effects = """
-                CREATE TABLE IF NOT EXISTS punishment_effects (
-                    punishment_id UUID NOT NULL REFERENCES punishments(punishment_id) ON DELETE CASCADE,
-                    effect_order INTEGER NOT NULL,
-                    type VARCHAR(32) NOT NULL,
-                    duration_seconds BIGINT,
-                    expires_at TIMESTAMPTZ,
-                    message TEXT,
-                    PRIMARY KEY (punishment_id, effect_order)
-                );
-                """;
-
-        String ladderState = """
-                CREATE TABLE IF NOT EXISTS ladder_state (
-                    player_uuid UUID NOT NULL,
-                    ladder VARCHAR(32) NOT NULL,
-                    rung INTEGER NOT NULL,
-                    updated_at TIMESTAMPTZ NOT NULL,
-                    PRIMARY KEY (player_uuid, ladder)
-                );
-                """;
-
-        try (Connection connection = adapter.getConnection();
-             Statement statement = connection.createStatement()) {
-            statement.execute(punishments);
-            statement.execute(effects);
-            statement.execute(ladderState);
-        } catch (SQLException e) {
-            logger.warn("Failed to initialize punishment schema: {}", e.getMessage());
+    private void ensureSchema() {
+        try {
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "punishments-001",
+                            "Create punishment tables",
+                            PunishmentRepository.class.getClassLoader(),
+                            "migrations/punishments-001.sql"
+                    )
+            );
+        } catch (Exception ex) {
+            logger.warn("Failed to initialize punishment schema: {}", ex.getMessage());
         }
     }
 
@@ -176,34 +142,11 @@ public final class PunishmentRepository implements AutoCloseable {
             ps.setObject(3, punishmentId);
             ps.executeUpdate();
 
-            int activeRung = countActiveRung(connection, playerId, ladder);
-            upsertLadderState(connection, playerId, ladder, activeRung, updatedAt);
+            int rung = countRelevantRung(connection, playerId, ladder);
+            upsertLadderState(connection, playerId, ladder, rung, updatedAt);
         } catch (SQLException ex) {
             logger.warn("Failed to update punishment status: {}", ex.getMessage());
         }
-    }
-
-    List<PunishmentRecord> loadAllPunishments() {
-        String query = """
-                SELECT punishment_id, player_uuid, player_name, staff_uuid, staff_name, ladder, reason,
-                       rung_before, rung_after, created_at, expires_at, status, updated_at
-                FROM punishments
-                ORDER BY created_at ASC
-                """;
-        List<PunishmentRecord> records = new ArrayList<>();
-        try (Connection connection = adapter.getConnection();
-             PreparedStatement ps = connection.prepareStatement(query);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                PunishmentRecord record = mapRecord(connection, rs);
-                if (record != null) {
-                    records.add(record);
-                }
-            }
-        } catch (SQLException ex) {
-            logger.warn("Failed to load punishments: {}", ex.getMessage());
-        }
-        return records;
     }
 
     Optional<PunishmentRecord> loadPunishment(UUID punishmentId) {
@@ -379,21 +322,23 @@ public final class PunishmentRepository implements AutoCloseable {
         }
     }
 
-    int countActiveRung(UUID playerId, PunishmentLadder ladder) {
+    int countRelevantRung(UUID playerId, PunishmentLadder ladder) {
         try (Connection connection = adapter.getConnection()) {
-            return countActiveRung(connection, playerId, ladder);
+            return countRelevantRung(connection, playerId, ladder);
         } catch (SQLException ex) {
             logger.warn("Failed to count active rung: {}", ex.getMessage());
             return 0;
         }
     }
 
-    private int countActiveRung(Connection connection, UUID playerId, PunishmentLadder ladder) throws SQLException {
-        String countSql = "SELECT COUNT(*) FROM punishments WHERE player_uuid = ? AND ladder = ? AND status = ?";
+    private int countRelevantRung(Connection connection, UUID playerId, PunishmentLadder ladder) throws SQLException {
+        String countSql = "SELECT COUNT(*) FROM punishments WHERE player_uuid = ? AND ladder = ? AND status IN (?, ?, ?)";
         try (PreparedStatement ps = connection.prepareStatement(countSql)) {
             ps.setObject(1, playerId);
             ps.setString(2, ladder.name());
             ps.setString(3, PunishmentStatus.ACTIVE.name());
+            ps.setString(4, PunishmentStatus.EXPIRED.name());
+            ps.setString(5, PunishmentStatus.PARDONED.name());
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return rs.getInt(1);
