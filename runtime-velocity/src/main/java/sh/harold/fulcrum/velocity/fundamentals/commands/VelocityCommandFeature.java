@@ -13,6 +13,8 @@ import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeat
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
+import sh.harold.fulcrum.velocity.punishment.AppealCommand;
+import sh.harold.fulcrum.velocity.punishment.PardonCommand;
 import sh.harold.fulcrum.velocity.punishment.PunishCommand;
 import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
@@ -71,6 +73,8 @@ public class VelocityCommandFeature implements VelocityFeature {
         registerLobbyCommand();
         registerRejoinCommand();
         registerPunishCommand();
+        registerAppealCommand();
+        registerPardonCommand();
 
         logger.info("VelocityCommandFeature initialized");
     }
@@ -139,6 +143,40 @@ public class VelocityCommandFeature implements VelocityFeature {
                 .build();
 
         PunishCommand command = new PunishCommand(
+                proxy,
+                messageBus,
+                dataAPI,
+                sessionService,
+                logger,
+                plugin
+        );
+
+        commandManager.register(meta, command);
+    }
+
+    private void registerAppealCommand() {
+        CommandMeta meta = commandManager.metaBuilder("appeal")
+                .plugin(plugin)
+                .build();
+
+        AppealCommand command = new AppealCommand(
+                proxy,
+                messageBus,
+                dataAPI,
+                sessionService,
+                logger,
+                plugin
+        );
+
+        commandManager.register(meta, command);
+    }
+
+    private void registerPardonCommand() {
+        CommandMeta meta = commandManager.metaBuilder("pardon")
+                .plugin(plugin)
+                .build();
+
+        PardonCommand command = new PardonCommand(
                 proxy,
                 messageBus,
                 dataAPI,

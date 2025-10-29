@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentAppliedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentCommandMessage;
+import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusCommandMessage;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusMessage;
 import sh.harold.fulcrum.api.punishment.*;
 
@@ -19,6 +20,7 @@ public final class PunishmentService implements AutoCloseable {
     private final PunishmentRepository repository;
     private final PunishmentSnapshotWriter snapshotWriter;
     private final MessageHandler commandHandler;
+    private final MessageHandler statusCommandHandler;
 
     public PunishmentService(MessageBus messageBus,
                              Logger logger,
@@ -29,7 +31,9 @@ public final class PunishmentService implements AutoCloseable {
         this.repository = repository;
         this.snapshotWriter = snapshotWriter;
         this.commandHandler = this::handleCommand;
+        this.statusCommandHandler = this::handleStatusCommand;
         this.messageBus.subscribe(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND, commandHandler);
+        this.messageBus.subscribe(ChannelConstants.REGISTRY_PUNISHMENT_STATUS_COMMAND, statusCommandHandler);
         logger.info("PunishmentService subscribed to {}", ChannelConstants.REGISTRY_PUNISHMENT_COMMAND);
     }
 
@@ -53,6 +57,26 @@ public final class PunishmentService implements AutoCloseable {
         }
     }
 
+    private void handleStatusCommand(MessageEnvelope envelope) {
+        PunishmentStatusCommandMessage command;
+        try {
+            command = MessageTypeRegistry.getInstance()
+                    .deserializeToClass(envelope.payload(), PunishmentStatusCommandMessage.class);
+        } catch (Exception ex) {
+            logger.warn("Failed to deserialize punishment status command", ex);
+            return;
+        }
+        if (command == null) {
+            return;
+        }
+
+        try {
+            processStatusCommand(command);
+        } catch (Exception ex) {
+            logger.error("Failed to process punishment status command {}", command.getCommandId(), ex);
+        }
+    }
+
     private void processCommand(PunishmentCommandMessage command) {
         PunishmentReason reason = command.getReason();
         if (reason == null) {
@@ -62,7 +86,7 @@ public final class PunishmentService implements AutoCloseable {
         UUID playerId = command.getPlayerId();
         PunishmentLadder ladder = reason.getLadder();
 
-        int currentRung = repository.countActiveRung(playerId, ladder);
+        int currentRung = repository.countRelevantRung(playerId, ladder);
         PunishmentOutcome outcome = reason.evaluate(currentRung);
 
         UUID punishmentId = UUID.randomUUID();
@@ -91,6 +115,33 @@ public final class PunishmentService implements AutoCloseable {
 
         broadcastApplied(record);
         refreshSnapshot(playerId);
+    }
+
+    private void processStatusCommand(PunishmentStatusCommandMessage command) {
+        UUID punishmentId = command.getPunishmentId();
+        PunishmentStatus status = command.getStatus();
+        if (punishmentId == null || status == null) {
+            throw new IllegalStateException("Punishment status command missing required fields");
+        }
+
+        Optional<PunishmentRecord> maybeRecord = repository.loadPunishment(punishmentId);
+        if (maybeRecord.isEmpty()) {
+            logger.warn("Ignoring status command for unknown punishment {}", punishmentId);
+            return;
+        }
+
+        PunishmentRecord record = maybeRecord.get();
+        Instant effectiveAt = command.getEffectiveAt() != null ? command.getEffectiveAt() : Instant.now();
+        repository.updateStatus(punishmentId, status, effectiveAt, record.getPlayerId(), record.getLadder());
+
+        refreshSnapshot(record.getPlayerId());
+
+        PunishmentStatusMessage msg = new PunishmentStatusMessage();
+        msg.setPunishmentId(punishmentId);
+        msg.setPlayerId(record.getPlayerId());
+        msg.setStatus(status);
+        msg.setUpdatedAt(effectiveAt);
+        messageBus.broadcast(ChannelConstants.REGISTRY_PUNISHMENT_STATUS, msg);
     }
 
     private void refreshSnapshot(UUID playerId) {
@@ -186,6 +237,7 @@ public final class PunishmentService implements AutoCloseable {
     @Override
     public void close() {
         messageBus.unsubscribe(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND, commandHandler);
+        messageBus.unsubscribe(ChannelConstants.REGISTRY_PUNISHMENT_STATUS_COMMAND, statusCommandHandler);
         try {
             repository.close();
         } catch (Exception ignored) {

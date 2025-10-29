@@ -5,7 +5,7 @@ package sh.harold.fulcrum.api.punishment;
  */
 public enum PunishmentStatus {
     ACTIVE,
-    INACTIVE,
+    EXPIRED,
     APPEALED,
-    REMOVED
+    PARDONED
 }

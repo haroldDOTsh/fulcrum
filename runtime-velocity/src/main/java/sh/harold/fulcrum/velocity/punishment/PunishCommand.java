@@ -19,8 +19,10 @@ import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static net.kyori.adventure.text.Component.text;
 
@@ -45,6 +47,34 @@ public final class PunishCommand implements SimpleCommand {
         this.sessionService = sessionService;
         this.logger = logger;
         this.plugin = plugin;
+    }
+
+    @Override
+    public List<String> suggest(Invocation invocation) {
+        String[] args = invocation.arguments();
+        if (args.length == 0) {
+            return proxy.getAllPlayers().stream()
+                    .map(Player::getUsername)
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .collect(Collectors.toList());
+        }
+        if (args.length == 1) {
+            String prefix = args[0].toLowerCase();
+            return proxy.getAllPlayers().stream()
+                    .map(Player::getUsername)
+                    .filter(name -> name.toLowerCase().startsWith(prefix))
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .collect(Collectors.toList());
+        }
+        if (args.length == 2) {
+            String prefix = args[1].toLowerCase();
+            return Arrays.stream(PunishmentReason.values())
+                    .map(PunishmentReason::getId)
+                    .filter(id -> id.toLowerCase().startsWith(prefix))
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .collect(Collectors.toList());
+        }
+        return List.of();
     }
 
     @Override
