@@ -866,10 +866,19 @@ public class PlayerRoutingService {
         });
     }
 
+    private static final Comparator<SlotCandidate> SLOT_CANDIDATE_COMPARATOR = Comparator
+            .comparingDouble(SlotCandidate::fillRatio).reversed()
+            .thenComparingInt(SlotCandidate::occupancy).reversed()
+            .thenComparingInt(SlotCandidate::remainingCapacity)
+            .thenComparingInt(SlotCandidate::order);
+
     private Optional<LogicalSlotRecord> findAvailableSlot(String familyId, String variantId, Set<String> blockedSlotIds) {
         if (familyId == null) {
             return Optional.empty();
         }
+
+        List<SlotCandidate> candidates = new ArrayList<>();
+        int order = 0;
 
         for (RegisteredServerData server : serverRegistry.getAllServers()) {
             for (LogicalSlotRecord slot : server.getSlots()) {
@@ -886,40 +895,23 @@ public class PlayerRoutingService {
                 if (!variantMatches(slot, variantId)) {
                     continue;
                 }
-                int pending = pendingOccupancy.getOrDefault(slot.getSlotId(), 0);
-                if (slot.getMaxPlayers() > 0 && slot.getOnlinePlayers() + pending >= slot.getMaxPlayers()) {
+                if (slotCapacityRemaining(slot) <= 0) {
                     continue;
                 }
-                return Optional.of(slot);
+
+                SlotCandidate candidate = createSlotCandidate(slot, order++);
+                if (candidate != null) {
+                    candidates.add(candidate);
+                }
             }
         }
-        return Optional.empty();
-    }
 
-    private Optional<LogicalSlotRecord> findAvailableSlotForParty(String familyId, String variantId, int partySize) {
-        if (familyId == null) {
+        if (candidates.isEmpty()) {
             return Optional.empty();
         }
 
-        for (RegisteredServerData server : serverRegistry.getAllServers()) {
-            for (LogicalSlotRecord slot : server.getSlots()) {
-                if (!isSlotEligible(slot)) {
-                    continue;
-                }
-                String slotFamily = slot.getMetadata().get("family");
-                if (!familyId.equalsIgnoreCase(slotFamily)) {
-                    continue;
-                }
-                if (!variantMatches(slot, variantId)) {
-                    continue;
-                }
-                if (!canSlotFitParty(slot, partySize)) {
-                    continue;
-                }
-                return Optional.of(slot);
-            }
-        }
-        return Optional.empty();
+        candidates.sort(SLOT_CANDIDATE_COMPARATOR);
+        return Optional.of(candidates.get(0).slot());
     }
 
     private Optional<LogicalSlotRecord> findSlotById(String slotId) {
@@ -964,30 +956,43 @@ public class PlayerRoutingService {
         messageBus.broadcast(ChannelConstants.PLAYER_ROUTE_ACK, ack);
     }
 
-    private LogicalSlotRecord findSlotOnServer(RegisteredServerData server,
-                                               String familyId,
-                                               String variantId,
-                                               int partySize) {
-        if (server == null) {
-            return null;
+    private Optional<LogicalSlotRecord> findAvailableSlotForParty(String familyId, String variantId, int partySize) {
+        if (familyId == null) {
+            return Optional.empty();
         }
-        for (LogicalSlotRecord slot : server.getSlots()) {
-            if (SlotLifecycleStatus.AVAILABLE != slot.getStatus()) {
-                continue;
+
+        List<SlotCandidate> candidates = new ArrayList<>();
+        int order = 0;
+
+        for (RegisteredServerData server : serverRegistry.getAllServers()) {
+            for (LogicalSlotRecord slot : server.getSlots()) {
+                if (!isSlotEligible(slot)) {
+                    continue;
+                }
+                String slotFamily = slot.getMetadata().get("family");
+                if (!familyId.equalsIgnoreCase(slotFamily)) {
+                    continue;
+                }
+                if (!variantMatches(slot, variantId)) {
+                    continue;
+                }
+                if (!canSlotFitParty(slot, partySize)) {
+                    continue;
+                }
+
+                SlotCandidate candidate = createSlotCandidate(slot, order++);
+                if (candidate != null && candidate.remainingCapacity() >= partySize) {
+                    candidates.add(candidate);
+                }
             }
-            String slotFamily = slot.getMetadata().get("family");
-            if (familyId != null && (!familyId.equalsIgnoreCase(slotFamily))) {
-                continue;
-            }
-            if (!variantMatches(slot, variantId)) {
-                continue;
-            }
-            if (!canSlotFitParty(slot, partySize)) {
-                continue;
-            }
-            return slot;
         }
-        return null;
+
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+
+        candidates.sort(SLOT_CANDIDATE_COMPARATOR);
+        return Optional.of(candidates.get(0).slot());
     }
 
     private void dispatchQueuedPlayers(String familyId, LogicalSlotRecord slot) {
@@ -1771,5 +1776,71 @@ public class PlayerRoutingService {
     }
 
     private record InFlightRoute(PlayerRequestContext request, String slotId, ScheduledFuture<?> timeoutFuture) {
+    }
+
+    private LogicalSlotRecord findSlotOnServer(RegisteredServerData server,
+                                               String familyId,
+                                               String variantId,
+                                               int partySize) {
+        if (server == null) {
+            return null;
+        }
+        List<SlotCandidate> candidates = new ArrayList<>();
+        int order = 0;
+
+        for (LogicalSlotRecord slot : server.getSlots()) {
+            if (SlotLifecycleStatus.AVAILABLE != slot.getStatus()) {
+                continue;
+            }
+            String slotFamily = slot.getMetadata().get("family");
+            if (familyId != null && (!familyId.equalsIgnoreCase(slotFamily))) {
+                continue;
+            }
+            if (!variantMatches(slot, variantId)) {
+                continue;
+            }
+            if (!canSlotFitParty(slot, partySize)) {
+                continue;
+            }
+
+            SlotCandidate candidate = createSlotCandidate(slot, order++);
+            if (candidate != null && candidate.remainingCapacity() >= partySize) {
+                candidates.add(candidate);
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        candidates.sort(SLOT_CANDIDATE_COMPARATOR);
+        return candidates.get(0).slot();
+    }
+
+    private SlotCandidate createSlotCandidate(LogicalSlotRecord slot, int order) {
+        if (slot == null) {
+            return null;
+        }
+        String slotId = slot.getSlotId();
+        int pending = pendingOccupancy.getOrDefault(slotId, 0);
+        int occupancy = slot.getOnlinePlayers() + pending;
+        int remaining = slotCapacityRemaining(slot);
+        int max = slot.getMaxPlayers();
+        double ratio;
+        if (max > 0) {
+            ratio = (double) occupancy / max;
+        } else if (occupancy > 0) {
+            ratio = 1.0D;
+        } else {
+            ratio = 0.0D;
+        }
+        return new SlotCandidate(slot, occupancy, remaining, ratio, order);
+    }
+
+    private record SlotCandidate(LogicalSlotRecord slot,
+                                 int occupancy,
+                                 int remainingCapacity,
+                                 double fillRatio,
+                                 int order) {
     }
 }
