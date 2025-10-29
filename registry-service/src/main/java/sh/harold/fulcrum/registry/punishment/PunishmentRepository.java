@@ -34,9 +34,27 @@ public final class PunishmentRepository implements AutoCloseable {
                     adapter,
                     SchemaDefinition.fromResource(
                             "punishments-001",
-                            "Create punishment tables",
+                            "Create punishments table",
                             PunishmentRepository.class.getClassLoader(),
                             "migrations/punishments-001.sql"
+                    )
+            );
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "punishment-effects-001",
+                            "Create punishment_effects table",
+                            PunishmentRepository.class.getClassLoader(),
+                            "migrations/punishment-effects-001.sql"
+                    )
+            );
+            SchemaRegistry.ensureSchema(
+                    adapter,
+                    SchemaDefinition.fromResource(
+                            "ladder-state-001",
+                            "Create ladder_state table",
+                            PunishmentRepository.class.getClassLoader(),
+                            "migrations/ladder-state-001.sql"
                     )
             );
         } catch (Exception ex) {
