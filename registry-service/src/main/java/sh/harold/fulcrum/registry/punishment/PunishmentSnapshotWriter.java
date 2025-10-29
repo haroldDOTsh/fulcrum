@@ -24,16 +24,16 @@ public final class PunishmentSnapshotWriter implements AutoCloseable {
         this.logger = logger;
     }
 
-    void writeSnapshot(PlayerPunishmentState state, List<PunishmentRecord> activeRecords) {
+    void writeSnapshot(UUID playerId, List<PunishmentRecord> activeRecords, List<UUID> historyIds) {
         try {
-            Document document = playersCollection.document(state.getPlayerId().toString());
+            Document document = playersCollection.document(playerId.toString());
             List<Map<String, Object>> active = toActiveList(activeRecords);
-            List<String> history = toStringList(state.getPunishmentHistory());
+            List<String> history = toStringList(historyIds);
             document.set("punishments.activePunishments", active);
             document.set("punishments.punishmentHistory", history);
             document.set("punishments.lastSyncedAt", Instant.now().toString());
         } catch (Exception ex) {
-            logger.warn("Failed to update punishment snapshot for {}", state.getPlayerId(), ex);
+            logger.warn("Failed to update punishment snapshot for {}", playerId, ex);
         }
     }
 

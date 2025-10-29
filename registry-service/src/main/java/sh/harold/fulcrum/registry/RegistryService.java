@@ -605,7 +605,7 @@ public class RegistryService {
 
             PunishmentRepository repository = new PunishmentRepository(postgresAdapter, LOGGER);
             PunishmentSnapshotWriter snapshotWriter = new PunishmentSnapshotWriter(mongoAdapter, dataAPI, LOGGER);
-            return new PunishmentService(messageBus, LOGGER, scheduler, repository, snapshotWriter);
+            return new PunishmentService(messageBus, LOGGER, repository, snapshotWriter);
         } catch (Exception ex) {
             LOGGER.error("Failed to initialise punishment service", ex);
             return null;

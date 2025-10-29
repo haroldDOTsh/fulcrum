@@ -11,56 +11,26 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.*;
 
 public final class PunishmentService implements AutoCloseable {
 
     private final MessageBus messageBus;
     private final Logger logger;
-    private final ScheduledExecutorService scheduler;
     private final PunishmentRepository repository;
     private final PunishmentSnapshotWriter snapshotWriter;
-    private final ConcurrentMap<UUID, PunishmentRecord> records = new ConcurrentHashMap<>();
-    private final ConcurrentMap<UUID, PlayerPunishmentState> playerStates = new ConcurrentHashMap<>();
-    private final ConcurrentMap<UUID, ScheduledFuture<?>> scheduledExpiryTasks = new ConcurrentHashMap<>();
     private final MessageHandler commandHandler;
 
     public PunishmentService(MessageBus messageBus,
                              Logger logger,
-                             ScheduledExecutorService scheduler,
                              PunishmentRepository repository,
                              PunishmentSnapshotWriter snapshotWriter) {
         this.messageBus = messageBus;
         this.logger = logger;
-        this.scheduler = scheduler;
         this.repository = repository;
         this.snapshotWriter = snapshotWriter;
         this.commandHandler = this::handleCommand;
         this.messageBus.subscribe(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND, commandHandler);
         logger.info("PunishmentService subscribed to {}", ChannelConstants.REGISTRY_PUNISHMENT_COMMAND);
-        loadExistingData();
-    }
-
-    private void loadExistingData() {
-        List<PunishmentRecord> existing = repository.loadAllPunishments();
-        for (PunishmentRecord record : existing) {
-            records.put(record.getPunishmentId(), record);
-            PlayerPunishmentState state = playerStates.computeIfAbsent(record.getPlayerId(), PlayerPunishmentState::new);
-            synchronized (state) {
-                state.appendHistory(record.getPunishmentId());
-                if (record.getStatus() == PunishmentStatus.ACTIVE && record.getEffects().stream().anyMatch(effect -> isEnforcementType(effect.type()))) {
-                    state.addActive(record.getPunishmentId());
-                }
-            }
-        }
-
-        playerStates.values().forEach(this::recomputeRungs);
-
-        existing.stream()
-                .filter(record -> record.getStatus() == PunishmentStatus.ACTIVE)
-                .forEach(this::scheduleExpiryTasks);
-
-        playerStates.values().forEach(state -> snapshotWriter.writeSnapshot(state, collectActiveRecords(state)));
     }
 
     private void handleCommand(MessageEnvelope envelope) {
@@ -90,50 +60,43 @@ public final class PunishmentService implements AutoCloseable {
         }
 
         UUID playerId = command.getPlayerId();
-        PlayerPunishmentState state = playerStates.computeIfAbsent(playerId, PlayerPunishmentState::new);
+        PunishmentLadder ladder = reason.getLadder();
 
-        PunishmentOutcome outcome;
-        PunishmentRecord record;
-        synchronized (state) {
-            int currentRung = state.getRung(reason.getLadder());
-            outcome = reason.evaluate(currentRung);
+        int currentRung = repository.countActiveRung(playerId, ladder);
+        PunishmentOutcome outcome = reason.evaluate(currentRung);
 
-            UUID punishmentId = UUID.randomUUID();
-            List<PunishmentRecordEffect> effects = convertEffects(outcome.effects(), command.getIssuedAt());
+        UUID punishmentId = UUID.randomUUID();
+        List<PunishmentRecordEffect> effects = convertEffects(outcome.effects(), command.getIssuedAt());
 
-            record = new PunishmentRecord(
-                    punishmentId,
-                    playerId,
-                    command.getPlayerName(),
-                    reason,
-                    reason.getLadder(),
-                    outcome.rungBefore(),
-                    outcome.rungAfter(),
-                    command.getStaffId(),
-                    command.getStaffName(),
-                    command.getIssuedAt(),
-                    effects
-            );
+        PunishmentRecord record = new PunishmentRecord(
+                punishmentId,
+                playerId,
+                command.getPlayerName(),
+                reason,
+                ladder,
+                outcome.rungBefore(),
+                outcome.rungAfter(),
+                command.getStaffId(),
+                command.getStaffName(),
+                command.getIssuedAt(),
+                effects
+        );
 
-            try {
-                repository.savePunishment(record);
-            } catch (SQLException ex) {
-                logger.error("Failed to persist punishment {}", punishmentId, ex);
-                return;
-            }
-
-            records.put(punishmentId, record);
-            state.setRung(reason.getLadder(), outcome.rungAfter());
-            state.appendHistory(punishmentId);
-
-            if (effects.stream().anyMatch(e -> isEnforcementType(e.type()))) {
-                state.addActive(punishmentId);
-            }
-            snapshotWriter.writeSnapshot(state, collectActiveRecords(state));
+        try {
+            repository.savePunishment(record);
+        } catch (SQLException ex) {
+            logger.error("Failed to persist punishment {}", punishmentId, ex);
+            return;
         }
 
         broadcastApplied(record);
-        scheduleExpiryTasks(record);
+        refreshSnapshot(playerId);
+    }
+
+    private void refreshSnapshot(UUID playerId) {
+        List<PunishmentRecord> active = repository.loadActivePunishments(playerId);
+        List<UUID> history = repository.loadPunishmentHistoryIds(playerId);
+        snapshotWriter.writeSnapshot(playerId, active, history);
     }
 
     private List<PunishmentRecordEffect> convertEffects(List<PunishmentEffect> effects, Instant issuedAt) {
@@ -174,137 +137,55 @@ public final class PunishmentService implements AutoCloseable {
         messageBus.broadcast(ChannelConstants.REGISTRY_PUNISHMENT_APPLIED, message);
     }
 
-    private boolean isEnforcementType(PunishmentEffectType type) {
-        return type == PunishmentEffectType.MUTE
-                || type == PunishmentEffectType.BAN
-                || type == PunishmentEffectType.BLACKLIST;
-    }
-
-    private void scheduleExpiryTasks(PunishmentRecord record) {
-        Instant latest = null;
-        for (PunishmentRecordEffect effect : record.getEffects()) {
-            if (effect.expiresAt() == null) {
-                return; // at least one permanent effect keeps this record active indefinitely
-            }
-            if (effect.type() == PunishmentEffectType.MUTE
-                    || effect.type() == PunishmentEffectType.BAN
-                    || effect.type() == PunishmentEffectType.BLACKLIST) {
-                if (latest == null || effect.expiresAt().isAfter(latest)) {
-                    latest = effect.expiresAt();
-                }
-            }
-        }
-        if (latest != null) {
-            cancelScheduled(record.getPunishmentId());
-            long delay = Math.max(0, Duration.between(Instant.now(), latest).toMillis());
-            ScheduledFuture<?> future = scheduler.schedule(() -> markInactive(record.getPunishmentId(), PunishmentStatus.INACTIVE),
-                    delay,
-                    TimeUnit.MILLISECONDS);
-            scheduledExpiryTasks.put(record.getPunishmentId(), future);
-        }
-    }
-
     public void markInactive(UUID punishmentId, PunishmentStatus status) {
-        markInactive(punishmentId, status, Instant.now());
-    }
-
-    public void markInactive(UUID punishmentId, PunishmentStatus status, Instant updatedAt) {
-        PunishmentRecord record = records.get(punishmentId);
-        if (record == null) {
-            record = repository.loadPunishment(punishmentId).orElse(null);
-            if (record == null) {
-                logger.warn("Received status update for unknown punishment {}", punishmentId);
-                return;
-            }
-            records.putIfAbsent(record.getPunishmentId(), record);
-            PlayerPunishmentState state = playerStates.computeIfAbsent(record.getPlayerId(), PlayerPunishmentState::new);
-            synchronized (state) {
-                List<UUID> history = state.getPunishmentHistory();
-                if (!history.contains(record.getPunishmentId())) {
-                    state.appendHistory(record.getPunishmentId());
-                }
-                if (record.getStatus() == PunishmentStatus.ACTIVE
-                        && record.getEffects().stream().anyMatch(effect -> isEnforcementType(effect.type()))) {
-                    state.addActive(record.getPunishmentId());
-                }
-            }
+        Optional<PunishmentRecord> maybeRecord = repository.loadPunishment(punishmentId);
+        if (maybeRecord.isEmpty()) {
+            return;
         }
+        PunishmentRecord record = maybeRecord.get();
         if (record.getStatus() == status) {
             return;
         }
-        record.setStatus(status, updatedAt);
-        PlayerPunishmentState state = playerStates.get(record.getPlayerId());
-        if (state != null) {
-            synchronized (state) {
-                state.removeActive(punishmentId);
-                recomputeRungs(state);
-                snapshotWriter.writeSnapshot(state, collectActiveRecords(state));
-            }
-        }
-        repository.updateStatus(record.getPunishmentId(), status, record.getUpdatedAt(), record.getPlayerId(), record.getLadder());
-        cancelScheduled(punishmentId);
-        messageBus.broadcast(ChannelConstants.REGISTRY_PUNISHMENT_STATUS, createStatusMessage(record));
-    }
+        Instant now = Instant.now();
+        repository.updateStatus(punishmentId, status, now, record.getPlayerId(), record.getLadder());
+        refreshSnapshot(record.getPlayerId());
 
-    private PunishmentStatusMessage createStatusMessage(PunishmentRecord record) {
         PunishmentStatusMessage msg = new PunishmentStatusMessage();
-        msg.setPunishmentId(record.getPunishmentId());
+        msg.setPunishmentId(punishmentId);
         msg.setPlayerId(record.getPlayerId());
-        msg.setStatus(record.getStatus());
-        msg.setUpdatedAt(record.getUpdatedAt());
-        return msg;
+        msg.setStatus(status);
+        msg.setUpdatedAt(now);
+        messageBus.broadcast(ChannelConstants.REGISTRY_PUNISHMENT_STATUS, msg);
     }
 
     public Optional<PunishmentSnapshot> snapshot(UUID playerId) {
-        PlayerPunishmentState state = playerStates.get(playerId);
-        if (state == null) {
+        List<PunishmentRecord> active = repository.loadActivePunishments(playerId);
+        List<UUID> history = repository.loadPunishmentHistoryIds(playerId);
+        if (active.isEmpty() && history.isEmpty()) {
             return Optional.empty();
         }
-        synchronized (state) {
-            return Optional.of(new PunishmentSnapshot(
-                    Instant.now(),
-                    new ArrayList<>(state.getActivePunishmentIds()),
-                    List.copyOf(state.getPunishmentHistory())
-            ));
-        }
+        return Optional.of(new PunishmentSnapshot(
+                Instant.now(),
+                active.stream().map(PunishmentRecord::getPunishmentId).toList(),
+                history
+        ));
     }
 
     public Optional<PunishmentRecord> getRecord(UUID punishmentId) {
-        return Optional.ofNullable(records.get(punishmentId));
+        return repository.loadPunishment(punishmentId);
     }
 
     public Map<PunishmentLadder, Integer> ladderSnapshot(UUID playerId) {
-        PlayerPunishmentState state = playerStates.get(playerId);
-        if (state == null) {
-            return Map.of();
-        }
-        synchronized (state) {
-            return state.getRungSnapshot();
-        }
+        return repository.loadLadderSnapshot(playerId);
     }
 
     public List<PunishmentRecord> getHistory(UUID playerId) {
-        PlayerPunishmentState state = playerStates.get(playerId);
-        if (state == null) {
-            return List.of();
-        }
-        List<PunishmentRecord> results = new ArrayList<>();
-        synchronized (state) {
-            for (UUID id : state.getPunishmentHistory()) {
-                PunishmentRecord record = records.get(id);
-                if (record != null) {
-                    results.add(record);
-                }
-            }
-        }
-        return results;
+        return repository.loadPunishmentHistory(playerId);
     }
 
     @Override
     public void close() {
         messageBus.unsubscribe(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND, commandHandler);
-        scheduledExpiryTasks.values().forEach(future -> future.cancel(false));
-        scheduledExpiryTasks.clear();
         try {
             repository.close();
         } catch (Exception ignored) {
@@ -313,33 +194,5 @@ public final class PunishmentService implements AutoCloseable {
             snapshotWriter.close();
         } catch (Exception ignored) {
         }
-    }
-
-    private void cancelScheduled(UUID punishmentId) {
-        ScheduledFuture<?> future = scheduledExpiryTasks.remove(punishmentId);
-        if (future != null) {
-            future.cancel(false);
-        }
-    }
-
-    private void recomputeRungs(PlayerPunishmentState state) {
-        Map<PunishmentLadder, Integer> counts = new EnumMap<>(PunishmentLadder.class);
-        for (PunishmentRecord record : collectActiveRecords(state)) {
-            counts.merge(record.getLadder(), 1, Integer::sum);
-        }
-        for (PunishmentLadder ladder : PunishmentLadder.values()) {
-            state.setRung(ladder, counts.getOrDefault(ladder, 0));
-        }
-    }
-
-    private List<PunishmentRecord> collectActiveRecords(PlayerPunishmentState state) {
-        List<PunishmentRecord> list = new ArrayList<>();
-        for (UUID id : state.getActivePunishmentIds()) {
-            PunishmentRecord record = records.get(id);
-            if (record != null && record.getStatus() == PunishmentStatus.ACTIVE) {
-                list.add(record);
-            }
-        }
-        return list;
     }
 }

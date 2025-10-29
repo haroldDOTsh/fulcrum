@@ -10,10 +10,7 @@ import sh.harold.fulcrum.api.punishment.PunishmentStatus;
 import java.sql.*;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Handles persistence of punishment records in PostgreSQL.
@@ -231,6 +228,107 @@ public final class PunishmentRepository implements AutoCloseable {
         return Optional.empty();
     }
 
+    List<PunishmentRecord> loadActivePunishments(UUID playerId) {
+        String query = """
+                SELECT punishment_id, player_uuid, player_name, staff_uuid, staff_name, ladder, reason,
+                       rung_before, rung_after, created_at, expires_at, status, updated_at
+                FROM punishments
+                WHERE player_uuid = ? AND status = ?
+                ORDER BY created_at ASC
+                """;
+        List<PunishmentRecord> records = new ArrayList<>();
+        try (Connection connection = adapter.getConnection();
+             PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setObject(1, playerId);
+            ps.setString(2, PunishmentStatus.ACTIVE.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    PunishmentRecord record = mapRecord(connection, rs);
+                    if (record != null) {
+                        records.add(record);
+                    }
+                }
+            }
+        } catch (SQLException ex) {
+            logger.warn("Failed to load active punishments: {}", ex.getMessage());
+        }
+        return records;
+    }
+
+    List<PunishmentRecord> loadPunishmentHistory(UUID playerId) {
+        String query = """
+                SELECT punishment_id, player_uuid, player_name, staff_uuid, staff_name, ladder, reason,
+                       rung_before, rung_after, created_at, expires_at, status, updated_at
+                FROM punishments
+                WHERE player_uuid = ?
+                ORDER BY created_at ASC
+                """;
+        List<PunishmentRecord> records = new ArrayList<>();
+        try (Connection connection = adapter.getConnection();
+             PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setObject(1, playerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    PunishmentRecord record = mapRecord(connection, rs);
+                    if (record != null) {
+                        records.add(record);
+                    }
+                }
+            }
+        } catch (SQLException ex) {
+            logger.warn("Failed to load punishment history: {}", ex.getMessage());
+        }
+        return records;
+    }
+
+    List<UUID> loadPunishmentHistoryIds(UUID playerId) {
+        String query = """
+                SELECT punishment_id
+                FROM punishments
+                WHERE player_uuid = ?
+                ORDER BY created_at ASC
+                """;
+        List<UUID> ids = new ArrayList<>();
+        try (Connection connection = adapter.getConnection();
+             PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setObject(1, playerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    UUID id = rs.getObject(1, UUID.class);
+                    if (id != null) {
+                        ids.add(id);
+                    }
+                }
+            }
+        } catch (SQLException ex) {
+            logger.warn("Failed to load punishment history ids: {}", ex.getMessage());
+        }
+        return ids;
+    }
+
+    Map<PunishmentLadder, Integer> loadLadderSnapshot(UUID playerId) {
+        String query = "SELECT ladder, rung FROM ladder_state WHERE player_uuid = ?";
+        Map<PunishmentLadder, Integer> snapshot = new EnumMap<>(PunishmentLadder.class);
+        try (Connection connection = adapter.getConnection();
+             PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setObject(1, playerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String ladderId = rs.getString("ladder");
+                    int rung = rs.getInt("rung");
+                    try {
+                        PunishmentLadder ladder = PunishmentLadder.valueOf(ladderId);
+                        snapshot.put(ladder, rung);
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
+        } catch (SQLException ex) {
+            logger.warn("Failed to load ladder snapshot: {}", ex.getMessage());
+        }
+        return snapshot;
+    }
+
     private List<PunishmentRecordEffect> loadEffects(Connection connection, UUID punishmentId) throws SQLException {
         String query = """
                 SELECT type, duration_seconds, expires_at, message
@@ -278,6 +376,15 @@ public final class PunishmentRepository implements AutoCloseable {
             ps.setInt(3, rung);
             ps.setTimestamp(4, Timestamp.from(updatedAt));
             ps.executeUpdate();
+        }
+    }
+
+    int countActiveRung(UUID playerId, PunishmentLadder ladder) {
+        try (Connection connection = adapter.getConnection()) {
+            return countActiveRung(connection, playerId, ladder);
+        } catch (SQLException ex) {
+            logger.warn("Failed to count active rung: {}", ex.getMessage());
+            return 0;
         }
     }
 
