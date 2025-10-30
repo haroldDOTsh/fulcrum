@@ -110,8 +110,9 @@ public final class PunishmentBroadcastFeature implements PluginFeature {
             if (message.getStatus() == PunishmentStatus.ACTIVE) {
                 return;
             }
+            String shortId = shortUuid(message.getPunishmentId());
             Component payload = Message.info("Punishment {arg0} for player {arg1} is now {arg2}.",
-                            shortUuid(message.getPunishmentId()),
+                            "#" + shortId,
                             resolvePlayerName(message.getPlayerName(), message.getPlayerId()),
                             message.getStatus())
                     .builder()
