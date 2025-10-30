@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
+import sh.harold.fulcrum.common.settings.PlayerDebugLevel;
 import sh.harold.fulcrum.data.playtime.PlaytimeTracker;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
@@ -201,14 +202,22 @@ public class PlayerSessionService {
         });
     }
 
-    public boolean isDebugEnabled(UUID playerId) {
+    public PlayerDebugLevel getDebugLevel(UUID playerId) {
         return getActiveSession(playerId)
-                .map(PlayerSessionRecord::isDebugEnabled)
-                .orElse(false);
+                .map(PlayerSessionRecord::getDebugLevel)
+                .orElse(PlayerDebugLevel.NONE);
+    }
+
+    public boolean isDebugEnabled(UUID playerId) {
+        return getDebugLevel(playerId).isEnabled();
     }
 
     public void setDebugEnabled(UUID playerId, boolean enabled) {
-        withActiveSession(playerId, record -> record.setDebugEnabled(enabled));
+        setDebugLevel(playerId, enabled ? PlayerDebugLevel.PLAYER : PlayerDebugLevel.NONE);
+    }
+
+    public void setDebugLevel(UUID playerId, PlayerDebugLevel level) {
+        withActiveSession(playerId, record -> record.setDebugLevel(level));
     }
 
     public void updateActiveSegmentMetadata(UUID playerId, Consumer<Map<String, Object>> mutator) {

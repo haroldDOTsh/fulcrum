@@ -14,17 +14,31 @@ import java.util.concurrent.CompletionStage;
 public interface PlayerSettingsService {
 
     /**
-     * Check whether the player has opted into network debug messaging.
+     * Retrieve the configured debug tier for the player.
+     */
+    default CompletionStage<PlayerDebugLevel> getDebugLevel(UUID playerId) {
+        return CompletableFuture.completedFuture(PlayerDebugLevel.NONE);
+    }
+
+    /**
+     * Persist the configured debug tier for the player.
+     */
+    default CompletionStage<Void> setDebugLevel(UUID playerId, PlayerDebugLevel level) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Check whether the player has opted into any network debug messaging.
      */
     default CompletionStage<Boolean> isDebugEnabled(UUID playerId) {
-        return CompletableFuture.completedFuture(Boolean.FALSE);
+        return getDebugLevel(playerId).thenApply(PlayerDebugLevel::isEnabled);
     }
 
     /**
      * Toggle the player debug flag.
      */
     default CompletionStage<Void> setDebugEnabled(UUID playerId, boolean enabled) {
-        return CompletableFuture.completedFuture(null);
+        return setDebugLevel(playerId, enabled ? PlayerDebugLevel.PLAYER : PlayerDebugLevel.NONE);
     }
 
     /**

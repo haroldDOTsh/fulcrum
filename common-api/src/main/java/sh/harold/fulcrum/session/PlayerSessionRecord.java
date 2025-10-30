@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.session;
 
 import com.fasterxml.jackson.annotation.*;
+import sh.harold.fulcrum.common.settings.PlayerDebugLevel;
 
 import java.time.Instant;
 import java.util.*;
@@ -130,33 +131,38 @@ public class PlayerSessionRecord {
     }
 
     @JsonIgnore
-    public boolean isDebugEnabled() {
+    public PlayerDebugLevel getDebugLevel() {
         Map<String, Object> settings = getSettingsInternal(false);
         if (settings == null) {
-            return false;
+            return PlayerDebugLevel.NONE;
         }
         Object debug = settings.get("debug");
         if (debug instanceof Map<?, ?> debugMap) {
-            Object enabled = debugMap.get("enabled");
-            if (enabled instanceof Boolean b) {
-                return b;
-            }
-            if (enabled instanceof Number number) {
-                return number.intValue() != 0;
-            }
-            if (enabled instanceof String text) {
-                return Boolean.parseBoolean(text);
+            Object level = debugMap.get("level");
+            if (level != null) {
+                return PlayerDebugLevel.from(level);
             }
         }
-        return false;
+        return PlayerDebugLevel.NONE;
+    }
+
+    @JsonIgnore
+    public void setDebugLevel(PlayerDebugLevel level) {
+        PlayerDebugLevel sanitized = PlayerDebugLevel.sanitize(level);
+        Map<String, Object> settings = getSettingsInternal(true);
+        Map<String, Object> debugSection = toMutableMap(settings.get("debug"));
+        debugSection.put("level", sanitized.name());
+        settings.put("debug", debugSection);
+    }
+
+    @JsonIgnore
+    public boolean isDebugEnabled() {
+        return getDebugLevel().isEnabled();
     }
 
     @JsonIgnore
     public void setDebugEnabled(boolean enabled) {
-        Map<String, Object> settings = getSettingsInternal(true);
-        Map<String, Object> debugSection = toMutableMap(settings.get("debug"));
-        debugSection.put("enabled", enabled);
-        settings.put("debug", debugSection);
+        setDebugLevel(enabled ? PlayerDebugLevel.PLAYER : PlayerDebugLevel.NONE);
     }
 
     @JsonAnyGetter

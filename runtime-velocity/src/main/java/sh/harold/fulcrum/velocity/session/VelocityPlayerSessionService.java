@@ -3,6 +3,7 @@ package sh.harold.fulcrum.velocity.session;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.common.settings.PlayerDebugLevel;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.util.*;
@@ -95,14 +96,22 @@ public class VelocityPlayerSessionService {
         return fetch(playerId);
     }
 
-    public boolean isDebugEnabled(UUID playerId) {
+    public PlayerDebugLevel getDebugLevel(UUID playerId) {
         return getSession(playerId)
-                .map(PlayerSessionRecord::isDebugEnabled)
-                .orElse(false);
+                .map(PlayerSessionRecord::getDebugLevel)
+                .orElse(PlayerDebugLevel.NONE);
+    }
+
+    public boolean isDebugEnabled(UUID playerId) {
+        return getDebugLevel(playerId).isEnabled();
     }
 
     public void setDebugEnabled(UUID playerId, boolean enabled) {
-        withActiveSession(playerId, record -> record.setDebugEnabled(enabled));
+        setDebugLevel(playerId, enabled ? PlayerDebugLevel.PLAYER : PlayerDebugLevel.NONE);
+    }
+
+    public void setDebugLevel(UUID playerId, PlayerDebugLevel level) {
+        withActiveSession(playerId, record -> record.setDebugLevel(level));
     }
 
     @SuppressWarnings("unchecked")

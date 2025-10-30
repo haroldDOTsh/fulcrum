@@ -2,6 +2,7 @@ package sh.harold.fulcrum.fundamentals.playerdata;
 
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.common.settings.PlayerDebugLevel;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.common.settings.SettingLevel;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
@@ -26,21 +27,22 @@ public class RuntimePlayerSettingsService implements PlayerSettingsService {
     }
 
     @Override
-    public CompletionStage<Boolean> isDebugEnabled(UUID playerId) {
-        boolean enabled = sessionService.isDebugEnabled(playerId);
-        if (enabled) {
-            return CompletableFuture.completedFuture(true);
+    public CompletionStage<PlayerDebugLevel> getDebugLevel(UUID playerId) {
+        PlayerDebugLevel level = sessionService.getDebugLevel(playerId);
+        if (level.isEnabled()) {
+            return CompletableFuture.completedFuture(level);
         }
-        return CompletableFuture.completedFuture(readBooleanSetting(playerId, "debug.enabled", false));
+        return CompletableFuture.completedFuture(readDebugLevel(playerId));
     }
 
     @Override
-    public CompletionStage<Void> setDebugEnabled(UUID playerId, boolean enabled) {
+    public CompletionStage<Void> setDebugLevel(UUID playerId, PlayerDebugLevel level) {
         if (playerId == null) {
             return CompletableFuture.completedFuture(null);
         }
-        sessionService.setDebugEnabled(playerId, enabled);
-        writePlayerSetting(playerId, "debug.enabled", enabled);
+        PlayerDebugLevel sanitized = PlayerDebugLevel.sanitize(level);
+        sessionService.setDebugLevel(playerId, sanitized);
+        writePlayerSetting(playerId, "debug.level", sanitized.name());
         return CompletableFuture.completedFuture(null);
     }
 
@@ -59,24 +61,6 @@ public class RuntimePlayerSettingsService implements PlayerSettingsService {
     @Override
     public GameSettingsScope forGame(String gameId) {
         return new RuntimeGameSettingsScope(dataAPI, gameId);
-    }
-
-    private boolean readBooleanSetting(UUID playerId, String path, boolean fallback) {
-        Document document = dataAPI.collection(PLAYERS_COLLECTION).document(playerId.toString());
-        if (!document.exists()) {
-            return fallback;
-        }
-        Object value = document.get(SETTINGS_PREFIX + "." + path, null);
-        if (value instanceof Boolean b) {
-            return b;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        if (value instanceof String text) {
-            return Boolean.parseBoolean(text);
-        }
-        return fallback;
     }
 
     private <E extends Enum<E>> E readEnumSetting(UUID playerId, String path, Class<E> type, E fallback) {
@@ -104,6 +88,18 @@ public class RuntimePlayerSettingsService implements PlayerSettingsService {
             document = dataAPI.collection(PLAYERS_COLLECTION).document(playerId.toString());
         }
         document.set(SETTINGS_PREFIX + "." + path, value);
+    }
+
+    private PlayerDebugLevel readDebugLevel(UUID playerId) {
+        Document document = dataAPI.collection(PLAYERS_COLLECTION).document(playerId.toString());
+        if (!document.exists()) {
+            return PlayerDebugLevel.NONE;
+        }
+        Object levelValue = document.get(SETTINGS_PREFIX + ".debug.level", null);
+        if (levelValue != null) {
+            return PlayerDebugLevel.from(levelValue);
+        }
+        return PlayerDebugLevel.NONE;
     }
 
     private record RuntimeGameSettingsScope(DataAPI dataAPI, String collectionName) implements GameSettingsScope {

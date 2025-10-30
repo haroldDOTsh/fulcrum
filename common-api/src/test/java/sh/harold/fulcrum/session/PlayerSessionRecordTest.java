@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.session;
 
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.common.settings.PlayerDebugLevel;
 
 import java.util.UUID;
 
@@ -9,19 +10,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PlayerSessionRecordTest {
 
     @Test
-    void debugFlagDefaultsToFalse() {
+    void debugLevelDefaultsToNone() {
         PlayerSessionRecord record = PlayerSessionRecord.newSession(UUID.randomUUID(), "session", "server");
+        assertThat(record.getDebugLevel()).isEqualTo(PlayerDebugLevel.NONE);
         assertThat(record.isDebugEnabled()).isFalse();
     }
 
     @Test
-    void debugFlagCanBeToggled() {
+    void debugLevelCanBeRaisedAndLowered() {
         PlayerSessionRecord record = PlayerSessionRecord.newSession(UUID.randomUUID(), "session", "server");
-        record.setDebugEnabled(true);
+        record.setDebugLevel(PlayerDebugLevel.COUNCIL);
+        assertThat(record.getDebugLevel()).isEqualTo(PlayerDebugLevel.COUNCIL);
         assertThat(record.isDebugEnabled()).isTrue();
 
-        record.setDebugEnabled(false);
+        record.setDebugLevel(PlayerDebugLevel.NONE);
+        assertThat(record.getDebugLevel()).isEqualTo(PlayerDebugLevel.NONE);
         assertThat(record.isDebugEnabled()).isFalse();
+    }
+
+    @Test
+    void booleanToggleMapsToLevels() {
+        PlayerSessionRecord record = PlayerSessionRecord.newSession(UUID.randomUUID(), "session", "server");
+        record.setDebugEnabled(true);
+        assertThat(record.getDebugLevel()).isEqualTo(PlayerDebugLevel.PLAYER);
+
+        record.setDebugEnabled(false);
+        assertThat(record.getDebugLevel()).isEqualTo(PlayerDebugLevel.NONE);
     }
 
     @Test
