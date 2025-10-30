@@ -5,6 +5,7 @@ import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.ConsoleCommandSource;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
@@ -13,6 +14,7 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentCommandMessage;
 import sh.harold.fulcrum.api.punishment.PunishmentLadder;
 import sh.harold.fulcrum.api.punishment.PunishmentReason;
+import sh.harold.fulcrum.message.Message;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.api.rank.Rank;
 import sh.harold.fulcrum.velocity.api.rank.VelocityRankUtils;
@@ -134,6 +136,13 @@ public final class PunishCommand implements SimpleCommand {
                 });
     }
 
+    private static String shortUuid(UUID uuid) {
+        if (uuid == null) {
+            return "UNKNOWN";
+        }
+        return uuid.toString().substring(0, 8).toUpperCase();
+    }
+
     private void executeAuthorized(CommandSource source, Player target, PunishmentReason reason) {
         if (!(source instanceof Player staff)) {
             source.sendMessage(text("Only in-game staff can issue punishments for now.", NamedTextColor.RED));
@@ -151,7 +160,12 @@ public final class PunishCommand implements SimpleCommand {
 
         try {
             messageBus.broadcast(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND, command);
-            source.sendMessage(text("Queued punishment " + reason.getId() + " for " + target.getUsername() + ".", NamedTextColor.GREEN));
+            Component confirmation = Message.success("Queued punishment {arg0} for {arg1}. Waiting on the Registry...", shortUuid(command.getCommandId()), target.getUsername())
+                    .builder()
+                    .tag("halcyon")
+                    .skipTranslation()
+                    .component();
+            source.sendMessage(confirmation);
         } catch (Exception ex) {
             logger.warn("Failed to broadcast punishment command", ex);
             source.sendMessage(text("Failed to send punishment command. Check logs.", NamedTextColor.RED));

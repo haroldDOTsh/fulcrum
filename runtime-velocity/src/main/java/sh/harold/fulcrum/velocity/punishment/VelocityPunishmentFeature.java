@@ -10,7 +10,6 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
@@ -210,17 +209,6 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
         if (tracker.hasActiveBan()) {
             proxy.getPlayer(message.getPlayerId()).ifPresent(player ->
                     player.disconnect(buildBanScreen(message, tracker.getActiveBanEffects())));
-        } else {
-            for (PunishmentAppliedMessage.Effect effect : message.getEffects()) {
-                if (effect.getType() == PunishmentEffectType.MUTE) {
-                    proxy.getPlayer(message.getPlayerId()).ifPresent(player ->
-                            sendMuteReminder(player, message, new PunishmentEffectInstance(
-                                    message.getPunishmentId(),
-                                    effect.getType(),
-                                    effect.getExpiresAt(),
-                                    message.getReason().getDisplayName())));
-                }
-            }
         }
     }
 
@@ -352,56 +340,6 @@ public final class VelocityPunishmentFeature implements VelocityFeature {
                 .append(banIdLine).append(Component.newline())
                 .append(warning)
                 .build();
-    }
-
-    private void sendMuteReminder(Player player, PunishmentAppliedMessage message, PunishmentEffectInstance effect) {
-        Component frame = Component.text("-----------------------------------------------------", NamedTextColor.RED)
-                .decorate(TextDecoration.STRIKETHROUGH);
-        Duration remaining = effect.expiresAt() != null ? Duration.between(Instant.now(), effect.expiresAt()) : null;
-        String remainingText = remaining == null || remaining.isNegative() ? "Permanent" : formatDuration(remaining);
-        String link = resolveLink("mute", "https://harold.sh/mutes");
-
-        Component body = Component.text()
-                .append(frame).append(Component.newline())
-                .append(text("You are currently muted for ", NamedTextColor.RED))
-                .append(text(message.getReason().getDisplayName(), NamedTextColor.WHITE)).append(Component.newline())
-                .append(text("Your mute will expire in ", NamedTextColor.GRAY))
-                .append(text(remainingText, NamedTextColor.RED)).append(Component.newline())
-                .append(Component.newline())
-                .append(text("Find out more here: ", NamedTextColor.GRAY))
-                .append(text(link, NamedTextColor.YELLOW)
-                        .clickEvent(ClickEvent.openUrl(link))
-                        .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(text("Open mute info", NamedTextColor.YELLOW))))
-                .append(Component.newline())
-                .append(text("Mute ID: ", NamedTextColor.GRAY))
-                .append(text("#" + effect.punishmentId().toString().split("-")[0].toUpperCase(Locale.ROOT), NamedTextColor.WHITE)).append(Component.newline())
-                .append(frame)
-                .build();
-        player.sendMessage(body);
-    }
-
-    private void sendMuteReminder(Player player, String reason, PunishmentEffectInstance effect) {
-        Duration remaining = effect.expiresAt() != null ? Duration.between(Instant.now(), effect.expiresAt()) : null;
-        String remainingText = remaining == null || remaining.isNegative() ? "Permanent" : formatDuration(remaining);
-        String link = resolveLink("mute", "https://harold.sh/mutes");
-        Component frame = Component.text("-----------------------------------------------------", NamedTextColor.RED)
-                .decorate(TextDecoration.STRIKETHROUGH);
-        Component body = Component.text()
-                .append(frame).append(Component.newline())
-                .append(text("You are currently muted for ", NamedTextColor.RED))
-                .append(text(reason, NamedTextColor.WHITE)).append(Component.newline())
-                .append(text("Your mute will expire in ", NamedTextColor.GRAY))
-                .append(text(remainingText, NamedTextColor.RED)).append(Component.newline())
-                .append(Component.newline())
-                .append(text("Find out more here: ", NamedTextColor.GRAY))
-                .append(text(link, NamedTextColor.YELLOW)
-                        .clickEvent(ClickEvent.openUrl(link)))
-                .append(Component.newline())
-                .append(text("Mute ID: ", NamedTextColor.GRAY))
-                .append(text("#" + effect.punishmentId().toString().split("-")[0].toUpperCase(Locale.ROOT), NamedTextColor.WHITE)).append(Component.newline())
-                .append(frame)
-                .build();
-        player.sendMessage(body);
     }
 
     private void synchronizeExpiredPunishments(UUID playerId, Map<UUID, ExpiredPunishmentInfo> expiredPunishmentIds) {

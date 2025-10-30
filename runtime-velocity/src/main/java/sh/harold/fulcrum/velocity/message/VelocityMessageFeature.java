@@ -90,7 +90,8 @@ public final class VelocityMessageFeature implements VelocityFeature {
 
         AudienceLocaleResolver localeResolver = audience -> {
             if (audience instanceof Player player) {
-                return player.getEffectiveLocale().orElse(defaultLocale);
+                Locale locale = player.getEffectiveLocale();
+                return locale != null ? locale : defaultLocale;
             }
             return defaultLocale;
         };
