@@ -36,6 +36,7 @@ import java.util.logging.Logger;
 
 final class ChatChannelServiceImpl implements ChatChannelService {
     private static final long SLOW_MODE_MILLIS = 3000L;
+    private static final Component STAFF_PREFIX = Component.text("Staff > ", NamedTextColor.AQUA);
     private static final GsonComponentSerializer GSON = GsonComponentSerializer.gson();
     private static final PlainTextComponentSerializer PLAIN = PlainTextComponentSerializer.plainText();
 
@@ -224,7 +225,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
 
         String channelId = message.getChannelId();
         if (ChatChannelRef.STAFF_CHANNEL_ID.equalsIgnoreCase(channelId)) {
-            deliverToStaff(component, messageId);
+            deliverToStaff(ensureStaffPrefix(component), messageId);
             return;
         }
 
@@ -346,11 +347,23 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     }
 
     private void deliverToStaff(Component message, UUID messageId) {
+        Component prepared = ensureStaffPrefix(message);
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (isStaff(player.getUniqueId())) {
-                deliverIfNew(player, message, messageId);
+                deliverIfNew(player, prepared, messageId);
             }
         }
+    }
+
+    private Component ensureStaffPrefix(Component message) {
+        if (message == null) {
+            return STAFF_PREFIX;
+        }
+        String plain = PLAIN.serialize(message);
+        if (plain.startsWith("Staff > ")) {
+            return message;
+        }
+        return STAFF_PREFIX.append(message);
     }
 
     private void deliverToParty(UUID partyId, Component message, UUID messageId) {
