@@ -8,12 +8,14 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class CommandRegistrar {
     private static final Logger LOGGER = Logger.getLogger(CommandRegistrar.class.getName());
     private static final List<LiteralCommandNode<CommandSourceStack>> pending = new ArrayList<>();
+    private static final List<Consumer<Commands>> mutators = new ArrayList<>();
     private static boolean registered = false;
 
     private CommandRegistrar() {
@@ -21,6 +23,10 @@ public final class CommandRegistrar {
 
     public static void register(LiteralCommandNode<CommandSourceStack> command) {
         pending.add(command);
+    }
+
+    public static void mutate(Consumer<Commands> mutator) {
+        mutators.add(mutator);
     }
 
     public static void registerAlias(LiteralCommandNode<CommandSourceStack> target, String alias) {
@@ -61,11 +67,19 @@ public final class CommandRegistrar {
                     LOGGER.log(Level.SEVERE, "Failed to register command: /" + command.getLiteral(), e);
                 }
             }
+            for (var mutator : mutators) {
+                try {
+                    mutator.accept(event.registrar());
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Failed to apply command mutator", e);
+                }
+            }
         });
     }
 
     public static void reset() {
         pending.clear();
+        mutators.clear();
         registered = false;
     }
 }
