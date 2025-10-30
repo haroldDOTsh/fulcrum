@@ -2,6 +2,7 @@ package sh.harold.fulcrum.velocity.punishment;
 
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
+import com.velocitypowered.api.proxy.ConsoleCommandSource;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -51,6 +52,10 @@ public final class PunishCommand implements SimpleCommand {
 
     @Override
     public List<String> suggest(Invocation invocation) {
+        if (!canAccess(invocation.source())) {
+            return List.of();
+        }
+
         String[] args = invocation.arguments();
         if (args.length == 0) {
             return proxy.getAllPlayers().stream()
@@ -75,6 +80,11 @@ public final class PunishCommand implements SimpleCommand {
                     .collect(Collectors.toList());
         }
         return List.of();
+    }
+
+    @Override
+    public boolean hasPermission(Invocation invocation) {
+        return canAccess(invocation.source());
     }
 
     @Override
@@ -146,5 +156,17 @@ public final class PunishCommand implements SimpleCommand {
             logger.warn("Failed to broadcast punishment command", ex);
             source.sendMessage(text("Failed to send punishment command. Check logs.", NamedTextColor.RED));
         }
+    }
+
+    private boolean canAccess(CommandSource source) {
+        if (source instanceof ConsoleCommandSource) {
+            return true;
+        }
+
+        if (source instanceof Player player) {
+            return VelocityRankUtils.hasRankOrHigherSync(player, Rank.HELPER, sessionService, dataAPI, logger);
+        }
+
+        return false;
     }
 }
