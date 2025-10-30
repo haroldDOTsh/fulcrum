@@ -12,6 +12,7 @@ public final class PunishmentStatusMessage implements BaseMessage {
 
     private UUID punishmentId;
     private UUID playerId;
+    private String playerName;
     private PunishmentStatus status;
     private Instant updatedAt = Instant.now();
 
@@ -29,6 +30,14 @@ public final class PunishmentStatusMessage implements BaseMessage {
 
     public void setPlayerId(UUID playerId) {
         this.playerId = playerId;
+    }
+
+    public String getPlayerName() {
+        return playerName;
+    }
+
+    public void setPlayerName(String playerName) {
+        this.playerName = playerName;
     }
 
     public PunishmentStatus getStatus() {
@@ -54,6 +63,9 @@ public final class PunishmentStatusMessage implements BaseMessage {
         }
         if (playerId == null) {
             throw new IllegalStateException("playerId is required");
+        }
+        if (playerName == null || playerName.isBlank()) {
+            throw new IllegalStateException("playerName is required");
         }
         if (status == null) {
             throw new IllegalStateException("status is required");

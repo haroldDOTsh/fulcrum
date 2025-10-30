@@ -139,6 +139,7 @@ public final class PunishmentService implements AutoCloseable {
         PunishmentStatusMessage msg = new PunishmentStatusMessage();
         msg.setPunishmentId(punishmentId);
         msg.setPlayerId(record.getPlayerId());
+        msg.setPlayerName(record.getPlayerName());
         msg.setStatus(status);
         msg.setUpdatedAt(effectiveAt);
         messageBus.broadcast(ChannelConstants.REGISTRY_PUNISHMENT_STATUS, msg);
@@ -204,6 +205,7 @@ public final class PunishmentService implements AutoCloseable {
         PunishmentStatusMessage msg = new PunishmentStatusMessage();
         msg.setPunishmentId(punishmentId);
         msg.setPlayerId(record.getPlayerId());
+        msg.setPlayerName(record.getPlayerName());
         msg.setStatus(status);
         msg.setUpdatedAt(now);
         messageBus.broadcast(ChannelConstants.REGISTRY_PUNISHMENT_STATUS, msg);
