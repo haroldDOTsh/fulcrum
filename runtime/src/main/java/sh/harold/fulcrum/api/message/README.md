@@ -7,15 +7,10 @@ Messaging system with localization support and scoreboard management.
 Add to `build.gradle.kts`:
 ```kotlin
 dependencies {
-    implementation(project(":message-api"))
+    implementation(project(":common-api:message"))
     implementation("net.kyori:adventure-api:4.17.0")
     implementation("net.kyori:adventure-text-minimessage:4.17.0")
 }
-```
-
-Add to `plugin.yml`:
-```yaml
-depend: [Fulcrum]
 ```
 
 ## Messages
@@ -23,7 +18,7 @@ depend: [Fulcrum]
 ### Basic Usage
 
 ```java
-import sh.harold.fulcrum.api.message.Message;
+import sh.harold.fulcrum.message.Message;
 
 // Send messages
 Message.success("banking.deposit.success", amount).send(playerId);
@@ -31,8 +26,12 @@ Message.info("skills.levelup", player.level).send(player);
 Message.error("generic.no_permission").send(player);
 Message.debug("debug.player.data_saved", playerName).send(player);
 
-// Broadcast
-Message.success("event.start", "Summer Festival").broadcast();
+// Tag chaining and debug tiers
+Message.debug("dev.packet.trace", packetId)
+       .builder()
+       .debugTier(DebugTier.COUNCIL)
+       .tag("staff")
+       .send(player);
 ```
 
 ### Message Styles

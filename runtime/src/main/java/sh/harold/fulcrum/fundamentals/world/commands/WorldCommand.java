@@ -26,7 +26,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
-import sh.harold.fulcrum.api.message.Message;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.world.generator.VoidChunkGenerator;
@@ -38,6 +37,7 @@ import sh.harold.fulcrum.fundamentals.world.model.PoiDefinition;
 import sh.harold.fulcrum.fundamentals.world.schematic.SchematicInspector;
 import sh.harold.fulcrum.fundamentals.world.schematic.SchematicInspector.InspectionResult;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.message.Message;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;

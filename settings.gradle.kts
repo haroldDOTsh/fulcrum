@@ -9,6 +9,7 @@ pluginManagement {
 
 include(
     "common-api",
+    "common-api:message",
     "runtime",
     "runtime-velocity",
     "registry-service"

@@ -20,6 +20,6 @@ public class GamemodeFeature implements PluginFeature {
 
     @Override
     public int getPriority() {
-        return 60; // After MessageService (priority 1)
+        return 60; // After messaging facade initialization
     }
 }

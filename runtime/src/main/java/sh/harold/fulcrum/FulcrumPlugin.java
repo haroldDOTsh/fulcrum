@@ -7,7 +7,6 @@ import sh.harold.fulcrum.api.chat.impl.ChatFormatFeature;
 import sh.harold.fulcrum.api.environment.EnvironmentConfig;
 import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
 import sh.harold.fulcrum.api.menu.impl.MenuFeature;
-import sh.harold.fulcrum.api.message.MessageFeature;
 import sh.harold.fulcrum.api.message.impl.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
@@ -35,6 +34,7 @@ import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.MinigameEngineFeature;
 import sh.harold.fulcrum.minigame.MinigameModuleRegistrar;
+import sh.harold.fulcrum.runtime.message.MessageFeature;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private static final int CONFIG_VERSION = 3;
