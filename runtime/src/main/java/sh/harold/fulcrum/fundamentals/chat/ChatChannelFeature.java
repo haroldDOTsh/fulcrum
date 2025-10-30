@@ -4,6 +4,7 @@ import io.papermc.paper.event.player.AsyncChatEvent;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerCommandSendEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -14,6 +15,7 @@ import sh.harold.fulcrum.api.messagebus.messages.chat.ChatChannelMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyUpdateMessage;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.chat.command.ChatCommands;
+import sh.harold.fulcrum.fundamentals.chat.command.DisableMeCommand;
 import sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -77,6 +79,15 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
         CommandRegistrar.register(commands.buildRoot());
         CommandRegistrar.register(commands.buildPartySend());
         CommandRegistrar.register(commands.buildStaffSend());
+        var disabledMe = new DisableMeCommand().build();
+        CommandRegistrar.register(disabledMe);
+        CommandRegistrar.mutate(registrar -> {
+            var dispatcher = registrar.getDispatcher();
+            var minecraftRoot = dispatcher.getRoot().getChild("minecraft");
+            if (minecraftRoot != null) {
+                minecraftRoot.addChild(new DisableMeCommand().build());
+            }
+        });
 
         // Initialize existing players (unlikely during enable but safe)
         plugin.getServer().getOnlinePlayers().forEach(service::handlePlayerJoin);
@@ -97,6 +108,12 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
         service.handlePlayerQuit(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler
+    public void onCommandSend(PlayerCommandSendEvent event) {
+        event.getCommands().remove("me");
+        event.getCommands().remove("minecraft:me");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
