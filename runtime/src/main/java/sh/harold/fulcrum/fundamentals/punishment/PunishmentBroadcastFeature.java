@@ -91,7 +91,7 @@ public final class PunishmentBroadcastFeature implements PluginFeature {
                     .tag("halcyon")
                     .skipTranslation()
                     .component()
-                    .append(Component.text(" (" + punishmentId + ")", NamedTextColor.DARK_GRAY));
+                    .append(Component.text(" (#" + punishmentId + ")", NamedTextColor.DARK_GRAY));
 
             logger.info(PlainTextComponentSerializer.plainText().serialize(payload));
             broadcastToStaffChannel(payload);
