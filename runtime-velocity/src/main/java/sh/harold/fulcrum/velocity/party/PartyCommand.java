@@ -9,12 +9,10 @@ import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.party.*;
-import sh.harold.fulcrum.velocity.api.rank.Rank;
-import sh.harold.fulcrum.velocity.api.rank.VelocityRankUtils;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
-import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -28,8 +26,7 @@ final class PartyCommand implements SimpleCommand {
     private final ProxyServer proxy;
     private final PlayerRoutingFeature routingFeature;
     private final PartyMatchRosterStore rosterStore;
-    private final DataAPI dataAPI;
-    private final VelocityPlayerSessionService sessionService;
+    private final RankService rankService;
     private final Logger logger;
 
     PartyCommand(PartyService partyService,
@@ -37,16 +34,14 @@ final class PartyCommand implements SimpleCommand {
                  ProxyServer proxy,
                  PlayerRoutingFeature routingFeature,
                  PartyMatchRosterStore rosterStore,
-                 DataAPI dataAPI,
-                 VelocityPlayerSessionService sessionService,
+                 RankService rankService,
                  Logger logger) {
         this.partyService = partyService;
         this.reservationService = reservationService;
         this.proxy = proxy;
         this.routingFeature = routingFeature;
         this.rosterStore = rosterStore;
-        this.dataAPI = dataAPI;
-        this.sessionService = sessionService;
+        this.rankService = rankService;
         this.logger = logger;
     }
 
@@ -61,7 +56,7 @@ final class PartyCommand implements SimpleCommand {
     }
 
     private Component formatName(UUID playerId, String fallbackName) {
-        return PartyTextFormatter.formatName(playerId, fallbackName, dataAPI, sessionService, logger);
+        return PartyTextFormatter.formatName(playerId, fallbackName, rankService, logger);
     }
 
     private Component yellow(String text) {
@@ -730,7 +725,7 @@ final class PartyCommand implements SimpleCommand {
     }
 
     private boolean ensureStaff(Player player) {
-        boolean allowed = VelocityRankUtils.hasRankOrHigherSync(player, Rank.HELPER, sessionService, dataAPI, logger);
+        boolean allowed = hasRankOrHigher(player, Rank.HELPER);
         if (!allowed) {
             sendError(player, PartyOperationResult.failure(PartyErrorCode.UNKNOWN, "missing-ids"));
         }
@@ -806,7 +801,12 @@ final class PartyCommand implements SimpleCommand {
         if (!(source instanceof Player player)) {
             return true;
         }
-        return VelocityRankUtils.hasRankOrHigherSync(player, Rank.HELPER, sessionService, dataAPI, logger);
+        return hasRankOrHigher(player, Rank.HELPER);
+    }
+
+    private boolean hasRankOrHigher(Player player, Rank required) {
+        Rank rank = rankService.getEffectiveRankSync(player.getUniqueId());
+        return rank != null && rank.getPriority() >= required.getPriority();
     }
 
     private void addRoleSection(List<Component> lines, String header, List<PartyMember> members) {

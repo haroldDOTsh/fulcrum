@@ -1,7 +1,5 @@
 package sh.harold.fulcrum.api.rank;
 
-import org.bukkit.entity.Player;
-
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -115,26 +113,6 @@ public interface RankService {
      * @return the effective rank based on priority
      */
     Rank getEffectiveRankSync(UUID playerId);
-
-    /**
-     * Convenience method to get the primary rank for a Player object.
-     *
-     * @param player the player
-     * @return the player's primary rank
-     */
-    default CompletableFuture<Rank> getPrimaryRank(Player player) {
-        return getPrimaryRank(player.getUniqueId());
-    }
-
-    /**
-     * Convenience method to get the effective rank for a Player object.
-     *
-     * @param player the player
-     * @return the player's effective rank
-     */
-    default CompletableFuture<Rank> getEffectiveRank(Player player) {
-        return getEffectiveRank(player.getUniqueId());
-    }
 
     /**
      * Checks if a player has a specific rank.

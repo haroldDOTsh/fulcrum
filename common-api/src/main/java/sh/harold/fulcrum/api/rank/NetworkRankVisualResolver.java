@@ -1,14 +1,15 @@
-package sh.harold.fulcrum.fundamentals.rank;
+package sh.harold.fulcrum.api.rank;
 
 import sh.harold.fulcrum.api.network.NetworkConfigService;
 import sh.harold.fulcrum.api.network.RankVisualView;
-import sh.harold.fulcrum.api.rank.Rank;
-import sh.harold.fulcrum.api.rank.RankVisualResolver;
 
-final class NetworkRankVisualResolver implements RankVisualResolver {
+/**
+ * Resolves rank visuals using the active network configuration profile.
+ */
+public final class NetworkRankVisualResolver implements RankVisualResolver {
     private final NetworkConfigService configService;
 
-    NetworkRankVisualResolver(NetworkConfigService configService) {
+    public NetworkRankVisualResolver(NetworkConfigService configService) {
         this.configService = configService;
     }
 

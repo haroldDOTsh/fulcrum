@@ -4,8 +4,8 @@ import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
 import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
@@ -30,9 +30,9 @@ public class VelocityCommandFeature implements VelocityFeature {
     private MessageBus messageBus;
     private PlayerRoutingFeature playerRoutingFeature;
     private FulcrumVelocityPlugin plugin;
-    private DataAPI dataAPI;
     private SlotFamilyCache familyCache;
     private VelocityPlayerSessionService sessionService;
+    private RankService rankService;
     private sh.harold.fulcrum.velocity.party.PartyService partyService;
     private sh.harold.fulcrum.velocity.party.PartyReservationService partyReservationService;
     private VelocityServerLifecycleFeature lifecycleFeature;
@@ -59,9 +59,9 @@ public class VelocityCommandFeature implements VelocityFeature {
         this.messageBus = serviceLocator.getRequiredService(MessageBus.class);
         this.playerRoutingFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature.class);
         this.plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
-        this.dataAPI = serviceLocator.getRequiredService(DataAPI.class);
         this.familyCache = serviceLocator.getRequiredService(SlotFamilyCache.class);
         this.sessionService = serviceLocator.getRequiredService(VelocityPlayerSessionService.class);
+        this.rankService = serviceLocator.getRequiredService(RankService.class);
         this.lifecycleFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature.class);
         this.messageBusFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature.class);
         this.partyService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyService.class).orElse(null);
@@ -91,7 +91,7 @@ public class VelocityCommandFeature implements VelocityFeature {
                 .plugin(plugin)
                 .build();
 
-        commandManager.register(meta, new LocatePlayerCommand(proxy, messageBus, playerRoutingFeature, plugin, logger, dataAPI, sessionService));
+        commandManager.register(meta, new LocatePlayerCommand(proxy, messageBus, playerRoutingFeature, plugin, logger, rankService));
     }
 
     private void registerPlayCommand() {
@@ -145,8 +145,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         PunishCommand command = new PunishCommand(
                 proxy,
                 messageBus,
-                dataAPI,
-                sessionService,
+                rankService,
                 logger,
                 plugin
         );
@@ -162,8 +161,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         AppealCommand command = new AppealCommand(
                 proxy,
                 messageBus,
-                dataAPI,
-                sessionService,
+                rankService,
                 logger,
                 plugin
         );
@@ -179,8 +177,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         PardonCommand command = new PardonCommand(
                 proxy,
                 messageBus,
-                dataAPI,
-                sessionService,
+                rankService,
                 logger,
                 plugin
         );

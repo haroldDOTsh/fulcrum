@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.velocitypowered.api.proxy.Player;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.message.Message;
 import sh.harold.fulcrum.message.MessageFacade;
 import sh.harold.fulcrum.message.debug.DebugGate;
@@ -17,7 +18,6 @@ import sh.harold.fulcrum.message.storage.TranslationRepository;
 import sh.harold.fulcrum.message.storage.mongo.MongoTranslationRepository;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
-import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -96,8 +96,8 @@ public final class VelocityMessageFeature implements VelocityFeature {
             return defaultLocale;
         };
 
-        VelocityPlayerSessionService sessionService = serviceLocator.getService(VelocityPlayerSessionService.class).orElse(null);
-        DebugGate debugGate = new VelocityMessageDebugGate(sessionService, dataAPI, logger);
+        RankService rankService = serviceLocator.getService(RankService.class).orElse(null);
+        DebugGate debugGate = new VelocityMessageDebugGate(rankService, logger);
 
         MessageFacade facade = new StandardMessageFacade(translationCache, localeResolver, debugGate);
         Message.setFacade(facade);

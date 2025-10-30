@@ -10,18 +10,16 @@ import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
-import sh.harold.fulcrum.velocity.api.rank.Rank;
-import sh.harold.fulcrum.velocity.api.rank.VelocityRankUtils;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
-import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -41,8 +39,7 @@ final class LocatePlayerCommand implements SimpleCommand {
     private final PlayerRoutingFeature routingFeature;
     private final FulcrumVelocityPlugin plugin;
     private final Logger logger;
-    private final DataAPI dataAPI;
-    private final VelocityPlayerSessionService sessionService;
+    private final RankService rankService;
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
@@ -51,15 +48,13 @@ final class LocatePlayerCommand implements SimpleCommand {
                         PlayerRoutingFeature routingFeature,
                         FulcrumVelocityPlugin plugin,
                         Logger logger,
-                        DataAPI dataAPI,
-                        VelocityPlayerSessionService sessionService) {
+                        RankService rankService) {
         this.proxy = proxy;
         this.messageBus = messageBus;
         this.routingFeature = routingFeature;
         this.plugin = plugin;
         this.logger = logger;
-        this.dataAPI = dataAPI;
-        this.sessionService = sessionService;
+        this.rankService = rankService;
     }
 
     @Override
@@ -67,7 +62,7 @@ final class LocatePlayerCommand implements SimpleCommand {
         CommandSource source = invocation.source();
         String[] arguments = Arrays.copyOf(invocation.arguments(), invocation.arguments().length);
 
-        VelocityRankUtils.hasRankOrHigher(source, Rank.HELPER, sessionService, dataAPI, logger)
+        hasRankOrHigher(source, Rank.HELPER)
                 .whenComplete((allowed, throwable) -> {
                     if (throwable != null) {
                         logger.warn("Failed to verify rank for /locateplayer", throwable);
@@ -155,6 +150,14 @@ final class LocatePlayerCommand implements SimpleCommand {
         });
 
         messageBus.broadcast(ChannelConstants.REGISTRY_PLAYER_LOCATE_REQUEST, request);
+    }
+
+    private CompletableFuture<Boolean> hasRankOrHigher(CommandSource source, Rank required) {
+        if (source instanceof Player player) {
+            return rankService.getEffectiveRank(player.getUniqueId())
+                    .thenApply(rank -> rank != null && rank.getPriority() >= required.getPriority());
+        }
+        return CompletableFuture.completedFuture(true);
     }
 
     private void sendLocalLocation(CommandSource source, Player player) {

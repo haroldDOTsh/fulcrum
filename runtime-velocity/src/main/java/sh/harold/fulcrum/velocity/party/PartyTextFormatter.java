@@ -3,13 +3,9 @@ package sh.harold.fulcrum.velocity.party;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.DataAPI;
-import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.rank.Rank;
-import sh.harold.fulcrum.session.PlayerSessionRecord;
-import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
+import sh.harold.fulcrum.api.rank.RankService;
 
-import java.util.Locale;
 import java.util.UUID;
 
 final class PartyTextFormatter {
@@ -19,11 +15,10 @@ final class PartyTextFormatter {
 
     static Component formatName(UUID playerId,
                                 String fallbackName,
-                                DataAPI dataAPI,
-                                VelocityPlayerSessionService sessionService,
+                                RankService rankService,
                                 Logger logger) {
         String effectiveName = fallbackName != null ? fallbackName : "Unknown";
-        Rank rank = resolveRank(playerId, dataAPI, sessionService, logger);
+        Rank rank = resolveRank(playerId, rankService, logger);
         NamedTextColor nameColor = rank != null && rank.getNameColor() != null
                 ? rank.getNameColor()
                 : NamedTextColor.YELLOW;
@@ -59,82 +54,20 @@ final class PartyTextFormatter {
     }
 
     private static Rank resolveRank(UUID playerId,
-                                    DataAPI dataAPI,
-                                    VelocityPlayerSessionService sessionService,
+                                    RankService rankService,
                                     Logger logger) {
-        if (playerId == null) {
+        if (playerId == null || rankService == null) {
             return Rank.DEFAULT;
         }
-
-        String rawRank = null;
-
-        if (sessionService != null) {
-            rawRank = sessionService.getSession(playerId)
-                    .map(PartyTextFormatter::extractPrimaryRank)
-                    .orElse(null);
-        }
-
-        if ((rawRank == null || rawRank.isBlank()) && dataAPI != null) {
-            try {
-                Document doc = dataAPI.collection("players").document(playerId.toString());
-                if (doc.exists()) {
-                    rawRank = extractPrimaryRank(doc);
-                }
-            } catch (Exception ex) {
-                if (logger != null) {
-                    logger.debug("Failed to resolve rank for {}", playerId, ex);
-                }
-            }
-        }
-
-        if (rawRank == null || rawRank.isBlank()) {
-            return Rank.DEFAULT;
-        }
-
-        String normalized = normalizeRankId(rawRank);
         try {
-            return Rank.valueOf(normalized);
-        } catch (IllegalArgumentException ex) {
+            Rank rank = rankService.getEffectiveRankSync(playerId);
+            return rank != null ? rank : Rank.DEFAULT;
+        } catch (Exception ex) {
             if (logger != null) {
-                logger.debug("Unknown rank '{}' for {}, defaulting to DEFAULT", rawRank, playerId);
+                logger.debug("Failed to resolve rank for {}", playerId, ex);
             }
             return Rank.DEFAULT;
         }
-    }
-
-    private static String extractPrimaryRank(PlayerSessionRecord record) {
-        if (record == null) {
-            return null;
-        }
-        Object primary = record.getRank().get("primary");
-        if (primary instanceof String value && !value.isBlank()) {
-            return value;
-        }
-        Object legacy = record.getCore().get("rank");
-        return legacy != null ? legacy.toString() : null;
-    }
-
-    private static String extractPrimaryRank(Document document) {
-        if (document == null) {
-            return null;
-        }
-        String primary = document.get("rankInfo.primary", null);
-        if (primary != null && !primary.isBlank()) {
-            return primary;
-        }
-        return document.get("rank", null);
-    }
-
-    private static String normalizeRankId(String value) {
-        if (value == null) {
-            return null;
-        }
-        String normalized = value.trim()
-                .replace(' ', '_')
-                .replace('-', '_');
-        normalized = normalized.replace("++", "_PLUS_PLUS");
-        normalized = normalized.replace("+", "_PLUS");
-        return normalized.toUpperCase(Locale.ROOT);
     }
 
     private static String firstNonBlank(String... values) {

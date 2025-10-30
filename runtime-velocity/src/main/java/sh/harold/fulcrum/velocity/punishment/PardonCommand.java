@@ -6,19 +6,18 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusCommandMessage;
 import sh.harold.fulcrum.api.punishment.PunishmentStatus;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
-import sh.harold.fulcrum.velocity.api.rank.Rank;
-import sh.harold.fulcrum.velocity.api.rank.VelocityRankUtils;
-import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import static net.kyori.adventure.text.Component.text;
 
@@ -26,21 +25,18 @@ public final class PardonCommand implements SimpleCommand {
 
     private final ProxyServer proxy;
     private final MessageBus messageBus;
-    private final DataAPI dataAPI;
-    private final VelocityPlayerSessionService sessionService;
+    private final RankService rankService;
     private final Logger logger;
     private final FulcrumVelocityPlugin plugin;
 
     public PardonCommand(ProxyServer proxy,
                          MessageBus messageBus,
-                         DataAPI dataAPI,
-                         VelocityPlayerSessionService sessionService,
+                         RankService rankService,
                          Logger logger,
                          FulcrumVelocityPlugin plugin) {
         this.proxy = proxy;
         this.messageBus = messageBus;
-        this.dataAPI = dataAPI;
-        this.sessionService = sessionService;
+        this.rankService = rankService;
         this.logger = logger;
         this.plugin = plugin;
     }
@@ -70,7 +66,7 @@ public final class PardonCommand implements SimpleCommand {
             return;
         }
 
-        VelocityRankUtils.hasRankOrHigher(source, Rank.STAFF, sessionService, dataAPI, logger)
+        hasRankOrHigher(source, Rank.STAFF)
                 .whenComplete((allowed, throwable) -> {
                     if (throwable != null) {
                         logger.warn("Failed to verify rank for /pardon", throwable);
@@ -109,5 +105,13 @@ public final class PardonCommand implements SimpleCommand {
             logger.warn("Failed to broadcast punishment pardon command", ex);
             staff.sendMessage(text("Failed to submit pardon command. Check logs.", NamedTextColor.RED));
         }
+    }
+
+    private CompletableFuture<Boolean> hasRankOrHigher(CommandSource source, Rank required) {
+        if (source instanceof Player player) {
+            return rankService.getEffectiveRank(player.getUniqueId())
+                    .thenApply(rank -> rank != null && rank.getPriority() >= required.getPriority());
+        }
+        return CompletableFuture.completedFuture(true);
     }
 }

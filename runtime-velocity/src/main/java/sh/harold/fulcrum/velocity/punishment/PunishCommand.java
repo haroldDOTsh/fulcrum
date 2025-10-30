@@ -8,23 +8,22 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentCommandMessage;
 import sh.harold.fulcrum.api.punishment.PunishmentLadder;
 import sh.harold.fulcrum.api.punishment.PunishmentReason;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.message.Message;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
-import sh.harold.fulcrum.velocity.api.rank.Rank;
-import sh.harold.fulcrum.velocity.api.rank.VelocityRankUtils;
-import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import static net.kyori.adventure.text.Component.text;
@@ -33,21 +32,18 @@ public final class PunishCommand implements SimpleCommand {
 
     private final ProxyServer proxy;
     private final MessageBus messageBus;
-    private final DataAPI dataAPI;
-    private final VelocityPlayerSessionService sessionService;
+    private final RankService rankService;
     private final Logger logger;
     private final FulcrumVelocityPlugin plugin;
 
     public PunishCommand(ProxyServer proxy,
                          MessageBus messageBus,
-                         DataAPI dataAPI,
-                         VelocityPlayerSessionService sessionService,
+                         RankService rankService,
                          Logger logger,
                          FulcrumVelocityPlugin plugin) {
         this.proxy = proxy;
         this.messageBus = messageBus;
-        this.dataAPI = dataAPI;
-        this.sessionService = sessionService;
+        this.rankService = rankService;
         this.logger = logger;
         this.plugin = plugin;
     }
@@ -115,7 +111,7 @@ public final class PunishCommand implements SimpleCommand {
                 ? Rank.HELPER
                 : Rank.STAFF;
 
-        VelocityRankUtils.hasRankOrHigher(source, required, sessionService, dataAPI, logger)
+        hasRankOrHigher(source, required)
                 .whenComplete((allowed, throwable) -> {
                     if (throwable != null) {
                         logger.warn("Failed to verify rank for /punish", throwable);
@@ -178,9 +174,25 @@ public final class PunishCommand implements SimpleCommand {
         }
 
         if (source instanceof Player player) {
-            return VelocityRankUtils.hasRankOrHigherSync(player, Rank.HELPER, sessionService, dataAPI, logger);
+            return hasRankOrHigherSync(player, Rank.HELPER);
         }
 
         return false;
+    }
+
+    private CompletableFuture<Boolean> hasRankOrHigher(CommandSource source, Rank required) {
+        if (source instanceof ConsoleCommandSource) {
+            return CompletableFuture.completedFuture(true);
+        }
+        if (source instanceof Player player) {
+            return rankService.getEffectiveRank(player.getUniqueId())
+                    .thenApply(rank -> rank != null && rank.getPriority() >= required.getPriority());
+        }
+        return CompletableFuture.completedFuture(false);
+    }
+
+    private boolean hasRankOrHigherSync(Player player, Rank required) {
+        Rank rank = rankService.getEffectiveRankSync(player.getUniqueId());
+        return rank != null && rank.getPriority() >= required.getPriority();
     }
 }
