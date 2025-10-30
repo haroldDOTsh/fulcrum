@@ -14,6 +14,7 @@ repositories {
 
 dependencies {
     api(project(":common-api"))
+    implementation(project(":common-api:message"))
     
     // Velocity API
     compileOnly("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
