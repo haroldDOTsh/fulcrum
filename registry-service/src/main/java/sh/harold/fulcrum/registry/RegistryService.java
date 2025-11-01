@@ -205,6 +205,9 @@ public class RegistryService {
 
         try {
             redisManager = new RedisManager(redisConfiguration);
+            idAllocator.initialize(redisManager);
+            serverRegistry.initialize(redisManager);
+            proxyRegistry.initialize(redisManager);
             // Create MessageBus configuration from application.yml
             MessageBusConnectionConfig connectionConfig = createMessageBusConfig();
 

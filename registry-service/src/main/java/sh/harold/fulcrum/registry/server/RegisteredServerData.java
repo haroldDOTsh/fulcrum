@@ -145,6 +145,12 @@ public class RegisteredServerData {
         slots.clear();
     }
 
+    public void putSlot(LogicalSlotRecord record) {
+        if (record != null) {
+            slots.put(record.getSlotSuffix(), record);
+        }
+    }
+
     public Map<String, Integer> getSlotFamilyCapacities() {
         return Collections.unmodifiableMap(slotFamilyCapacities);
     }

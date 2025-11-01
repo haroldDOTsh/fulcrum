@@ -7,7 +7,7 @@ import redis.embedded.RedisServer;
 import java.io.IOException;
 import java.net.ServerSocket;
 
-abstract class RedisIntegrationTestSupport {
+public abstract class RedisIntegrationTestSupport {
 
     private static RedisServer redisServer;
     private static int redisPort;

@@ -178,6 +178,29 @@ public class RegistrationStateMachine {
         }
     }
 
+    public void forceSetState(RegistrationState newState, String reason) {
+        Objects.requireNonNull(newState, "New state cannot be null");
+
+        lock.writeLock().lock();
+        try {
+            RegistrationState oldState = currentState;
+            cancelTimeout();
+            currentState = newState;
+            stateEntryTimes.put(newState, Instant.now());
+
+            StateTransitionEvent event = new StateTransitionEvent(
+                    proxyIdentifier,
+                    oldState,
+                    newState,
+                    reason
+            );
+            addToHistory(event);
+            handleTimeoutForState(newState);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     /**
      * Gets the current state.
      *

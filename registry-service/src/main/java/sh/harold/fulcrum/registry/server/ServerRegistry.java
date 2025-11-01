@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
+import sh.harold.fulcrum.registry.redis.RedisManager;
+import sh.harold.fulcrum.registry.server.store.RedisServerRegistryStore;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 
 import java.util.Collection;
@@ -21,11 +23,27 @@ public class ServerRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerRegistry.class);
 
     private final IdAllocator idAllocator;
+    private RedisServerRegistryStore store;
     private final Map<String, RegisteredServerData> servers = new ConcurrentHashMap<>();
     private final Map<String, String> tempIdToPermId = new ConcurrentHashMap<>();
 
     public ServerRegistry(IdAllocator idAllocator) {
         this.idAllocator = idAllocator;
+    }
+
+    public void initialize(RedisManager redisManager) {
+        this.store = new RedisServerRegistryStore(redisManager);
+        List<RegisteredServerData> restored = store.loadAll();
+        servers.clear();
+        tempIdToPermId.clear();
+        for (RegisteredServerData server : restored) {
+            servers.put(server.getServerId(), server);
+            if (server.getTempId() != null && !server.getTempId().isBlank()) {
+                tempIdToPermId.put(server.getTempId(), server.getServerId());
+            }
+            idAllocator.claimServerId(server.getServerId());
+        }
+        LOGGER.info("Restored {} server registrations from Redis", restored.size());
     }
 
     /**
@@ -56,6 +74,7 @@ public class ServerRegistry {
 
                 // Replace the server data
                 servers.put(requestId, updatedServer);
+                persist(updatedServer);
 
                 LOGGER.info("Re-registered existing server {} (re-registration)", requestId);
                 return requestId; // Return the SAME ID
@@ -75,6 +94,19 @@ public class ServerRegistry {
                 // Clean up orphaned mapping
                 tempIdToPermId.remove(requestId);
                 LOGGER.debug("Cleaned up orphaned temp ID mapping for {}", requestId);
+            }
+        }
+        if (existingId == null && store != null) {
+            existingId = store.findPermanentIdByTemp(requestId).orElse(null);
+            if (existingId != null) {
+                if (servers.containsKey(existingId)) {
+                    tempIdToPermId.put(requestId, existingId);
+                    LOGGER.debug("Server {} already registered with ID {} (restored from Redis)", requestId, existingId);
+                    return existingId;
+                } else {
+                    tempIdToPermId.remove(requestId);
+                    LOGGER.debug("Stale temp mapping for {} found in Redis, ignoring", requestId);
+                }
             }
         }
 
@@ -104,6 +136,7 @@ public class ServerRegistry {
         // Store server atomically
         servers.put(permanentId, serverData);
         tempIdToPermId.put(requestId, permanentId);
+        persist(serverData);
 
         LOGGER.info("Registered server {} -> {} (type: {}, role: {})",
                 requestId, permanentId, request.getServerType(), serverData.getRole());
@@ -146,6 +179,7 @@ public class ServerRegistry {
 
         LOGGER.info("Restored server {} from heartbeat snapshot ({}:{})",
                 serverId, snapshot.getAddress(), snapshot.getPort());
+        persist(snapshot);
         return true;
     }
 
@@ -157,6 +191,10 @@ public class ServerRegistry {
         if (server != null) {
             // Clean up temp ID mapping
             tempIdToPermId.remove(server.getTempId());
+
+            if (store != null) {
+                store.delete(serverId, server.getTempId());
+            }
 
             // Return ID to pool for reuse
             idAllocator.releaseServerId(serverId);
@@ -190,7 +228,20 @@ public class ServerRegistry {
      * Get permanent ID for a temp ID
      */
     public String getPermanentId(String tempId) {
-        return tempIdToPermId.get(tempId);
+        String mapped = tempIdToPermId.get(tempId);
+        if (mapped == null && store != null) {
+            mapped = store.findPermanentIdByTemp(tempId).orElse(null);
+            if (mapped != null) {
+                tempIdToPermId.put(tempId, mapped);
+            }
+        }
+        return mapped;
+    }
+
+    private void persist(RegisteredServerData server) {
+        if (store != null && server != null) {
+            store.save(server);
+        }
     }
 
     /**
@@ -232,6 +283,7 @@ public class ServerRegistry {
                 server.setStatus(RegisteredServerData.Status.RUNNING);
                 LOGGER.info("Server {} is now RUNNING", serverId);
             }
+            persist(server);
         }
     }
 
@@ -245,6 +297,7 @@ public class ServerRegistry {
             RegisteredServerData.Status newStatus = RegisteredServerData.Status.valueOf(status);
             server.setStatus(newStatus);
             LOGGER.info("Server {} status changed: {} -> {}", serverId, oldStatus, newStatus);
+            persist(server);
         }
     }
 
@@ -264,11 +317,13 @@ public class ServerRegistry {
             if ("true".equalsIgnoreCase(removedFlag)) {
                 server.removeSlot(record.getSlotSuffix());
                 LOGGER.debug("Removed slot {} for server {} (removal flag)", record.getSlotId(), serverId);
+                persist(server);
                 return null;
             }
         }
         LOGGER.debug("Updated slot {} for server {} -> status={} players={}/{}",
                 record.getSlotId(), serverId, record.getStatus(), record.getOnlinePlayers(), record.getMaxPlayers());
+        persist(server);
         return record;
     }
 
@@ -284,6 +339,7 @@ public class ServerRegistry {
 
         server.updateSlotFamilyCapacities(capacities);
         LOGGER.debug("Updated family capacities for {} => {}", serverId, capacities);
+        persist(server);
     }
 
     public void updateFamilyVariants(String serverId, Map<String, ? extends Collection<String>> variants) {
@@ -295,6 +351,7 @@ public class ServerRegistry {
 
         server.updateSlotFamilyVariants(variants);
         LOGGER.debug("Updated family variants for {} => {}", serverId, variants);
+        persist(server);
     }
 
     /**
@@ -321,6 +378,7 @@ public class ServerRegistry {
         if (server != null) {
             server.setPlayerCount(playerCount);
             server.setTps(tps);
+            persist(server);
         }
     }
 

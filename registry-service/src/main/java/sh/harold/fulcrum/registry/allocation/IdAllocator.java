@@ -1,208 +1,199 @@
 package sh.harold.fulcrum.registry.allocation;
 
+import io.lettuce.core.RedisCommandExecutionException;
+import io.lettuce.core.ScriptOutputType;
+import io.lettuce.core.api.sync.RedisCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sh.harold.fulcrum.registry.redis.RedisManager;
+import sh.harold.fulcrum.registry.redis.RedisScript;
 
-import java.util.Map;
-import java.util.TreeSet;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Manages contiguous ID allocation for servers and proxies.
- * <p>
- * ID formats:
- * - Proxies: fulcrum-proxy-N (where N is contiguous)
- * - Backend servers: mini1, mega2, etc.
- * - Pool slots: mini1A, mini1B, mega2C, etc. (letter indicates slot)
+ * Manages contiguous ID allocation for servers, slots, and proxies backed by Redis.
  */
 public class IdAllocator {
     private static final Logger LOGGER = LoggerFactory.getLogger(IdAllocator.class);
 
-    // Pattern to extract server type and number from IDs
     private static final Pattern SERVER_ID_PATTERN = Pattern.compile("^(mini|mega|pool)(\\d+)([A-Z]?)$");
     private static final Pattern PROXY_ID_PATTERN = Pattern.compile("^fulcrum-proxy-(\\d+)$");
+    private static final int MAX_SLOT_SUFFIX = 26;
 
-    // Track available numbers for reuse (for contiguous allocation)
-    private final Map<String, TreeSet<Integer>> availableNumbers = new ConcurrentHashMap<>();
+    private static final String SERVER_COUNTER_KEY = "fulcrum:registry:id:server:%s:counter";
+    private static final String SERVER_RECYCLE_KEY = "fulcrum:registry:id:server:%s:recycle";
+    private static final String PROXY_COUNTER_KEY = "fulcrum:registry:id:proxy:counter";
+    private static final String PROXY_RECYCLE_KEY = "fulcrum:registry:id:proxy:recycle";
+    private static final String SLOT_COUNTER_KEY = "fulcrum:registry:id:slot:%s:counter";
+    private static final String SLOT_RECYCLE_KEY = "fulcrum:registry:id:slot:%s:recycle";
 
-    // Track next numbers to allocate
-    private final Map<String, AtomicInteger> nextNumbers = new ConcurrentHashMap<>();
+    private volatile RedisManager redisManager;
+    private RedisScript allocateNumericIdScript;
+    private RedisScript allocateSlotSuffixScript;
+    private RedisScript claimNumericIdScript;
 
-    // Track allocated slot letters per server
-    private final Map<String, TreeSet<Character>> allocatedSlots = new ConcurrentHashMap<>();
+    private boolean debugMode;
 
-    // Debug mode flag
-    private boolean debugMode = false;
-
-    /**
-     * Default constructor
-     */
     public IdAllocator() {
         this(false);
     }
 
-    /**
-     * Constructor with debug mode
-     *
-     * @param debugMode Enable verbose logging
-     */
     public IdAllocator(boolean debugMode) {
         this.debugMode = debugMode;
     }
 
-    /**
-     * Set debug mode
-     *
-     * @param debugMode Enable/disable verbose logging
-     */
+    private static String serverCounterKey(String type) {
+        return String.format(SERVER_COUNTER_KEY, type);
+    }
+
     public void setDebugMode(boolean debugMode) {
         this.debugMode = debugMode;
     }
 
-    /**
-     * Allocate a new server ID
-     *
-     * @param serverType The type of server (mini, mega, pool)
-     * @return The allocated ID
-     */
-    public synchronized String allocateServerId(String serverType) {
-        serverType = serverType.toLowerCase();
+    private static String serverRecycleKey(String type) {
+        return String.format(SERVER_RECYCLE_KEY, type);
+    }
 
-        // Get or create available set for this type
-        TreeSet<Integer> available = availableNumbers.computeIfAbsent(serverType, k -> new TreeSet<>());
+    private static String slotCounterKey(String baseServerId) {
+        return String.format(SLOT_COUNTER_KEY, baseServerId);
+    }
 
-        int number;
-        if (!available.isEmpty()) {
-            // Reuse lowest available number
-            number = available.pollFirst();
-            if (debugMode) {
-                LOGGER.debug("Reusing ID number {} for type {}", number, serverType);
-            }
-        } else {
-            // Allocate next sequential number
-            AtomicInteger nextNumber = nextNumbers.computeIfAbsent(serverType, k -> new AtomicInteger(1));
-            number = nextNumber.getAndIncrement();
-            if (debugMode) {
-                LOGGER.debug("Allocating new ID number {} for type {}", number, serverType);
-            }
-        }
+    private static String slotRecycleKey(String baseServerId) {
+        return String.format(SLOT_RECYCLE_KEY, baseServerId);
+    }
 
-        String serverId = serverType + number;
+    public void initialize(RedisManager redisManager) {
+        this.redisManager = Objects.requireNonNull(redisManager, "redisManager");
+        this.allocateNumericIdScript = redisManager.loadScriptFromResource(
+                "id-allocate-numeric",
+                ScriptOutputType.VALUE,
+                "redis/scripts/id/allocate_numeric.lua"
+        );
+        this.allocateSlotSuffixScript = redisManager.loadScriptFromResource(
+                "id-allocate-slot-suffix",
+                ScriptOutputType.VALUE,
+                "redis/scripts/id/allocate_slot.lua"
+        );
+        this.claimNumericIdScript = redisManager.loadScriptFromResource(
+                "id-claim-numeric",
+                ScriptOutputType.STATUS,
+                "redis/scripts/id/claim_numeric.lua"
+        );
+    }
+
+    public String allocateServerId(String serverType) {
+        String normalizedType = Objects.requireNonNull(serverType, "serverType").toLowerCase();
+        RedisManager manager = requireRedisManager();
+
+        String recycleKey = serverRecycleKey(normalizedType);
+        String counterKey = serverCounterKey(normalizedType);
+
+        String serverId = manager.eval(
+                allocateNumericIdScript,
+                List.of(recycleKey, counterKey),
+                List.of(normalizedType)
+        );
+
         if (debugMode) {
             LOGGER.info("Allocated server ID: {}", serverId);
         }
         return serverId;
     }
 
-    /**
-     * Allocate a pool slot ID (e.g., mini1A, mini1B)
-     *
-     * @param baseServerId The base server ID (e.g., mini1)
-     * @return The allocated slot ID
-     */
-    public synchronized String allocateSlotId(String baseServerId) {
-        TreeSet<Character> slots = allocatedSlots.computeIfAbsent(baseServerId, k -> new TreeSet<>());
+    public String allocateSlotId(String baseServerId) {
+        Objects.requireNonNull(baseServerId, "baseServerId");
+        RedisManager manager = requireRedisManager();
 
-        // Find next available letter
-        char nextSlot = 'A';
-        for (char c = 'A'; c <= 'Z'; c++) {
-            if (!slots.contains(c)) {
-                nextSlot = c;
-                break;
+        String recycleKey = slotRecycleKey(baseServerId);
+        String counterKey = slotCounterKey(baseServerId);
+
+        try {
+            String suffix = manager.eval(
+                    allocateSlotSuffixScript,
+                    List.of(recycleKey, counterKey),
+                    List.of(String.valueOf(MAX_SLOT_SUFFIX))
+            );
+
+            if (suffix == null) {
+                throw new IllegalStateException("Failed to allocate slot suffix for " + baseServerId);
             }
-        }
 
-        // If all single letters used, start with AA, BB, etc.
-        if (slots.size() >= 26) {
-            // For simplicity, we'll limit to 26 slots per server
-            throw new IllegalStateException("Maximum slots (26) reached for server: " + baseServerId);
-        }
+            if (debugMode) {
+                LOGGER.info("Allocated slot ID: {}{}", baseServerId, suffix);
+            }
 
-        slots.add(nextSlot);
-        String slotId = baseServerId + nextSlot;
-        if (debugMode) {
-            LOGGER.info("Allocated slot ID: {}", slotId);
+            return baseServerId + suffix;
+        } catch (RedisCommandExecutionException ex) {
+            if (ex.getMessage() != null && ex.getMessage().contains("SLOT_LIMIT_REACHED")) {
+                throw new IllegalStateException("Maximum slots (" + MAX_SLOT_SUFFIX + ") reached for server: " + baseServerId, ex);
+            }
+            throw ex;
         }
-        return slotId;
     }
 
-    /**
-     * Allocate a proxy ID
-     *
-     * @return The allocated proxy ID
-     */
-    public synchronized String allocateProxyId() {
-        TreeSet<Integer> available = availableNumbers.computeIfAbsent("proxy", k -> new TreeSet<>());
+    public String allocateProxyId() {
+        RedisManager manager = requireRedisManager();
 
-        int number;
-        if (!available.isEmpty()) {
-            // Reuse lowest available number
-            number = available.pollFirst();
-            if (debugMode) {
-                LOGGER.debug("Reusing proxy ID number {}", number);
-            }
-        } else {
-            // Allocate next sequential number
-            AtomicInteger nextNumber = nextNumbers.computeIfAbsent("proxy", k -> new AtomicInteger(1));
-            number = nextNumber.getAndIncrement();
-            if (debugMode) {
-                LOGGER.debug("Allocating new proxy ID number {}", number);
-            }
-        }
+        String proxyId = manager.eval(
+                allocateNumericIdScript,
+                List.of(PROXY_RECYCLE_KEY, PROXY_COUNTER_KEY),
+                List.of("fulcrum-proxy-")
+        );
 
-        String proxyId = "fulcrum-proxy-" + number;
-        // Always log proxy ID allocation as it's essential information
         LOGGER.info("Allocated proxy ID: {}", proxyId);
         return proxyId;
     }
 
-    /**
-     * Release a server ID for reuse
-     *
-     * @param serverId The server ID to release
-     */
-    public synchronized void releaseServerId(String serverId) {
+    public boolean isSlotId(String serverId) {
         Matcher matcher = SERVER_ID_PATTERN.matcher(serverId);
+        return matcher.matches() && !matcher.group(3).isEmpty();
+    }
+
+    public String getBaseServerId(String slotId) {
+        Matcher matcher = SERVER_ID_PATTERN.matcher(slotId);
         if (matcher.matches()) {
-            String type = matcher.group(1);
-            int number = Integer.parseInt(matcher.group(2));
-            String slot = matcher.group(3);
+            return matcher.group(1) + matcher.group(2);
+        }
+        return slotId;
+    }
 
-            if (!slot.isEmpty()) {
-                // This is a slot ID, release the slot letter
-                String baseId = type + number;
-                TreeSet<Character> slots = allocatedSlots.get(baseId);
-                if (slots != null) {
-                    slots.remove(slot.charAt(0));
-                    if (debugMode) {
-                        LOGGER.info("Released slot ID: {}", serverId);
-                    }
-                }
-            } else {
-                // This is a base server ID, release the number
-                TreeSet<Integer> available = availableNumbers.computeIfAbsent(type, k -> new TreeSet<>());
-                available.add(number);
+    public void releaseServerId(String serverId) {
+        Objects.requireNonNull(serverId, "serverId");
+        RedisManager manager = requireRedisManager();
+        Matcher matcher = SERVER_ID_PATTERN.matcher(serverId);
+        if (!matcher.matches()) {
+            LOGGER.warn("Attempted to release invalid server ID: {}", serverId);
+            return;
+        }
 
-                // Also clear any allocated slots for this server
-                allocatedSlots.remove(serverId);
+        String type = matcher.group(1);
+        int number = Integer.parseInt(matcher.group(2));
+        String slotSuffix = matcher.group(3);
 
-                if (debugMode) {
-                    LOGGER.info("Released server ID: {} (number {} now available for reuse)", serverId, number);
-                }
-            }
+        if (!slotSuffix.isEmpty()) {
+            String baseId = type + number;
+            releaseSlotId(baseId, slotSuffix.charAt(0));
+            return;
+        }
+
+        String recycleKey = serverRecycleKey(type);
+        RedisCommands<String, String> commands = manager.sync();
+        commands.zadd(recycleKey, number, serverId);
+
+        // Reset slot tracking for this server
+        commands.del(slotRecycleKey(serverId), slotCounterKey(serverId));
+
+        if (debugMode) {
+            LOGGER.info("Released server ID: {}", serverId);
         }
     }
 
-    /**
-     * Ensure a previously released server ID is marked as in-use again.
-     * Called when a server returns after being considered dead.
-     *
-     * @param serverId The server ID to reclaim
-     */
-    public synchronized void claimServerId(String serverId) {
+    public void claimServerId(String serverId) {
+        Objects.requireNonNull(serverId, "serverId");
+        RedisManager manager = requireRedisManager();
         Matcher matcher = SERVER_ID_PATTERN.matcher(serverId);
         if (!matcher.matches()) {
             return;
@@ -210,72 +201,58 @@ public class IdAllocator {
 
         String type = matcher.group(1);
         int number = Integer.parseInt(matcher.group(2));
+        String recycleKey = serverRecycleKey(type);
+        String counterKey = serverCounterKey(type);
 
-        TreeSet<Integer> available = availableNumbers.computeIfAbsent(type, k -> new TreeSet<>());
-        if (available.remove(number) && debugMode) {
-            LOGGER.debug("Reclaimed server ID {} (number {} removed from available pool)", serverId, number);
-        }
-
-        AtomicInteger nextNumber = nextNumbers.computeIfAbsent(type, k -> new AtomicInteger(number + 1));
-        if (number >= nextNumber.get()) {
-            nextNumber.set(number + 1);
-        }
+        manager.eval(
+                claimNumericIdScript,
+                List.of(recycleKey, counterKey),
+                List.of(serverId, Integer.toString(number))
+        );
     }
 
-    /**
-     * Release a proxy ID for reuse
-     *
-     * @param proxyId The proxy ID to release
-     * @deprecated Use releaseProxyIdExplicit() for controlled ID release
-     */
     @Deprecated
-    public synchronized void releaseProxyId(String proxyId) {
-        // DO NOT automatically release proxy IDs - this causes ID clashes
-        // IDs should only be released through explicit action after extended timeout
+    public void releaseProxyId(String proxyId) {
         if (debugMode) {
             LOGGER.debug("Proxy ID release requested for {} but ignored (preventing ID clash)", proxyId);
         }
     }
 
-    /**
-     * Explicitly release a proxy ID for reuse after confirmation it won't cause conflicts
-     *
-     * @param proxyId      The proxy ID to release
-     * @param forceRelease If true, forces the release even for recent disconnections
-     */
-    public synchronized void releaseProxyIdExplicit(String proxyId, boolean forceRelease) {
+    public void releaseProxyIdExplicit(String proxyId, boolean forceRelease) {
+        Objects.requireNonNull(proxyId, "proxyId");
+        RedisManager manager = requireRedisManager();
         Matcher matcher = PROXY_ID_PATTERN.matcher(proxyId);
-        if (matcher.matches()) {
-            int number = Integer.parseInt(matcher.group(1));
-            TreeSet<Integer> available = availableNumbers.computeIfAbsent("proxy", k -> new TreeSet<>());
-            available.add(number);
-            LOGGER.info("Explicitly released proxy ID: {} (number {} now available for reuse, forced={})",
-                    proxyId, number, forceRelease);
+        if (!matcher.matches()) {
+            LOGGER.warn("Attempted to release invalid proxy ID: {}", proxyId);
+            return;
         }
+
+        int number = Integer.parseInt(matcher.group(1));
+        manager.sync().zadd(PROXY_RECYCLE_KEY, number, proxyId);
+
+        LOGGER.info(
+                "Explicitly released proxy ID: {} (number {} now available for reuse, forced={})",
+                proxyId,
+                number,
+                forceRelease
+        );
     }
 
-    /**
-     * Check if an ID is a pool slot ID
-     *
-     * @param serverId The server ID to check
-     * @return true if it's a slot ID (has a letter suffix)
-     */
-    public boolean isSlotId(String serverId) {
-        Matcher matcher = SERVER_ID_PATTERN.matcher(serverId);
-        return matcher.matches() && !matcher.group(3).isEmpty();
+    private RedisManager requireRedisManager() {
+        RedisManager manager = this.redisManager;
+        if (manager == null) {
+            throw new IllegalStateException("IdAllocator has not been initialised with a RedisManager");
+        }
+        return manager;
     }
 
-    /**
-     * Get the base server ID from a slot ID
-     *
-     * @param slotId The slot ID (e.g., mini1A)
-     * @return The base server ID (e.g., mini1)
-     */
-    public String getBaseServerId(String slotId) {
-        Matcher matcher = SERVER_ID_PATTERN.matcher(slotId);
-        if (matcher.matches()) {
-            return matcher.group(1) + matcher.group(2);
+    private void releaseSlotId(String baseServerId, char suffix) {
+        RedisManager manager = requireRedisManager();
+        int score = suffix - 'A' + 1;
+        manager.sync().zadd(slotRecycleKey(baseServerId), score, Character.toString(suffix));
+
+        if (debugMode) {
+            LOGGER.info("Released slot ID: {}{}", baseServerId, suffix);
         }
-        return slotId;
     }
 }

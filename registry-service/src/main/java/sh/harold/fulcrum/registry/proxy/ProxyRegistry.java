@@ -3,13 +3,12 @@ package sh.harold.fulcrum.registry.proxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
+import sh.harold.fulcrum.registry.proxy.store.RedisProxyRegistryStore;
+import sh.harold.fulcrum.registry.redis.RedisManager;
 import sh.harold.fulcrum.registry.state.RegistrationState;
 import sh.harold.fulcrum.registry.state.RegistrationStateMachine;
 
-import java.util.Collection;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -25,6 +24,7 @@ public class ProxyRegistry {
     private static final long UNAVAILABLE_PROXY_RECYCLE_TIMEOUT_MS = 5 * 60 * 1000;
 
     private final IdAllocator idAllocator;
+    private RedisProxyRegistryStore store;
     private final Map<ProxyIdentifier, RegisteredProxyData> proxies = new ConcurrentHashMap<>();
     private final Map<ProxyIdentifier, RegisteredProxyData> unavailableProxies = new ConcurrentHashMap<>();
     private final Map<ProxyIdentifier, Long> unavailableTimestamps = new ConcurrentHashMap<>();
@@ -47,6 +47,41 @@ public class ProxyRegistry {
         this.idAllocator = idAllocator;
         this.debugMode = debugMode;
         startCleanupTask();
+    }
+
+    public void initialize(RedisManager redisManager) {
+        this.store = new RedisProxyRegistryStore(redisManager);
+
+        proxies.clear();
+        unavailableProxies.clear();
+        unavailableTimestamps.clear();
+        tempIdToPermId.clear();
+        registrationTimestamps.clear();
+        addressPortToProxyId.clear();
+
+        List<RegisteredProxyData> active = store.loadActive(stateMachineExecutor);
+        for (RegisteredProxyData proxy : active) {
+            proxies.put(proxy.getProxyId(), proxy);
+            registrationTimestamps.put(proxy.getProxyId(), System.currentTimeMillis());
+            addressPortToProxyId.put(proxy.getAddress() + ":" + proxy.getPort(), proxy.getProxyId());
+        }
+
+        Map<RegisteredProxyData, Long> unavailable = store.loadUnavailable(stateMachineExecutor);
+        unavailable.forEach((proxy, timestamp) -> {
+            unavailableProxies.put(proxy.getProxyId(), proxy);
+            unavailableTimestamps.put(proxy.getProxyId(), timestamp);
+        });
+
+        store.loadTempMappings().forEach((tempId, proxyIdString) -> {
+            try {
+                ProxyIdentifier identifier = ProxyIdentifier.parse(proxyIdString);
+                tempIdToPermId.put(tempId, identifier);
+            } catch (IllegalArgumentException ex) {
+                LOGGER.warn("Ignoring invalid proxy mapping {} -> {} from Redis", tempId, proxyIdString);
+            }
+        });
+
+        LOGGER.info("Restored {} active proxies and {} unavailable proxies from Redis", active.size(), unavailable.size());
     }
 
     /**
@@ -98,9 +133,11 @@ public class ProxyRegistry {
             // Reactivate the existing proxy
             unavailableProxies.remove(proxyId);
             unavailableTimestamps.remove(proxyId);
+            removeUnavailableProxyState(proxyId);
             unavailableProxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
             unavailableProxy.setLastHeartbeat(System.currentTimeMillis());
             proxies.put(proxyId, unavailableProxy);
+            persistActiveProxy(unavailableProxy);
 
             LOGGER.info("Reactivated previously unavailable proxy: {}",
                     proxyId.getFormattedId());
@@ -123,6 +160,7 @@ public class ProxyRegistry {
         proxies.put(proxyId, proxyInfo);
         registrationTimestamps.put(proxyId, System.currentTimeMillis());
         addressPortToProxyId.put(addressPortKey, proxyId);
+        persistActiveProxy(proxyInfo);
 
         // Transition to REGISTERED state
         proxyInfo.transitionTo(RegistrationState.REGISTERED, "Registration successful");
@@ -164,7 +202,7 @@ public class ProxyRegistry {
                 LOGGER.info("Proxy at {}:{} was recently registered as {} (within 30s), reusing existing ID",
                         address, port, existingByAddress.getFormattedId());
                 // Update the temp ID mapping to point to the existing proxy
-                tempIdToPermId.put(tempId, existingByAddress);
+                mapTempToProxy(tempId, existingByAddress);
                 return existingByAddress.getFormattedId();
             }
         }
@@ -187,11 +225,13 @@ public class ProxyRegistry {
                 // Reactivate the existing proxy instead of allocating a new ID
                 unavailableProxies.remove(existingId);
                 unavailableTimestamps.remove(existingId);
+                removeUnavailableProxyState(existingId);
                 unavailableProxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
                 unavailableProxy.setLastHeartbeat(System.currentTimeMillis());
                 // Note: address and port are final, can't update them
                 // If proxy reconnects with different address/port, it would need a new registration
                 proxies.put(existingId, unavailableProxy);
+                persistActiveProxy(unavailableProxy);
 
                 LOGGER.info("Reactivated previously unavailable proxy: {} -> {} (original address: {}:{})",
                         tempId, existingId.getFormattedId(), unavailableProxy.getAddress(), unavailableProxy.getPort());
@@ -203,7 +243,7 @@ public class ProxyRegistry {
             }
 
             // Clean up orphaned mapping
-            tempIdToPermId.remove(tempId);
+            removeTempMapping(tempId);
             LOGGER.debug("Cleaned up orphaned temp ID mapping for proxy {}", tempId);
         }
 
@@ -233,7 +273,7 @@ public class ProxyRegistry {
         }
 
         // Store mapping
-        tempIdToPermId.put(tempId, proxyId);
+        mapTempToProxy(tempId, proxyId);
 
         // Register with new identifier
         registerProxy(proxyId, address, port);
@@ -268,6 +308,7 @@ public class ProxyRegistry {
         }
 
         unavailableTimestamps.remove(proxyId);
+        removeUnavailableProxyState(proxyId);
         unavailable.setStatus(RegisteredProxyData.Status.AVAILABLE);
         unavailable.setLastHeartbeat(System.currentTimeMillis());
 
@@ -286,6 +327,7 @@ public class ProxyRegistry {
         proxies.put(proxyId, unavailable);
         registrationTimestamps.put(proxyId, System.currentTimeMillis());
         addressPortToProxyId.put(unavailable.getAddress() + ":" + unavailable.getPort(), proxyId);
+        persistActiveProxy(unavailable);
 
         if (debugMode) {
             LOGGER.info("Reactivated proxy {} from unavailable pool (previous state: {})",
@@ -313,8 +355,11 @@ public class ProxyRegistry {
 
             // DO NOT release the ID immediately - move to unavailable list
             removed.setStatus(RegisteredProxyData.Status.UNAVAILABLE);
+            removeActiveProxyState(removed);
+            long timestamp = System.currentTimeMillis();
             unavailableProxies.put(proxyId, removed);
-            unavailableTimestamps.put(proxyId, System.currentTimeMillis());
+            unavailableTimestamps.put(proxyId, timestamp);
+            persistUnavailableProxy(removed, timestamp);
 
             // Complete deregistration
             removed.transitionTo(RegistrationState.DISCONNECTED, "Proxy disconnected, ID reserved");
@@ -454,7 +499,8 @@ public class ProxyRegistry {
         if (removed != null) {
             // Remove all mappings
             final ProxyIdentifier finalProxyId = proxyId;
-            tempIdToPermId.values().removeIf(id -> id.equals(finalProxyId));
+            removeActiveProxyState(removed);
+            removeTempMappingsForProxy(finalProxyId);
             registrationTimestamps.remove(proxyId);
             String addressPortKey = removed.getAddress() + ":" + removed.getPort();
             addressPortToProxyId.remove(addressPortKey);
@@ -471,7 +517,8 @@ public class ProxyRegistry {
         if (removed != null) {
             unavailableTimestamps.remove(proxyId);
             final ProxyIdentifier finalProxyId = proxyId;
-            tempIdToPermId.values().removeIf(id -> id.equals(finalProxyId));
+            removeUnavailableProxyState(proxyId);
+            removeTempMappingsForProxy(finalProxyId);
             registrationTimestamps.remove(proxyId);
             String addressPortKey = removed.getAddress() + ":" + removed.getPort();
             addressPortToProxyId.remove(addressPortKey);
@@ -494,6 +541,8 @@ public class ProxyRegistry {
         if (removed != null) {
             unavailableTimestamps.remove(proxyId);
 
+            removeUnavailableProxyState(proxyId);
+
             // Transition to final state
             removed.transitionTo(RegistrationState.UNREGISTERED,
                     "Timeout expired, proxy permanently removed");
@@ -502,7 +551,7 @@ public class ProxyRegistry {
             removed.shutdown();
 
             // Remove all mappings
-            tempIdToPermId.values().removeIf(id -> id.equals(proxyId));
+            removeTempMappingsForProxy(proxyId);
             registrationTimestamps.remove(proxyId);
             String addressPortKey = removed.getAddress() + ":" + removed.getPort();
             addressPortToProxyId.remove(addressPortKey);
@@ -766,6 +815,66 @@ public class ProxyRegistry {
                 LOGGER.debug("Failed to resolve proxy identifier '{}': {}", proxyIdString, e.getMessage());
             }
             return null;
+        }
+    }
+
+    private void mapTempToProxy(String tempId, ProxyIdentifier proxyId) {
+        if (tempId == null || tempId.isBlank() || proxyId == null) {
+            return;
+        }
+        tempIdToPermId.put(tempId, proxyId);
+        if (store != null) {
+            store.upsertTempMapping(tempId, proxyId.getFormattedId());
+        }
+    }
+
+    private void removeTempMapping(String tempId) {
+        if (tempId == null || tempId.isBlank()) {
+            return;
+        }
+        tempIdToPermId.remove(tempId);
+        if (store != null) {
+            store.removeTempMapping(tempId);
+        }
+    }
+
+    private void removeTempMappingsForProxy(ProxyIdentifier proxyId) {
+        if (proxyId == null) {
+            return;
+        }
+        Iterator<Map.Entry<String, ProxyIdentifier>> iterator = tempIdToPermId.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, ProxyIdentifier> entry = iterator.next();
+            if (proxyId.equals(entry.getValue())) {
+                if (store != null) {
+                    store.removeTempMapping(entry.getKey());
+                }
+                iterator.remove();
+            }
+        }
+    }
+
+    private void persistActiveProxy(RegisteredProxyData proxy) {
+        if (store != null && proxy != null) {
+            store.saveActive(proxy);
+        }
+    }
+
+    private void persistUnavailableProxy(RegisteredProxyData proxy, long unavailableSince) {
+        if (store != null && proxy != null) {
+            store.saveUnavailable(proxy, unavailableSince);
+        }
+    }
+
+    private void removeActiveProxyState(RegisteredProxyData proxy) {
+        if (store != null && proxy != null) {
+            store.deleteActive(proxy);
+        }
+    }
+
+    private void removeUnavailableProxyState(ProxyIdentifier proxyId) {
+        if (store != null && proxyId != null) {
+            store.deleteUnavailable(proxyId.getFormattedId());
         }
     }
 
