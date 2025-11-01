@@ -16,6 +16,9 @@ import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
+import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryCache;
+import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryManager;
+import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryRepository;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.network.NetworkConfigCache;
@@ -65,6 +68,7 @@ public class RegistryService {
     private RankMutationService rankMutationService;
     private PunishmentService punishmentService;
     private NetworkConfigManager networkConfigManager;
+    private EnvironmentDirectoryManager environmentDirectoryManager;
 
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -213,6 +217,10 @@ public class RegistryService {
             if (networkConfigManager != null) {
                 networkConfigManager.initialize();
             }
+            environmentDirectoryManager = createEnvironmentDirectoryManager();
+            if (environmentDirectoryManager != null) {
+                environmentDirectoryManager.initialize();
+            }
 
             // Log which implementation was created
             String busClassName = messageBus.getClass().getSimpleName();
@@ -317,6 +325,9 @@ public class RegistryService {
         if (networkConfigManager != null) {
             commandRegistry.register("networkconfig", new NetworkConfigCommand(networkConfigManager));
         }
+        if (environmentDirectoryManager != null) {
+            commandRegistry.register("environment", new EnvironmentDirectoryCommand(environmentDirectoryManager));
+        }
 
         // Start interactive console
         console = new InteractiveConsole(commandRegistry);
@@ -413,6 +424,9 @@ public class RegistryService {
             if (networkConfigManager != null) {
                 networkConfigManager.refreshProfiles();
             }
+            if (environmentDirectoryManager != null) {
+                environmentDirectoryManager.refreshDirectory(true);
+            }
         } catch (Exception e) {
             LOGGER.error("Failed to reload configuration", e);
         }
@@ -484,6 +498,54 @@ public class RegistryService {
             return new NetworkConfigManager(repository, cache, messageBus, LOGGER);
         } catch (Exception ex) {
             LOGGER.error("Failed to initialise network configuration manager", ex);
+            if (adapter != null) {
+                adapter.close();
+            }
+            return null;
+        }
+    }
+
+    private EnvironmentDirectoryManager createEnvironmentDirectoryManager() {
+        if (messageBus == null) {
+            LOGGER.warn("MessageBus unavailable; environment directory manager disabled");
+            return null;
+        }
+
+        Map<String, Object> storage = (Map<String, Object>) config.get("storage");
+        if (storage == null) {
+            LOGGER.warn("Storage configuration missing; environment directory manager disabled");
+            return null;
+        }
+
+        Map<String, Object> mongoSection = (Map<String, Object>) storage.get("mongodb");
+        if (mongoSection == null) {
+            LOGGER.warn("MongoDB configuration missing; environment directory manager disabled");
+            return null;
+        }
+
+        Map<String, Object> redisSection = (Map<String, Object>) config.get("redis");
+        if (redisSection == null) {
+            LOGGER.warn("Redis configuration missing; environment directory manager disabled");
+            return null;
+        }
+
+        String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
+        String database = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
+
+        String redisHost = String.valueOf(redisSection.getOrDefault("host", "localhost"));
+        int redisPort = redisSection.get("port") instanceof Number
+                ? ((Number) redisSection.get("port")).intValue()
+                : Integer.parseInt(String.valueOf(redisSection.getOrDefault("port", 6379)));
+        String redisPassword = String.valueOf(redisSection.getOrDefault("password", ""));
+
+        MongoConnectionAdapter adapter = null;
+        try {
+            adapter = new MongoConnectionAdapter(connectionString, database);
+            EnvironmentDirectoryRepository repository = new EnvironmentDirectoryRepository(adapter);
+            EnvironmentDirectoryCache cache = new EnvironmentDirectoryCache(redisHost, redisPort, redisPassword, LOGGER);
+            return new EnvironmentDirectoryManager(repository, cache, messageBus, LOGGER);
+        } catch (Exception ex) {
+            LOGGER.error("Failed to initialise environment directory manager", ex);
             if (adapter != null) {
                 adapter.close();
             }
@@ -677,6 +739,14 @@ public class RegistryService {
                     networkConfigManager.close();
                 } catch (Exception ex) {
                     LOGGER.warn("Failed to close network configuration manager", ex);
+                }
+            }
+
+            if (environmentDirectoryManager != null) {
+                try {
+                    environmentDirectoryManager.close();
+                } catch (Exception ex) {
+                    LOGGER.warn("Failed to close environment directory manager", ex);
                 }
             }
 

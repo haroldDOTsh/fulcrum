@@ -6,6 +6,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.chat.impl.ChatFormatFeature;
 import sh.harold.fulcrum.api.environment.EnvironmentConfig;
 import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
+import sh.harold.fulcrum.api.environment.directory.EnvironmentDescriptorView;
+import sh.harold.fulcrum.api.environment.directory.EnvironmentDirectoryService;
 import sh.harold.fulcrum.api.menu.impl.MenuFeature;
 import sh.harold.fulcrum.api.message.impl.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
@@ -35,6 +37,8 @@ import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.MinigameEngineFeature;
 import sh.harold.fulcrum.minigame.MinigameModuleRegistrar;
 import sh.harold.fulcrum.runtime.message.MessageFeature;
+
+import java.util.*;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private static final int CONFIG_VERSION = 3;
@@ -80,6 +84,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new DataAPIFeature()); // Register DataAPI before PlayerData
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.session.PlayerSessionFeature());
         FeatureManager.register(new PlayerDataFeature()); // Depends on DataAPI & sessions
+        FeatureManager.register(new sh.harold.fulcrum.fundamentals.environment.EnvironmentDirectoryFeature());
         FeatureManager.register(new NetworkConfigFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.punishment.PunishmentBroadcastFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature());
@@ -116,7 +121,7 @@ public final class FulcrumPlugin extends JavaPlugin {
 
         // Load environment configuration to verify modules later
         EnvironmentConfigParser configParser = new EnvironmentConfigParser();
-        EnvironmentConfig environmentConfig = configParser.loadDefaultConfiguration();
+        EnvironmentConfig environmentConfig = resolveEnvironmentConfig(container, configParser);
 
         // Create service locator and platform
         FulcrumPlatform platform = new FulcrumPlatform(serviceLocator);
@@ -132,6 +137,28 @@ public final class FulcrumPlugin extends JavaPlugin {
         verificationManager.register();
 
         getLogger().info("Fulcrum started successfully");
+    }
+
+    private EnvironmentConfig resolveEnvironmentConfig(DependencyContainer container, EnvironmentConfigParser parser) {
+        EnvironmentDirectoryService directoryService = container.getOptional(EnvironmentDirectoryService.class)
+                .orElseGet(() -> Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                        .flatMap(locator -> locator.findService(EnvironmentDirectoryService.class))
+                        .orElse(null));
+
+        if (directoryService == null) {
+            return parser.loadDefaultConfiguration();
+        }
+
+        Map<String, Set<String>> mappings = new LinkedHashMap<>();
+        for (Map.Entry<String, EnvironmentDescriptorView> entry : directoryService.asMap().entrySet()) {
+            mappings.put(entry.getKey(), new LinkedHashSet<>(entry.getValue().modules()));
+        }
+
+        if (mappings.isEmpty()) {
+            return parser.loadDefaultConfiguration();
+        }
+
+        return new EnvironmentConfig(mappings);
     }
 
     private FileConfiguration loadAndMigrateConfig() {

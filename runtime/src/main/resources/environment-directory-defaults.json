@@ -1,0 +1,20 @@
+{
+  "global": {
+    "id": "global",
+    "tag": "Global Modules",
+    "modules": [
+      "chat",
+      "scoreboard"
+    ],
+    "description": "Baseline modules applied to every environment"
+  },
+  "dev": {
+    "id": "dev",
+    "tag": "Development Stack",
+    "modules": [
+      "debug-minigame",
+      "slot-watchdog"
+    ],
+    "description": "Default development environment"
+  }
+}

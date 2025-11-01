@@ -8,6 +8,7 @@ import sh.harold.fulcrum.velocity.config.ServerLifecycleConfig;
 import sh.harold.fulcrum.velocity.fundamentals.commands.VelocityCommandFeature;
 import sh.harold.fulcrum.velocity.fundamentals.data.VelocityDataAPIFeature;
 import sh.harold.fulcrum.velocity.fundamentals.data.VelocityPlayerDataFeature;
+import sh.harold.fulcrum.velocity.fundamentals.environment.VelocityEnvironmentDirectoryFeature;
 import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyFeature;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
@@ -64,6 +65,7 @@ public class VelocityFeatureManager {
         // Register features in dependency order
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
+        registerFeature(new VelocityEnvironmentDirectoryFeature());
         registerFeature(new VelocityNetworkConfigFeature());
         registerFeature(new VelocityMotdFeature());
         registerFeature(new VelocityDataAPIFeature());

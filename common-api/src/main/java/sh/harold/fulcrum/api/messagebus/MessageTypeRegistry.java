@@ -102,6 +102,12 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigRequestMessage.class);
             register(ChannelConstants.REGISTRY_NETWORK_CONFIG_RESPONSE,
                     sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigResponseMessage.class);
+            register(ChannelConstants.REGISTRY_ENVIRONMENT_DIRECTORY_UPDATED,
+                    sh.harold.fulcrum.api.messagebus.messages.environment.EnvironmentDirectoryUpdatedMessage.class);
+            register(ChannelConstants.REGISTRY_ENVIRONMENT_DIRECTORY_REQUEST,
+                    sh.harold.fulcrum.api.messagebus.messages.environment.EnvironmentDirectoryRequestMessage.class);
+            register(ChannelConstants.REGISTRY_ENVIRONMENT_DIRECTORY_RESPONSE,
+                    sh.harold.fulcrum.api.messagebus.messages.environment.EnvironmentDirectoryResponseMessage.class);
             register(ChannelConstants.REGISTRY_PUNISHMENT_COMMAND,
                     sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentCommandMessage.class);
             register(ChannelConstants.REGISTRY_PUNISHMENT_APPLIED,

@@ -148,6 +148,12 @@ public final class ChannelConstants {
     public static final String REGISTRY_NETWORK_CONFIG_REQUEST = "fulcrum.registry.network.config.request";
     public static final String REGISTRY_NETWORK_CONFIG_RESPONSE = "fulcrum.registry.network.config.response";
     /**
+     * Environment directory distribution channels
+     */
+    public static final String REGISTRY_ENVIRONMENT_DIRECTORY_UPDATED = "fulcrum.registry.environment.directory.updated";
+    public static final String REGISTRY_ENVIRONMENT_DIRECTORY_REQUEST = "fulcrum.registry.environment.directory.request";
+    public static final String REGISTRY_ENVIRONMENT_DIRECTORY_RESPONSE = "fulcrum.registry.environment.directory.response";
+    /**
      * Prefix for directed slot provision commands
      */
     public static final String SERVER_SLOT_PROVISION_PREFIX = "fulcrum.server.slot.provision.";
