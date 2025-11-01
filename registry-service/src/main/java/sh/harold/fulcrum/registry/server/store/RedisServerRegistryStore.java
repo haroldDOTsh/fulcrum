@@ -90,7 +90,7 @@ public class RedisServerRegistryStore {
         return Optional.ofNullable(value);
     }
 
-    private record ServerDocument(
+    public record ServerDocument(
             String serverId,
             String tempId,
             String serverType,
@@ -108,7 +108,7 @@ public class RedisServerRegistryStore {
             Map<String, Integer> slotFamilyCapacities,
             Map<String, List<String>> slotFamilyVariants
     ) {
-        static ServerDocument from(RegisteredServerData data) {
+        public static ServerDocument from(RegisteredServerData data) {
             Map<String, SlotDocument> slotDocs = new LinkedHashMap<>();
             for (LogicalSlotRecord record : data.getSlots()) {
                 slotDocs.put(record.getSlotSuffix(), SlotDocument.from(record));
@@ -139,7 +139,7 @@ public class RedisServerRegistryStore {
             );
         }
 
-        RegisteredServerData toDomain() {
+        public RegisteredServerData toDomain() {
             RegisteredServerData server = new RegisteredServerData(
                     serverId,
                     tempId,
@@ -183,7 +183,7 @@ public class RedisServerRegistryStore {
         }
     }
 
-    private record SlotDocument(
+    public record SlotDocument(
             String slotId,
             String slotSuffix,
             String gameType,
@@ -193,7 +193,7 @@ public class RedisServerRegistryStore {
             long lastUpdated,
             Map<String, String> metadata
     ) {
-        static SlotDocument from(LogicalSlotRecord record) {
+        public static SlotDocument from(LogicalSlotRecord record) {
             return new SlotDocument(
                     record.getSlotId(),
                     record.getSlotSuffix(),
@@ -206,7 +206,7 @@ public class RedisServerRegistryStore {
             );
         }
 
-        void applyTo(RegisteredServerData server) {
+        public void applyTo(RegisteredServerData server) {
             LogicalSlotRecord record = new LogicalSlotRecord(slotId, slotSuffix, server.getServerId());
             record.setGameType(gameType);
             if (status != null) {

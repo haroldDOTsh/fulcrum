@@ -21,6 +21,7 @@ import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryManager;
 import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryRepository;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
+import sh.harold.fulcrum.registry.heartbeat.store.RedisHeartbeatStore;
 import sh.harold.fulcrum.registry.network.NetworkConfigCache;
 import sh.harold.fulcrum.registry.network.NetworkConfigManager;
 import sh.harold.fulcrum.registry.network.NetworkConfigRepository;
@@ -73,6 +74,7 @@ public class RegistryService {
     private NetworkConfigManager networkConfigManager;
     private EnvironmentDirectoryManager environmentDirectoryManager;
     private RedisManager redisManager;
+    private RedisHeartbeatStore redisHeartbeatStore;
 
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -208,6 +210,8 @@ public class RegistryService {
             idAllocator.initialize(redisManager);
             serverRegistry.initialize(redisManager);
             proxyRegistry.initialize(redisManager);
+            redisHeartbeatStore = new RedisHeartbeatStore(redisManager);
+            heartbeatMonitor.setHeartbeatStore(redisHeartbeatStore);
             // Create MessageBus configuration from application.yml
             MessageBusConnectionConfig connectionConfig = createMessageBusConfig();
 

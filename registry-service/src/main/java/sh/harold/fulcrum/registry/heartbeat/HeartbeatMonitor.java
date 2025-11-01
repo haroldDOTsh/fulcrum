@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.registry.heartbeat.store.RedisHeartbeatStore;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
@@ -43,19 +44,26 @@ public class HeartbeatMonitor {
     private final Map<String, RegisteredServerData> recentlyDeadServers = new ConcurrentHashMap<>(); // Track recently dead servers for display
     private final Map<String, RegisteredProxyData> recentlyDeadProxies = new ConcurrentHashMap<>(); // Track recently dead proxies for display
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private RedisHeartbeatStore heartbeatStore;
 
     private ScheduledFuture<?> monitorTask;
     private Consumer<String> onServerTimeout;
     private MessageBus messageBus;
 
     public HeartbeatMonitor(ServerRegistry serverRegistry, ScheduledExecutorService scheduler) {
-        this(serverRegistry, null, scheduler);
+        this(serverRegistry, null, scheduler, null);
     }
 
     public HeartbeatMonitor(ServerRegistry serverRegistry, ProxyRegistry proxyRegistry, ScheduledExecutorService scheduler) {
+        this(serverRegistry, proxyRegistry, scheduler, null);
+    }
+
+    public HeartbeatMonitor(ServerRegistry serverRegistry, ProxyRegistry proxyRegistry, ScheduledExecutorService scheduler,
+                            RedisHeartbeatStore heartbeatStore) {
         this.serverRegistry = serverRegistry;
         this.proxyRegistry = proxyRegistry;
         this.scheduler = scheduler;
+        this.heartbeatStore = heartbeatStore;
     }
 
     /**
@@ -66,8 +74,7 @@ public class HeartbeatMonitor {
             return;
         }
 
-        // Clear any existing tracking data to start fresh
-        clearTrackingData();
+        loadTrackingData();
 
         monitorTask = scheduler.scheduleWithFixedDelay(
                 this::checkTimeouts,
@@ -129,17 +136,21 @@ public class HeartbeatMonitor {
         // Try to find the server in ServerRegistry first
         RegisteredServerData server = serverRegistry.getServer(serverId);
         if (server != null) {
-            // Use the permanent ID for tracking
             String permanentId = server.getServerId();
+            long now = System.currentTimeMillis();
 
-            // Update tracking with permanent ID
-            lastHeartbeats.put(permanentId, System.currentTimeMillis());
-
-            // Also track by temp ID if this was a temp ID heartbeat
+            lastHeartbeats.put(permanentId, now);
             if (!permanentId.equals(serverId)) {
                 LOGGER.debug("Received heartbeat with temp ID {}, mapping to permanent ID {}",
                         serverId, permanentId);
-                lastHeartbeats.put(serverId, System.currentTimeMillis());
+                lastHeartbeats.put(serverId, now);
+            }
+            if (heartbeatStore != null) {
+                heartbeatStore.updateServerHeartbeat(permanentId, now);
+                if (!permanentId.equals(serverId)) {
+                    heartbeatStore.updateServerHeartbeat(serverId, now);
+                }
+                heartbeatStore.clearDeadServer(permanentId);
             }
 
             RegisteredServerData.Status oldStatus = server.getStatus();
@@ -190,6 +201,11 @@ public class HeartbeatMonitor {
                     long now = System.currentTimeMillis();
                     lastProxyHeartbeats.put(permanentId, now);
                     lastProxyHeartbeats.put(proxyId, now);
+                    if (heartbeatStore != null) {
+                        heartbeatStore.updateProxyHeartbeat(permanentId, now);
+                        heartbeatStore.updateProxyHeartbeat(proxyId, now);
+                        heartbeatStore.clearDeadProxy(permanentId);
+                    }
                     RegisteredProxyData.Status oldStatus = proxy.getStatus();
                     proxyRegistry.updateHeartbeat(permanentId);
                     if (oldStatus != RegisteredProxyData.Status.AVAILABLE) {
@@ -245,6 +261,13 @@ public class HeartbeatMonitor {
             if (!effectiveId.equals(proxyId)) {
                 lastProxyHeartbeats.put(proxyId, now);
             }
+            if (heartbeatStore != null) {
+                heartbeatStore.updateProxyHeartbeat(effectiveId, now);
+                if (!effectiveId.equals(proxyId)) {
+                    heartbeatStore.updateProxyHeartbeat(proxyId, now);
+                }
+                heartbeatStore.clearDeadProxy(effectiveId);
+            }
 
             RegisteredProxyData.Status oldStatus = proxy.getStatus();
             proxyRegistry.updateHeartbeat(effectiveId);
@@ -268,6 +291,10 @@ public class HeartbeatMonitor {
      */
     public void setOnServerTimeout(Consumer<String> onServerTimeout) {
         this.onServerTimeout = onServerTimeout;
+    }
+
+    public void setHeartbeatStore(RedisHeartbeatStore heartbeatStore) {
+        this.heartbeatStore = heartbeatStore;
     }
 
     /**
@@ -438,10 +465,18 @@ public class HeartbeatMonitor {
                 snapshot.setTps(deadServer.getTps());
 
                 recentlyDeadServers.put(serverId, snapshot);
+                if (heartbeatStore != null) {
+                    heartbeatStore.storeDeadServerSnapshot(snapshot);
+                }
             }
 
             // Add to dead servers blacklist
-            this.deadServers.put(serverId, System.currentTimeMillis());
+            long timestamp = System.currentTimeMillis();
+            this.deadServers.put(serverId, timestamp);
+            if (heartbeatStore != null) {
+                heartbeatStore.markServerDead(serverId, timestamp);
+                heartbeatStore.removeServerHeartbeat(serverId);
+            }
             LOGGER.info("Added server {} to dead servers blacklist for {} seconds",
                     serverId, DEAD_SERVER_BLACKLIST_MS / 1000);
 
@@ -496,6 +531,9 @@ public class HeartbeatMonitor {
 
     private boolean attemptServerRestore(String serverId) {
         RegisteredServerData snapshot = recentlyDeadServers.remove(serverId);
+        if (snapshot == null && heartbeatStore != null) {
+            snapshot = heartbeatStore.loadDeadServerSnapshot(serverId).orElse(null);
+        }
         if (snapshot == null) {
             return false;
         }
@@ -503,6 +541,9 @@ public class HeartbeatMonitor {
         boolean restored = serverRegistry.restoreServer(snapshot);
         if (restored) {
             deadServers.remove(serverId);
+            if (heartbeatStore != null) {
+                heartbeatStore.clearDeadServer(serverId);
+            }
             LOGGER.info("Server {} heartbeat triggered automatic re-registration ({}:{})",
                     serverId, snapshot.getAddress(), snapshot.getPort());
         }
@@ -560,6 +601,9 @@ public class HeartbeatMonitor {
                 LOGGER.debug("Removing server {} from dead servers blacklist (expired)", entry.getKey());
                 // Also remove from recently dead servers display list
                 recentlyDeadServers.remove(entry.getKey());
+                if (heartbeatStore != null) {
+                    heartbeatStore.clearDeadServer(entry.getKey());
+                }
                 return true;
             }
             return false;
@@ -570,6 +614,9 @@ public class HeartbeatMonitor {
             long timeSinceDeath = now - entry.getValue().getLastHeartbeat();
             if (timeSinceDeath >= DEAD_SERVER_BLACKLIST_MS) {
                 LOGGER.debug("Removing proxy {} from dead proxies list (expired)", entry.getKey());
+                if (heartbeatStore != null) {
+                    heartbeatStore.clearDeadProxy(entry.getKey());
+                }
                 return true;
             }
             return false;
@@ -579,13 +626,35 @@ public class HeartbeatMonitor {
     /**
      * Clear all tracking data (used when starting fresh)
      */
-    public void clearTrackingData() {
+    private void loadTrackingData() {
         lastHeartbeats.clear();
         lastProxyHeartbeats.clear();
         deadServers.clear();
         recentlyDeadServers.clear();
         recentlyDeadProxies.clear();
-        LOGGER.info("Cleared all heartbeat tracking data");
+
+        if (heartbeatStore != null) {
+            lastHeartbeats.putAll(heartbeatStore.loadServerHeartbeats());
+            lastProxyHeartbeats.putAll(heartbeatStore.loadProxyHeartbeats());
+
+            Map<String, Long> storedDeadServers = heartbeatStore.loadDeadServers();
+            deadServers.putAll(storedDeadServers);
+            storedDeadServers.keySet().forEach(serverId ->
+                    heartbeatStore.loadDeadServerSnapshot(serverId)
+                            .ifPresent(snapshot -> recentlyDeadServers.put(serverId, snapshot))
+            );
+
+            heartbeatStore.loadDeadProxies().forEach((proxyId, timestamp) ->
+                    heartbeatStore.loadDeadProxySnapshot(proxyId)
+                            .ifPresent(snapshot -> {
+                                snapshot.setStatus(RegisteredProxyData.Status.DEAD);
+                                recentlyDeadProxies.put(proxyId, snapshot);
+                            })
+            );
+        }
+
+        LOGGER.info("Loaded heartbeat tracking state (servers={}, proxies={})",
+                lastHeartbeats.size(), lastProxyHeartbeats.size());
     }
 
     /**
