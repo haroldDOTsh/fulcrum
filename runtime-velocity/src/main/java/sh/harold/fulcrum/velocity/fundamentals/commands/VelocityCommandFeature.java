@@ -8,8 +8,6 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
-import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
-import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
@@ -35,8 +33,6 @@ public class VelocityCommandFeature implements VelocityFeature {
     private RankService rankService;
     private sh.harold.fulcrum.velocity.party.PartyService partyService;
     private sh.harold.fulcrum.velocity.party.PartyReservationService partyReservationService;
-    private VelocityServerLifecycleFeature lifecycleFeature;
-    private VelocityMessageBusFeature messageBusFeature;
 
     @Override
     public String getName() {
@@ -62,8 +58,6 @@ public class VelocityCommandFeature implements VelocityFeature {
         this.familyCache = serviceLocator.getRequiredService(SlotFamilyCache.class);
         this.sessionService = serviceLocator.getRequiredService(VelocityPlayerSessionService.class);
         this.rankService = serviceLocator.getRequiredService(RankService.class);
-        this.lifecycleFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature.class);
-        this.messageBusFeature = serviceLocator.getRequiredService(sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature.class);
         this.partyService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyService.class).orElse(null);
         this.partyReservationService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyReservationService.class).orElse(null);
 
@@ -111,10 +105,8 @@ public class VelocityCommandFeature implements VelocityFeature {
 
         LobbyCommand command = new LobbyCommand(
                 proxy,
-                messageBus,
-                messageBusFeature,
                 playerRoutingFeature,
-                lifecycleFeature,
+                familyCache,
                 logger
         );
 

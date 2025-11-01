@@ -8,38 +8,32 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.messagebus.ChannelConstants;
-import sh.harold.fulcrum.api.messagebus.MessageBus;
-import sh.harold.fulcrum.api.messagebus.messages.EnvironmentRouteRequestMessage;
-import sh.harold.fulcrum.velocity.api.ServerIdentifier;
-import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycleFeature;
-import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
+import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 final class LobbyCommand implements SimpleCommand {
-    private static final String LOBBY_ENVIRONMENT = "lobby";
+    private static final String DEFAULT_LOBBY_FAMILY = "lobby.main";
+    private static final Component NO_LOBBY_COMPONENT = Component.text(
+            "No lobby servers are currently available. Please reconnect in a moment.",
+            NamedTextColor.RED);
 
     private final ProxyServer proxy;
-    private final MessageBus messageBus;
-    private final VelocityMessageBusFeature messageBusFeature;
     private final PlayerRoutingFeature routingFeature;
-    private final VelocityServerLifecycleFeature lifecycleFeature;
+    private final SlotFamilyCache familyCache;
     private final Logger logger;
 
     LobbyCommand(ProxyServer proxy,
-                 MessageBus messageBus,
-                 VelocityMessageBusFeature messageBusFeature,
                  PlayerRoutingFeature routingFeature,
-                 VelocityServerLifecycleFeature lifecycleFeature,
+                 SlotFamilyCache familyCache,
                  Logger logger) {
         this.proxy = proxy;
-        this.messageBus = messageBus;
-        this.messageBusFeature = messageBusFeature;
         this.routingFeature = routingFeature;
-        this.lifecycleFeature = lifecycleFeature;
+        this.familyCache = familyCache;
         this.logger = logger;
     }
 
@@ -51,8 +45,16 @@ final class LobbyCommand implements SimpleCommand {
             return;
         }
 
-        if (!hasLobbyAvailable()) {
-            player.disconnect(Component.text("No lobby servers are currently available. Please reconnect in a moment.", NamedTextColor.RED));
+        Optional<String> lobbyFamily = resolveLobbyFamily();
+        if (lobbyFamily.isEmpty()) {
+            logger.debug("No lobby family advertised; disconnecting {} from /l command", player.getUsername());
+            player.disconnect(NO_LOBBY_COMPONENT);
+            return;
+        }
+
+        if (!hasLobbyFamilyAvailable(lobbyFamily.get())) {
+            logger.debug("Lobby family {} advertised but no capacity; disconnecting {}", lobbyFamily.get(), player.getUsername());
+            player.disconnect(NO_LOBBY_COMPONENT);
             return;
         }
 
@@ -62,23 +64,34 @@ final class LobbyCommand implements SimpleCommand {
             return;
         }
 
-        EnvironmentRouteRequestMessage request = buildRouteRequest(player, originId.get());
-        try {
-            request.validate();
-        } catch (IllegalStateException exception) {
-            player.sendMessage(Component.text("Unable to route you to a lobby: " + exception.getMessage(), NamedTextColor.RED));
-            return;
-        }
-
-        messageBus.broadcast(ChannelConstants.REGISTRY_ENVIRONMENT_ROUTE_REQUEST, request);
+        routeViaFamily(player, originId.get(), lobbyFamily.get());
     }
 
-    private boolean hasLobbyAvailable() {
-        return lifecycleFeature.getServersByRole(LOBBY_ENVIRONMENT).stream()
-                .map(ServerIdentifier::getServerId)
-                .filter(id -> id != null && !id.isBlank())
-                .filter(this::isServerReachable)
-                .anyMatch(lifecycleFeature::isServerActive);
+    private Optional<String> resolveLobbyFamily() {
+        if (familyCache == null) {
+            return Optional.empty();
+        }
+
+        if (familyCache.hasFamily(DEFAULT_LOBBY_FAMILY)) {
+            return Optional.of(DEFAULT_LOBBY_FAMILY);
+        }
+
+        Set<String> families = familyCache.families();
+        return families.stream()
+                .filter(name -> name != null && !name.isBlank())
+                .filter(name -> name.startsWith("lobby"))
+                .findFirst();
+    }
+
+    private boolean hasLobbyFamilyAvailable(String familyId) {
+        Map<String, Map<String, Integer>> perServer = familyCache.snapshotPerServer();
+        for (Map.Entry<String, Map<String, Integer>> entry : perServer.entrySet()) {
+            Integer capacity = entry.getValue().get(familyId);
+            if (capacity != null && capacity > 0 && isServerReachable(entry.getKey())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isServerReachable(String serverId) {
@@ -104,19 +117,23 @@ final class LobbyCommand implements SimpleCommand {
                         .filter(name -> name != null && !name.isBlank()));
     }
 
-    private EnvironmentRouteRequestMessage buildRouteRequest(Player player, String originServerId) {
-        EnvironmentRouteRequestMessage message = new EnvironmentRouteRequestMessage();
-        message.setPlayerId(player.getUniqueId());
-        message.setPlayerName(player.getUsername());
-        message.setProxyId(messageBusFeature.getCurrentProxyId());
-        message.setOriginServerId(originServerId);
-        message.setTargetEnvironmentId(LOBBY_ENVIRONMENT);
-        message.setFailureMode(EnvironmentRouteRequestMessage.FailureMode.KICK_ON_FAIL);
-        message.setMetadata(Map.of(
-                "reason", "command:lobby",
-                "issuedBy", player.getUniqueId().toString()
-        ));
-        logger.debug("Dispatching lobby route request for {} (origin={})", player.getUsername(), originServerId);
-        return message;
+    private void routeViaFamily(Player player, String originServerId, String familyId) {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("reason", "command:lobby");
+        metadata.put("originServer", originServerId);
+        metadata.put("family", familyId);
+
+        routingFeature.getPlayerLocation(player.getUniqueId()).ifPresent(snapshot -> {
+            if (snapshot.getServerId() != null && !snapshot.getServerId().isBlank()) {
+                metadata.put("currentServerId", snapshot.getServerId());
+            }
+            if (snapshot.getSlotId() != null && !snapshot.getSlotId().isBlank()) {
+                metadata.put("currentSlotId", snapshot.getSlotId());
+            }
+        });
+
+        routingFeature.sendSlotRequest(player, familyId, metadata);
+        logger.debug("Queued lobby route request for {} via family {} (origin={})",
+                player.getUsername(), familyId, originServerId);
     }
 }
