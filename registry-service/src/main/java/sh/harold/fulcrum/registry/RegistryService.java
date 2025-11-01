@@ -29,6 +29,8 @@ import sh.harold.fulcrum.registry.punishment.PunishmentRepository;
 import sh.harold.fulcrum.registry.punishment.PunishmentService;
 import sh.harold.fulcrum.registry.punishment.PunishmentSnapshotWriter;
 import sh.harold.fulcrum.registry.rank.RankMutationService;
+import sh.harold.fulcrum.registry.redis.RedisConfiguration;
+import sh.harold.fulcrum.registry.redis.RedisManager;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.session.DeadServerSessionSweeper;
@@ -49,6 +51,7 @@ public class RegistryService {
     private static final Logger LOGGER = LoggerFactory.getLogger(RegistryService.class);
 
     private final Map<String, Object> config;
+    private final RedisConfiguration redisConfiguration;
     private final IdAllocator idAllocator;
     private final ServerRegistry serverRegistry;
     private final ProxyRegistry proxyRegistry;
@@ -69,9 +72,11 @@ public class RegistryService {
     private PunishmentService punishmentService;
     private NetworkConfigManager networkConfigManager;
     private EnvironmentDirectoryManager environmentDirectoryManager;
+    private RedisManager redisManager;
 
     public RegistryService() {
         this.config = loadYamlConfig();
+        this.redisConfiguration = createRedisConfiguration((Map<String, Object>) config.get("redis"));
         this.scheduler = Executors.newScheduledThreadPool(4);
         this.shutdownLatch = new CountDownLatch(1);
 
@@ -168,6 +173,25 @@ public class RegistryService {
         );
     }
 
+    private RedisConfiguration createRedisConfiguration(Map<String, Object> redisSection) {
+        String host = "localhost";
+        int port = 6379;
+        String password = "";
+
+        if (redisSection != null) {
+            host = String.valueOf(redisSection.getOrDefault("host", host));
+            Object portValue = redisSection.get("port");
+            if (portValue instanceof Number number) {
+                port = number.intValue();
+            } else if (portValue != null) {
+                port = Integer.parseInt(String.valueOf(portValue));
+            }
+            password = String.valueOf(redisSection.getOrDefault("password", password));
+        }
+
+        return new RedisConfiguration(host, port, password);
+    }
+
     /**
      * Start the registry service
      */
@@ -180,6 +204,7 @@ public class RegistryService {
         LOGGER.info("Debug mode: {}", debugMode ? "ENABLED" : "DISABLED");
 
         try {
+            redisManager = new RedisManager(redisConfiguration);
             // Create MessageBus configuration from application.yml
             MessageBusConnectionConfig connectionConfig = createMessageBusConfig();
 
@@ -262,16 +287,21 @@ public class RegistryService {
 
         } catch (Exception e) {
             LOGGER.error("Failed to start Registry Service", e);
+            if (redisManager != null) {
+                try {
+                    redisManager.close();
+                } catch (Exception closeEx) {
+                    LOGGER.warn("Failed to close Redis manager after startup failure", closeEx);
+                }
+            }
             System.exit(1);
         }
     }
 
     private MessageBusConnectionConfig createMessageBusConfig() {
-        Map<String, Object> redisConfig = (Map<String, Object>) config.get("redis");
-        String redisHost = (String) redisConfig.get("host");
-        Object portObj = redisConfig.get("port");
-        int redisPort = portObj instanceof Integer ? (Integer) portObj : Integer.parseInt(portObj.toString());
-        String password = (String) redisConfig.get("password");
+        String redisHost = redisConfiguration.host();
+        int redisPort = redisConfiguration.port();
+        String password = redisConfiguration.password();
 
         // Check for message bus type configuration
         Map<String, Object> messageBusConfig = (Map<String, Object>) config.get("message-bus");
@@ -681,6 +711,14 @@ public class RegistryService {
         return debugMode;
     }
 
+    public RedisManager getRedisManager() {
+        return redisManager;
+    }
+
+    public RedisConfiguration getRedisConfiguration() {
+        return redisConfiguration;
+    }
+
     /**
      * Shutdown the registry service
      */
@@ -747,6 +785,14 @@ public class RegistryService {
                     environmentDirectoryManager.close();
                 } catch (Exception ex) {
                     LOGGER.warn("Failed to close environment directory manager", ex);
+                }
+            }
+
+            if (redisManager != null) {
+                try {
+                    redisManager.close();
+                } catch (Exception ex) {
+                    LOGGER.warn("Failed to close Redis manager", ex);
                 }
             }
 
