@@ -59,11 +59,12 @@ dependencies {
     implementation("org.quartz-scheduler:quartz:2.3.2")
     
     // Testing
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
+    testImplementation(platform("org.junit:junit-bom:5.11.3"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.mockito:mockito-core:5.7.0")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("it.ozimov:embedded-redis:0.7.3")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.1")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.test {

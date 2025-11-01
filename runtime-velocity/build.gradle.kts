@@ -35,8 +35,10 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.9")
     
     // Testing
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
+    testImplementation(platform("org.junit:junit-bom:5.11.3"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.mockito:mockito-core:5.8.0")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
