@@ -33,6 +33,7 @@ import sh.harold.fulcrum.registry.rank.RankMutationService;
 import sh.harold.fulcrum.registry.redis.RedisConfiguration;
 import sh.harold.fulcrum.registry.redis.RedisManager;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
+import sh.harold.fulcrum.registry.route.store.RedisRoutingStore;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.session.DeadServerSessionSweeper;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
@@ -230,10 +231,11 @@ public class RegistryService {
 
             messageBus = MessageBusFactory.create(messageBusAdapter);
             RedisSlotStore redisSlotStore = new RedisSlotStore(redisManager);
+            RedisRoutingStore redisRoutingStore = new RedisRoutingStore(redisManager);
             serverRegistry.setSlotStore(redisSlotStore);
 
             slotProvisionService = new SlotProvisionService(serverRegistry, messageBus, redisSlotStore);
-            playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry, redisSlotStore);
+            playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry, redisSlotStore, redisRoutingStore);
             playerRoutingService.initialize();
 
             sessionSweeper = createSessionSweeper();

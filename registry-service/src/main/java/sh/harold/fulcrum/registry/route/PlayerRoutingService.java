@@ -13,23 +13,27 @@ import sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterCreatedMessage
 import sh.harold.fulcrum.api.messagebus.messages.match.MatchRosterEndedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationClaimedMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationCreatedMessage;
-import sh.harold.fulcrum.api.party.PartyConstants;
-import sh.harold.fulcrum.api.party.PartyReservationSnapshot;
-import sh.harold.fulcrum.api.party.PartyReservationToken;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
+import sh.harold.fulcrum.registry.route.model.BlockedSlotContext;
+import sh.harold.fulcrum.registry.route.model.PartyReservationAllocation;
+import sh.harold.fulcrum.registry.route.model.PlayerRequestContext;
+import sh.harold.fulcrum.registry.route.service.ActivePlayerTracker;
+import sh.harold.fulcrum.registry.route.service.MatchRosterService;
+import sh.harold.fulcrum.registry.route.service.PartyReservationCoordinator;
+import sh.harold.fulcrum.registry.route.store.RedisRoutingStore;
+import sh.harold.fulcrum.registry.route.util.SlotIdUtils;
+import sh.harold.fulcrum.registry.route.util.SlotSelectionRules;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService.ProvisionResult;
 import sh.harold.fulcrum.registry.slot.store.RedisSlotStore;
-import sh.harold.fulcrum.registry.route.store.RedisRoutingStore;
 
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
 
 /**
  * Coordinates player matchmaking between proxies and backend slots.
@@ -62,8 +66,11 @@ public class PlayerRoutingService {
     private final ScheduledExecutorService scheduler;
     private final RedisSlotStore slotStore;
     private final RedisRoutingStore routingStore;
+    private final ActivePlayerTracker activePlayerTracker;
+    private final MatchRosterService matchRosterService;
+    private final PartyReservationCoordinator partyCoordinator;
 
-    private final ConcurrentMap<UUID, InFlightRoute> inFlightRoutes = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, ScheduledFuture<?>> routeTimeouts = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, CompletableFuture<PlayerReservationResponse>> pendingReservations = new ConcurrentHashMap<>();
 
     private final MessageHandler playerRequestHandler = this::handlePlayerRequest;
@@ -94,6 +101,42 @@ public class PlayerRoutingService {
         });
         this.slotStore = slotStore;
         this.routingStore = Objects.requireNonNull(routingStore, "routingStore");
+        this.activePlayerTracker = new ActivePlayerTracker(this.routingStore, RECENT_SLOT_TTL, RECENT_SLOT_HISTORY);
+        this.matchRosterService = new MatchRosterService(this.routingStore, this.activePlayerTracker);
+        this.partyCoordinator = new PartyReservationCoordinator(
+                this.routingStore,
+                this.slotProvisionService,
+                this.serverRegistry,
+                new PartyReservationCoordinator.Callbacks() {
+                    @Override
+                    public void dispatchWithReservation(PlayerRequestContext context,
+                                                        LogicalSlotRecord slot,
+                                                        String reservationToken,
+                                                        boolean preReserved) {
+                        dispatchRouteWithReservation(context, slot, reservationToken, preReserved);
+                    }
+
+                    @Override
+                    public void sendDisconnect(PlayerSlotRequest request, String reason) {
+                        sendDisconnectCommand(request, reason);
+                    }
+
+                    @Override
+                    public void triggerProvision(String familyId, Map<String, String> metadata) {
+                        triggerProvisionIfNeeded(familyId, metadata);
+                    }
+
+                    @Override
+                    public void enqueueContext(PlayerRequestContext context) {
+                        PlayerRoutingService.this.enqueueContext(context);
+                    }
+
+                    @Override
+                    public void retryRequest(PlayerRequestContext context, String reason) {
+                        PlayerRoutingService.this.retryRequest(context, reason);
+                    }
+                }
+        );
     }
 
     public void initialize() {
@@ -111,18 +154,8 @@ public class PlayerRoutingService {
         LOGGER.info("PlayerRoutingService subscribed to matchmaking channels");
     }
 
-    public void shutdown() {
-        scheduler.shutdownNow();
-        messageBus.unsubscribe(ChannelConstants.REGISTRY_PLAYER_REQUEST, playerRequestHandler);
-        messageBus.unsubscribe(ChannelConstants.REGISTRY_SLOT_STATUS, slotStatusHandler);
-        messageBus.unsubscribe(ChannelConstants.PLAYER_ROUTE_ACK, routeAckHandler);
-        messageBus.unsubscribe(ChannelConstants.PLAYER_RESERVATION_RESPONSE, reservationResponseHandler);
-        messageBus.unsubscribe(ChannelConstants.PARTY_RESERVATION_CREATED, partyReservationHandler);
-        messageBus.unsubscribe(ChannelConstants.MATCH_ROSTER_CREATED, matchRosterHandler);
-        messageBus.unsubscribe(ChannelConstants.MATCH_ROSTER_ENDED, matchRosterEndedHandler);
-        messageBus.unsubscribe(ChannelConstants.PARTY_RESERVATION_CLAIMED, partyReservationClaimedHandler);
-        messageBus.unsubscribe(ChannelConstants.REGISTRY_ENVIRONMENT_ROUTE_REQUEST, environmentRouteHandler);
-        LOGGER.info("PlayerRoutingService shut down");
+    private static String sanitizeSlotId(String slotId) {
+        return SlotIdUtils.sanitize(slotId);
     }
 
     private void seedAvailableSlots() {
@@ -138,17 +171,24 @@ public class PlayerRoutingService {
         }
     }
 
-    private static String sanitizeSlotId(String slotId) {
-        if (slotId == null) {
-            return null;
-        }
-        String trimmed = slotId.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+    private static String normalizeSlotId(String slotId) {
+        return SlotIdUtils.normalize(slotId);
     }
 
-    private static String normalizeSlotId(String slotId) {
-        String sanitized = sanitizeSlotId(slotId);
-        return sanitized != null ? sanitized.toLowerCase(Locale.ROOT) : null;
+    public void shutdown() {
+        scheduler.shutdownNow();
+        messageBus.unsubscribe(ChannelConstants.REGISTRY_PLAYER_REQUEST, playerRequestHandler);
+        messageBus.unsubscribe(ChannelConstants.REGISTRY_SLOT_STATUS, slotStatusHandler);
+        messageBus.unsubscribe(ChannelConstants.PLAYER_ROUTE_ACK, routeAckHandler);
+        messageBus.unsubscribe(ChannelConstants.PLAYER_RESERVATION_RESPONSE, reservationResponseHandler);
+        messageBus.unsubscribe(ChannelConstants.PARTY_RESERVATION_CREATED, partyReservationHandler);
+        messageBus.unsubscribe(ChannelConstants.MATCH_ROSTER_CREATED, matchRosterHandler);
+        messageBus.unsubscribe(ChannelConstants.MATCH_ROSTER_ENDED, matchRosterEndedHandler);
+        messageBus.unsubscribe(ChannelConstants.PARTY_RESERVATION_CLAIMED, partyReservationClaimedHandler);
+        messageBus.unsubscribe(ChannelConstants.REGISTRY_ENVIRONMENT_ROUTE_REQUEST, environmentRouteHandler);
+        routeTimeouts.values().forEach(future -> future.cancel(false));
+        routeTimeouts.clear();
+        LOGGER.info("PlayerRoutingService shut down");
     }
 
     private void handleSlotStatus(MessageEnvelope envelope) {
@@ -162,11 +202,10 @@ public class PlayerRoutingService {
             SlotLifecycleStatus status = slot.getStatus();
             String familyId = slot.getMetadata().get("family");
             if (status == SlotLifecycleStatus.AVAILABLE) {
-                matchRosters.remove(slot.getSlotId());
-                if (familyId == null) {
-                    return;
+                matchRosterService.clearForSlot(slot.getSlotId());
+                if (familyId != null) {
+                    dispatchQueuedPlayers(familyId, slot);
                 }
-                dispatchQueuedPlayers(familyId, slot);
                 return;
             }
 
@@ -183,71 +222,7 @@ public class PlayerRoutingService {
     private void handlePartyReservationCreated(MessageEnvelope envelope) {
         try {
             PartyReservationCreatedMessage message = convert(envelope.payload(), PartyReservationCreatedMessage.class);
-            if (message == null) {
-                return;
-            }
-
-            PartyReservationSnapshot reservation = message.getReservation();
-            if (reservation == null) {
-                LOGGER.warn("Received PartyReservationCreatedMessage without snapshot");
-                return;
-            }
-
-            String reservationId = reservation.getReservationId();
-            if (reservationId == null || reservationId.isBlank()) {
-                LOGGER.warn("Party reservation snapshot missing reservationId");
-                return;
-            }
-
-            if (activePartyReservations.containsKey(reservationId)) {
-                LOGGER.debug("Reservation {} already active; ignoring duplicate message", reservationId);
-                return;
-            }
-
-            String familyId = message.getFamilyId();
-            if (familyId == null || familyId.isBlank()) {
-                LOGGER.warn("Party reservation {} missing family id", reservationId);
-                return;
-            }
-            String variantId = message.getVariantId();
-
-            Map<UUID, PartyReservationToken> tokens = reservation.getTokens();
-            int partySize = tokens != null ? tokens.size() : 0;
-            if (partySize <= 0) {
-                LOGGER.warn("Party reservation {} has no participants", reservationId);
-                return;
-            }
-
-            String targetServerId = reservation.getTargetServerId();
-            if (targetServerId != null && !targetServerId.isBlank()) {
-                RegisteredServerData targetServer = serverRegistry.getServer(targetServerId);
-                if (targetServer == null) {
-                    LOGGER.warn("Target server {} not found for party reservation {}", targetServerId, reservationId);
-                } else {
-                    LogicalSlotRecord targetSlot = findSlotOnServer(targetServer, familyId, variantId, partySize);
-                    if (targetSlot != null) {
-                        allocatePartyReservation(reservation, targetSlot, familyId, variantId);
-                        return;
-                    }
-                    LOGGER.info("Target server {} cannot satisfy reservation {}; falling back to family queue",
-                            targetServerId, reservationId);
-                }
-            }
-
-            Optional<LogicalSlotRecord> slotOpt = findAvailableSlotForParty(familyId, variantId, partySize);
-            if (slotOpt.isPresent()) {
-                allocatePartyReservation(reservation, slotOpt.get(), familyId, variantId);
-            } else {
-                LOGGER.info("Queuing party reservation {} for family {} (variant {})", reservationId, familyId, variantId);
-                pendingPartyReservations.computeIfAbsent(familyId, key -> new ConcurrentLinkedDeque<>()).addLast(reservation);
-                Map<String, String> provisionMetadata = new HashMap<>();
-                provisionMetadata.put("partyReservationId", reservationId);
-                if (variantId != null && !variantId.isBlank()) {
-                    provisionMetadata.put("variant", variantId);
-                }
-                provisionMetadata.put("partySize", Integer.toString(partySize));
-                triggerProvisionIfNeeded(familyId, provisionMetadata);
-            }
+            partyCoordinator.handleReservationCreated(message);
         } catch (Exception exception) {
             LOGGER.error("Failed to handle party reservation message", exception);
         }
@@ -259,19 +234,7 @@ public class PlayerRoutingService {
             if (message == null) {
                 return;
             }
-            String slotId = message.getSlotId();
-            if (slotId == null || slotId.isBlank()) {
-                return;
-            }
-            Set<UUID> players = message.getPlayers();
-            if (players == null || players.isEmpty()) {
-                matchRosters.remove(slotId);
-                clearActivePlayersForSlot(slotId);
-                return;
-            }
-            Set<UUID> rosterPlayers = Set.copyOf(players);
-            matchRosters.put(slotId, new MatchRosterSnapshot(message.getMatchId(), rosterPlayers, System.currentTimeMillis()));
-            recordActivePlayers(slotId, rosterPlayers);
+            matchRosterService.handleCreated(message);
         } catch (Exception exception) {
             LOGGER.error("Failed to handle match roster message", exception);
         }
@@ -285,8 +248,17 @@ public class PlayerRoutingService {
             Map<String, String> requestMetadata = request.getMetadata();
             String reservationId = requestMetadata != null ? requestMetadata.get("partyReservationId") : null;
             if (reservationId != null && !reservationId.isBlank()) {
-                handlePartyPlayerRequest(request, reservationId);
-                return;
+                BlockedSlotContext blockedSlotContext = resolveBlockedSlotContext(request);
+                PlayerRequestContext context = new PlayerRequestContext(
+                        request,
+                        blockedSlotContext,
+                        resolveVariantId(request),
+                        null,
+                        false
+                );
+                if (partyCoordinator.handlePartyPlayerRequest(context, reservationId)) {
+                    return;
+                }
             }
 
             RegisteredProxyData proxy = proxyRegistry.getProxy(request.getProxyId());
@@ -333,113 +305,15 @@ public class PlayerRoutingService {
         }
     }
 
-    private void handlePartyPlayerRequest(PlayerSlotRequest request, String reservationId) {
-        PartyReservationAllocation allocation = activePartyReservations.get(reservationId);
-        BlockedSlotContext blockedSlotContext = resolveBlockedSlotContext(request);
-        PlayerRequestContext context = new PlayerRequestContext(
-                request,
-                blockedSlotContext,
-                resolveVariantId(request),
-                null,
-                false);
-
-        if (allocation == null || allocation.isReleased()) {
-            Queue<PlayerRequestContext> queue = pendingPartyPlayerRequests.computeIfAbsent(reservationId, key -> new ConcurrentLinkedQueue<>());
-            context.markEnqueued();
-            queue.add(context);
-            return;
-        }
-
-        PartyReservationToken token = allocation.getTokenForPlayer(request.getPlayerId());
-        if (token == null) {
-            LOGGER.warn("No reservation token for player {} in reservation {}", request.getPlayerName(), reservationId);
-            sendDisconnectCommand(request, "party-token-missing");
-            return;
-        }
-
-        Map<String, String> metadata = request.getMetadata();
-        String providedToken = metadata != null ? metadata.get("partyTokenId") : null;
-        if (providedToken != null && !providedToken.equals(token.getTokenId())) {
-            LOGGER.warn("Reservation token mismatch for player {} in reservation {}", request.getPlayerName(), reservationId);
-            sendDisconnectCommand(request, "party-token-mismatch");
-            return;
-        }
-
-        RegisteredServerData server = serverRegistry.getServer(allocation.serverId);
-        if (server == null) {
-            LOGGER.warn("Assigned server {} for reservation {} no longer available", allocation.serverId, reservationId);
-            Queue<PlayerRequestContext> queue = pendingPartyPlayerRequests.computeIfAbsent(reservationId, key -> new ConcurrentLinkedQueue<>());
-            context.markEnqueued();
-            queue.add(context);
-            requeuePartyReservation(allocation);
-            return;
-        }
-
-        LogicalSlotRecord slot = server.getSlot(allocation.slotSuffix);
-        if (slot == null || SlotLifecycleStatus.AVAILABLE != slot.getStatus()) {
-            LOGGER.warn("Assigned slot {} for reservation {} unavailable; re-queuing", allocation.slotId, reservationId);
-            Queue<PlayerRequestContext> queue = pendingPartyPlayerRequests.computeIfAbsent(reservationId, key -> new ConcurrentLinkedQueue<>());
-            context.markEnqueued();
-            queue.add(context);
-            requeuePartyReservation(allocation);
-            return;
-        }
-
-        if (!allocation.markDispatched(request.getPlayerId())) {
-            LOGGER.debug("Player {} already dispatched for reservation {}", request.getPlayerName(), reservationId);
-            return;
-        }
-
-        dispatchRouteWithReservation(context, slot, token.getTokenId(), true);
-    }
-
     private void handleMatchRosterEnded(MessageEnvelope envelope) {
         try {
             MatchRosterEndedMessage message = convert(envelope.payload(), MatchRosterEndedMessage.class);
             if (message == null) {
                 return;
             }
-            String slotId = message.getSlotId();
-            if (slotId == null || slotId.isBlank()) {
-                return;
-            }
-            MatchRosterSnapshot snapshot = matchRosters.remove(slotId);
-            String sanitizedSlotId = sanitizeSlotId(slotId);
-            if (snapshot != null && snapshot.players() != null && !snapshot.players().isEmpty()) {
-                snapshot.players().forEach(playerId -> {
-                    if (playerId == null) {
-                        return;
-                    }
-                    if (sanitizedSlotId != null) {
-                        rememberRecentSlot(playerId, sanitizedSlotId);
-                    }
-                    playerActiveSlots.computeIfPresent(playerId, (id, current) ->
-                            sanitizedSlotId != null && sanitizedSlotId.equalsIgnoreCase(current) ? null : current);
-                });
-            } else {
-                clearActivePlayersForSlot(slotId);
-            }
+            matchRosterService.handleEnded(message);
         } catch (Exception exception) {
             LOGGER.error("Failed to handle match roster end message", exception);
-        }
-    }
-
-    private void recordActivePlayers(String slotId, Set<UUID> players) {
-        String sanitizedSlotId = sanitizeSlotId(slotId);
-        if (sanitizedSlotId == null || players == null || players.isEmpty()) {
-            return;
-        }
-        for (UUID playerId : players) {
-            if (playerId == null) {
-                continue;
-            }
-            playerActiveSlots.compute(playerId, (id, current) -> {
-                String sanitizedCurrent = sanitizeSlotId(current);
-                if (sanitizedCurrent != null && !sanitizedCurrent.equalsIgnoreCase(sanitizedSlotId)) {
-                    rememberRecentSlot(id, sanitizedCurrent);
-                }
-                return sanitizedSlotId;
-            });
         }
     }
 
@@ -592,35 +466,16 @@ public class PlayerRoutingService {
         return "env:" + request.getTargetEnvironmentId() + ":" + target.getServerId();
     }
 
-    private void rememberRecentSlot(UUID playerId, String slotId) {
-        String sanitizedSlotId = sanitizeSlotId(slotId);
-        if (playerId == null || sanitizedSlotId == null) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        playerRecentSlots.compute(playerId, (id, history) -> {
-            Deque<RecentSlot> updated = history != null ? new ArrayDeque<>(history) : new ArrayDeque<>();
-            updated.removeIf(entry -> entry == null
-                    || now - entry.recordedAt() > RECENT_SLOT_TTL.toMillis()
-                    || sanitizedSlotId.equalsIgnoreCase(entry.slotId()));
-            updated.addFirst(new RecentSlot(sanitizedSlotId, now));
-            while (updated.size() > RECENT_SLOT_HISTORY) {
-                updated.removeLast();
-            }
-            return updated.isEmpty() ? null : updated;
-        });
-    }
-
     private CompletableFuture<PlayerReservationResponse> requestReservation(PlayerRequestContext context, LogicalSlotRecord slot) {
         UUID reservationId = UUID.randomUUID();
         PlayerReservationRequest reservationRequest = new PlayerReservationRequest();
         reservationRequest.setRequestId(reservationId);
-        reservationRequest.setPlayerId(context.request.getPlayerId());
-        reservationRequest.setPlayerName(context.request.getPlayerName());
-        reservationRequest.setProxyId(context.request.getProxyId());
+        reservationRequest.setPlayerId(context.request().getPlayerId());
+        reservationRequest.setPlayerName(context.request().getPlayerName());
+        reservationRequest.setProxyId(context.request().getProxyId());
         reservationRequest.setServerId(slot.getServerId());
         reservationRequest.setSlotId(slot.getSlotId());
-        reservationRequest.setMetadata(context.request.getMetadata());
+        reservationRequest.setMetadata(context.request().getMetadata());
 
         CompletableFuture<PlayerReservationResponse> future = new CompletableFuture<>();
         CompletableFuture<PlayerReservationResponse> existing = pendingReservations.putIfAbsent(reservationId, future);
@@ -665,14 +520,7 @@ public class PlayerRoutingService {
     }
 
     private void clearActivePlayersForSlot(String slotId) {
-        String sanitizedSlotId = sanitizeSlotId(slotId);
-        if (sanitizedSlotId == null) {
-            return;
-        }
-        playerActiveSlots.entrySet().removeIf(entry -> {
-            String current = sanitizeSlotId(entry.getValue());
-            return current != null && current.equalsIgnoreCase(sanitizedSlotId);
-        });
+        activePlayerTracker.clearActivePlayersForSlot(slotId);
     }
 
     private void handleRouteAck(MessageEnvelope envelope) {
@@ -680,18 +528,24 @@ public class PlayerRoutingService {
             PlayerRouteAck ack = convert(envelope.payload(), PlayerRouteAck.class);
             ack.validate();
 
-            InFlightRoute route = inFlightRoutes.remove(ack.getRequestId());
-            if (route != null) {
-                if (route.timeoutFuture != null) {
-                    route.timeoutFuture.cancel(false);
-                }
-                adjustPendingOccupancy(route.slotId, -1);
-                PlayerSlotRequest routedRequest = route.request.request;
-                Map<String, String> metadata = routedRequest.getMetadata();
+            Optional.ofNullable(routeTimeouts.remove(ack.getRequestId()))
+                    .ifPresent(future -> future.cancel(false));
+
+            Optional<RedisRoutingStore.RouteEntry> storedRoute = routingStore.removeInFlightRoute(ack.getRequestId());
+            PlayerRequestContext context = storedRoute
+                    .map(RedisRoutingStore.RouteEntry::getContext)
+                    .map(this::fromQueueEntry)
+                    .orElse(null);
+            storedRoute.map(RedisRoutingStore.RouteEntry::getSlotId)
+                    .filter(Objects::nonNull)
+                    .ifPresent(slotId -> updatePendingOccupancy(slotId, -1));
+
+            if (context != null) {
+                Map<String, String> metadata = context.request().getMetadata();
                 if (metadata != null) {
                     String reservationId = metadata.get("partyReservationId");
                     if (reservationId != null && !reservationId.isBlank()) {
-                        handlePartyRouteAck(reservationId, routedRequest.getPlayerId());
+                        partyCoordinator.handleRouteAck(reservationId, context.request().getPlayerId());
                     }
                 }
             }
@@ -700,13 +554,9 @@ public class PlayerRoutingService {
                 if (ack.getPlayerId() != null) {
                     String sanitizedSlot = sanitizeSlotId(ack.getSlotId());
                     if (sanitizedSlot != null) {
-                        playerActiveSlots.compute(ack.getPlayerId(), (id, current) -> {
-                            String sanitizedCurrent = sanitizeSlotId(current);
-                            if (sanitizedCurrent != null && !sanitizedCurrent.equalsIgnoreCase(sanitizedSlot)) {
-                                rememberRecentSlot(id, sanitizedCurrent);
-                            }
-                            return sanitizedSlot;
-                        });
+                        UUID playerId = ack.getPlayerId();
+                        activePlayerTracker.setActiveSlot(playerId, sanitizedSlot)
+                                .ifPresent(previous -> activePlayerTracker.rememberRecentSlot(playerId, previous));
                     }
                 }
                 LOGGER.debug("Player {} successfully routed to slot {}", ack.getPlayerId(), ack.getSlotId());
@@ -715,15 +565,14 @@ public class PlayerRoutingService {
 
             LOGGER.warn("Player routing failed for request {} (reason: {})", ack.getRequestId(), ack.getReason());
 
-            if (route == null) {
+            if (context == null) {
                 return;
             }
 
-            PlayerRequestContext context = route.request;
             if (shouldRetry(ack.getReason())) {
                 retryRequest(context, ack.getReason());
             } else {
-                sendDisconnectCommand(context.request, ack.getReason() != null ? ack.getReason() : "route-failed");
+                sendDisconnectCommand(context.request(), ack.getReason() != null ? ack.getReason() : "route-failed");
             }
         } catch (Exception exception) {
             LOGGER.error("Failed to handle PlayerRouteAck", exception);
@@ -749,64 +598,19 @@ public class PlayerRoutingService {
 
         UUID playerId = request.getPlayerId();
         if (playerId != null) {
-            String activeSlot = sanitizeSlotId(playerActiveSlots.get(playerId));
+            String activeSlot = activePlayerTracker.getActiveSlot(playerId)
+                    .map(SlotIdUtils::sanitize)
+                    .orElse(null);
             if (activeSlot != null) {
                 blocked.add(normalizeSlotId(activeSlot));
                 if (currentSlot == null) {
                     currentSlot = activeSlot;
                 }
             }
-            blocked.addAll(resolveRecentBlockedSlots(playerId));
+            blocked.addAll(activePlayerTracker.resolveRecentBlockedSlots(playerId));
         }
 
         return new BlockedSlotContext(currentSlot, blocked);
-    }
-
-    private Set<String> resolveRecentBlockedSlots(UUID playerId) {
-        if (playerId == null) {
-            return Collections.emptySet();
-        }
-
-        Deque<RecentSlot> history = playerRecentSlots.get(playerId);
-        if (history == null || history.isEmpty()) {
-            return Collections.emptySet();
-        }
-
-        long now = System.currentTimeMillis();
-        Set<String> blocked = new LinkedHashSet<>();
-        boolean expired = false;
-
-        for (RecentSlot slot : history) {
-            if (slot == null) {
-                continue;
-            }
-            if (now - slot.recordedAt() > RECENT_SLOT_TTL.toMillis()) {
-                expired = true;
-                continue;
-            }
-            String normalized = normalizeSlotId(slot.slotId());
-            if (normalized != null) {
-                blocked.add(normalized);
-            }
-        }
-
-        if (expired) {
-            pruneExpiredRecentSlots(playerId, now);
-        }
-
-        return blocked;
-    }
-
-    private void pruneExpiredRecentSlots(UUID playerId, long now) {
-        playerRecentSlots.computeIfPresent(playerId, (id, history) -> {
-            Deque<RecentSlot> updated = new ArrayDeque<>();
-            for (RecentSlot slot : history) {
-                if (slot != null && now - slot.recordedAt() <= RECENT_SLOT_TTL.toMillis()) {
-                    updated.addLast(slot);
-                }
-            }
-            return updated.isEmpty() ? null : updated;
-        });
     }
 
     private String resolveVariantId(PlayerSlotRequest request) {
@@ -836,16 +640,53 @@ public class PlayerRoutingService {
         return null;
     }
 
+    private RedisRoutingStore.PlayerQueueEntry toQueueEntry(PlayerRequestContext context) {
+        if (context == null) {
+            return null;
+        }
+        List<String> blocked = context.blockedSlots() != null
+                ? new ArrayList<>(context.blockedSlots())
+                : List.of();
+        return new RedisRoutingStore.PlayerQueueEntry(
+                context.request(),
+                context.createdAt(),
+                context.lastEnqueuedAt(),
+                context.currentSlotId(),
+                blocked,
+                context.variantId(),
+                context.preferredSlotId(),
+                context.isRejoin(),
+                context.retries()
+        );
+    }
+
+    private PlayerRequestContext fromQueueEntry(RedisRoutingStore.PlayerQueueEntry entry) {
+        if (entry == null || entry.getRequest() == null) {
+            return null;
+        }
+        Set<String> blocked = entry.getBlockedSlotIds() != null
+                ? new LinkedHashSet<>(entry.getBlockedSlotIds())
+                : Collections.emptySet();
+        BlockedSlotContext blockedContext = new BlockedSlotContext(entry.getCurrentSlotId(), blocked);
+        return new PlayerRequestContext(
+                entry.getRequest(),
+                blockedContext,
+                entry.getVariantId(),
+                entry.getPreferredSlotId(),
+                entry.isRejoin(),
+                entry.getCreatedAt(),
+                entry.getLastEnqueuedAt(),
+                entry.getRetries()
+        );
+    }
+
     private void enqueueContext(PlayerRequestContext context) {
         if (context == null) {
             return;
         }
         context.markEnqueued();
-        pendingQueues.compute(context.request.getFamilyId(), (family, queue) -> {
-            Deque<PlayerRequestContext> effective = queue != null ? queue : new ConcurrentLinkedDeque<>();
-            effective.addLast(context);
-            return effective;
-        });
+        RedisRoutingStore.PlayerQueueEntry entry = toQueueEntry(context);
+        routingStore.enqueuePlayer(context.request().getFamilyId(), entry);
     }
 
     private void triggerProvisionIfNeeded(String familyId, Map<String, String> metadata) {
@@ -853,16 +694,18 @@ public class PlayerRoutingService {
             return;
         }
 
-        provisioningFamilies.compute(familyId, (family, inFlight) -> {
-            if (Boolean.TRUE.equals(inFlight)) {
-                return Boolean.TRUE;
-            }
+        if (!routingStore.acquireProvisionLock(familyId)) {
+            return;
+        }
 
-            Optional<ProvisionResult> result = slotProvisionService.requestProvision(familyId, metadata);
-            result.ifPresent(provision -> LOGGER.info(
-                    "Triggered slot provision for family {} on server {}", familyId, provision.serverId()));
-            return result.isPresent() ? Boolean.TRUE : null;
-        });
+        Optional<ProvisionResult> result = slotProvisionService.requestProvision(familyId, metadata);
+        if (result.isPresent()) {
+            ProvisionResult provision = result.get();
+            LOGGER.info("Triggered slot provision for family {} on server {}", familyId, provision.serverId());
+            return;
+        }
+
+        routingStore.releaseProvisionLock(familyId);
     }
 
     private static final Comparator<SlotCandidate> SLOT_CANDIDATE_COMPARATOR = Comparator
@@ -881,7 +724,7 @@ public class PlayerRoutingService {
 
         for (RegisteredServerData server : serverRegistry.getAllServers()) {
             for (LogicalSlotRecord slot : server.getSlots()) {
-                if (!isSlotEligible(slot)) {
+                if (!SlotSelectionRules.isSlotEligible(slot)) {
                     continue;
                 }
                 if (isSlotBlocked(slot.getSlotId(), blockedSlotIds)) {
@@ -891,10 +734,10 @@ public class PlayerRoutingService {
                 if (!familyId.equalsIgnoreCase(slotFamily)) {
                     continue;
                 }
-                if (!variantMatches(slot, variantId)) {
+                if (!SlotSelectionRules.variantMatches(slot, variantId)) {
                     continue;
                 }
-                if (slotCapacityRemaining(slot) <= 0) {
+                if (SlotSelectionRules.remainingCapacity(slot, routingStore) <= 0) {
                     continue;
                 }
 
@@ -939,7 +782,7 @@ public class PlayerRoutingService {
         if (status != SlotLifecycleStatus.ALLOCATED) {
             return false;
         }
-        return slotCapacityRemaining(slot) > 0;
+        return SlotSelectionRules.remainingCapacity(slot, routingStore) > 0;
     }
 
     private void sendRejoinUnavailableAck(PlayerSlotRequest request) {
@@ -955,112 +798,63 @@ public class PlayerRoutingService {
         messageBus.broadcast(ChannelConstants.PLAYER_ROUTE_ACK, ack);
     }
 
-    private Optional<LogicalSlotRecord> findAvailableSlotForParty(String familyId, String variantId, int partySize) {
-        if (familyId == null) {
-            return Optional.empty();
-        }
-
-        List<SlotCandidate> candidates = new ArrayList<>();
-        int order = 0;
-
-        for (RegisteredServerData server : serverRegistry.getAllServers()) {
-            for (LogicalSlotRecord slot : server.getSlots()) {
-                if (!isSlotEligible(slot)) {
-                    continue;
-                }
-                String slotFamily = slot.getMetadata().get("family");
-                if (!familyId.equalsIgnoreCase(slotFamily)) {
-                    continue;
-                }
-                if (!variantMatches(slot, variantId)) {
-                    continue;
-                }
-                if (!canSlotFitParty(slot, partySize)) {
-                    continue;
-                }
-
-                SlotCandidate candidate = createSlotCandidate(slot, order++);
-                if (candidate != null && candidate.remainingCapacity() >= partySize) {
-                    candidates.add(candidate);
-                }
-            }
-        }
-
-        if (candidates.isEmpty()) {
-            return Optional.empty();
-        }
-
-        candidates.sort(SLOT_CANDIDATE_COMPARATOR);
-        return Optional.of(candidates.get(0).slot());
-    }
-
     private void dispatchQueuedPlayers(String familyId, LogicalSlotRecord slot) {
         if (familyId == null || slot == null) {
             return;
         }
 
-        processPendingPartyReservations(familyId, slot);
+        partyCoordinator.processPendingReservations(familyId, slot);
 
-        if (slotCapacityRemaining(slot) <= 0) {
-            provisioningFamilies.remove(familyId);
+        if (SlotSelectionRules.remainingCapacity(slot, routingStore) <= 0) {
+            routingStore.releaseProvisionLock(familyId);
             return;
         }
 
-        Deque<PlayerRequestContext> queue = pendingQueues.get(familyId);
-        if (queue == null) {
-            provisioningFamilies.remove(familyId);
-            return;
-        }
-
+        List<RedisRoutingStore.PlayerQueueEntry> deferred = new ArrayList<>();
+        boolean routedAny = false;
         String slotId = slot.getSlotId();
-        int initialSize = queue.size();
-        int inspected = 0;
-        while (!queue.isEmpty()) {
-            if (slotCapacityRemaining(slot) <= 0) {
-                break;
-            }
-            int pending = pendingOccupancy.getOrDefault(slot.getSlotId(), 0);
-            if (slot.getMaxPlayers() > 0 && slot.getOnlinePlayers() + pending >= slot.getMaxPlayers()) {
-                break;
-            }
-            if (inspected >= initialSize) {
+
+        while (SlotSelectionRules.remainingCapacity(slot, routingStore) > 0) {
+            Optional<RedisRoutingStore.PlayerQueueEntry> entryOpt = routingStore.pollPlayer(familyId);
+            if (entryOpt.isEmpty()) {
                 break;
             }
 
-            PlayerRequestContext context = queue.pollFirst();
+            PlayerRequestContext context = fromQueueEntry(entryOpt.get());
             if (context == null) {
-                break;
-            }
-            inspected++;
-
-            if (context.isBlockedSlot(slotId)) {
-                queue.addLast(context);
                 continue;
             }
-            if (!variantMatches(slot, context.variantId())) {
-                queue.addLast(context);
+
+            if (context.isBlockedSlot(slotId) || !SlotSelectionRules.variantMatches(slot, context.variantId())) {
+                context.markEnqueued();
+                deferred.add(toQueueEntry(context));
                 continue;
             }
 
             if (context.hasExceededWait(MAX_QUEUE_WAIT)) {
-                sendDisconnectCommand(context.request, "queue-timeout");
+                sendDisconnectCommand(context.request(), "queue-timeout");
                 continue;
             }
 
+            routedAny = true;
             routePlayer(context, slot);
-            provisioningFamilies.remove(familyId);
         }
 
-        if (queue.isEmpty()) {
-            pendingQueues.remove(familyId);
-            provisioningFamilies.remove(familyId);
-        } else {
-            triggerProvisionIfNeeded(familyId, queue.peekFirst().request.getMetadata());
+        for (RedisRoutingStore.PlayerQueueEntry entry : deferred) {
+            routingStore.enqueuePlayer(familyId, entry);
         }
+
+        if (!routedAny && !deferred.isEmpty()) {
+            // Trigger provisioning with metadata from the first deferred request to encourage capacity.
+            PlayerSlotRequest pendingRequest = deferred.get(0).getRequest();
+            triggerProvisionIfNeeded(familyId, pendingRequest != null ? pendingRequest.getMetadata() : Map.of());
+        }
+
+        routingStore.releaseProvisionLock(familyId);
     }
 
     private void routePlayer(PlayerRequestContext context, LogicalSlotRecord slot) {
-        PlayerSlotRequest request = context.request;
+        PlayerSlotRequest request = context.request();
 
         if (context.isBlockedSlot(slot.getSlotId())) {
             LOGGER.debug("Skipping slot {} for player {} because it matches their current assignment",
@@ -1072,7 +866,7 @@ public class PlayerRoutingService {
 
         String currentSlotId = context.currentSlotId();
         if (currentSlotId != null && !currentSlotId.equalsIgnoreCase(slot.getSlotId())) {
-            rememberRecentSlot(request.getPlayerId(), currentSlotId);
+            activePlayerTracker.rememberRecentSlot(request.getPlayerId(), currentSlotId);
         }
 
         requestReservation(context, slot).whenCompleteAsync((response, throwable) -> {
@@ -1109,11 +903,11 @@ public class PlayerRoutingService {
                                               LogicalSlotRecord slot,
                                               String reservationToken,
                                               boolean preReserved) {
-        PlayerSlotRequest request = context.request;
+        PlayerSlotRequest request = context.request();
 
-        MatchRosterSnapshot rosterSnapshot = matchRosters.get(slot.getSlotId());
-        if (rosterSnapshot != null) {
-            Set<UUID> allowedPlayers = rosterSnapshot.players();
+        Optional<RedisRoutingStore.MatchRosterEntry> rosterSnapshot = routingStore.getMatchRoster(slot.getSlotId());
+        if (rosterSnapshot.isPresent()) {
+            Set<UUID> allowedPlayers = rosterSnapshot.get().getPlayers();
             if (allowedPlayers != null && !allowedPlayers.contains(request.getPlayerId())) {
                 LOGGER.warn("Blocking route for player {} into slot {} due to roster lock", request.getPlayerName(), slot.getSlotId());
                 sendDisconnectCommand(request, "match-roster-locked");
@@ -1148,13 +942,13 @@ public class PlayerRoutingService {
         metadata.put("reservationToken", reservationToken);
         String reservationId = metadata.get("partyReservationId");
         if (reservationId != null) {
-            PartyReservationAllocation allocation = activePartyReservations.get(reservationId);
+            PartyReservationAllocation allocation = partyCoordinator.getAllocation(reservationId);
             if (allocation != null) {
-                if (allocation.teamIndex >= 0) {
-                    metadata.put("team.index", Integer.toString(allocation.teamIndex));
+                if (allocation.teamIndex() >= 0) {
+                    metadata.put("team.index", Integer.toString(allocation.teamIndex()));
                 }
-                if (allocation.snapshot != null && allocation.snapshot.getPartyId() != null) {
-                    metadata.putIfAbsent("partyId", allocation.snapshot.getPartyId().toString());
+                if (allocation.snapshot() != null && allocation.snapshot().getPartyId() != null) {
+                    metadata.putIfAbsent("partyId", allocation.snapshot().getPartyId().toString());
                 }
             }
         }
@@ -1165,55 +959,76 @@ public class PlayerRoutingService {
         LOGGER.info("Routing player {} to slot {} on server {}", request.getPlayerName(), slot.getSlotId(), slot.getServerId());
 
         if (!preReserved) {
-            adjustPendingOccupancy(slot.getSlotId(), 1);
+            updatePendingOccupancy(slot.getSlotId(), 1);
         }
-        ScheduledFuture<?> timeout = scheduler.schedule(() -> handleRouteTimeout(context, slot),
-                ROUTE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-
-        inFlightRoutes.put(request.getRequestId(), new InFlightRoute(context, slot.getSlotId(), timeout));
+        routingStore.storeInFlightRoute(
+                request.getRequestId(),
+                new RedisRoutingStore.RouteEntry(toQueueEntry(context), slot.getSlotId(), System.currentTimeMillis())
+        );
+        ScheduledFuture<?> timeout = scheduler.schedule(
+                () -> handleRouteTimeout(request.getRequestId()),
+                ROUTE_TIMEOUT.toMillis(),
+                TimeUnit.MILLISECONDS
+        );
+        routeTimeouts.put(request.getRequestId(), timeout);
     }
 
-    private void handleRouteTimeout(PlayerRequestContext context, LogicalSlotRecord slot) {
-        InFlightRoute removed = inFlightRoutes.remove(context.request.getRequestId());
-        if (removed == null) {
+    private void handleRouteTimeout(UUID requestId) {
+        if (requestId == null) {
             return;
         }
-
-        adjustPendingOccupancy(slot.getSlotId(), -1);
-        LOGGER.warn("Player routing timed out for request {}", context.request.getRequestId());
-        sendDisconnectCommand(context.request, "route-timeout");
+        routeTimeouts.remove(requestId);
+        Optional<RedisRoutingStore.RouteEntry> removed = routingStore.removeInFlightRoute(requestId);
+        if (removed.isEmpty()) {
+            return;
+        }
+        RedisRoutingStore.RouteEntry entry = removed.get();
+        updatePendingOccupancy(entry.getSlotId(), -1);
+        PlayerRequestContext context = fromQueueEntry(entry.getContext());
+        if (context == null) {
+            return;
+        }
+        LOGGER.warn("Player routing timed out for request {}", context.request().getRequestId());
+        sendDisconnectCommand(context.request(), "route-timeout");
     }
 
     private void handleSlotUnavailable(LogicalSlotRecord slot, String reason) {
-        pendingOccupancy.remove(slot.getSlotId());
-        matchRosters.remove(slot.getSlotId());
-        clearActivePlayersForSlot(slot.getSlotId());
+        if (slot == null) {
+            return;
+        }
+        String slotId = slot.getSlotId();
+        long pending = routingStore.getOccupancy(slotId);
+        if (pending > 0) {
+            updatePendingOccupancy(slotId, (int) -pending);
+        }
+        matchRosterService.clearForSlot(slotId);
 
-        for (PartyReservationAllocation allocation : new ArrayList<>(activePartyReservations.values())) {
-            if (allocation.slotId.equals(slot.getSlotId())) {
-                LOGGER.warn("Re-queueing party reservation {} after slot {} became unavailable", allocation.reservationId, slot.getSlotId());
-                requeuePartyReservation(allocation);
+        for (PartyReservationAllocation allocation : partyCoordinator.getActiveAllocations()) {
+            if (slotId.equalsIgnoreCase(allocation.slotId())) {
+                LOGGER.warn("Re-queueing party reservation {} after slot {} became unavailable", allocation.reservationId(), slotId);
+                partyCoordinator.requeueAllocation(allocation);
             }
         }
 
-        Set<UUID> affected = new HashSet<>();
-        for (Map.Entry<UUID, InFlightRoute> entry : new ArrayList<>(inFlightRoutes.entrySet())) {
-            InFlightRoute route = entry.getValue();
-            if (!slot.getSlotId().equals(route.slotId)) {
+        int affected = 0;
+        for (RedisRoutingStore.StoredRoute storedRoute : routingStore.getInFlightRoutes()) {
+            RedisRoutingStore.RouteEntry entry = storedRoute.entry();
+            if (!slotId.equalsIgnoreCase(entry.getSlotId())) {
                 continue;
             }
-
-            inFlightRoutes.remove(entry.getKey());
-            if (route.timeoutFuture != null) {
-                route.timeoutFuture.cancel(false);
+            routingStore.removeInFlightRoute(storedRoute.requestId());
+            Optional.ofNullable(routeTimeouts.remove(storedRoute.requestId()))
+                    .ifPresent(future -> future.cancel(false));
+            updatePendingOccupancy(entry.getSlotId(), -1);
+            PlayerRequestContext context = fromQueueEntry(entry.getContext());
+            if (context != null) {
+                retryRequest(context, reason);
+                affected++;
             }
-            adjustPendingOccupancy(route.slotId, -1);
-            affected.add(entry.getKey());
-            retryRequest(route.request, reason);
         }
 
-        if (!affected.isEmpty()) {
-            LOGGER.warn("Slot {} became unavailable; re-queued {} pending players", slot.getSlotId(), affected.size());
+        if (affected > 0) {
+            LOGGER.warn("Slot {} became unavailable; re-queued {} pending players", slotId, affected);
         }
     }
 
@@ -1223,17 +1038,17 @@ public class PlayerRoutingService {
         }
 
         if (context.hasExceededWait(MAX_QUEUE_WAIT)) {
-            sendDisconnectCommand(context.request, reason != null ? reason : "queue-timeout");
+            sendDisconnectCommand(context.request(), reason != null ? reason : "queue-timeout");
             return;
         }
 
         if (!context.registerRetry(MAX_ROUTE_RETRIES)) {
-            sendDisconnectCommand(context.request, reason != null ? reason : "route-failed");
+            sendDisconnectCommand(context.request(), reason != null ? reason : "route-failed");
             return;
         }
 
         enqueueContext(context);
-        triggerProvisionIfNeeded(context.request.getFamilyId(), context.request.getMetadata());
+        triggerProvisionIfNeeded(context.request().getFamilyId(), context.request().getMetadata());
     }
 
     private boolean shouldRetry(String reason) {
@@ -1262,134 +1077,18 @@ public class PlayerRoutingService {
         messageBus.broadcast(ChannelConstants.getPlayerRouteChannel(request.getProxyId()), command);
     }
 
-    private void adjustPendingOccupancy(String slotId, int delta) {
-        if (slotId == null) {
+    private void updatePendingOccupancy(String slotId, int delta) {
+        if (slotId == null || delta == 0) {
             return;
         }
-
-        pendingOccupancy.compute(slotId, (id, current) -> {
-            int value = (current != null ? current : 0) + delta;
-            return value <= 0 ? null : value;
-        });
-    }
-
-    private void processPendingPartyReservations(String familyId, LogicalSlotRecord slot) {
-        Deque<PartyReservationSnapshot> queue = pendingPartyReservations.get(familyId);
-        if (queue == null) {
-            return;
-        }
-
-        Iterator<PartyReservationSnapshot> iterator = queue.iterator();
-        while (iterator.hasNext()) {
-            PartyReservationSnapshot reservation = iterator.next();
-            Map<UUID, PartyReservationToken> tokens = reservation.getTokens();
-            int partySize = tokens != null ? tokens.size() : 0;
-            if (partySize <= 0) {
-                iterator.remove();
-                continue;
+        if (delta > 0) {
+            for (int index = 0; index < delta; index++) {
+                routingStore.incrementOccupancy(slotId);
             }
-            String variantId = reservation.getVariantId();
-            if (!variantMatches(slot, variantId)) {
-                continue;
+        } else {
+            for (int index = 0; index < Math.abs(delta); index++) {
+                routingStore.decrementOccupancy(slotId);
             }
-            if (!canSlotFitParty(slot, partySize)) {
-                continue;
-            }
-            iterator.remove();
-            allocatePartyReservation(reservation, slot, familyId, variantId);
-            break;
-        }
-
-        if (queue.isEmpty()) {
-            pendingPartyReservations.remove(familyId);
-        }
-    }
-
-    private void allocatePartyReservation(PartyReservationSnapshot reservation,
-                                          LogicalSlotRecord slot,
-                                          String familyId,
-                                          String variantId) {
-        if (reservation == null) {
-            return;
-        }
-
-        PartyReservationAllocation existing = activePartyReservations.get(reservation.getReservationId());
-        if (existing != null && !existing.isReleased()) {
-            LOGGER.debug("Reservation {} already allocated to slot {}", reservation.getReservationId(), existing.slotId);
-            return;
-        }
-
-        int teamCount = resolveTeamCount(slot);
-        int teamIndex = nextAvailableTeamIndex(slot, teamCount);
-        if (teamCount > 0 && teamIndex < 0) {
-            LOGGER.warn("Unable to assign party {} to slot {} because all {} teams are occupied",
-                    reservation.getReservationId(), slot.getSlotId(), teamCount);
-            reservation.setTargetServerId(null);
-            reservation.setAssignedTeamIndex(null);
-            pendingPartyReservations.computeIfAbsent(familyId, key -> new ConcurrentLinkedDeque<>())
-                    .addFirst(reservation);
-            Map<String, String> metadata = new HashMap<>();
-            metadata.put("partyReservationId", reservation.getReservationId());
-            if (variantId != null && !variantId.isBlank()) {
-                metadata.put("variant", variantId);
-            }
-            metadata.put("partySize", Integer.toString(reservation.getTokens() != null ? reservation.getTokens().size() : 0));
-            triggerProvisionIfNeeded(familyId, metadata);
-            return;
-        }
-
-        reservation.setTargetServerId(slot.getServerId());
-        reservation.setAssignedTeamIndex(teamIndex >= 0 ? teamIndex : null);
-        PartyReservationAllocation allocation = new PartyReservationAllocation(reservation, slot, familyId, variantId, teamIndex);
-        activePartyReservations.put(reservation.getReservationId(), allocation);
-        adjustPendingOccupancy(slot.getSlotId(), allocation.partySize);
-        LOGGER.info("Allocated party reservation {} to slot {} on server {}",
-                reservation.getReservationId(), slot.getSlotId(), slot.getServerId());
-        processPendingPartyPlayerContexts(reservation.getReservationId(), allocation);
-    }
-
-    private void processPendingPartyPlayerContexts(String reservationId, PartyReservationAllocation allocation) {
-        Queue<PlayerRequestContext> queue = pendingPartyPlayerRequests.remove(reservationId);
-        if (queue == null || allocation == null) {
-            return;
-        }
-        PlayerRequestContext context;
-        while ((context = queue.poll()) != null) {
-            handlePartyPlayerRequest(context.request, reservationId);
-        }
-    }
-
-    private void requeuePartyReservation(PartyReservationAllocation allocation) {
-        if (allocation == null || allocation.isReleased()) {
-            return;
-        }
-
-        activePartyReservations.remove(allocation.reservationId, allocation);
-        allocation.release();
-        adjustPendingOccupancy(allocation.slotId, -allocation.partySize);
-        allocation.snapshot.setTargetServerId(null);
-        allocation.snapshot.setAssignedTeamIndex(null);
-        pendingPartyReservations.computeIfAbsent(allocation.familyId, key -> new ConcurrentLinkedDeque<>())
-                .addFirst(allocation.snapshot);
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("partyReservationId", allocation.reservationId);
-        if (allocation.variantId != null && !allocation.variantId.isBlank()) {
-            metadata.put("variant", allocation.variantId);
-        }
-        metadata.put("partySize", Integer.toString(allocation.partySize));
-        triggerProvisionIfNeeded(allocation.familyId, metadata);
-    }
-
-    private void handlePartyRouteAck(String reservationId, UUID playerId) {
-        PartyReservationAllocation allocation = activePartyReservations.get(reservationId);
-        if (allocation == null) {
-            return;
-        }
-
-        boolean completed = allocation.onRouteCompleted(playerId);
-        if (completed) {
-            LOGGER.debug("Party reservation {} fully routed", reservationId);
-            releasePartyReservation(reservationId, allocation, true, "route-ack", Map.of(), Set.of());
         }
     }
 
@@ -1399,43 +1098,10 @@ public class PlayerRoutingService {
             if (message == null) {
                 return;
             }
-            String reservationId = message.getReservationId();
-            if (reservationId == null || reservationId.isBlank()) {
-                return;
-            }
-
-            PartyReservationAllocation allocation = activePartyReservations.get(reservationId);
-            if (allocation == null) {
-                return;
-            }
-
-            PartyReservationAllocation.ClaimProgress progress = allocation.recordClaim(
-                    message.getPlayerId(),
-                    message.isSuccess(),
-                    message.getReason());
-            if (!message.isSuccess()) {
-                LOGGER.warn("Reservation {} claim failed for player {} (reason: {})",
-                        reservationId, message.getPlayerId(), message.getReason());
-            }
-            if (progress.complete()) {
-                releasePartyReservation(reservationId, allocation, progress.success(), "claim",
-                        progress.failures(), progress.missingPlayers());
-            }
+            partyCoordinator.handleReservationClaimed(message);
         } catch (Exception exception) {
             LOGGER.error("Failed to handle party reservation claim message", exception);
         }
-    }
-
-    private int slotCapacityRemaining(LogicalSlotRecord slot) {
-        if (slot == null) {
-            return 0;
-        }
-        int max = slot.getMaxPlayers();
-        if (max <= 0) {
-            return Integer.MAX_VALUE;
-        }
-        int pending = pendingOccupancy.getOrDefault(slot.getSlotId(), 0);
-        return max - slot.getOnlinePlayers() - pending;
     }
 
     private boolean isSlotBlocked(String slotId, Set<String> blockedSlotIds) {
@@ -1446,129 +1112,11 @@ public class PlayerRoutingService {
         return normalized != null && blockedSlotIds.contains(normalized);
     }
 
-    private boolean isSlotEligible(LogicalSlotRecord slot) {
-        if (slot == null) {
-            return false;
-        }
-        SlotLifecycleStatus status = slot.getStatus();
-        return status == SlotLifecycleStatus.AVAILABLE || status == SlotLifecycleStatus.ALLOCATED;
-    }
-
-    private boolean variantMatches(LogicalSlotRecord slot, String variantId) {
-        if (variantId == null || variantId.isBlank()) {
-            return true;
-        }
-        Map<String, String> metadata = slot.getMetadata();
-        String slotVariant = metadata.get("variant");
-        if (variantId.equalsIgnoreCase(slotVariant)) {
-            return true;
-        }
-        String slotGameType = slot.getGameType();
-        if (variantId.equalsIgnoreCase(slotGameType)) {
-            return true;
-        }
-        String metaVariant = metadata.get("familyVariant");
-        return variantId.equalsIgnoreCase(metaVariant);
-    }
-
-    private boolean canSlotFitParty(LogicalSlotRecord slot, int partySize) {
-        if (slotCapacityRemaining(slot) < partySize) {
-            return false;
-        }
-        int maxTeamSize = parsePositiveInt(slot.getMetadata(), "team.max");
-        if (maxTeamSize > 0 && partySize > maxTeamSize) {
-            return false;
-        }
-        int teamCount = resolveTeamCount(slot);
-        if (teamCount > 0) {
-            long existingParties = activePartyReservations.values().stream()
-                    .filter(allocation -> allocation != null
-                            && allocation.slotId.equals(slot.getSlotId())
-                            && !allocation.isReleased()
-                            && allocation.teamIndex >= 0)
-                    .count();
-            return existingParties < teamCount;
-        }
-        return true;
-    }
-
-    private int parsePositiveInt(Map<String, String> metadata, String key) {
-        if (metadata == null) {
-            return -1;
-        }
-        String raw = metadata.get(key);
-        if (raw == null || raw.isBlank()) {
-            return -1;
-        }
-        try {
-            int value = Integer.parseInt(raw.trim());
-            return value > 0 ? value : -1;
-        } catch (NumberFormatException ignored) {
-        }
-        return -1;
-    }
-
-    private int resolveTeamCount(LogicalSlotRecord slot) {
-        Map<String, String> metadata = slot.getMetadata();
-        int teamCount = parsePositiveInt(metadata, "team.count");
-        if (teamCount > 0) {
-            return teamCount;
-        }
-        int teamSize = parsePositiveInt(metadata, "team.max");
-        int maxPlayers = slot.getMaxPlayers();
-        if (teamSize > 0 && maxPlayers > 0) {
-            return Math.max(1, maxPlayers / Math.max(1, teamSize));
-        }
-        return teamSize > 0 ? Math.max(1, PartyConstants.HARD_SIZE_CAP / teamSize) : -1;
-    }
-
-    private int nextAvailableTeamIndex(LogicalSlotRecord slot, int teamCount) {
-        if (teamCount <= 0) {
-            return -1;
-        }
-        Set<Integer> used = activePartyReservations.values().stream()
-                .filter(allocation -> allocation != null
-                        && allocation.slotId.equals(slot.getSlotId())
-                        && allocation.teamIndex >= 0)
-                .map(allocation -> allocation.teamIndex)
-                .collect(Collectors.toSet());
-        for (int index = 0; index < teamCount; index++) {
-            if (!used.contains(index)) {
-                return index;
-            }
-        }
-        return -1;
-    }
-
     private <T> T convert(Object payload, Class<T> type) {
         if (type.isInstance(payload)) {
             return type.cast(payload);
         }
         return objectMapper.convertValue(payload, type);
-    }
-
-    private void releasePartyReservation(String reservationId,
-                                         PartyReservationAllocation allocation,
-                                         boolean success,
-                                         String context,
-                                         Map<UUID, String> failures,
-                                         Set<UUID> missingPlayers) {
-        if (allocation == null) {
-            return;
-        }
-        boolean removed = activePartyReservations.remove(reservationId, allocation);
-        if (removed) {
-            adjustPendingOccupancy(allocation.slotId, -allocation.partySize);
-        }
-        allocation.release();
-        pendingPartyPlayerRequests.remove(reservationId);
-
-        if (success) {
-            LOGGER.info("Party reservation {} completed (context: {}) on server {}", reservationId, context, allocation.serverId);
-        } else {
-            LOGGER.warn("Party reservation {} released (context: {}) failures={} missing={}",
-                    reservationId, context, failures, missingPlayers);
-        }
     }
 
     private double parseDouble(String raw, double fallback) {
@@ -1582,248 +1130,14 @@ public class PlayerRoutingService {
         }
     }
 
-    private static final class PartyReservationAllocation {
-        final PartyReservationSnapshot snapshot;
-        final String reservationId;
-        final String familyId;
-        final String variantId;
-        final String slotId;
-        final String slotSuffix;
-        final String serverId;
-        final Map<UUID, PartyReservationToken> tokensByPlayer;
-        final Map<String, UUID> playerByToken;
-        final Set<UUID> dispatchedPlayers = ConcurrentHashMap.newKeySet();
-        final Set<UUID> claimedPlayers = ConcurrentHashMap.newKeySet();
-        final ConcurrentMap<UUID, String> claimFailures = new ConcurrentHashMap<>();
-        final int partySize;
-        final int teamIndex;
-        private volatile boolean released;
-
-        PartyReservationAllocation(PartyReservationSnapshot snapshot,
-                                   LogicalSlotRecord slot,
-                                   String familyId,
-                                   String variantId,
-                                   int teamIndex) {
-            this.snapshot = snapshot;
-            this.reservationId = snapshot.getReservationId();
-            this.familyId = familyId;
-            this.variantId = variantId;
-            this.slotId = slot.getSlotId();
-            this.slotSuffix = slot.getSlotSuffix();
-            this.serverId = slot.getServerId();
-            Map<UUID, PartyReservationToken> tokens = snapshot.getTokens();
-            this.tokensByPlayer = tokens != null ? new LinkedHashMap<>(tokens) : Collections.emptyMap();
-            this.playerByToken = new HashMap<>();
-            this.tokensByPlayer.forEach((playerId, token) -> playerByToken.put(token.getTokenId(), playerId));
-            this.partySize = this.tokensByPlayer.size();
-            this.teamIndex = teamIndex;
-            this.released = false;
-        }
-
-        PartyReservationToken getTokenForPlayer(UUID playerId) {
-            return tokensByPlayer.get(playerId);
-        }
-
-        boolean markDispatched(UUID playerId) {
-            return dispatchedPlayers.add(playerId);
-        }
-
-        boolean onRouteCompleted(UUID playerId) {
-            dispatchedPlayers.add(playerId);
-            if (dispatchedPlayers.size() >= partySize) {
-                released = true;
-                return true;
-            }
-            return false;
-        }
-
-        ClaimProgress recordClaim(UUID playerId, boolean success, String reason) {
-            if (playerId != null) {
-                if (success) {
-                    claimedPlayers.add(playerId);
-                    claimFailures.remove(playerId);
-                } else {
-                    claimedPlayers.remove(playerId);
-                    claimFailures.put(playerId, reason != null ? reason : "unknown");
-                }
-            }
-
-            Set<UUID> expected = new HashSet<>(tokensByPlayer.keySet());
-            expected.removeAll(claimedPlayers);
-            expected.removeAll(claimFailures.keySet());
-
-            int processed = claimedPlayers.size() + claimFailures.size();
-            boolean complete = partySize > 0 && processed >= partySize;
-            boolean successful = complete && claimFailures.isEmpty() && claimedPlayers.size() >= partySize;
-
-            return new ClaimProgress(
-                    complete,
-                    successful,
-                    Map.copyOf(claimFailures),
-                    Set.copyOf(expected)
-            );
-        }
-
-        boolean isReleased() {
-            return released;
-        }
-
-        void release() {
-            released = true;
-        }
-
-        private record ClaimProgress(boolean complete, boolean success, Map<UUID, String> failures, Set<UUID> missing) {
-
-            Set<UUID> missingPlayers() {
-                        return missing;
-                    }
-                }
-    }
-
-    private record MatchRosterSnapshot(UUID matchId, Set<UUID> players, long updatedAt) {
-    }
-
-    private static final class PlayerRequestContext {
-        final PlayerSlotRequest request;
-        private final long createdAt = System.currentTimeMillis();
-        private final String currentSlotId;
-        private final Set<String> blockedSlotIds;
-        private final String variantId;
-        private final String preferredSlotId;
-        private final boolean rejoin;
-        private volatile long lastEnqueuedAt = createdAt;
-        private int retries;
-
-        PlayerRequestContext(PlayerSlotRequest request,
-                             BlockedSlotContext blockedContext,
-                             String variantId,
-                             String preferredSlotId,
-                             boolean rejoin) {
-            this.request = request;
-            this.currentSlotId = blockedContext != null ? blockedContext.currentSlotId() : null;
-            Set<String> blocked = blockedContext != null ? blockedContext.blockedSlotIds() : Collections.emptySet();
-            String normalizedPreferred = normalizeSlotId(preferredSlotId);
-            if (normalizedPreferred != null && !blocked.isEmpty()) {
-                Set<String> filtered = new LinkedHashSet<>(blocked);
-                filtered.remove(normalizedPreferred);
-                this.blockedSlotIds = Collections.unmodifiableSet(filtered);
-            } else {
-                this.blockedSlotIds = blocked;
-            }
-            this.variantId = variantId;
-            this.preferredSlotId = normalizedPreferred;
-            this.rejoin = rejoin && normalizedPreferred != null;
-        }
-
-        void markEnqueued() {
-            lastEnqueuedAt = System.currentTimeMillis();
-        }
-
-        boolean hasExceededWait(Duration threshold) {
-            return System.currentTimeMillis() - createdAt >= threshold.toMillis();
-        }
-
-        boolean registerRetry(int maxRetries) {
-            retries++;
-            return retries <= maxRetries;
-        }
-
-        boolean isBlockedSlot(String slotId) {
-            String normalized = normalizeSlotId(slotId);
-            if (normalized == null) {
-                return false;
-            }
-            if (rejoin && normalized.equalsIgnoreCase(preferredSlotId)) {
-                return false;
-            }
-            return blockedSlotIds.contains(normalized);
-        }
-
-        Set<String> blockedSlots() {
-            return blockedSlotIds;
-        }
-
-        String currentSlotId() {
-            return currentSlotId;
-        }
-
-        String variantId() {
-            return variantId;
-        }
-
-        boolean isRejoin() {
-            return rejoin;
-        }
-
-        String preferredSlotId() {
-            return preferredSlotId;
-        }
-    }
-
-    private record BlockedSlotContext(String currentSlotId, Set<String> blockedSlotIds) {
-            private BlockedSlotContext(String currentSlotId, Set<String> blockedSlotIds) {
-                this.currentSlotId = currentSlotId;
-                if (blockedSlotIds != null && !blockedSlotIds.isEmpty()) {
-                    this.blockedSlotIds = Collections.unmodifiableSet(new LinkedHashSet<>(blockedSlotIds));
-                } else {
-                    this.blockedSlotIds = Collections.emptySet();
-                }
-            }
-        }
-
-    private record RecentSlot(String slotId, long recordedAt) {
-    }
-
-    private record InFlightRoute(PlayerRequestContext request, String slotId, ScheduledFuture<?> timeoutFuture) {
-    }
-
-    private LogicalSlotRecord findSlotOnServer(RegisteredServerData server,
-                                               String familyId,
-                                               String variantId,
-                                               int partySize) {
-        if (server == null) {
-            return null;
-        }
-        List<SlotCandidate> candidates = new ArrayList<>();
-        int order = 0;
-
-        for (LogicalSlotRecord slot : server.getSlots()) {
-            if (SlotLifecycleStatus.AVAILABLE != slot.getStatus()) {
-                continue;
-            }
-            String slotFamily = slot.getMetadata().get("family");
-            if (familyId != null && (!familyId.equalsIgnoreCase(slotFamily))) {
-                continue;
-            }
-            if (!variantMatches(slot, variantId)) {
-                continue;
-            }
-            if (!canSlotFitParty(slot, partySize)) {
-                continue;
-            }
-
-            SlotCandidate candidate = createSlotCandidate(slot, order++);
-            if (candidate != null && candidate.remainingCapacity() >= partySize) {
-                candidates.add(candidate);
-            }
-        }
-
-        if (candidates.isEmpty()) {
-            return null;
-        }
-
-        candidates.sort(SLOT_CANDIDATE_COMPARATOR);
-        return candidates.get(0).slot();
-    }
-
     private SlotCandidate createSlotCandidate(LogicalSlotRecord slot, int order) {
         if (slot == null) {
             return null;
         }
         String slotId = slot.getSlotId();
-        int pending = pendingOccupancy.getOrDefault(slotId, 0);
-        int occupancy = slot.getOnlinePlayers() + pending;
-        int remaining = slotCapacityRemaining(slot);
+        long pending = routingStore.getOccupancy(slotId);
+        int occupancy = slot.getOnlinePlayers() + (int) pending;
+        int remaining = SlotSelectionRules.remainingCapacity(slot, routingStore);
         int max = slot.getMaxPlayers();
         double ratio;
         if (max > 0) {
