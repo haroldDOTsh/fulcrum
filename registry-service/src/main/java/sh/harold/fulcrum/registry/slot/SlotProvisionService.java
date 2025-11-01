@@ -7,6 +7,7 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.SlotProvisionCommand;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
+import sh.harold.fulcrum.registry.slot.store.RedisSlotStore;
 
 import java.util.Comparator;
 import java.util.List;
@@ -22,10 +23,12 @@ public class SlotProvisionService {
 
     private final ServerRegistry serverRegistry;
     private final MessageBus messageBus;
+    private final RedisSlotStore slotStore;
 
-    public SlotProvisionService(ServerRegistry serverRegistry, MessageBus messageBus) {
+    public SlotProvisionService(ServerRegistry serverRegistry, MessageBus messageBus, RedisSlotStore slotStore) {
         this.serverRegistry = serverRegistry;
         this.messageBus = messageBus;
+        this.slotStore = slotStore;
     }
 
     /**
@@ -43,7 +46,19 @@ public class SlotProvisionService {
         }
 
         for (RegisteredServerData candidate : candidates) {
+            int remainingCapacity = slotStore != null
+                    ? slotStore.reserveFamilyCapacity(candidate.getServerId(), familyId)
+                    : -1;
+
+            if (slotStore != null && remainingCapacity < 0) {
+                LOGGER.debug("Redis reservation failed for {} on {}", familyId, candidate.getServerId());
+                continue;
+            }
+
             if (!candidate.reserveFamilySlot(familyId)) {
+                if (slotStore != null && remainingCapacity >= 0) {
+                    slotStore.releaseFamilyCapacity(candidate.getServerId(), familyId);
+                }
                 LOGGER.debug("Failed to reserve budget on server {} for family {} (race)",
                         candidate.getServerId(), familyId);
                 continue;
@@ -60,12 +75,15 @@ public class SlotProvisionService {
 
             try {
                 messageBus.broadcast(ChannelConstants.getSlotProvisionChannel(candidate.getServerId()), command);
-                int remaining = candidate.getAvailableFamilySlots(familyId);
+                int remaining = slotStore != null ? remainingCapacity : candidate.getAvailableFamilySlots(familyId);
                 LOGGER.info("Provisioning {} on {} ({} slots remaining)",
                         familyId, candidate.getServerId(), remaining);
                 return Optional.of(new ProvisionResult(candidate.getServerId(), familyId, remaining, command));
             } catch (Exception ex) {
                 candidate.releaseFamilySlot(familyId);
+                if (slotStore != null && remainingCapacity >= 0) {
+                    slotStore.releaseFamilyCapacity(candidate.getServerId(), familyId);
+                }
                 LOGGER.error("Failed to dispatch SlotProvisionCommand to {} for family {}", candidate.getServerId(), familyId, ex);
             }
         }

@@ -23,6 +23,8 @@ import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService.ProvisionResult;
+import sh.harold.fulcrum.registry.slot.store.RedisSlotStore;
+import sh.harold.fulcrum.registry.route.store.RedisRoutingStore;
 
 import java.time.Duration;
 import java.util.*;
@@ -58,18 +60,11 @@ public class PlayerRoutingService {
     private final ProxyRegistry proxyRegistry;
     private final ObjectMapper objectMapper;
     private final ScheduledExecutorService scheduler;
+    private final RedisSlotStore slotStore;
+    private final RedisRoutingStore routingStore;
 
-    private final ConcurrentMap<String, Deque<PlayerRequestContext>> pendingQueues = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, InFlightRoute> inFlightRoutes = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Integer> pendingOccupancy = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Boolean> provisioningFamilies = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, CompletableFuture<PlayerReservationResponse>> pendingReservations = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, PartyReservationAllocation> activePartyReservations = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Deque<PartyReservationSnapshot>> pendingPartyReservations = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Queue<PlayerRequestContext>> pendingPartyPlayerRequests = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, MatchRosterSnapshot> matchRosters = new ConcurrentHashMap<>();
-    private final ConcurrentMap<UUID, String> playerActiveSlots = new ConcurrentHashMap<>();
-    private final ConcurrentMap<UUID, Deque<RecentSlot>> playerRecentSlots = new ConcurrentHashMap<>();
 
     private final MessageHandler playerRequestHandler = this::handlePlayerRequest;
     private final MessageHandler slotStatusHandler = this::handleSlotStatus;
@@ -84,7 +79,9 @@ public class PlayerRoutingService {
     public PlayerRoutingService(MessageBus messageBus,
                                 SlotProvisionService slotProvisionService,
                                 ServerRegistry serverRegistry,
-                                ProxyRegistry proxyRegistry) {
+                                ProxyRegistry proxyRegistry,
+                                RedisSlotStore slotStore,
+                                RedisRoutingStore routingStore) {
         this.messageBus = Objects.requireNonNull(messageBus, "messageBus");
         this.slotProvisionService = Objects.requireNonNull(slotProvisionService, "slotProvisionService");
         this.serverRegistry = Objects.requireNonNull(serverRegistry, "serverRegistry");
@@ -95,6 +92,8 @@ public class PlayerRoutingService {
             thread.setDaemon(true);
             return thread;
         });
+        this.slotStore = slotStore;
+        this.routingStore = Objects.requireNonNull(routingStore, "routingStore");
     }
 
     public void initialize() {

@@ -36,6 +36,7 @@ import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.session.DeadServerSessionSweeper;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
+import sh.harold.fulcrum.registry.slot.store.RedisSlotStore;
 
 import java.io.InputStream;
 import java.util.Map;
@@ -228,8 +229,11 @@ public class RegistryService {
             }
 
             messageBus = MessageBusFactory.create(messageBusAdapter);
-            slotProvisionService = new SlotProvisionService(serverRegistry, messageBus);
-            playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry);
+            RedisSlotStore redisSlotStore = new RedisSlotStore(redisManager);
+            serverRegistry.setSlotStore(redisSlotStore);
+
+            slotProvisionService = new SlotProvisionService(serverRegistry, messageBus, redisSlotStore);
+            playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry, redisSlotStore);
             playerRoutingService.initialize();
 
             sessionSweeper = createSessionSweeper();

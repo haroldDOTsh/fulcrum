@@ -8,6 +8,7 @@ import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.redis.RedisManager;
 import sh.harold.fulcrum.registry.server.store.RedisServerRegistryStore;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
+import sh.harold.fulcrum.registry.slot.store.RedisSlotStore;
 
 import java.util.Collection;
 import java.util.List;
@@ -24,6 +25,7 @@ public class ServerRegistry {
 
     private final IdAllocator idAllocator;
     private RedisServerRegistryStore store;
+    private RedisSlotStore slotStore;
     private final Map<String, RegisteredServerData> servers = new ConcurrentHashMap<>();
     private final Map<String, String> tempIdToPermId = new ConcurrentHashMap<>();
 
@@ -44,6 +46,17 @@ public class ServerRegistry {
             idAllocator.claimServerId(server.getServerId());
         }
         LOGGER.info("Restored {} server registrations from Redis", restored.size());
+    }
+
+    public void setSlotStore(RedisSlotStore slotStore) {
+        this.slotStore = slotStore;
+        if (slotStore != null) {
+            servers.values().forEach(slotStore::syncServer);
+            servers.values().forEach(server -> server.getSlots().forEach(slot -> {
+                String familyId = slot.getMetadata().get("family");
+                slotStore.storeSlot(server, slot, familyId);
+            }));
+        }
     }
 
     /**
@@ -195,6 +208,13 @@ public class ServerRegistry {
             if (store != null) {
                 store.delete(serverId, server.getTempId());
             }
+            if (slotStore != null) {
+                server.getSlots().forEach(slot -> {
+                    String familyId = slot.getMetadata().get("family");
+                    slotStore.removeSlot(slot.getSlotId(), familyId);
+                });
+                slotStore.removeServer(serverId);
+            }
 
             // Return ID to pool for reuse
             idAllocator.releaseServerId(serverId);
@@ -241,6 +261,13 @@ public class ServerRegistry {
     private void persist(RegisteredServerData server) {
         if (store != null && server != null) {
             store.save(server);
+        }
+        if (slotStore != null && server != null) {
+            slotStore.syncServer(server);
+            server.getSlots().forEach(slot -> {
+                String familyId = slot.getMetadata().get("family");
+                slotStore.storeSlot(server, slot, familyId);
+            });
         }
     }
 
@@ -314,7 +341,11 @@ public class ServerRegistry {
         LogicalSlotRecord record = server.applySlotUpdate(update);
         if (record != null) {
             String removedFlag = record.getMetadata().get("removed");
+            String familyId = record.getMetadata().get("family");
             if ("true".equalsIgnoreCase(removedFlag)) {
+                if (slotStore != null) {
+                    slotStore.removeSlot(record.getSlotId(), familyId);
+                }
                 server.removeSlot(record.getSlotSuffix());
                 LOGGER.debug("Removed slot {} for server {} (removal flag)", record.getSlotId(), serverId);
                 persist(server);
@@ -365,6 +396,15 @@ public class ServerRegistry {
      * Clear all servers (for shutdown)
      */
     public void clear() {
+        if (slotStore != null) {
+            for (RegisteredServerData server : servers.values()) {
+                server.getSlots().forEach(slot -> {
+                    String familyId = slot.getMetadata().get("family");
+                    slotStore.removeSlot(slot.getSlotId(), familyId);
+                });
+                slotStore.removeServer(server.getServerId());
+            }
+        }
         servers.clear();
         tempIdToPermId.clear();
         LOGGER.info("Cleared all server registrations");
