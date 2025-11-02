@@ -12,13 +12,10 @@ import sh.harold.fulcrum.api.network.NetworkProfileView;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 
 public final class NetworkConfigCache implements Closeable {
     private static final String ACTIVE_KEY = "network:config:active";
-    private static final String PROFILE_KEY_PREFIX = "network:config:";
 
     private final Logger logger;
     private final RedisClient redisClient;
@@ -60,14 +57,7 @@ public final class NetworkConfigCache implements Closeable {
         try {
             RedisCommands<String, String> commands = connection.sync();
             String profileJson = mapper.writeValueAsString(profile);
-            commands.set(profileKey(profile.profileId()), profileJson);
-
-            Map<String, Object> activePayload = new LinkedHashMap<>();
-            activePayload.put("profileId", profile.profileId());
-            activePayload.put("tag", profile.getString("tag").orElse(profile.profileId()));
-            activePayload.put("updatedAt", profile.updatedAt());
-            String activeJson = mapper.writeValueAsString(activePayload);
-            commands.set(ACTIVE_KEY, activeJson);
+            commands.set(ACTIVE_KEY, profileJson);
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to write network config to Redis", ex);
         }
@@ -94,9 +84,5 @@ public final class NetworkConfigCache implements Closeable {
             logger.error("Failed to ping Redis for network config cache", ex);
             return false;
         }
-    }
-
-    private String profileKey(String profileId) {
-        return PROFILE_KEY_PREFIX + profileId;
     }
 }

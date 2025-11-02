@@ -25,7 +25,6 @@ import java.util.logging.Logger;
 
 final class RedisNetworkConfigService implements NetworkConfigService {
     private static final String ACTIVE_KEY = "network:config:active";
-    private static final String PROFILE_KEY_PREFIX = "network:config:";
     private static final String REGISTRY_SERVER_ID = "registry-service";
 
     private final JavaPlugin plugin;
@@ -95,16 +94,22 @@ final class RedisNetworkConfigService implements NetworkConfigService {
                 return Optional.empty();
             }
             JsonNode node = mapper.readTree(activeJson);
+            if (node.has("motd") || node.has("scoreboard") || node.has("ranks")) {
+                NetworkProfileView profile = mapper.treeToValue(node, NetworkProfileView.class);
+                return Optional.of(profile);
+            }
+
             String profileId = node.path("profileId").asText(null);
             if (profileId == null || profileId.isBlank()) {
                 return Optional.empty();
             }
-            String payloadJson = redisOperations.get(PROFILE_KEY_PREFIX + profileId);
-            if (payloadJson == null || payloadJson.isBlank()) {
+
+            String legacyPayload = redisOperations.get("network:config:" + profileId);
+            if (legacyPayload == null || legacyPayload.isBlank()) {
                 return Optional.empty();
             }
-            NetworkProfileView profile = mapper.readValue(payloadJson, NetworkProfileView.class);
-            return Optional.of(profile);
+            NetworkProfileView legacyProfile = mapper.readValue(legacyPayload, NetworkProfileView.class);
+            return Optional.of(legacyProfile);
         } catch (Exception ex) {
             logger.log(Level.WARNING, "Failed to read network profile from Redis", ex);
             return Optional.empty();

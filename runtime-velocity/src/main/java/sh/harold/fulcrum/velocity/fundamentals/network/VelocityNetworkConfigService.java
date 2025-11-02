@@ -24,7 +24,6 @@ import java.util.concurrent.TimeUnit;
 
 final class VelocityNetworkConfigService implements NetworkConfigService {
     private static final String ACTIVE_KEY = "network:config:active";
-    private static final String PROFILE_KEY_PREFIX = "network:config:";
     private static final String REGISTRY_SERVER_ID = "registry-service";
 
     private final FulcrumVelocityPlugin plugin;
@@ -95,17 +94,22 @@ final class VelocityNetworkConfigService implements NetworkConfigService {
             }
 
             JsonNode node = mapper.readTree(activeJson);
+            if (node.has("motd") || node.has("scoreboard") || node.has("ranks")) {
+                NetworkProfileView profile = mapper.treeToValue(node, NetworkProfileView.class);
+                return Optional.of(profile);
+            }
+
             String profileId = node.path("profileId").asText(null);
             if (profileId == null || profileId.isBlank()) {
                 return Optional.empty();
             }
 
-            String payloadJson = redisClient.get(PROFILE_KEY_PREFIX + profileId);
-            if (payloadJson == null || payloadJson.isBlank()) {
+            String legacyPayload = redisClient.get("network:config:" + profileId);
+            if (legacyPayload == null || legacyPayload.isBlank()) {
                 return Optional.empty();
             }
-            NetworkProfileView profile = mapper.readValue(payloadJson, NetworkProfileView.class);
-            return Optional.of(profile);
+            NetworkProfileView legacyProfile = mapper.readValue(legacyPayload, NetworkProfileView.class);
+            return Optional.of(legacyProfile);
         } catch (Exception ex) {
             logger.warn("Failed to read network configuration from Redis", ex);
             return Optional.empty();
