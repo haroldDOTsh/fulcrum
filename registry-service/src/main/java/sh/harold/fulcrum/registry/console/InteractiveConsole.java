@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -13,10 +14,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class InteractiveConsole implements Runnable {
     private static final Logger LOGGER = LoggerFactory.getLogger(InteractiveConsole.class);
+    private static final String PROMPT = "registry> ";
 
     private final CommandRegistry commandRegistry;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Thread consoleThread;
+    private PromptAwarePrintStream promptStream;
+    private PrintStream originalOut;
+    private boolean ownsPromptStream;
 
     public InteractiveConsole(CommandRegistry commandRegistry) {
         this.commandRegistry = commandRegistry;
@@ -49,6 +54,7 @@ public class InteractiveConsole implements Runnable {
     @Override
     public void run() {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        installPromptStream();
 
         System.out.println("Registry Service Interactive Console");
         System.out.println("Type 'help' for available commands");
@@ -56,14 +62,16 @@ public class InteractiveConsole implements Runnable {
 
         while (running.get()) {
             try {
-                System.out.print("registry> ");
-                System.out.flush();
+                promptStream.activatePrompt(PROMPT);
+                promptStream.printPrompt();
 
                 String input = reader.readLine();
                 if (input == null) {
                     // EOF reached (Ctrl+D on Unix, Ctrl+Z on Windows)
                     break;
                 }
+
+                promptStream.deactivatePrompt();
 
                 input = input.trim();
                 if (input.isEmpty()) {
@@ -81,11 +89,45 @@ public class InteractiveConsole implements Runnable {
             } catch (Exception e) {
                 LOGGER.error("Unexpected error in console", e);
                 System.out.println("Error: " + e.getMessage());
+            } finally {
+                if (promptStream != null) {
+                    promptStream.deactivatePrompt();
+                }
             }
         }
+
+        restoreOriginalStream();
     }
 
     public boolean isRunning() {
         return running.get();
+    }
+
+    private void installPromptStream() {
+        PrintStream systemOut = System.out;
+
+        if (systemOut instanceof PromptAwarePrintStream existing) {
+            promptStream = existing;
+            originalOut = existing.getDelegate();
+            ownsPromptStream = false;
+            return;
+        }
+
+        promptStream = new PromptAwarePrintStream(systemOut);
+        originalOut = systemOut;
+        System.setOut(promptStream);
+        ownsPromptStream = true;
+    }
+
+    private void restoreOriginalStream() {
+        if (promptStream == null) {
+            return;
+        }
+
+        promptStream.deactivatePrompt();
+
+        if (ownsPromptStream && System.out == promptStream && originalOut != null) {
+            System.setOut(originalOut);
+        }
     }
 }

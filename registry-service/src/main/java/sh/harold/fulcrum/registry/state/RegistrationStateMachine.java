@@ -164,8 +164,10 @@ public class RegistrationStateMachine {
 
             addToHistory(event);
 
-            LOGGER.info("State transition for proxy {}: {} -> {} (reason: {})",
-                    proxyIdentifier.getFormattedId(), oldState, newState, reason);
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("State transition for proxy {}: {} -> {} (reason: {})",
+                        proxyIdentifier.getFormattedId(), oldState, newState, reason);
+            }
 
             handleTimeoutForState(newState);
 

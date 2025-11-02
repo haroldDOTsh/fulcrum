@@ -582,7 +582,6 @@ public class RegistrationHandler {
                                 sendProxyRegistrationResponse(tempId, null, false, "Registration failed: " + throwable.getMessage());
                             }
                         } else {
-                            LOGGER.info("Registration completed successfully - ProxyID: {}", proxyId);
                             sendProxyRegistrationResponse(tempId, proxyId, true, "Proxy registered successfully");
                         }
 
@@ -636,12 +635,12 @@ public class RegistrationHandler {
             responsePayload.put("message", message);
             responsePayload.put("timestamp", System.currentTimeMillis());
 
-            // CRITICAL: Log the response we're sending
-            LOGGER.info("[PROXY REGISTRATION RESPONSE] Sending response:");
-            LOGGER.info("  - Temp ID: {}", tempId);
-            LOGGER.info("  - Assigned Proxy ID: {}", proxyId);
-            LOGGER.info("  - Success: {}", success);
-            LOGGER.info("  - Channel: {}", ChannelConstants.PROXY_REGISTRATION_RESPONSE);
+            LOGGER.info("[proxy-registration] response tempId={} assignedId={} success={} message=\"{}\" channel={} legacyChannel={}",
+                    tempId, proxyId, success, message, ChannelConstants.PROXY_REGISTRATION_RESPONSE,
+                    "fulcrum.registry.registration.response");
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("[proxy-registration] payload={}", responsePayload);
+            }
 
             // Send to proxy registration response channel (standardized only)
             messageBus.broadcast(ChannelConstants.PROXY_REGISTRATION_RESPONSE, responsePayload);
@@ -679,20 +678,21 @@ public class RegistrationHandler {
 
             // CRITICAL: Use broadcast instead of send because the backend is listening on a shared channel
             // The backend server subscribes to server registration response channel to receive responses
-            LOGGER.info("[REGISTRY-DEBUG] Broadcasting server registration response:");
-            LOGGER.info("[REGISTRY-DEBUG]   - tempId: {}", request.getTempId());
-            LOGGER.info("[REGISTRY-DEBUG]   - assignedServerId: {}", permanentId);
-            LOGGER.info("[REGISTRY-DEBUG]   - channel: {}", ChannelConstants.SERVER_REGISTRATION_RESPONSE);
-            LOGGER.info("[REGISTRY-DEBUG]   - response object: {}", response);
+            String responseChannel = ChannelConstants.getServerRegistrationResponseChannel(request.getTempId());
+
+            LOGGER.info("[server-registration] response tempId={} assignedId={} type={} addr={}:{} channel={} specificChannel={}",
+                    request.getTempId(), permanentId, request.getServerType(),
+                    request.getAddress(), request.getPort(),
+                    ChannelConstants.SERVER_REGISTRATION_RESPONSE,
+                    responseChannel);
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("[server-registration] payload={}", response);
+            }
 
             // Broadcast to standardized channel
             messageBus.broadcast(ChannelConstants.SERVER_REGISTRATION_RESPONSE, response);
 
             // Also broadcast to server-specific channel for redundancy (standardized only)
-            String responseChannel = ChannelConstants.getServerRegistrationResponseChannel(request.getTempId());
-
-            LOGGER.info("[REGISTRY-DEBUG] Also broadcasting to specific channel: {}", responseChannel);
-
             messageBus.broadcast(responseChannel, response);
 
             if (debugMode) {

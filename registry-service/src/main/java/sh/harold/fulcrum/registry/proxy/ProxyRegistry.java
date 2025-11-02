@@ -173,9 +173,8 @@ public class ProxyRegistry {
             }
         });
 
-        LOGGER.info("Registered proxy: {} (address: {}:{}, state: {})",
-                proxyId.getFormattedId(), address, port,
-                proxyInfo.getRegistrationState());
+        LOGGER.info("[proxy] registered id={} addr={}:{} state={}",
+                proxyId.getFormattedId(), address, port, proxyInfo.getRegistrationState());
 
         return proxyId;
     }
@@ -233,7 +232,7 @@ public class ProxyRegistry {
                 proxies.put(existingId, unavailableProxy);
                 persistActiveProxy(unavailableProxy);
 
-                LOGGER.info("Reactivated previously unavailable proxy: {} -> {} (original address: {}:{})",
+                LOGGER.info("[proxy] reactivated temp={} id={} prevAddr={}:{}",
                         tempId, existingId.getFormattedId(), unavailableProxy.getAddress(), unavailableProxy.getPort());
                 if (!unavailableProxy.getAddress().equals(address) || unavailableProxy.getPort() != port) {
                     LOGGER.warn("Proxy {} reconnected with different address/port ({}:{} -> {}:{})",
@@ -279,7 +278,7 @@ public class ProxyRegistry {
         registerProxy(proxyId, address, port);
 
         // This is essential log - always show
-        LOGGER.info("Registered proxy: {} -> {} (address: {}:{})",
+        LOGGER.info("[proxy] registered temp={} id={} addr={}:{}",
                 tempId, proxyId.getFormattedId(), address, port);
 
         return proxyId.getFormattedId();
