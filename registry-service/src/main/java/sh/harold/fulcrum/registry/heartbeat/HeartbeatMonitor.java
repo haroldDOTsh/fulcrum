@@ -34,6 +34,7 @@ public class HeartbeatMonitor {
     private static final long CHECK_INTERVAL_MS = 1000;       // 1 second
     private static final long GRACE_PERIOD_MS = 10000;        // 10 second grace period for new servers
     private static final long DEAD_SERVER_BLACKLIST_MS = 60000; // 60 seconds blacklist for dead servers
+    private static final long INVALID_PROXY_HEARTBEAT_LOG_INTERVAL_MS = 5000; // Rate-limit repeated warnings
 
     private final ServerRegistry serverRegistry;
     private final ProxyRegistry proxyRegistry;
@@ -43,6 +44,7 @@ public class HeartbeatMonitor {
     private final Map<String, Long> deadServers = new ConcurrentHashMap<>(); // Track dead servers with removal timestamp
     private final Map<String, RegisteredServerData> recentlyDeadServers = new ConcurrentHashMap<>(); // Track recently dead servers for display
     private final Map<String, RegisteredProxyData> recentlyDeadProxies = new ConcurrentHashMap<>(); // Track recently dead proxies for display
+    private final Map<String, Long> lastInvalidProxyHeartbeatLog = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private RedisHeartbeatStore heartbeatStore;
 
@@ -234,26 +236,8 @@ public class HeartbeatMonitor {
         }
 
         if (proxy != null) {
-            RegistrationState currentState = proxy.getRegistrationState();
-
-            if (currentState != RegistrationState.REGISTERED) {
-                LOGGER.warn("Received heartbeat from proxy {} in non-REGISTERED state: {}",
-                        effectiveId, currentState);
-
-                if (currentState == RegistrationState.RE_REGISTERING) {
-                    if (proxy.transitionTo(RegistrationState.REGISTERED,
-                            "Heartbeat received - completing re-registration")) {
-                        LOGGER.info("Proxy {} re-registration completed (state: {} -> REGISTERED)",
-                                effectiveId, currentState);
-                    }
-                } else if (currentState == RegistrationState.DISCONNECTED) {
-                    if (proxy.transitionTo(RegistrationState.RE_REGISTERING,
-                            "Heartbeat received from disconnected proxy")) {
-                        proxy.transitionTo(RegistrationState.REGISTERED,
-                                "Automatic re-registration completed");
-                        LOGGER.info("Proxy {} automatically re-registered after disconnect", effectiveId);
-                    }
-                }
+            if (!shouldProcessProxyHeartbeat(proxy, effectiveId, proxyId)) {
+                return;
             }
 
             long now = System.currentTimeMillis();
@@ -269,19 +253,98 @@ public class HeartbeatMonitor {
                 heartbeatStore.clearDeadProxy(effectiveId);
             }
 
+            lastInvalidProxyHeartbeatLog.remove(effectiveId);
+            lastInvalidProxyHeartbeatLog.remove(proxyId);
+
             RegisteredProxyData.Status oldStatus = proxy.getStatus();
             proxyRegistry.updateHeartbeat(effectiveId);
 
+            RegistrationState updatedState = proxy.getRegistrationState();
             if (oldStatus != RegisteredProxyData.Status.AVAILABLE) {
                 LOGGER.info("Proxy {} status changed from {} to AVAILABLE (state: {})",
-                        effectiveId, oldStatus, currentState);
+                        effectiveId, oldStatus, updatedState);
             }
 
-            LOGGER.debug("Heartbeat from proxy: {} (state: {})", effectiveId, proxy.getRegistrationState());
+            LOGGER.debug("Heartbeat from proxy: {} (state: {})", effectiveId, updatedState);
         } else {
             LOGGER.warn("Received heartbeat from unknown proxy: {} - requesting re-registration", proxyId);
             requestReregistrationForNode(proxyId, "heartbeat-from-unknown-proxy");
         }
+    }
+
+    private boolean shouldProcessProxyHeartbeat(RegisteredProxyData proxy, String effectiveId, String rawProxyId) {
+        RegistrationState currentState = proxy.getRegistrationState();
+
+        if (currentState == RegistrationState.REGISTERED) {
+            return true;
+        }
+
+        switch (currentState) {
+            case REGISTERING -> {
+                if (proxy.transitionTo(RegistrationState.REGISTERED,
+                        "Heartbeat confirmed initial registration")) {
+                    LOGGER.info("Proxy {} registration confirmed via heartbeat", effectiveId);
+                }
+            }
+            case RE_REGISTERING -> {
+                if (proxy.transitionTo(RegistrationState.REGISTERED,
+                        "Heartbeat received - completing re-registration")) {
+                    LOGGER.info("Proxy {} re-registration completed (state: {} -> REGISTERED)",
+                            effectiveId, currentState);
+                }
+            }
+            case DISCONNECTED -> {
+                if (proxy.transitionTo(RegistrationState.RE_REGISTERING,
+                        "Heartbeat received from disconnected proxy")) {
+                    proxy.transitionTo(RegistrationState.REGISTERED,
+                            "Automatic re-registration completed");
+                    LOGGER.info("Proxy {} automatically re-registered after disconnect", effectiveId);
+                }
+            }
+            default -> {
+                handleInvalidProxyHeartbeat(effectiveId, rawProxyId, currentState);
+                return false;
+            }
+        }
+
+        if (proxy.getRegistrationState() != RegistrationState.REGISTERED) {
+            handleInvalidProxyHeartbeat(effectiveId, rawProxyId, proxy.getRegistrationState());
+            return false;
+        }
+
+        return true;
+    }
+
+    private void handleInvalidProxyHeartbeat(String effectiveId, String rawProxyId, RegistrationState state) {
+        String targetId = effectiveId != null ? effectiveId : rawProxyId;
+        if (targetId == null) {
+            return;
+        }
+
+        if (shouldLogInvalidProxyHeartbeat(targetId)) {
+            LOGGER.warn("Received heartbeat from proxy {} in state {} – ignoring until it re-registers",
+                    targetId, state);
+        }
+
+        proxyRegistry.updateProxyStatus(targetId, RegisteredProxyData.Status.UNAVAILABLE);
+
+        String reason = "heartbeat-in-" + state.name().toLowerCase(Locale.ROOT);
+        if (rawProxyId != null) {
+            requestReregistrationForNode(rawProxyId, reason);
+        }
+        if (effectiveId != null && !Objects.equals(effectiveId, rawProxyId)) {
+            requestReregistrationForNode(effectiveId, reason);
+        }
+    }
+
+    private boolean shouldLogInvalidProxyHeartbeat(String proxyId) {
+        long now = System.currentTimeMillis();
+        Long lastLogged = lastInvalidProxyHeartbeatLog.get(proxyId);
+        if (lastLogged == null || now - lastLogged >= INVALID_PROXY_HEARTBEAT_LOG_INTERVAL_MS) {
+            lastInvalidProxyHeartbeatLog.put(proxyId, now);
+            return true;
+        }
+        return false;
     }
 
     /**
