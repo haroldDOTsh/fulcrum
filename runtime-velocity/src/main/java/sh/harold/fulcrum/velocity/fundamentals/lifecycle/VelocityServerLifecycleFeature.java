@@ -87,7 +87,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         if (developmentMode) {
             logger.warn("Development mode is enabled - proxy registration and heartbeats are disabled");
             // In development mode, use a simple temporary ID and skip all network operations
-            this.proxyIdentifier = ProxyIdentifier.fromLegacy("dev-proxy-" + UUID.randomUUID().toString().substring(0, 8));
+            String devId = "dev-proxy-" + UUID.randomUUID().toString().substring(0, 8);
+            this.proxyIdentifier = ProxyIdentifier.fromString(devId);
             this.proxyId = proxyIdentifier.getFormattedId();
             logger.info("Using development proxy ID: {}", proxyId);
             return; // Skip all initialization in development mode
@@ -100,16 +101,16 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         services.getService(VelocityMessageBusFeature.class).ifPresentOrElse(
                 messageBusFeature -> {
                     String tempId = messageBusFeature.getCurrentProxyId();
-                    this.proxyIdentifier = ProxyIdentifier.fromLegacy(tempId);
-                    this.proxyId = tempId;  // Keep legacy format until Registry assigns permanent ID
-                    logger.info("Using temporary proxy ID from MessageBusFeature: {}", proxyId);
+                    this.proxyIdentifier = ProxyIdentifier.fromString(tempId);
+                    this.proxyId = proxyIdentifier.getFormattedId();
+                    logger.info("Using temporary proxy ID from MessageBusFeature: {}", this.proxyId);
                 },
                 () -> {
                     // Generate temporary ID if MessageBusFeature is not available
                     String tempId = "temp-proxy-" + UUID.randomUUID();
-                    this.proxyIdentifier = ProxyIdentifier.fromLegacy(tempId);
-                    this.proxyId = tempId;  // Keep legacy format until Registry assigns permanent ID
-                    logger.warn("MessageBusFeature not available, generated temporary ID: {}", proxyId);
+                    this.proxyIdentifier = ProxyIdentifier.fromString(tempId);
+                    this.proxyId = proxyIdentifier.getFormattedId();
+                    logger.warn("MessageBusFeature not available, generated temporary ID: {}", this.proxyId);
                 }
         );
 
@@ -156,7 +157,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         try {
             // CRITICAL: Log the exact ID being used for registration
             logger.info("[REGISTRATION] Preparing to register with ID: {} (is temp: {})",
-                    proxyId, proxyId.startsWith("temp-"));
+                    proxyId, ProxyIdentifier.isTemporary(proxyId));
 
             // Use the SAME ServerRegistrationRequest that backend servers use
             ServerRegistrationRequest request = new ServerRegistrationRequest(
@@ -486,39 +487,6 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             }
         });
 
-        // ALSO listen on the backward-compatible channel
-        messageBus.subscribe("fulcrum.registry.registration.response", envelope -> {
-            logger.info("[PROXY RESPONSE RECEIVED] Received proxy registration response on LEGACY channel");
-
-            try {
-                Object payload = envelope.payload();
-                Map<String, Object> response = null;
-
-                if (payload instanceof JsonNode) {
-                    ObjectMapper mapper = new ObjectMapper();
-                    response = mapper.treeToValue((JsonNode) payload, Map.class);
-                } else if (payload instanceof Map) {
-                    response = (Map<String, Object>) payload;
-                } else if (payload instanceof String) {
-                    ObjectMapper mapper = new ObjectMapper();
-                    response = mapper.readValue((String) payload, Map.class);
-                }
-
-                if (response != null) {
-                    // Only process if it has a proxyId (proxy-specific response)
-                    if (response.containsKey("proxyId") && response.get("proxyId") != null) {
-                        logger.info("[PROXY RESPONSE] Processing response from legacy channel: tempId={}, proxyId={}, success={}",
-                                response.get("tempId"), response.get("proxyId"), response.get("success"));
-                        handleProxyRegistrationResponse(response);
-                    }
-                } else {
-                    logger.error("Failed to extract response from payload");
-                }
-            } catch (Exception e) {
-                logger.error("Failed to process proxy registration response from legacy channel", e);
-            }
-        });
-
         // Handle proxy discovery requests - for OTHER servers discovering this proxy
         messageBus.subscribe(ChannelConstants.PROXY_DISCOVERY_REQUEST, envelope -> {
             logger.debug("Proxy discovery request received");
@@ -545,7 +513,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             logger.debug("Discovery request from server: {} (type: {})", request.requesterId(), request.serverType());
 
             // Only respond if we have been registered with Registry Service
-            if (registeredWithRegistry && proxyId != null && !proxyId.startsWith("temp-")) {
+            if (registeredWithRegistry && proxyId != null && !ProxyIdentifier.isTemporary(proxyId)) {
                 // Create response with our proxy info
                 ProxyDiscoveryResponse response = new ProxyDiscoveryResponse(proxyId);
                 ProxyDiscoveryResponse.ProxyInfo proxyInfo = new ProxyDiscoveryResponse.ProxyInfo(
@@ -568,7 +536,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             try {
                 logger.info("[RE-REGISTRATION] Registry Service requested re-registration");
                 logger.info("[RE-REGISTRATION] Current proxy ID: {} (registered: {}, temp: {})",
-                        proxyId, registeredWithRegistry, proxyId.startsWith("temp-"));
+                        proxyId, registeredWithRegistry, ProxyIdentifier.isTemporary(proxyId));
 
                 // DIAGNOSTIC: Log timing information
                 long timeSinceStart = System.currentTimeMillis() - startTime;
@@ -609,7 +577,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                         proxyId, registeredWithRegistry);
 
                 // Check if we're using temp ID - this subscription might be stale
-                if (proxyId.startsWith("temp-")) {
+                if (ProxyIdentifier.isTemporary(proxyId)) {
                     logger.warn("[TARGETED RE-REG] Still using temp ID, ignoring targeted re-registration");
                     return;
                 }
@@ -766,7 +734,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         }
 
         // CRITICAL: Validate we have a permanent ID before starting heartbeat
-        if (proxyId.startsWith("temp-")) {
+        if (ProxyIdentifier.isTemporary(proxyId)) {
             logger.error("[HEARTBEAT] CRITICAL: Attempted to start heartbeat with temporary ID: {}. ABORTING!", proxyId);
             logger.error("[HEARTBEAT] This should never happen - check registration flow!");
             return;  // Don't start heartbeat with temp ID
@@ -782,7 +750,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 logger.trace("Heartbeat executing with current proxy ID: {}", currentProxyId);
 
                 // Safety check - should never happen after registration
-                if (currentProxyId.startsWith("temp-")) {
+                if (ProxyIdentifier.isTemporary(currentProxyId)) {
                     logger.error("Heartbeat attempted with temporary ID: {}. Skipping this heartbeat.", currentProxyId);
                     return;
                 }
@@ -811,7 +779,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
 
                 // Send heartbeat via MessageBus - use standardized channel
                 messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, heartbeat);
-                logger.debug("Sent heartbeat for proxy: {} (permanent: {})", currentProxyId, !currentProxyId.startsWith("temp-"));
+                logger.debug("Sent heartbeat for proxy: {} (permanent: {})", currentProxyId, !ProxyIdentifier.isTemporary(currentProxyId));
 
                 // Log capacity warnings
                 if (config.isAtHardCapacity(currentPlayers)) {
@@ -1060,14 +1028,12 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             // Update our proxy ID with the permanent one from Registry
             String oldId = this.proxyId;
 
-            // Parse the new permanent ID into ProxyIdentifier if it's in the new format
-            if (ProxyIdentifier.isValid(assignedProxyId)) {
-                this.proxyIdentifier = ProxyIdentifier.parse(assignedProxyId);
-                this.proxyId = assignedProxyId;
-            } else {
-                // Handle legacy format from Registry (shouldn't happen with updated Registry)
-                this.proxyIdentifier = ProxyIdentifier.fromLegacy(assignedProxyId);
-                this.proxyId = assignedProxyId;  // Keep original for backward compatibility
+            try {
+                this.proxyIdentifier = ProxyIdentifier.fromString(assignedProxyId);
+                this.proxyId = this.proxyIdentifier.getFormattedId();
+            } catch (IllegalArgumentException ex) {
+                logger.error("Registry returned unsupported proxy ID '{}'", assignedProxyId, ex);
+                return;
             }
             registeredWithRegistry = true;
 
@@ -1105,7 +1071,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             );
 
             // Final safety check before starting heartbeat
-            if (this.proxyId.startsWith("temp-")) {
+            if (ProxyIdentifier.isTemporary(this.proxyId)) {
                 logger.error("[REGISTRATION] CRITICAL: Still have temp ID after registration! Old: {}, Assigned: {}, Current: {}",
                         oldId, assignedProxyId, this.proxyId);
                 // Force update
@@ -1198,11 +1164,10 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         }
 
         // Fallback: Extract index from legacy ID format: fulcrum-proxy-N
-        if (proxyId != null && proxyId.startsWith("fulcrum-proxy-")) {
+        if (ProxyIdentifier.isValid(proxyId)) {
             try {
-                String indexStr = proxyId.substring("fulcrum-proxy-".length());
-                return Integer.parseInt(indexStr);
-            } catch (NumberFormatException e) {
+                return ProxyIdentifier.parse(proxyId).getInstanceId();
+            } catch (RuntimeException e) {
                 // Fallback for overflow or special cases
                 return 0;
             }

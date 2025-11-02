@@ -41,16 +41,6 @@ public class RegisteredProxyData {
         this.stateMachine = new RegistrationStateMachine(proxyId);
     }
 
-    /**
-     * Legacy constructor for backward compatibility during migration.
-     *
-     * @deprecated Use constructor with ProxyIdentifier instead
-     */
-    @Deprecated
-    public RegisteredProxyData(String legacyProxyId, String address, int port) {
-        this(ProxyIdentifier.fromLegacy(legacyProxyId), address, port);
-    }
-
     public ProxyIdentifier getProxyId() {
         return proxyId;
     }

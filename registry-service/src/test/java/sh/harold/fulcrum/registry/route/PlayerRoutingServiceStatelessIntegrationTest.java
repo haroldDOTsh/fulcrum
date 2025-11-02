@@ -9,6 +9,7 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.*;
+import sh.harold.fulcrum.registry.proxy.ProxyIdentifier;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.redis.RedisIntegrationTestSupport;
@@ -58,7 +59,8 @@ class PlayerRoutingServiceStatelessIntegrationTest extends RedisIntegrationTestS
                             .orElse(null));
 
             TestMessageBus firstBus = new TestMessageBus();
-            when(proxyRegistry.getProxy("proxy-1")).thenReturn(new RegisteredProxyData("proxy-1", "127.0.0.1", 25565));
+            RegisteredProxyData proxyData = new RegisteredProxyData(ProxyIdentifier.parse("fulcrum-proxy-1"), "127.0.0.1", 25565);
+            when(proxyRegistry.getProxy("fulcrum-proxy-1")).thenReturn(proxyData);
 
             PlayerRoutingService firstInstance = new PlayerRoutingService(firstBus, slotProvisionService, serverRegistry, proxyRegistry, slotStore, routingStore);
             firstInstance.initialize();
@@ -67,7 +69,7 @@ class PlayerRoutingServiceStatelessIntegrationTest extends RedisIntegrationTestS
             request.setRequestId(UUID.randomUUID());
             request.setPlayerId(UUID.randomUUID());
             request.setPlayerName("QueueMe");
-            request.setProxyId("proxy-1");
+            request.setProxyId("fulcrum-proxy-1");
             request.setFamilyId("mini");
             request.setMetadata(Map.of());
 
@@ -121,7 +123,7 @@ class PlayerRoutingServiceStatelessIntegrationTest extends RedisIntegrationTestS
     private boolean waitForRoute(TestMessageBus bus, UUID playerId) {
         for (int attempt = 0; attempt < 20; attempt++) {
             boolean routed = bus.broadcasts().stream()
-                    .anyMatch(b -> b.type().equals(ChannelConstants.getPlayerRouteChannel("proxy-1"))
+                    .anyMatch(b -> b.type().equals(ChannelConstants.getPlayerRouteChannel("fulcrum-proxy-1"))
                             && b.payload() instanceof PlayerRouteCommand command
                             && command.getPlayerId().equals(playerId));
             if (routed) {

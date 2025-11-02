@@ -34,13 +34,7 @@ public class ProxyConnectionHandler {
 
     public ProxyConnectionHandler(ProxyServer proxy, String proxyIdString, Logger logger, VelocityServerLifecycleFeature lifecycleFeature) {
         this.proxy = proxy;
-        // Parse the initial proxy ID string
-        if (ProxyIdentifier.isValid(proxyIdString)) {
-            this.proxyId = ProxyIdentifier.parse(proxyIdString);
-        } else {
-            // Handle legacy format
-            this.proxyId = ProxyIdentifier.fromLegacy(proxyIdString);
-        }
+        this.proxyId = ProxyIdentifier.fromString(proxyIdString);
         this.logger = logger;
         this.lifecycleFeature = lifecycleFeature;
     }
@@ -54,21 +48,14 @@ public class ProxyConnectionHandler {
         ProxyIdentifier oldId = this.proxyId;
 
         // Parse the new proxy ID
-        ProxyIdentifier newProxyId;
-        if (ProxyIdentifier.isValid(newProxyIdString)) {
-            newProxyId = ProxyIdentifier.parse(newProxyIdString);
-        } else {
-            // Handle legacy format
-            newProxyId = ProxyIdentifier.fromLegacy(newProxyIdString);
-        }
+        ProxyIdentifier newProxyId = ProxyIdentifier.fromString(newProxyIdString);
 
         this.proxyId = newProxyId;
         logger.info("ProxyConnectionHandler updated proxyId from {} to {} (is permanent: {})",
-                oldId.getFormattedId(), newProxyId.getFormattedId(),
-                !newProxyIdString.startsWith("temp-"));
+                oldId.getFormattedId(), newProxyId.getFormattedId(), newProxyId.isPermanent());
 
         // Warn if updating to a temp ID from a permanent one
-        if (newProxyIdString.startsWith("temp-") && !oldId.getFormattedId().startsWith("temp-")) {
+        if (newProxyId.isTemporary() && !oldId.isTemporary()) {
             logger.warn("WARNING: ProxyConnectionHandler reverting from permanent ID to temp ID!");
         }
     }
@@ -136,7 +123,7 @@ public class ProxyConnectionHandler {
                 // Log with current proxy ID
                 String currentProxyId = this.proxyId.getFormattedId();
                 logger.error("No servers available for player {} ({}) [Timestamp: {}, Proxy: {} (is permanent: {})]",
-                        playerName, playerUuid, timestamp, currentProxyId, !currentProxyId.startsWith("temp-"));
+                        playerName, playerUuid, timestamp, currentProxyId, this.proxyId.isPermanent());
 
                 // Build the disconnection message
                 Component mainMessage = Component.text()

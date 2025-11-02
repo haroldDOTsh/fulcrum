@@ -632,7 +632,7 @@ public class HeartbeatMonitor {
 
     private boolean looksLikeProxy(String serverId) {
         String lower = serverId.toLowerCase(Locale.ROOT);
-        return lower.startsWith("proxy-") || lower.startsWith("temp-proxy-") || lower.startsWith("fulcrum-proxy-");
+        return lower.startsWith("temp-proxy-") || lower.startsWith("fulcrum-proxy-");
     }
 
     private void requestReregistrationForNode(String nodeId, String reason) {

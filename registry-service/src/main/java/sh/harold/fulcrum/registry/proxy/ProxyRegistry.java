@@ -248,21 +248,16 @@ public class ProxyRegistry {
 
         // Allocate NEW contiguous proxy ID (never reuse unavailable IDs)
         String permanentId = idAllocator.allocateProxyId();
+        if (permanentId == null) {
+            throw new IllegalStateException("Failed to allocate proxy ID for tempId " + tempId);
+        }
 
         // Create ProxyIdentifier from allocated ID
         ProxyIdentifier proxyId;
-        if (permanentId != null && permanentId.startsWith("fulcrum-proxy-")) {
-            try {
-                String numStr = permanentId.substring("fulcrum-proxy-".length());
-                int instanceId = Integer.parseInt(numStr) % 100;
-                proxyId = ProxyIdentifier.create(instanceId);
-            } catch (NumberFormatException e) {
-                // Fall back to instance 0
-                proxyId = ProxyIdentifier.create(0);
-            }
-        } else {
-            // Generate new identifier
-            proxyId = ProxyIdentifier.create(0);
+        try {
+            proxyId = ProxyIdentifier.parse(permanentId);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException("Allocated proxy ID has invalid format: " + permanentId, ex);
         }
 
         // Check for ID collision (extremely rare but possible)
@@ -389,12 +384,13 @@ public class ProxyRegistry {
         // Try to find by temp ID mapping
         ProxyIdentifier proxyId = tempIdToPermId.get(proxyIdString);
         if (proxyId == null) {
-            // Try parsing
+            if (!ProxyIdentifier.isValid(proxyIdString)) {
+                LOGGER.error("Failed to parse proxy ID for deregistration: {}", proxyIdString);
+                return;
+            }
             try {
-                proxyId = ProxyIdentifier.isValid(proxyIdString)
-                        ? ProxyIdentifier.parse(proxyIdString)
-                        : ProxyIdentifier.fromLegacy(proxyIdString);
-            } catch (Exception e) {
+                proxyId = ProxyIdentifier.parse(proxyIdString);
+            } catch (IllegalArgumentException e) {
                 LOGGER.error("Failed to parse proxy ID for deregistration: {}", proxyIdString, e);
                 return;
             }
@@ -430,11 +426,12 @@ public class ProxyRegistry {
     public boolean wasRecentlyRegistered(String proxyIdString, long withinMillis) {
         ProxyIdentifier proxyId = tempIdToPermId.get(proxyIdString);
         if (proxyId == null) {
+            if (!ProxyIdentifier.isValid(proxyIdString)) {
+                return false;
+            }
             try {
-                proxyId = ProxyIdentifier.isValid(proxyIdString)
-                        ? ProxyIdentifier.parse(proxyIdString)
-                        : ProxyIdentifier.fromLegacy(proxyIdString);
-            } catch (Exception e) {
+                proxyId = ProxyIdentifier.parse(proxyIdString);
+            } catch (IllegalArgumentException e) {
                 return false;
             }
         }
@@ -490,11 +487,13 @@ public class ProxyRegistry {
 
         // If still not found, try parsing
         if (proxyId == null) {
+            if (!ProxyIdentifier.isValid(proxyIdString)) {
+                LOGGER.error("Failed to parse proxy ID for immediate removal: {}", proxyIdString);
+                return false;
+            }
             try {
-                proxyId = ProxyIdentifier.isValid(proxyIdString)
-                        ? ProxyIdentifier.parse(proxyIdString)
-                        : ProxyIdentifier.fromLegacy(proxyIdString);
-            } catch (Exception e) {
+                proxyId = ProxyIdentifier.parse(proxyIdString);
+            } catch (IllegalArgumentException e) {
                 LOGGER.error("Failed to parse proxy ID for immediate removal: {}", proxyIdString, e);
                 return false;
             }
@@ -594,16 +593,17 @@ public class ProxyRegistry {
         }
 
         // Try to parse the string as a ProxyIdentifier
-        try {
-            proxyId = ProxyIdentifier.isValid(proxyIdString)
-                    ? ProxyIdentifier.parse(proxyIdString)
-                    : ProxyIdentifier.fromLegacy(proxyIdString);
-            return proxies.get(proxyId);
-        } catch (Exception e) {
-            // Not a valid proxy identifier format
-            if (debugMode) {
-                LOGGER.debug("Failed to parse proxy ID '{}': {}", proxyIdString, e.getMessage());
+        if (ProxyIdentifier.isValid(proxyIdString)) {
+            try {
+                proxyId = ProxyIdentifier.parse(proxyIdString);
+                return proxies.get(proxyId);
+            } catch (IllegalArgumentException e) {
+                if (debugMode) {
+                    LOGGER.debug("Failed to parse proxy ID '{}': {}", proxyIdString, e.getMessage());
+                }
             }
+        } else if (debugMode) {
+            LOGGER.debug("Ignoring proxy lookup for unrecognised ID format: {}", proxyIdString);
         }
 
         return null;
@@ -811,11 +811,16 @@ public class ProxyRegistry {
             return fromTemp;
         }
 
+        if (!ProxyIdentifier.isValid(proxyIdString)) {
+            if (debugMode) {
+                LOGGER.debug("Cannot resolve proxy identifier '{}': invalid format", proxyIdString);
+            }
+            return null;
+        }
+
         try {
-            return ProxyIdentifier.isValid(proxyIdString)
-                    ? ProxyIdentifier.parse(proxyIdString)
-                    : ProxyIdentifier.fromLegacy(proxyIdString);
-        } catch (Exception e) {
+            return ProxyIdentifier.parse(proxyIdString);
+        } catch (IllegalArgumentException e) {
             if (debugMode) {
                 LOGGER.debug("Failed to resolve proxy identifier '{}': {}", proxyIdString, e.getMessage());
             }

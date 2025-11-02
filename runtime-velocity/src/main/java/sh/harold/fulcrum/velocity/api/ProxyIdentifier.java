@@ -1,154 +1,100 @@
 package sh.harold.fulcrum.velocity.api;
 
-import java.time.Instant;
+import java.util.Locale;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Immutable identifier for proxy servers following the standardized format:
- * proxy-{uuid}-{instance}-{timestamp}
- * <p>
- * This class provides:
- * - Immutable design pattern for thread safety
- * - Validation of proxy ID formats
- * - Parsing and generation of proxy IDs
- * - Backward compatibility with legacy formats
+ * Lightweight representation of a proxy identifier. Proxies now use the contiguous
+ * {@code fulcrum-proxy-N} format allocated by the registry, while temporary bootstrapping
+ * IDs retain the {@code temp-proxy-*} or {@code dev-proxy-*} prefixes.
  */
 public final class ProxyIdentifier {
-    private static final Pattern PROXY_ID_PATTERN = Pattern.compile(
-            "^proxy-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})-(\\d{1,2})-(\\d+)$"
-    );
+    private static final Pattern PERMANENT_PATTERN = Pattern.compile("^fulcrum-proxy-(\\d+)$");
 
-    private static final String PREFIX = "proxy";
-    private static final int MAX_INSTANCE_ID = 99;
-
-    private final UUID uuid;
-    private final int instanceId;
-    private final long timestamp;
     private final String formattedId;
+    private final Integer instanceNumber; // null for temporary/dev identifiers
 
-    /**
-     * Private constructor - use static factory methods
-     */
-    private ProxyIdentifier(UUID uuid, int instanceId, long timestamp) {
-        this.uuid = Objects.requireNonNull(uuid, "UUID cannot be null");
-        this.instanceId = validateInstanceId(instanceId);
-        this.timestamp = validateTimestamp(timestamp);
-        this.formattedId = String.format("%s-%s-%d-%d", PREFIX, uuid, instanceId, timestamp);
+    private ProxyIdentifier(String formattedId, Integer instanceNumber) {
+        this.formattedId = formattedId;
+        this.instanceNumber = instanceNumber;
     }
 
     /**
-     * Creates a new ProxyIdentifier with the current timestamp
-     *
-     * @param instanceId The instance ID (0-99)
-     * @return A new ProxyIdentifier
+     * Create a permanent proxy identifier for the given instance number.
      */
-    public static ProxyIdentifier create(int instanceId) {
-        return new ProxyIdentifier(UUID.randomUUID(), instanceId, Instant.now().toEpochMilli());
+    public static ProxyIdentifier create(int instanceNumber) {
+        validateInstanceNumber(instanceNumber);
+        return new ProxyIdentifier("fulcrum-proxy-" + instanceNumber, instanceNumber);
     }
 
     /**
-     * Creates a new ProxyIdentifier with all parameters
-     *
-     * @param uuid       The UUID
-     * @param instanceId The instance ID (0-99)
-     * @param timestamp  The timestamp in milliseconds
-     * @return A new ProxyIdentifier
-     */
-    public static ProxyIdentifier create(UUID uuid, int instanceId, long timestamp) {
-        return new ProxyIdentifier(uuid, instanceId, timestamp);
-    }
-
-    /**
-     * Parses a proxy ID string
-     *
-     * @param proxyId The proxy ID string to parse
-     * @return The parsed ProxyIdentifier
-     * @throws IllegalArgumentException if the format is invalid
+     * Parse a permanent proxy identifier string.
      */
     public static ProxyIdentifier parse(String proxyId) {
-        Objects.requireNonNull(proxyId, "Proxy ID cannot be null");
-
-        Matcher matcher = PROXY_ID_PATTERN.matcher(proxyId.toLowerCase());
-        if (!matcher.matches()) {
+        if (!isValid(proxyId)) {
             throw new IllegalArgumentException("Invalid proxy ID format: " + proxyId);
         }
 
-        UUID uuid = UUID.fromString(matcher.group(1));
-        int instanceId = Integer.parseInt(matcher.group(2));
-        long timestamp = Long.parseLong(matcher.group(3));
-
-        return new ProxyIdentifier(uuid, instanceId, timestamp);
+        Matcher matcher = PERMANENT_PATTERN.matcher(proxyId.trim());
+        matcher.matches(); // guaranteed because of isValid
+        int numeric = Integer.parseInt(matcher.group(1));
+        return new ProxyIdentifier("fulcrum-proxy-" + numeric, numeric);
     }
 
     /**
-     * Checks if a string is a valid proxy ID
-     *
-     * @param proxyId The string to check
-     * @return true if valid, false otherwise
+     * Create a proxy identifier from any supported string.
+     * Accepts permanent {@code fulcrum-proxy-N}, {@code temp-proxy-*}, and {@code dev-proxy-*}.
+     */
+    public static ProxyIdentifier fromString(String proxyId) {
+        if (proxyId == null || proxyId.isBlank()) {
+            throw new IllegalArgumentException("Proxy ID cannot be null or empty");
+        }
+        String trimmed = proxyId.trim();
+        if (isValid(trimmed)) {
+            return parse(trimmed);
+        }
+        if (isTemporary(trimmed)) {
+            return new ProxyIdentifier(trimmed, null);
+        }
+        throw new IllegalArgumentException("Unsupported proxy ID format: " + trimmed);
+    }
+
+    /**
+     * Determine if the supplied identifier is in the permanent {@code fulcrum-proxy-N} format.
      */
     public static boolean isValid(String proxyId) {
-        if (proxyId == null) {
+        if (proxyId == null || proxyId.isBlank()) {
             return false;
         }
-        return PROXY_ID_PATTERN.matcher(proxyId.toLowerCase()).matches();
+        Matcher matcher = PERMANENT_PATTERN.matcher(proxyId.trim());
+        if (!matcher.matches()) {
+            return false;
+        }
+        try {
+            int numeric = Integer.parseInt(matcher.group(1));
+            return numeric > 0;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 
     /**
-     * Converts a legacy format proxy ID to the new format
-     *
-     * @param legacyId The legacy ID (e.g., "temp-proxy-123", "fulcrum-proxy-5")
-     * @return A new ProxyIdentifier with preserved instance number if possible
+     * Determine if the identifier represents a temporary or development proxy.
      */
-    public static ProxyIdentifier fromLegacy(String legacyId) {
-        Objects.requireNonNull(legacyId, "Legacy ID cannot be null");
-
-        // Extract instance number from legacy formats
-        int instanceId = 0;
-
-        if (legacyId.startsWith("temp-proxy-") || legacyId.startsWith("fulcrum-proxy-")) {
-            String[] parts = legacyId.split("-");
-            if (parts.length >= 3) {
-                try {
-                    instanceId = Integer.parseInt(parts[2]) % (MAX_INSTANCE_ID + 1);
-                } catch (NumberFormatException ignored) {
-                    // Use default 0
-                }
-            }
+    public static boolean isTemporary(String proxyId) {
+        if (proxyId == null || proxyId.isBlank()) {
+            return false;
         }
-
-        return create(instanceId);
+        String lower = proxyId.toLowerCase(Locale.ROOT);
+        return lower.startsWith("temp-proxy-") || lower.startsWith("dev-proxy-");
     }
 
-    private static int validateInstanceId(int instanceId) {
-        if (instanceId < 0 || instanceId > MAX_INSTANCE_ID) {
-            throw new IllegalArgumentException(
-                    "Instance ID must be between 0 and " + MAX_INSTANCE_ID + ", got: " + instanceId
-            );
+    private static void validateInstanceNumber(int instanceNumber) {
+        if (instanceNumber <= 0) {
+            throw new IllegalArgumentException("Proxy instance number must be positive, got: " + instanceNumber);
         }
-        return instanceId;
-    }
-
-    private static long validateTimestamp(long timestamp) {
-        if (timestamp <= 0) {
-            throw new IllegalArgumentException("Timestamp must be positive, got: " + timestamp);
-        }
-        return timestamp;
-    }
-
-    // Getters
-    public UUID getUuid() {
-        return uuid;
-    }
-
-    public int getInstanceId() {
-        return instanceId;
-    }
-
-    public long getTimestamp() {
-        return timestamp;
     }
 
     public String getFormattedId() {
@@ -156,71 +102,38 @@ public final class ProxyIdentifier {
     }
 
     /**
-     * Creates a new ProxyIdentifier with a different instance ID
-     *
-     * @param newInstanceId The new instance ID
-     * @return A new ProxyIdentifier with the updated instance ID
+     * Returns the contiguous instance number. Temporary identifiers default to {@code 0}.
      */
-    public ProxyIdentifier withInstanceId(int newInstanceId) {
-        return new ProxyIdentifier(uuid, newInstanceId, timestamp);
+    public int getInstanceId() {
+        return instanceNumber != null ? instanceNumber : 0;
     }
 
-    /**
-     * Creates a new ProxyIdentifier with a different timestamp
-     *
-     * @param newTimestamp The new timestamp
-     * @return A new ProxyIdentifier with the updated timestamp
-     */
-    public ProxyIdentifier withTimestamp(long newTimestamp) {
-        return new ProxyIdentifier(uuid, instanceId, newTimestamp);
+    public boolean isTemporary() {
+        return instanceNumber == null;
     }
 
-    /**
-     * Creates a new ProxyIdentifier with the current timestamp
-     *
-     * @return A new ProxyIdentifier with the current timestamp
-     */
-    public ProxyIdentifier withCurrentTimestamp() {
-        return withTimestamp(Instant.now().toEpochMilli());
+    public boolean isPermanent() {
+        return instanceNumber != null;
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        ProxyIdentifier that = (ProxyIdentifier) o;
-        return instanceId == that.instanceId &&
-                timestamp == that.timestamp &&
-                uuid.equals(that.uuid);
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ProxyIdentifier that)) {
+            return false;
+        }
+        return formattedId.equals(that.formattedId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(uuid, instanceId, timestamp);
+        return Objects.hash(formattedId);
     }
 
     @Override
     public String toString() {
         return formattedId;
-    }
-
-    /**
-     * Checks if this proxy ID is newer than another
-     *
-     * @param other The other ProxyIdentifier to compare
-     * @return true if this proxy ID has a later timestamp
-     */
-    public boolean isNewerThan(ProxyIdentifier other) {
-        return this.timestamp > other.timestamp;
-    }
-
-    /**
-     * Checks if this proxy ID is from the same proxy instance
-     *
-     * @param other The other ProxyIdentifier to compare
-     * @return true if both have the same UUID and instance ID
-     */
-    public boolean isSameInstance(ProxyIdentifier other) {
-        return this.uuid.equals(other.uuid) && this.instanceId == other.instanceId;
     }
 }

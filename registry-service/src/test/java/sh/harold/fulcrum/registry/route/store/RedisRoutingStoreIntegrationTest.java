@@ -26,7 +26,7 @@ class RedisRoutingStoreIntegrationTest extends RedisIntegrationTestSupport {
         request.setRequestId(requestId);
         request.setPlayerId(playerId);
         request.setPlayerName("Player-" + playerId.toString().substring(0, 4));
-        request.setProxyId("proxy-1");
+        request.setProxyId("fulcrum-proxy-1");
         request.setFamilyId(familyId);
         return request;
     }

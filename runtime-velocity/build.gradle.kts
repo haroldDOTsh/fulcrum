@@ -30,6 +30,9 @@ dependencies {
     
     // YAML configuration
     implementation("org.yaml:snakeyaml:2.0")
+
+    // PostgreSQL JDBC driver (required at runtime for optional relational features)
+    implementation("org.postgresql:postgresql:42.7.4")
     
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.9")
@@ -77,6 +80,7 @@ tasks.shadowJar {
         exclude(dependency("io.lettuce:lettuce-core"))
         exclude(dependency("com.fasterxml.jackson.core:jackson-databind"))
         exclude(dependency("org.yaml:snakeyaml"))
+        exclude(dependency("org.postgresql:postgresql"))
     }
     
     mergeServiceFiles()

@@ -16,7 +16,6 @@ import sh.harold.fulcrum.registry.server.store.RedisServerRegistryStore;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -106,19 +105,19 @@ class RedisRegistryInspectorTest extends RedisIntegrationTestSupport {
     void fetchProxiesMergesUnavailableAndDeadStates() {
         long now = Instant.now().toEpochMilli();
 
-        ProxyIdentifier activeId = ProxyIdentifier.create(UUID.randomUUID(), 1);
+        ProxyIdentifier activeId = ProxyIdentifier.create(1);
         RegisteredProxyData active = new RegisteredProxyData(activeId, "127.0.0.1", 25565);
         active.setStatus(RegisteredProxyData.Status.AVAILABLE);
         active.setLastHeartbeat(now);
         proxyStore.saveActive(active);
 
-        ProxyIdentifier unavailableId = ProxyIdentifier.create(UUID.randomUUID(), 2);
+        ProxyIdentifier unavailableId = ProxyIdentifier.create(2);
         RegisteredProxyData unavailable = new RegisteredProxyData(unavailableId, "127.0.0.2", 25566);
         unavailable.setStatus(RegisteredProxyData.Status.UNAVAILABLE);
         unavailable.setLastHeartbeat(now - 90_000L);
         proxyStore.saveUnavailable(unavailable, now - 90_000L);
 
-        ProxyIdentifier deadId = ProxyIdentifier.create(UUID.randomUUID(), 3);
+        ProxyIdentifier deadId = ProxyIdentifier.create(3);
         RegisteredProxyData dead = new RegisteredProxyData(deadId, "127.0.0.3", 25567);
         dead.setStatus(RegisteredProxyData.Status.DEAD);
         dead.setLastHeartbeat(now - 240_000L);

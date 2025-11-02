@@ -462,7 +462,7 @@ public class RegistrationHandler {
             if ("SHUTDOWN".equals(status) && serverId != null) {
                 LOGGER.info("[HEARTBEAT] Received SHUTDOWN status from server: {}", serverId);
                 // Handle graceful shutdown based on server type
-                if (serverId.startsWith("proxy-") || serverId.startsWith("fulcrum-proxy-")) {
+                if (serverId.startsWith("temp-proxy-") || serverId.startsWith("fulcrum-proxy-")) {
                     LOGGER.info("[HEARTBEAT] Processing graceful shutdown for proxy: {}", serverId);
                     // Graceful shutdown from heartbeat - immediately release ID
                     handleProxyGracefulShutdown(serverId);
@@ -635,18 +635,14 @@ public class RegistrationHandler {
             responsePayload.put("message", message);
             responsePayload.put("timestamp", System.currentTimeMillis());
 
-            LOGGER.info("[proxy-registration] response tempId={} assignedId={} success={} message=\"{}\" channel={} legacyChannel={}",
-                    tempId, proxyId, success, message, ChannelConstants.PROXY_REGISTRATION_RESPONSE,
-                    "fulcrum.registry.registration.response");
+            LOGGER.info("[proxy-registration] response tempId={} assignedId={} success={} message=\"{}\" channel={}",
+                    tempId, proxyId, success, message, ChannelConstants.PROXY_REGISTRATION_RESPONSE);
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("[proxy-registration] payload={}", responsePayload);
             }
 
-            // Send to proxy registration response channel (standardized only)
+            // Send to proxy registration response channel (standardized)
             messageBus.broadcast(ChannelConstants.PROXY_REGISTRATION_RESPONSE, responsePayload);
-
-            // ALSO send on fulcrum.registry.registration.response for backward compatibility
-            messageBus.broadcast("fulcrum.registry.registration.response", responsePayload);
 
             if (debugMode) {
                 LOGGER.debug("Sent proxy registration response for tempId: {} -> proxyId: {}", tempId, proxyId);
