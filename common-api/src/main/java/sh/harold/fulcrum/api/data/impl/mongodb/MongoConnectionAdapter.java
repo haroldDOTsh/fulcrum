@@ -5,11 +5,14 @@ import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.api.data.storage.CacheProvider;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -18,6 +21,8 @@ import java.util.concurrent.TimeUnit;
  * Manages MongoDB client connections and database access.
  */
 public class MongoConnectionAdapter implements ConnectionAdapter {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(MongoConnectionAdapter.class);
 
     private final MongoClient mongoClient;
     private final MongoDatabase database;
@@ -45,9 +50,11 @@ public class MongoConnectionAdapter implements ConnectionAdapter {
         this.databaseName = databaseName;
         this.cacheProvider = cacheProvider;
 
+        ConnectionString parsedConnection = new ConnectionString(connectionString);
+
         // Configure MongoDB client settings
         MongoClientSettings settings = MongoClientSettings.builder()
-                .applyConnectionString(new ConnectionString(connectionString))
+                .applyConnectionString(parsedConnection)
                 .applyToConnectionPoolSettings(builder ->
                         builder.maxSize(100)
                                 .minSize(10)
@@ -63,6 +70,9 @@ public class MongoConnectionAdapter implements ConnectionAdapter {
 
         this.mongoClient = MongoClients.create(settings);
         this.database = mongoClient.getDatabase(databaseName);
+
+        List<String> hosts = parsedConnection.getHosts();
+        LOGGER.info("MongoDB connection established (database='{}', hosts={})", databaseName, hosts.isEmpty() ? "unknown" : hosts);
     }
 
     @Override

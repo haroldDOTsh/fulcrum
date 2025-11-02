@@ -50,6 +50,7 @@ dependencies {
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.9")
     implementation("ch.qos.logback:logback-classic:1.4.14")
+    implementation("org.slf4j:jul-to-slf4j:2.0.9")
     implementation("org.fusesource.jansi:jansi:2.4.1") // For ANSI color support in Windows
     
     // Configuration

@@ -2,6 +2,8 @@ package sh.harold.fulcrum.api.data.impl.postgres;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -12,6 +14,8 @@ import java.util.Properties;
  * Used by features that require relational storage outside the document DataAPI.
  */
 public class PostgresConnectionAdapter {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(PostgresConnectionAdapter.class);
 
     private final HikariDataSource dataSource;
     private final String databaseName;
@@ -79,6 +83,7 @@ public class PostgresConnectionAdapter {
         }
 
         this.dataSource = new HikariDataSource(config);
+        LOGGER.info("PostgreSQL connection pool ready (database='{}')", databaseName);
     }
 
     /**

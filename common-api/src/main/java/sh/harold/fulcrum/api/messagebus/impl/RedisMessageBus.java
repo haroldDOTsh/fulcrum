@@ -48,6 +48,9 @@ public class RedisMessageBus extends AbstractMessageBus {
     private final StatefulRedisPubSubConnection<String, String> pubSubConnection;
     private volatile boolean running = true;
     private volatile String subscribedServerId;
+    private final Set<String> pendingSubscriptionSummary = ConcurrentHashMap.newKeySet();
+    private final Object subscriptionSummaryLock = new Object();
+    private volatile ScheduledFuture<?> pendingSubscriptionSummaryTask;
 
     public RedisMessageBus(MessageBusAdapter adapter) {
         super(adapter);
@@ -172,8 +175,7 @@ public class RedisMessageBus extends AbstractMessageBus {
         // This allows the service to receive messages broadcast to specific types
         subscribeToTypeChannel(type);
 
-        String channel = type.startsWith("fulcrum.") ? type : "fulcrum.custom." + type;
-        logger.info("Subscribed to type '" + type + "' with handler and channel '" + channel + "'");
+        queueSubscriptionSummary(type);
     }
 
     @Override
@@ -394,6 +396,13 @@ public class RedisMessageBus extends AbstractMessageBus {
                 future.completeExceptionally(new IllegalStateException("Message bus shutting down"));
             }
             pendingRequests.clear();
+            synchronized (subscriptionSummaryLock) {
+                if (pendingSubscriptionSummaryTask != null) {
+                    pendingSubscriptionSummaryTask.cancel(false);
+                    pendingSubscriptionSummaryTask = null;
+                }
+            }
+            pendingSubscriptionSummary.clear();
 
             // Shutdown scheduler
             scheduler.shutdown();
@@ -409,6 +418,56 @@ public class RedisMessageBus extends AbstractMessageBus {
         } catch (Exception e) {
             logger.log(Level.WARNING, "Error during shutdown", e);
         }
+    }
+
+    private void queueSubscriptionSummary(String type) {
+        if (!running || scheduler.isShutdown()) {
+            return;
+        }
+
+        pendingSubscriptionSummary.add(type);
+
+        synchronized (subscriptionSummaryLock) {
+            if (pendingSubscriptionSummaryTask != null) {
+                pendingSubscriptionSummaryTask.cancel(false);
+            }
+            pendingSubscriptionSummaryTask = scheduler.schedule(this::logSubscriptionSummary, 200, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void logSubscriptionSummary() {
+        if (!running) {
+            pendingSubscriptionSummary.clear();
+            return;
+        }
+
+        List<String> snapshot = new ArrayList<>(pendingSubscriptionSummary);
+        pendingSubscriptionSummary.clear();
+
+        int totalChannels = subscriptions.size();
+        if (totalChannels == 0) {
+            logger.info("No message bus listeners registered");
+        } else if (snapshot.isEmpty()) {
+            logger.info("Registered listeners on " + totalChannels + " channels");
+        } else {
+            snapshot.sort(String::compareToIgnoreCase);
+            String summary = summarizeChannels(snapshot);
+            logger.info("Registered listeners on " + totalChannels + " channels (added: " + summary + ")");
+        }
+
+        synchronized (subscriptionSummaryLock) {
+            pendingSubscriptionSummaryTask = null;
+        }
+    }
+
+    private String summarizeChannels(List<String> channels) {
+        int maxEntries = 5;
+        if (channels.size() <= maxEntries) {
+            return String.join(", ", channels);
+        }
+        List<String> head = channels.subList(0, maxEntries);
+        int remaining = channels.size() - maxEntries;
+        return String.join(", ", head) + " +" + remaining + " more";
     }
 
     private void handleMessage(MessageEnvelope envelope) {

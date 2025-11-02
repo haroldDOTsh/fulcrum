@@ -6,7 +6,7 @@
     <!-- Console appender with ANSI colors -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%cyan(%d{HH:mm:ss.SSS}) %highlight(%-5level) %yellow([%thread]) %green(%logger{36}) %blue(▸) %msg%n</pattern>
+            <pattern>%cyan(%d{HH:mm:ss.SSS}) %highlight(%-5level) %blue(▸) %msg%n</pattern>
         </encoder>
         <withJansi>true</withJansi>
     </appender>
@@ -46,6 +46,8 @@
     <logger name="io.lettuce" level="WARN"/>
     <logger name="io.lettuce.core.protocol" level="ERROR"/>
     <logger name="org.quartz" level="WARN"/>
+    <logger name="org.mongodb.driver" level="WARN"/>
+    <logger name="com.zaxxer.hikari" level="WARN"/>
     
     <!-- Performance tracking logger -->
     <logger name="performance" level="DEBUG" additivity="false">

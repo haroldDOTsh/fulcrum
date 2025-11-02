@@ -3,6 +3,7 @@ package sh.harold.fulcrum.registry;
 import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.bridge.SLF4JBridgeHandler;
 import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
@@ -112,8 +113,16 @@ public class RegistryService {
      * Main entry point
      */
     public static void main(String[] args) {
+        configureJavaUtilLoggingBridge();
         RegistryService service = new RegistryService();
         service.start();
+    }
+
+    private static void configureJavaUtilLoggingBridge() {
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        if (!SLF4JBridgeHandler.isInstalled()) {
+            SLF4JBridgeHandler.install();
+        }
     }
 
     private Map<String, Object> loadYamlConfig() {
