@@ -29,18 +29,22 @@ public final class EnvironmentDescriptorView implements Serializable {
         this.description = description != null ? description : "";
     }
 
+    @JsonProperty("id")
     public String id() {
         return id;
     }
 
+    @JsonProperty("tag")
     public String tag() {
         return tag;
     }
 
+    @JsonProperty("modules")
     public List<String> modules() {
         return modules;
     }
 
+    @JsonProperty("description")
     public String description() {
         return description;
     }

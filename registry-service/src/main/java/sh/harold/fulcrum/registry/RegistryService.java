@@ -16,6 +16,7 @@ import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
+import sh.harold.fulcrum.registry.console.inspect.RedisRegistryInspector;
 import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryCache;
 import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryManager;
 import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryRepository;
@@ -77,6 +78,7 @@ public class RegistryService {
     private EnvironmentDirectoryManager environmentDirectoryManager;
     private RedisManager redisManager;
     private RedisHeartbeatStore redisHeartbeatStore;
+    private RedisRegistryInspector redisRegistryInspector;
 
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -213,6 +215,7 @@ public class RegistryService {
             serverRegistry.initialize(redisManager);
             proxyRegistry.initialize(redisManager);
             redisHeartbeatStore = new RedisHeartbeatStore(redisManager);
+            redisRegistryInspector = new RedisRegistryInspector(redisManager);
             heartbeatMonitor.setHeartbeatStore(redisHeartbeatStore);
             // Create MessageBus configuration from application.yml
             MessageBusConnectionConfig connectionConfig = createMessageBusConfig();
@@ -347,12 +350,11 @@ public class RegistryService {
         // Register commands
         commandRegistry.register("help", new HelpCommand(commandRegistry));
         commandRegistry.register("stop", new StopCommand(this));
-        commandRegistry.register("proxyregistry", new ProxyRegistryCommand(proxyRegistry, heartbeatMonitor));
-        commandRegistry.register("backendregistry", new BackendRegistryCommand(serverRegistry, heartbeatMonitor));
-        commandRegistry.register("ls", new LogicalServersCommand(serverRegistry));
-        commandRegistry.register("status", new StatusCommand(this));
+        commandRegistry.register("proxyregistry", new ProxyRegistryCommand(redisRegistryInspector));
+        commandRegistry.register("backendregistry", new BackendRegistryCommand(redisRegistryInspector));
+        commandRegistry.register("ls", new LogicalServersCommand(redisRegistryInspector));
+        commandRegistry.register("status", new StatusCommand(this, redisRegistryInspector));
         commandRegistry.register("clear", new ClearCommand());
-        commandRegistry.register("cleardead", new ClearDeadServicesCommand(serverRegistry, proxyRegistry, heartbeatMonitor));
         commandRegistry.register("debug", new DebugCommand(this));
         commandRegistry.register("reload", new ReloadCommand(this));
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
@@ -362,9 +364,9 @@ public class RegistryService {
         }
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
-            commandRegistry.register("provisionminigame", new ProvisionMinigameCommand(slotProvisionService, serverRegistry));
+            commandRegistry.register("provisionminigame", new ProvisionMinigameCommand(slotProvisionService, redisRegistryInspector));
         }
-        commandRegistry.register("debugminigamepipeline", new DebugMinigamePipelineCommand(messageBus, proxyRegistry));
+        commandRegistry.register("debugminigamepipeline", new DebugMinigamePipelineCommand(messageBus, redisRegistryInspector));
         if (networkConfigManager != null) {
             commandRegistry.register("networkconfig", new NetworkConfigCommand(networkConfigManager));
         }

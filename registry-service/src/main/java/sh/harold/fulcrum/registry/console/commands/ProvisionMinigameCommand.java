@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.registry.console.commands;
 
 import sh.harold.fulcrum.registry.console.CommandHandler;
+import sh.harold.fulcrum.registry.console.inspect.RedisRegistryInspector;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
-import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 
 import java.time.Instant;
@@ -15,12 +15,12 @@ import java.util.*;
 public final class ProvisionMinigameCommand implements CommandHandler {
 
     private final SlotProvisionService slotProvisionService;
-    private final ServerRegistry serverRegistry;
+    private final RedisRegistryInspector inspector;
 
     public ProvisionMinigameCommand(SlotProvisionService slotProvisionService,
-                                    ServerRegistry serverRegistry) {
+                                    RedisRegistryInspector inspector) {
         this.slotProvisionService = slotProvisionService;
-        this.serverRegistry = serverRegistry;
+        this.inspector = inspector;
     }
 
     private static String normalize(String value) {
@@ -145,7 +145,8 @@ public final class ProvisionMinigameCommand implements CommandHandler {
         Map<String, String> variants = new LinkedHashMap<>();
         boolean foundFamily = false;
 
-        for (RegisteredServerData server : serverRegistry.getAllServers()) {
+        for (RedisRegistryInspector.ServerView view : inspector.fetchServers()) {
+            RegisteredServerData server = view.snapshot();
             String matchedFamilyId = findMatchingFamily(server, familyKey);
             if (matchedFamilyId == null) {
                 continue;
@@ -201,7 +202,8 @@ public final class ProvisionMinigameCommand implements CommandHandler {
 
     private List<String> listAvailableFamilies() {
         Map<String, String> families = new LinkedHashMap<>();
-        for (RegisteredServerData server : serverRegistry.getAllServers()) {
+        for (RedisRegistryInspector.ServerView view : inspector.fetchServers()) {
+            RegisteredServerData server = view.snapshot();
             for (String family : server.getSlotFamilyCapacities().keySet()) {
                 String normalized = normalize(family);
                 if (normalized != null) {

@@ -2,9 +2,8 @@ package sh.harold.fulcrum.registry.console.commands;
 
 import sh.harold.fulcrum.registry.console.CommandHandler;
 import sh.harold.fulcrum.registry.console.TableFormatter;
-import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
+import sh.harold.fulcrum.registry.console.inspect.RedisRegistryInspector;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
-import sh.harold.fulcrum.registry.server.ServerRegistry;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -19,16 +18,10 @@ public class BackendRegistryCommand implements CommandHandler {
     private static final int ITEMS_PER_PAGE = 10;
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
-    private final ServerRegistry serverRegistry;
-    private final HeartbeatMonitor heartbeatMonitor;
+    private final RedisRegistryInspector inspector;
 
-    public BackendRegistryCommand(ServerRegistry serverRegistry) {
-        this(serverRegistry, null);
-    }
-
-    public BackendRegistryCommand(ServerRegistry serverRegistry, HeartbeatMonitor heartbeatMonitor) {
-        this.serverRegistry = serverRegistry;
-        this.heartbeatMonitor = heartbeatMonitor;
+    public BackendRegistryCommand(RedisRegistryInspector inspector) {
+        this.inspector = inspector;
     }
 
     @Override
@@ -44,28 +37,29 @@ public class BackendRegistryCommand implements CommandHandler {
             }
         }
 
-        // Get all active servers
-        List<RegisteredServerData> servers = new ArrayList<>(serverRegistry.getAllServers());
+        List<RedisRegistryInspector.ServerView> serverViews =
+                new ArrayList<>(inspector.fetchServers());
 
-        // Add recently dead servers if heartbeat monitor is available
-        if (heartbeatMonitor != null) {
-            servers.addAll(heartbeatMonitor.getRecentlyDeadServers());
-        }
-
-        // Sort servers: active first, then by server ID
-        servers.sort((a, b) -> {
-            if (a.getStatus() == RegisteredServerData.Status.DEAD && b.getStatus() != RegisteredServerData.Status.DEAD) {
-                return 1;
-            } else if (a.getStatus() != RegisteredServerData.Status.DEAD && b.getStatus() == RegisteredServerData.Status.DEAD) {
-                return -1;
-            }
-            return a.getServerId().compareTo(b.getServerId());
-        });
-
-        if (servers.isEmpty()) {
+        if (serverViews.isEmpty()) {
             System.out.println("No backend servers registered.");
             return true;
         }
+
+        // Sort servers: active first, then by server ID
+        serverViews.sort((a, b) -> {
+            boolean aDead = a.recentlyDead() || a.status() == RegisteredServerData.Status.DEAD;
+            boolean bDead = b.recentlyDead() || b.status() == RegisteredServerData.Status.DEAD;
+            if (aDead && !bDead) {
+                return 1;
+            } else if (!aDead && bDead) {
+                return -1;
+            }
+            return a.serverId().compareTo(b.serverId());
+        });
+
+        List<RegisteredServerData> servers = serverViews.stream()
+                .map(RedisRegistryInspector.ServerView::snapshot)
+                .toList();
 
         // Calculate pagination
         int totalPages = (servers.size() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
@@ -139,18 +133,23 @@ public class BackendRegistryCommand implements CommandHandler {
         }
 
         // Show server statistics
-        int deadCount = 0;
-        if (heartbeatMonitor != null) {
-            deadCount = heartbeatMonitor.getRecentlyDeadServers().size();
-        }
-
         System.out.println("\nServer Statistics:");
         System.out.println("  Total servers: " + servers.size());
-        System.out.println("  Available: " + serverRegistry.getAvailableServerCount());
-        System.out.println("  Unavailable: " + serverRegistry.getUnavailableServerCount());
-        System.out.println("  Dead/Stalled: " + deadCount);
+        long availableCount = servers.stream()
+                .filter(server -> server.getStatus() == RegisteredServerData.Status.AVAILABLE)
+                .count();
+        long unavailableCount = servers.stream()
+                .filter(server -> server.getStatus() == RegisteredServerData.Status.UNAVAILABLE)
+                .count();
+        long recentlyDeadCount = serverViews.stream()
+                .filter(view -> view.recentlyDead() || view.status() == RegisteredServerData.Status.DEAD)
+                .count();
 
-        if (deadCount > 0) {
+        System.out.println("  Available: " + availableCount);
+        System.out.println("  Unavailable: " + unavailableCount);
+        System.out.println("  Dead/Stalled: " + recentlyDeadCount);
+
+        if (recentlyDeadCount > 0) {
             System.out.println("\n  Note: Dead/stalled servers are shown for 60 seconds after failure");
         }
 

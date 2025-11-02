@@ -9,8 +9,7 @@ import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateRequest;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerLocateResponse;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerSlotRequest;
 import sh.harold.fulcrum.registry.console.CommandHandler;
-import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
-import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
+import sh.harold.fulcrum.registry.console.inspect.RedisRegistryInspector;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
@@ -27,12 +26,12 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
     private static final long LOCATE_TIMEOUT_MS = 2000L;
 
     private final MessageBus messageBus;
-    private final ProxyRegistry proxyRegistry;
+    private final RedisRegistryInspector inspector;
     private final ObjectMapper objectMapper;
 
-    public DebugMinigamePipelineCommand(MessageBus messageBus, ProxyRegistry proxyRegistry) {
+    public DebugMinigamePipelineCommand(MessageBus messageBus, RedisRegistryInspector inspector) {
         this.messageBus = messageBus;
-        this.proxyRegistry = proxyRegistry;
+        this.inspector = inspector;
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
@@ -60,7 +59,8 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
             }
         }
 
-        LocateResult target = resolveTarget(playerName, suppliedId, parsed.proxyId);
+        Collection<RedisRegistryInspector.ProxyView> proxies = inspector.fetchProxies();
+        LocateResult target = resolveTarget(playerName, suppliedId, parsed.proxyId, proxies);
         if (target == null) {
             return false;
         }
@@ -140,9 +140,12 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
         return parsed;
     }
 
-    private LocateResult resolveTarget(String playerName, UUID suppliedId, String requestedProxyId) {
+    private LocateResult resolveTarget(String playerName, UUID suppliedId, String requestedProxyId,
+                                       Collection<RedisRegistryInspector.ProxyView> proxies) {
         if (requestedProxyId != null && !requestedProxyId.isBlank()) {
-            if (proxyRegistry.getProxy(requestedProxyId) == null) {
+            boolean exists = proxies.stream()
+                    .anyMatch(proxy -> proxy.proxyId().equalsIgnoreCase(requestedProxyId));
+            if (!exists) {
                 System.out.println("Proxy '" + requestedProxyId + "' is not registered.");
                 return null;
             }
@@ -162,9 +165,8 @@ public class DebugMinigamePipelineCommand implements CommandHandler {
             return located;
         }
 
-        Collection<RegisteredProxyData> proxies = proxyRegistry.getAllProxies();
         if (proxies.size() == 1) {
-            String fallback = proxies.iterator().next().getProxyIdString();
+            String fallback = proxies.iterator().next().proxyId();
             System.out.println("Player not located; defaulting to proxy " + fallback + " (single proxy environment).");
             return new LocateResult(fallback, suppliedId, playerName, null, null, null);
         }

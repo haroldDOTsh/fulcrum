@@ -3,8 +3,8 @@ package sh.harold.fulcrum.registry.console.commands;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.registry.console.CommandHandler;
 import sh.harold.fulcrum.registry.console.TableFormatter;
+import sh.harold.fulcrum.registry.console.inspect.RedisRegistryInspector;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
-import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 
 import java.util.*;
@@ -16,10 +16,10 @@ import java.util.stream.Collectors;
 public class LogicalServersCommand implements CommandHandler {
     private static final int ITEMS_PER_PAGE = 15;
 
-    private final ServerRegistry serverRegistry;
+    private final RedisRegistryInspector inspector;
 
-    public LogicalServersCommand(ServerRegistry serverRegistry) {
-        this.serverRegistry = serverRegistry;
+    public LogicalServersCommand(RedisRegistryInspector inspector) {
+        this.inspector = inspector;
     }
 
     @Override
@@ -100,7 +100,8 @@ public class LogicalServersCommand implements CommandHandler {
     private List<SlotSnapshot> captureSnapshots() {
         List<SlotSnapshot> snapshots = new ArrayList<>();
 
-        for (RegisteredServerData server : serverRegistry.getAllServers()) {
+        for (RedisRegistryInspector.ServerView view : inspector.fetchServers()) {
+            RegisteredServerData server = view.snapshot();
             String serverDisplay = buildServerDisplay(server);
             for (LogicalSlotRecord slot : server.getSlots()) {
                 Map<String, String> metadata = new HashMap<>(slot.getMetadata());
