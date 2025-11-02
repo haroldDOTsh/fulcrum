@@ -41,7 +41,9 @@ import java.util.stream.Collectors;
 public class ServerLifecycleFeature implements PluginFeature {
     private static final Logger LOGGER = Logger.getLogger(ServerLifecycleFeature.class.getName());
     // Configuration constants
-    private static final int MAX_REGISTRATION_ATTEMPTS = 5;
+    private static final long INITIAL_REGISTRATION_RETRY_DELAY_MS = 5_000L;
+    private static final long MAX_REGISTRATION_RETRY_DELAY_MS = 60_000L;
+    private static final int TEMP_HEARTBEAT_THRESHOLD = 5;
     private static final Duration PROXY_TIMEOUT = Duration.ofSeconds(10);
     private final AtomicInteger registrationAttempts = new AtomicInteger(0);
     private final Map<String, ServerInfo> availableServers = new ConcurrentHashMap<>();
@@ -64,6 +66,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> registrationTimeoutTask;
     private ScheduledFuture<?> registrationRetryTask;
+    private volatile boolean tempHeartbeatStarted = false;
     private SimpleSlotOrchestrator slotOrchestrator;
     private SlotFamilyService slotFamilyService;
     private SlotFamilyFilter slotFamilyFilter = SlotFamilyFilter.allowAll();
@@ -182,6 +185,7 @@ public class ServerLifecycleFeature implements PluginFeature {
 
 
         // Schedule initial registration after server has fully loaded
+        resetRegistrationBackoff();
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -381,28 +385,48 @@ public class ServerLifecycleFeature implements PluginFeature {
     }
 
     private void scheduleRegistrationRetry() {
-        // Cancel any existing retry task
         if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
             registrationRetryTask.cancel(false);
         }
 
-        // Schedule retry attempts if registration fails
+        if (registered.get()) {
+            return;
+        }
+
+        int attempt = registrationAttempts.incrementAndGet();
+        long delayMs = computeRegistrationRetryDelay(attempt);
+
         registrationRetryTask = scheduler.schedule(() -> {
             if (!registered.get()) {
-                // Increment BEFORE checking to fix off-by-one error
-                int attempt = registrationAttempts.incrementAndGet();
-
-                if (attempt <= MAX_REGISTRATION_ATTEMPTS) {
-                    LOGGER.warning("Retrying registration with Registry Service (attempt " + attempt + "/" + MAX_REGISTRATION_ATTEMPTS + ")");
-                    sendInitialRegistration();
-                } else {
-                    LOGGER.severe("Failed to register with Registry Service after " + MAX_REGISTRATION_ATTEMPTS + " attempts. " +
-                            "Server will continue with temporary ID: " + serverIdentifier.getServerId());
-                    // Continue with temporary ID but still start heartbeat
-                    startHeartbeat();
-                }
+                LOGGER.warning(String.format(
+                        "Retrying registration with Registry Service (attempt %d, next attempt in %d ms)",
+                        attempt, delayMs));
+                sendInitialRegistration();
             }
-        }, 15, TimeUnit.SECONDS);
+        }, delayMs, TimeUnit.MILLISECONDS);
+
+        if (attempt >= TEMP_HEARTBEAT_THRESHOLD && !tempHeartbeatStarted) {
+            LOGGER.warning(String.format(
+                    "Starting heartbeat with temporary ID after %d unsuccessful registration attempts", attempt));
+            startHeartbeat();
+            tempHeartbeatStarted = true;
+        }
+    }
+
+    private long computeRegistrationRetryDelay(int attempt) {
+        int exponent = Math.max(0, attempt - 1);
+        exponent = Math.min(exponent, 6); // prevent overflow after 64x multiplier
+        long delay = INITIAL_REGISTRATION_RETRY_DELAY_MS * (1L << exponent);
+        return Math.min(delay, MAX_REGISTRATION_RETRY_DELAY_MS);
+    }
+
+    private void resetRegistrationBackoff() {
+        registrationAttempts.set(0);
+        tempHeartbeatStarted = false;
+        if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
+            registrationRetryTask.cancel(false);
+            registrationRetryTask = null;
+        }
     }
 
     private void handleRegistrationResponse(ServerRegistrationResponse response) {
@@ -417,6 +441,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         }
 
         if (response.isSuccess()) {
+            resetRegistrationBackoff();
             String permanentId = response.getAssignedServerId();
             String oldId = serverIdentifier.getServerId();
             LOGGER.info("Successfully registered with central Registry Service! Permanent ID: " + permanentId);
@@ -684,11 +709,11 @@ public class ServerLifecycleFeature implements PluginFeature {
         messageBus.subscribe(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, envelope -> {
             try {
                 LOGGER.info("Registry Service requested re-registration - sending our current registration");
-                // Re-send our registration with current ID
+                boolean wasRegistered = registered.getAndSet(false);
+                resetRegistrationBackoff();
                 sendInitialRegistration();
 
-                // If we're already registered, also send an immediate heartbeat
-                if (registered.get()) {
+                if (wasRegistered) {
                     sendHeartbeat();
                     LOGGER.info("Sent immediate heartbeat after re-registration request");
                 }
@@ -702,10 +727,11 @@ public class ServerLifecycleFeature implements PluginFeature {
         messageBus.subscribe(reregisterChannel, envelope -> {
             try {
                 LOGGER.info("Registry requested targeted re-registration for this server");
+                boolean wasRegistered = registered.getAndSet(false);
+                resetRegistrationBackoff();
                 sendInitialRegistration();
 
-                // Send immediate heartbeat
-                if (registered.get()) {
+                if (wasRegistered) {
                     sendHeartbeat();
                 }
             } catch (Exception e) {

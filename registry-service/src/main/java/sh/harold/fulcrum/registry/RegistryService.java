@@ -7,7 +7,6 @@ import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
-import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
@@ -289,9 +288,6 @@ public class RegistryService {
             // Initialize command registry and console
             initializeConsole();
 
-            // Request re-registration from all servers and proxies
-            requestReRegistration();
-
             // Register shutdown hook
             Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
 
@@ -394,43 +390,6 @@ public class RegistryService {
         rootLogger.setLevel(debugMode ? ch.qos.logback.classic.Level.DEBUG : ch.qos.logback.classic.Level.INFO);
 
         LOGGER.info("Debug mode {}", debugMode ? "ENABLED" : "DISABLED");
-    }
-
-    /**
-     * Request re-registration from all servers and proxies
-     * This is called on Registry startup to recover state
-     */
-    private void requestReRegistration() {
-        try {
-            // Wait longer (10 seconds) before requesting re-registration to avoid duplicates
-            // This gives proxies time to register naturally on startup
-            scheduler.schedule(() -> {
-                LOGGER.info("==================================================");
-                LOGGER.info("Requesting re-registration from all servers/proxies");
-                LOGGER.info("==================================================");
-
-                // Log current registry state
-                LOGGER.info("Current registry state before re-registration request:");
-                LOGGER.info("  - Registered proxies: {}", proxyRegistry.getAllProxies().size());
-                LOGGER.info("  - Registered servers: {}", serverRegistry.getAllServers().size());
-                LOGGER.info("  - Grace period: 10 seconds");
-
-                // Create re-registration request with grace period info
-                Map<String, Object> request = Map.of(
-                        "timestamp", System.currentTimeMillis(),
-                        "reason", "Registry Service started/restarted",
-                        "forceReregistration", true,
-                        "graceStartTime", System.currentTimeMillis() - 10000 // Include when the registry started
-                );
-
-                // Broadcast on a special channel that all servers and proxies listen to
-                messageBus.broadcast(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, request);
-                LOGGER.info("Broadcast re-registration request to all nodes (after 10 second grace period)");
-
-            }, 10, TimeUnit.SECONDS); // Increased from 2 to 10 seconds
-        } catch (Exception e) {
-            LOGGER.error("Failed to request re-registration", e);
-        }
     }
 
     /**

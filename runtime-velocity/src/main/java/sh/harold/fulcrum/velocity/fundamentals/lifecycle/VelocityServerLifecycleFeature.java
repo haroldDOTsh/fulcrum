@@ -37,8 +37,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     private static final String PROXY_PREFIX = "proxy:";
     private static final String PROXIES_KEY = "fulcrum:proxies";
     private static final String PROXY_INFO_PREFIX = "fulcrum:proxy:";
-    private static final int MAX_REGISTRATION_ATTEMPTS = 5;
-    private static final int RETRY_INTERVAL_SECONDS = 10;
+    private static final long INITIAL_REGISTRATION_RETRY_DELAY_SECONDS = 5L;
+    private static final long MAX_REGISTRATION_RETRY_DELAY_SECONDS = 60L;
     private final ProxyServer proxy;
     private final Logger logger;
     private final ServerLifecycleConfig config;
@@ -122,6 +122,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
 
         // NOW send registration to Registry Service and start retry mechanism
         // The response handler is already subscribed and ready
+        resetRegistrationBackoff();
         sendProxyRegistrationToRegistry();
 
         // Start cleanup task immediately (heartbeat will start after registration)
@@ -171,8 +172,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
 
             // Use the standardized channel for registration
             messageBus.broadcast(ChannelConstants.REGISTRY_REGISTRATION_REQUEST, request);
-            logger.info("[ATTEMPT {}/{}] Sent proxy registration to Registry Service with tempId: {}",
-                    registrationAttempts, MAX_REGISTRATION_ATTEMPTS, proxyId);
+            logger.info("[REGISTRATION] Sent proxy registration attempt {} with tempId: {}",
+                    registrationAttempts + 1, proxyId);
             logger.debug("Registration request: tempId={}, type={}, role={}, address={}:{}, capacity={}",
                     request.getTempId(), request.getServerType(), request.getRole(),
                     request.getAddress(), request.getPort(), request.getMaxCapacity());
@@ -190,50 +191,39 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     }
 
     private void scheduleRegistrationRetry() {
-        // Cancel any existing retry task
         if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
             registrationRetryTask.cancel(false);
         }
 
-        // Increment BEFORE checking (fixes off-by-one error)
-        registrationAttempts++;
-
-        // Check if we've exceeded max attempts
-        if (registrationAttempts > MAX_REGISTRATION_ATTEMPTS) {
-            logger.error("[CRITICAL] Failed to register with Registry Service after {} attempts", MAX_REGISTRATION_ATTEMPTS);
-            shutdownDueToRegistrationFailure();
+        if (registeredWithRegistry) {
             return;
         }
 
-        // Schedule retry
+        int attempt = ++registrationAttempts;
+        long delaySeconds = computeRegistrationRetryDelaySeconds(attempt);
+
         registrationRetryTask = scheduler.schedule(() -> {
             if (!registeredWithRegistry) {
-                logger.warn("[RETRY] No registration response received, attempting retry {}/{}",
-                        registrationAttempts, MAX_REGISTRATION_ATTEMPTS);
+                logger.warn("[RETRY] No registration response received, attempting retry {} (next delay {}s)",
+                        attempt, delaySeconds);
                 sendProxyRegistrationToRegistry();
             }
-        }, RETRY_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        }, delaySeconds, TimeUnit.SECONDS);
     }
 
-    private void shutdownDueToRegistrationFailure() {
-        logger.error("============================================");
-        logger.error("CRITICAL: PROXY SHUTTING DOWN");
-        logger.error("============================================");
-        logger.error("Failed to register with Registry Service after {} attempts", MAX_REGISTRATION_ATTEMPTS);
-        logger.error("The Registry Service is either:");
-        logger.error("  1. Not running - please start the Registry Service");
-        logger.error("  2. Not accessible - check Redis connection");
-        logger.error("  3. Rejecting this proxy - check Registry logs");
-        logger.error("");
-        logger.error("Proxies MUST be registered with the central Registry Service");
-        logger.error("to receive permanent IDs and function properly.");
-        logger.error("============================================");
+    private long computeRegistrationRetryDelaySeconds(int attempt) {
+        int exponent = Math.max(0, attempt - 1);
+        exponent = Math.min(exponent, 6);
+        long delay = INITIAL_REGISTRATION_RETRY_DELAY_SECONDS * (1L << exponent);
+        return Math.min(delay, MAX_REGISTRATION_RETRY_DELAY_SECONDS);
+    }
 
-        // Give time for logs to be written
-        scheduler.schedule(() -> {
-            // Shutdown the proxy
-            proxy.shutdown();
-        }, 2, TimeUnit.SECONDS);
+    private void resetRegistrationBackoff() {
+        registrationAttempts = 0;
+        if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
+            registrationRetryTask.cancel(false);
+            registrationRetryTask = null;
+        }
     }
 
     private void registerSelfInRedis() {
@@ -595,7 +585,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     logger.info("[RE-REGISTRATION] Was previously registered, resetting state for new registration");
                     logger.warn("[DIAGNOSTIC] RESETTING registration state - will register again!");
                     registeredWithRegistry = false;
-                    registrationAttempts = 0;  // Reset attempts counter
+                    resetRegistrationBackoff();
                 }
 
                 logger.warn("[DIAGNOSTIC] About to send ANOTHER registration request!");
@@ -628,7 +618,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 if (registeredWithRegistry) {
                     logger.info("[TARGETED RE-REG] Resetting registration state");
                     registeredWithRegistry = false;
-                    registrationAttempts = 0;
+                    resetRegistrationBackoff();
                 }
 
                 sendProxyRegistrationToRegistry();
@@ -1065,10 +1055,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         }
 
         if (success != null && success && assignedProxyId != null) {
-            // Cancel any pending retry
-            if (registrationRetryTask != null && !registrationRetryTask.isDone()) {
-                registrationRetryTask.cancel(false);
-            }
+            resetRegistrationBackoff();
 
             // Update our proxy ID with the permanent one from Registry
             String oldId = this.proxyId;
