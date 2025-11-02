@@ -408,12 +408,26 @@ public class HeartbeatMonitor {
                                     proxyId, secondsSinceHeartbeat);
                             proxyRegistry.updateProxyStatus(proxyId, newStatus);
                             break;
-                        case DEAD:
+                        case DEAD: {
                             LOGGER.error("Proxy {} status changed to DEAD (no heartbeat for {}s) - removing from registry",
                                     proxyId, secondsSinceHeartbeat);
-                            // ProxyRegistry handles removal automatically when status is set to DEAD
+
+                            RegisteredProxyData snapshot = new RegisteredProxyData(
+                                    proxy.getProxyId(),
+                                    proxy.getAddress(),
+                                    proxy.getPort()
+                            );
+                            snapshot.setLastHeartbeat(proxy.getLastHeartbeat());
+                            snapshot.setStatus(RegisteredProxyData.Status.DEAD);
+                            recentlyDeadProxies.put(proxyId, snapshot);
+                            if (heartbeatStore != null) {
+                                heartbeatStore.storeDeadProxySnapshot(snapshot);
+                            }
+
                             proxyRegistry.updateProxyStatus(proxyId, newStatus);
+                            proxyRegistry.deregisterProxy(proxyId);
                             break;
+                        }
                         case AVAILABLE:
                             // This shouldn't happen in checkTimeouts, only in processHeartbeat
                             break;
@@ -421,21 +435,24 @@ public class HeartbeatMonitor {
                 }
             }
 
-            // Remove dead proxies from tracking and save for display
+            // Remove dead proxies from tracking and ensure a snapshot exists for display
             for (String proxyId : deadProxies) {
-                // Save the proxy data before removal for display purposes
-                RegisteredProxyData deadProxy = proxyRegistry.getProxy(proxyId);
-                if (deadProxy != null) {
-                    // Create a snapshot of the dead proxy
-                    RegisteredProxyData snapshot = new RegisteredProxyData(
-                            deadProxy.getProxyIdString(),
-                            deadProxy.getAddress(),
-                            deadProxy.getPort()
-                    );
-                    snapshot.setLastHeartbeat(deadProxy.getLastHeartbeat());
-                    snapshot.setStatus(RegisteredProxyData.Status.DEAD);
-
-                    recentlyDeadProxies.put(proxyId, snapshot);
+                RegisteredProxyData deadProxy = recentlyDeadProxies.get(proxyId);
+                if (deadProxy == null) {
+                    RegisteredProxyData existing = proxyRegistry.getProxy(proxyId);
+                    if (existing != null) {
+                        deadProxy = new RegisteredProxyData(
+                                existing.getProxyId(),
+                                existing.getAddress(),
+                                existing.getPort()
+                        );
+                        deadProxy.setLastHeartbeat(existing.getLastHeartbeat());
+                        deadProxy.setStatus(RegisteredProxyData.Status.DEAD);
+                        recentlyDeadProxies.put(proxyId, deadProxy);
+                        if (heartbeatStore != null) {
+                            heartbeatStore.storeDeadProxySnapshot(deadProxy);
+                        }
+                    }
                 }
 
                 lastProxyHeartbeats.remove(proxyId);

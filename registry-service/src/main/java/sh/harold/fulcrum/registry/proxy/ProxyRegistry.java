@@ -353,16 +353,22 @@ public class ProxyRegistry {
             // Transition to DEREGISTERING state
             removed.transitionTo(RegistrationState.DEREGISTERING, "Proxy deregistration requested");
 
-            // DO NOT release the ID immediately - move to unavailable list
-            removed.setStatus(RegisteredProxyData.Status.UNAVAILABLE);
+            // Mark as dead while we transition it out of the active pool
+            removed.setStatus(RegisteredProxyData.Status.DEAD);
             removeActiveProxyState(removed);
+            removeTempMappingsForProxy(proxyId);
+            registrationTimestamps.remove(proxyId);
+            String addressPortKey = removed.getAddress() + ":" + removed.getPort();
+            addressPortToProxyId.remove(addressPortKey);
+
+            // DO NOT release the ID immediately - move to unavailable list
             long timestamp = System.currentTimeMillis();
             unavailableProxies.put(proxyId, removed);
             unavailableTimestamps.put(proxyId, timestamp);
             persistUnavailableProxy(removed, timestamp);
 
             // Complete deregistration
-            removed.transitionTo(RegistrationState.DISCONNECTED, "Proxy disconnected, ID reserved");
+            removed.transitionTo(RegistrationState.DISCONNECTED, "Proxy marked dead, ID reserved for potential reuse");
 
             LOGGER.info("Proxy {} marked as unavailable (ID reserved for reconnection, state: {})",
                     proxyId.getFormattedId(), removed.getRegistrationState());
