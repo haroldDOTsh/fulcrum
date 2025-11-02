@@ -26,6 +26,7 @@ import sh.harold.fulcrum.registry.network.NetworkConfigCache;
 import sh.harold.fulcrum.registry.network.NetworkConfigManager;
 import sh.harold.fulcrum.registry.network.NetworkConfigRepository;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
+import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.punishment.PunishmentRepository;
 import sh.harold.fulcrum.registry.punishment.PunishmentService;
 import sh.harold.fulcrum.registry.punishment.PunishmentSnapshotWriter;
@@ -34,12 +35,15 @@ import sh.harold.fulcrum.registry.redis.RedisConfiguration;
 import sh.harold.fulcrum.registry.redis.RedisManager;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 import sh.harold.fulcrum.registry.route.store.RedisRoutingStore;
+import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.session.DeadServerSessionSweeper;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.slot.store.RedisSlotStore;
 
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -346,6 +350,7 @@ public class RegistryService {
         // Register commands
         commandRegistry.register("help", new HelpCommand(commandRegistry));
         commandRegistry.register("stop", new StopCommand(this));
+        commandRegistry.register("fullshutdowniknowwhatimdoing", new FullShutdownIKnowWhatImDoingCommand(this));
         commandRegistry.register("proxyregistry", new ProxyRegistryCommand(redisRegistryInspector));
         commandRegistry.register("backendregistry", new BackendRegistryCommand(redisRegistryInspector));
         commandRegistry.register("ls", new LogicalServersCommand(redisRegistryInspector));
@@ -459,6 +464,61 @@ public class RegistryService {
      */
     public ProxyRegistry getProxyRegistry() {
         return proxyRegistry;
+    }
+
+    /**
+     * Capture a snapshot of currently alive services maintained by this registry.
+     *
+     * @return snapshot of active servers and proxies
+     */
+    public AliveServiceSnapshot getAliveServiceSnapshot() {
+        List<RegisteredServerData> aliveServers = new ArrayList<>();
+        if (serverRegistry != null) {
+            for (RegisteredServerData server : serverRegistry.getAllServers()) {
+                if (server != null && server.getStatus() != RegisteredServerData.Status.DEAD) {
+                    aliveServers.add(server);
+                }
+            }
+        }
+
+        List<RegisteredProxyData> aliveProxies = new ArrayList<>();
+        if (proxyRegistry != null) {
+            for (RegisteredProxyData proxy : proxyRegistry.getAllProxies()) {
+                if (proxy != null && proxy.getStatus() != RegisteredProxyData.Status.DEAD) {
+                    aliveProxies.add(proxy);
+                }
+            }
+        }
+
+        return new AliveServiceSnapshot(List.copyOf(aliveServers), List.copyOf(aliveProxies));
+    }
+
+    /**
+     * Clear all Redis keys used by the registry.
+     *
+     * @return true if the keys were cleared successfully
+     */
+    public boolean clearAllRedisKeys() {
+        if (redisManager == null) {
+            LOGGER.error("Redis manager is not initialised; cannot clear Redis keys");
+            return false;
+        }
+
+        try {
+            String response = redisManager.sync().flushdb();
+            LOGGER.warn("Cleared Redis database (response: {})", response);
+            return true;
+        } catch (Exception ex) {
+            LOGGER.error("Failed to clear Redis keys during full shutdown", ex);
+            return false;
+        }
+    }
+
+    public record AliveServiceSnapshot(List<RegisteredServerData> servers,
+                                       List<RegisteredProxyData> proxies) {
+        public boolean hasAliveServices() {
+            return (servers != null && !servers.isEmpty()) || (proxies != null && !proxies.isEmpty());
+        }
     }
 
     private NetworkConfigManager createNetworkConfigManager() {
