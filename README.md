@@ -12,8 +12,8 @@ that can be built on top of Paper and Velocity.
 
 ### Info
 
-- Minecraft Version: `1.21.8`
-- Protocol Version: `772`
+- Minecraft Version: `1.21.10`
+- Protocol Version: `773`
 - Toolchain: Java 21, Gradle 8.14, Paper + Velocity APIs
 
 ## Quick Start

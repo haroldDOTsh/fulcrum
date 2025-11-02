@@ -161,7 +161,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
                     return (NMSAdapter) Class.forName("sh.harold.fulcrum.api.message.impl.scoreboard.nms.v1_21_R1.NMSAdapterV1_21_R1")
                             .getDeclaredConstructor().newInstance();
                 default:
-                    Bukkit.getLogger().severe("Unsupported server version: " + version + ". Supported versions: v1_21_R1 (Minecraft 1.21.6/7)");
+                    Bukkit.getLogger().severe("Unsupported server version: " + version + ". Supported versions: v1_21_R1 (Minecraft 1.21.6-1.21.10)");
                     return null;
             }
         } catch (Exception e) {
@@ -192,8 +192,12 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         }
 
         // Map Minecraft versions to their corresponding NMS versions
-        // Minecraft 1.21.6 and 1.21.7 both use v1_21_R1
-        if (minecraftVersion.startsWith("1.21.6") || minecraftVersion.startsWith("1.21.7") || minecraftVersion.startsWith("1.21.8")) {
+        // Minecraft 1.21.6 through 1.21.10 all use v1_21_R1
+        if (minecraftVersion.startsWith("1.21.6")
+                || minecraftVersion.startsWith("1.21.7")
+                || minecraftVersion.startsWith("1.21.8")
+                || minecraftVersion.startsWith("1.21.9")
+                || minecraftVersion.startsWith("1.21.10")) {
             return "v1_21_R1";
         }
 

@@ -22,7 +22,7 @@ dependencies {
     implementation(project(":common-api:message"))
 
     // Paper API (temporary fallback until userdev configuration is resolved)
-    paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.8-R0.1-SNAPSHOT")
+    paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.10-R0.1-SNAPSHOT")
 
     // Other runtime deps
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
@@ -108,7 +108,7 @@ tasks.named("build") {
 // Ensure runServer uses the shaded jar
 tasks.named<RunServer>("runServer") {
     systemProperty("com.mojang.eula.agree", "true")
-    minecraftVersion("1.21.8")
+    minecraftVersion("1.21.10")
     dependsOn(tasks.named("shadowJar"))
     pluginJars.setFrom(tasks.named<ShadowJar>("shadowJar").map { it.archiveFile })
 }

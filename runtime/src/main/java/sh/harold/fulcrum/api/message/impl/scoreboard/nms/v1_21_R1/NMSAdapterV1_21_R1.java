@@ -5,7 +5,7 @@ import sh.harold.fulcrum.api.message.impl.scoreboard.nms.NMSAdapter;
 import sh.harold.fulcrum.api.message.scoreboard.render.PacketRenderer;
 
 /**
- * NMS adapter for Minecraft 1.21.6/7 (v1_21_R1).
+ * NMS adapter for Minecraft 1.21.6 through 1.21.10 (v1_21_R1).
  * This adapter provides version-specific implementations for packet-based scoreboard rendering
  * using proper NMS classes with paper-userdev.
  */
@@ -27,13 +27,13 @@ public class NMSAdapterV1_21_R1 extends NMSAdapter {
 
     @Override
     public String getVersionInfo() {
-        return "Minecraft 1.21.6/7/8 (" + VERSION + ")";
+        return "Minecraft 1.21.6-1.21.10 (" + VERSION + ")";
     }
 
     @Override
     public boolean isCompatible() {
         try {
-            // Check if the required NMS classes exist for 1.21.6/7
+            // Check if the required NMS classes exist for the v1_21_R1 revision
             Class.forName("net.minecraft.network.protocol.game.ClientboundSetObjectivePacket");
             Class.forName("net.minecraft.network.protocol.game.ClientboundSetScorePacket");
             Class.forName("net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket");

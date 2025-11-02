@@ -20,7 +20,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * PacketRenderer implementation for Minecraft 1.21.7 (v1_21_R1).
+ * PacketRenderer implementation for Minecraft 1.21.6-1.21.10 (v1_21_R1).
  * This class handles packet-based scoreboard rendering using proper NMS classes
  * with paper-userdev for direct packet manipulation.
  */
