@@ -5,11 +5,11 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.chat.impl.ChatFormatFeature;
 import sh.harold.fulcrum.api.environment.EnvironmentConfig;
-import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
 import sh.harold.fulcrum.api.environment.directory.EnvironmentDescriptorView;
 import sh.harold.fulcrum.api.environment.directory.EnvironmentDirectoryService;
 import sh.harold.fulcrum.api.menu.impl.MenuFeature;
 import sh.harold.fulcrum.api.message.impl.scoreboard.ScoreboardFeature;
+import sh.harold.fulcrum.api.module.FulcrumEnvironment;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
 import sh.harold.fulcrum.api.module.impl.ModuleFeature;
@@ -120,8 +120,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         getLogger().info("Fulcrum starting with role-based module detection");
 
         // Load environment configuration to verify modules later
-        EnvironmentConfigParser configParser = new EnvironmentConfigParser();
-        EnvironmentConfig environmentConfig = resolveEnvironmentConfig(container, configParser);
+        EnvironmentConfig environmentConfig = resolveEnvironmentConfig(container);
 
         // Create service locator and platform
         FulcrumPlatform platform = new FulcrumPlatform(serviceLocator);
@@ -139,14 +138,14 @@ public final class FulcrumPlugin extends JavaPlugin {
         getLogger().info("Fulcrum started successfully");
     }
 
-    private EnvironmentConfig resolveEnvironmentConfig(DependencyContainer container, EnvironmentConfigParser parser) {
+    private EnvironmentConfig resolveEnvironmentConfig(DependencyContainer container) {
         EnvironmentDirectoryService directoryService = container.getOptional(EnvironmentDirectoryService.class)
                 .orElseGet(() -> Optional.ofNullable(ServiceLocatorImpl.getInstance())
                         .flatMap(locator -> locator.findService(EnvironmentDirectoryService.class))
                         .orElse(null));
 
         if (directoryService == null) {
-            return parser.loadDefaultConfiguration();
+            throw new IllegalStateException("Environment directory service unavailable; aborting startup");
         }
 
         Map<String, Set<String>> mappings = new LinkedHashMap<>();
@@ -155,7 +154,12 @@ public final class FulcrumPlugin extends JavaPlugin {
         }
 
         if (mappings.isEmpty()) {
-            return parser.loadDefaultConfiguration();
+            throw new IllegalStateException("Environment directory returned no environments; aborting startup");
+        }
+
+        String currentEnvironment = FulcrumEnvironment.getCurrent();
+        if (!mappings.containsKey(currentEnvironment)) {
+            throw new IllegalStateException("Environment '" + currentEnvironment + "' not present in environment directory; aborting startup");
         }
 
         return new EnvironmentConfig(mappings);

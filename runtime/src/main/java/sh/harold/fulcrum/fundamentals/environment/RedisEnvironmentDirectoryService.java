@@ -1,13 +1,9 @@
 package sh.harold.fulcrum.fundamentals.environment;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.api.environment.EnvironmentConfig;
-import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
-import sh.harold.fulcrum.api.environment.directory.EnvironmentDescriptorView;
 import sh.harold.fulcrum.api.environment.directory.EnvironmentDirectoryService;
 import sh.harold.fulcrum.api.environment.directory.EnvironmentDirectoryView;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
@@ -16,11 +12,10 @@ import sh.harold.fulcrum.api.messagebus.messages.environment.EnvironmentDirector
 import sh.harold.fulcrum.api.messagebus.messages.environment.EnvironmentDirectoryResponseMessage;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.util.*;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -28,13 +23,13 @@ import java.util.logging.Logger;
 
 final class RedisEnvironmentDirectoryService implements EnvironmentDirectoryService {
     private static final String DIRECTORY_KEY = "network:environments:directory";
+    private static final String REGISTRY_SERVER_ID = "registry-service";
 
     private final JavaPlugin plugin;
     private final MessageBus messageBus;
     private final LettuceRedisOperations redisOperations;
     private final Logger logger;
     private final ObjectMapper mapper;
-    private final Map<String, EnvironmentDescriptorView> bundledDefaults;
 
     private volatile EnvironmentDirectoryView activeDirectory;
 
@@ -49,13 +44,12 @@ final class RedisEnvironmentDirectoryService implements EnvironmentDirectoryServ
         this.mapper = new ObjectMapper();
         this.mapper.registerModule(new JavaTimeModule());
         this.mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        this.bundledDefaults = loadBundledDefaults();
-        this.activeDirectory = new EnvironmentDirectoryView(bundledDefaults, "defaults");
+        this.activeDirectory = new EnvironmentDirectoryView(Map.of(), "uninitialized");
     }
 
     @Override
     public synchronized EnvironmentDirectoryView getDirectory() {
-        if (activeDirectory == null) {
+        if (activeDirectory == null || activeDirectory.environments().isEmpty()) {
             refresh();
         }
         return activeDirectory;
@@ -75,15 +69,7 @@ final class RedisEnvironmentDirectoryService implements EnvironmentDirectoryServ
             return;
         }
 
-        Optional<EnvironmentDirectoryView> fileDirectory = loadFromEnvironmentFile();
-        if (fileDirectory.isPresent()) {
-            updateActive(fileDirectory.get(), "environment.yml");
-            logger.warning("Environment directory fallback to local environment.yml file");
-            return;
-        }
-
-        updateActive(new EnvironmentDirectoryView(bundledDefaults, "defaults"), "defaults");
-        logger.warning("Environment directory fallback to bundled defaults");
+        throw new IllegalStateException("Unable to resolve environment directory from Redis or registry-service");
     }
 
     private Optional<EnvironmentDirectoryView> loadFromRedis() {
@@ -112,7 +98,7 @@ final class RedisEnvironmentDirectoryService implements EnvironmentDirectoryServ
             UUID requestId = UUID.randomUUID();
             EnvironmentDirectoryRequestMessage request = new EnvironmentDirectoryRequestMessage(requestId, true);
             CompletableFuture<Object> future = messageBus.request(
-                    "registry-service",
+                    REGISTRY_SERVER_ID,
                     ChannelConstants.REGISTRY_ENVIRONMENT_DIRECTORY_REQUEST,
                     request,
                     Duration.ofSeconds(5)
@@ -135,39 +121,11 @@ final class RedisEnvironmentDirectoryService implements EnvironmentDirectoryServ
         return Optional.empty();
     }
 
-    private Optional<EnvironmentDirectoryView> loadFromEnvironmentFile() {
-        Path path = Path.of("./environment.yml");
-        if (!Files.exists(path)) {
-            return Optional.empty();
-        }
-        try {
-            EnvironmentConfigParser parser = new EnvironmentConfigParser();
-            EnvironmentConfig config = parser.loadDefaultConfiguration();
-            Map<String, EnvironmentDescriptorView> descriptors = new LinkedHashMap<>();
-            config.getAllMappings().forEach((id, modules) -> descriptors.put(id,
-                    new EnvironmentDescriptorView(id, id, List.copyOf(modules), "")));
-            return Optional.of(new EnvironmentDirectoryView(descriptors, "environment.yml"));
-        } catch (Exception ex) {
-            logger.log(Level.WARNING, "Failed to load environment.yml fallback", ex);
-            return Optional.empty();
-        }
-    }
-
-    private Map<String, EnvironmentDescriptorView> loadBundledDefaults() {
-        try (InputStream input = plugin.getResource("environment-directory-defaults.json")) {
-            if (input == null) {
-                return Map.of();
-            }
-            return mapper.readValue(input, new TypeReference<Map<String, EnvironmentDescriptorView>>() {
-            });
-        } catch (Exception ex) {
-            logger.log(Level.WARNING, "Failed to load bundled environment directory defaults", ex);
-            return Map.of();
-        }
-    }
-
     private void updateActive(EnvironmentDirectoryView view, String source) {
         this.activeDirectory = view;
         logger.fine(() -> "Environment directory refreshed from " + source + " (revision=" + view.revision() + ")");
+        if (view.environments().isEmpty()) {
+            throw new IllegalStateException("Environment directory refresh from " + source + " returned no environments");
+        }
     }
 }

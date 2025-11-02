@@ -1,11 +1,9 @@
 package sh.harold.fulcrum.velocity.fundamentals.environment;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.environment.directory.EnvironmentDescriptorView;
 import sh.harold.fulcrum.api.environment.directory.EnvironmentDirectoryService;
 import sh.harold.fulcrum.api.environment.directory.EnvironmentDirectoryView;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
@@ -15,7 +13,6 @@ import sh.harold.fulcrum.api.messagebus.messages.environment.EnvironmentDirector
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.session.LettuceSessionRedisClient;
 
-import java.io.InputStream;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
@@ -32,7 +29,6 @@ final class VelocityEnvironmentDirectoryService implements EnvironmentDirectoryS
     private final MessageBus messageBus;
     private final LettuceSessionRedisClient redisClient;
     private final ObjectMapper mapper;
-    private final Map<String, EnvironmentDescriptorView> fallback;
 
     private volatile EnvironmentDirectoryView activeDirectory;
 
@@ -47,13 +43,12 @@ final class VelocityEnvironmentDirectoryService implements EnvironmentDirectoryS
         this.mapper = new ObjectMapper();
         this.mapper.registerModule(new JavaTimeModule());
         this.mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        this.fallback = loadBundledDefaults();
-        this.activeDirectory = new EnvironmentDirectoryView(fallback, "defaults");
+        this.activeDirectory = new EnvironmentDirectoryView(Map.of(), "uninitialized");
     }
 
     @Override
     public synchronized EnvironmentDirectoryView getDirectory() {
-        if (activeDirectory == null) {
+        if (activeDirectory == null || activeDirectory.environments().isEmpty()) {
             refresh();
         }
         return activeDirectory;
@@ -73,8 +68,7 @@ final class VelocityEnvironmentDirectoryService implements EnvironmentDirectoryS
             return;
         }
 
-        logger.warn("Environment directory unavailable from registry; using bundled defaults");
-        updateDirectory(new EnvironmentDirectoryView(fallback, "defaults"), "defaults");
+        throw new IllegalStateException("Unable to resolve environment directory from Redis or registry-service");
     }
 
     private Optional<EnvironmentDirectoryView> loadFromRedis() {
@@ -126,23 +120,11 @@ final class VelocityEnvironmentDirectoryService implements EnvironmentDirectoryS
         return Optional.empty();
     }
 
-    private Map<String, EnvironmentDescriptorView> loadBundledDefaults() {
-        try (InputStream input = plugin.getClass().getClassLoader()
-                .getResourceAsStream("environment-directory-defaults.json")) {
-            if (input == null) {
-                logger.warn("Missing resource: environment-directory-defaults.json");
-                return Map.of();
-            }
-            return mapper.readValue(input, new TypeReference<Map<String, EnvironmentDescriptorView>>() {
-            });
-        } catch (Exception ex) {
-            logger.error("Failed to load bundled environment directory defaults", ex);
-            return Map.of();
-        }
-    }
-
     private void updateDirectory(EnvironmentDirectoryView view, String source) {
         this.activeDirectory = view;
         logger.debug("Environment directory refreshed from {} (revision={})", source, view.revision());
+        if (view.environments().isEmpty()) {
+            throw new IllegalStateException("Environment directory refresh from " + source + " returned no environments");
+        }
     }
 }
