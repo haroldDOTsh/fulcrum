@@ -61,7 +61,7 @@ public final class EnvironmentDirectoryRepository implements AutoCloseable {
 
     @Override
     public void close() {
-        connectionAdapter.close();
+        // Mongo adapter lifecycle managed by registry service
     }
 
     private Optional<EnvironmentDirectoryDocument> mapDocument(Document document) {

@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.Collection;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
-import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.punishment.PunishmentEffectType;
 
 import java.time.Instant;
@@ -12,13 +11,11 @@ import java.util.*;
 
 public final class PunishmentSnapshotWriter implements AutoCloseable {
 
-    private final MongoConnectionAdapter mongoAdapter;
     private final DataAPI dataAPI;
     private final Collection playersCollection;
     private final Logger logger;
 
-    public PunishmentSnapshotWriter(MongoConnectionAdapter adapter, DataAPI dataAPI, Logger logger) {
-        this.mongoAdapter = adapter;
+    public PunishmentSnapshotWriter(DataAPI dataAPI, Logger logger) {
         this.dataAPI = dataAPI;
         this.playersCollection = dataAPI.players();
         this.logger = logger;
@@ -73,9 +70,6 @@ public final class PunishmentSnapshotWriter implements AutoCloseable {
 
     @Override
     public void close() {
-        try {
-            mongoAdapter.close();
-        } catch (Exception ignored) {
-        }
+        // Mongo adapter lifecycle managed by registry service; no-op
     }
 }

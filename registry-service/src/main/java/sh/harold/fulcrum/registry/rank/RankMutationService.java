@@ -30,17 +30,16 @@ public final class RankMutationService implements AutoCloseable {
 
     public RankMutationService(MessageBus messageBus,
                                Logger logger,
-                               String connectionString,
-                               String databaseName) {
+                               MongoConnectionAdapter connectionAdapter) {
         this.messageBus = messageBus;
         this.logger = logger;
-        this.connectionAdapter = new MongoConnectionAdapter(connectionString, databaseName);
+        this.connectionAdapter = connectionAdapter;
         this.dataAPI = DataAPI.create(connectionAdapter);
         this.playersCollection = dataAPI.collection(PLAYERS_COLLECTION);
 
         this.requestHandler = this::handleRequest;
         this.messageBus.subscribe(ChannelConstants.REGISTRY_RANK_MUTATION_REQUEST, requestHandler);
-        logger.info("RankMutationService subscribed to mutation requests (database='{}')", databaseName);
+        logger.info("RankMutationService subscribed to mutation requests (database='{}')", connectionAdapter.getDatabaseName());
     }
 
     private void handleRequest(MessageEnvelope envelope) {
@@ -300,7 +299,6 @@ public final class RankMutationService implements AutoCloseable {
     @Override
     public void close() {
         messageBus.unsubscribe(ChannelConstants.REGISTRY_RANK_MUTATION_REQUEST, requestHandler);
-        connectionAdapter.close();
     }
 
     public record RankSnapshot(Rank primary, List<Rank> ranks) {

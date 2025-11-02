@@ -46,10 +46,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  * Centralized Registry Service for managing server and proxy registrations.
@@ -83,6 +80,7 @@ public class RegistryService {
     private RedisManager redisManager;
     private RedisHeartbeatStore redisHeartbeatStore;
     private RedisRegistryInspector redisRegistryInspector;
+    private final Map<String, MongoConnectionAdapter> mongoAdapters = new ConcurrentHashMap<>();
 
     public RegistryService() {
         this.config = loadYamlConfig();
@@ -123,6 +121,47 @@ public class RegistryService {
         if (!SLF4JBridgeHandler.isInstalled()) {
             SLF4JBridgeHandler.install();
         }
+    }
+
+    private MongoConnectionAdapter getMongoAdapter(String owner, String connectionString, String database) {
+        String key = mongoKey(connectionString, database);
+        MongoConnectionAdapter existing = mongoAdapters.get(key);
+        if (existing != null) {
+            return existing;
+        }
+
+        MongoConnectionAdapter created = new MongoConnectionAdapter(connectionString, database);
+        MongoConnectionAdapter prior = mongoAdapters.putIfAbsent(key, created);
+        if (prior != null) {
+            created.close();
+            return prior;
+        }
+        return created;
+    }
+
+    private void discardMongoAdapter(String connectionString, String database, MongoConnectionAdapter adapter) {
+        if (adapter != null && mongoAdapters.remove(mongoKey(connectionString, database), adapter)) {
+            try {
+                adapter.close();
+            } catch (Exception ex) {
+                LOGGER.warn("Failed to close Mongo adapter '{}|{}'", connectionString, database, ex);
+            }
+        }
+    }
+
+    private void closeMongoAdapters() {
+        mongoAdapters.forEach((key, adapter) -> {
+            try {
+                adapter.close();
+            } catch (Exception ex) {
+                LOGGER.warn("Failed to close Mongo adapter '{}'", key, ex);
+            }
+        });
+        mongoAdapters.clear();
+    }
+
+    private String mongoKey(String connectionString, String database) {
+        return connectionString + "|" + database;
     }
 
     private Map<String, Object> loadYamlConfig() {
@@ -563,16 +602,17 @@ public class RegistryService {
                 : Integer.parseInt(String.valueOf(redisSection.getOrDefault("port", 6379)));
         String redisPassword = String.valueOf(redisSection.getOrDefault("password", ""));
 
+        boolean adapterPreExisting = mongoAdapters.containsKey(mongoKey(connectionString, database));
         MongoConnectionAdapter adapter = null;
         try {
-            adapter = new MongoConnectionAdapter(connectionString, database);
+            adapter = getMongoAdapter("network-config", connectionString, database);
             NetworkConfigRepository repository = new NetworkConfigRepository(adapter);
             NetworkConfigCache cache = new NetworkConfigCache(redisHost, redisPort, redisPassword, LOGGER);
             return new NetworkConfigManager(repository, cache, messageBus, LOGGER);
         } catch (Exception ex) {
             LOGGER.error("Failed to initialise network configuration manager", ex);
-            if (adapter != null) {
-                adapter.close();
+            if (!adapterPreExisting) {
+                discardMongoAdapter(connectionString, database, adapter);
             }
             return null;
         }
@@ -611,16 +651,17 @@ public class RegistryService {
                 : Integer.parseInt(String.valueOf(redisSection.getOrDefault("port", 6379)));
         String redisPassword = String.valueOf(redisSection.getOrDefault("password", ""));
 
+        boolean adapterPreExisting = mongoAdapters.containsKey(mongoKey(connectionString, database));
         MongoConnectionAdapter adapter = null;
         try {
-            adapter = new MongoConnectionAdapter(connectionString, database);
+            adapter = getMongoAdapter("environment-directory", connectionString, database);
             EnvironmentDirectoryRepository repository = new EnvironmentDirectoryRepository(adapter);
             EnvironmentDirectoryCache cache = new EnvironmentDirectoryCache(redisHost, redisPort, redisPassword, LOGGER);
             return new EnvironmentDirectoryManager(repository, cache, messageBus, LOGGER);
         } catch (Exception ex) {
             LOGGER.error("Failed to initialise environment directory manager", ex);
-            if (adapter != null) {
-                adapter.close();
+            if (!adapterPreExisting) {
+                discardMongoAdapter(connectionString, database, adapter);
             }
             return null;
         }
@@ -694,10 +735,16 @@ public class RegistryService {
         String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
         String database = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
 
+        boolean adapterPreExisting = mongoAdapters.containsKey(mongoKey(connectionString, database));
+        MongoConnectionAdapter adapter = null;
         try {
-            return new RankMutationService(messageBus, LOGGER, connectionString, database);
+            adapter = getMongoAdapter("rank-mutation", connectionString, database);
+            return new RankMutationService(messageBus, LOGGER, adapter);
         } catch (Exception e) {
             LOGGER.error("Failed to initialise rank mutation service", e);
+            if (!adapterPreExisting) {
+                discardMongoAdapter(connectionString, database, adapter);
+            }
             return null;
         }
     }
@@ -733,16 +780,21 @@ public class RegistryService {
         String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
         String mongoDatabase = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
 
+        boolean adapterPreExisting = mongoAdapters.containsKey(mongoKey(connectionString, mongoDatabase));
+        MongoConnectionAdapter mongoAdapter = null;
         try {
             PostgresConnectionAdapter postgresAdapter = new PostgresConnectionAdapter(jdbcUrl, username, password, database);
-            MongoConnectionAdapter mongoAdapter = new MongoConnectionAdapter(connectionString, mongoDatabase);
+            mongoAdapter = getMongoAdapter("punishment", connectionString, mongoDatabase);
             DataAPI dataAPI = DataAPI.create(mongoAdapter);
 
             PunishmentRepository repository = new PunishmentRepository(postgresAdapter, LOGGER);
-            PunishmentSnapshotWriter snapshotWriter = new PunishmentSnapshotWriter(mongoAdapter, dataAPI, LOGGER);
+            PunishmentSnapshotWriter snapshotWriter = new PunishmentSnapshotWriter(dataAPI, LOGGER);
             return new PunishmentService(messageBus, LOGGER, repository, snapshotWriter);
         } catch (Exception ex) {
             LOGGER.error("Failed to initialise punishment service", ex);
+            if (!adapterPreExisting) {
+                discardMongoAdapter(connectionString, mongoDatabase, mongoAdapter);
+            }
             return null;
         }
     }
@@ -838,6 +890,8 @@ public class RegistryService {
                     LOGGER.warn("Failed to close Redis manager", ex);
                 }
             }
+
+            closeMongoAdapters();
 
             // MessageBus shutdown is handled by the adapter
 

@@ -17,7 +17,6 @@ import java.util.Objects;
 public final class EnvironmentDirectoryCache implements Closeable {
     private static final String DIRECTORY_KEY = "network:environments:directory";
     private static final String META_KEY = "network:environments:meta";
-
     private final Logger logger;
     private final RedisClient redisClient;
     private final StatefulRedisConnection<String, String> connection;
