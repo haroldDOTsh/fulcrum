@@ -265,6 +265,12 @@ public class PlayerSessionService {
                 }
                 return;
             }
+            if ("extras".equals(key) && value instanceof Map<?, ?> map) {
+                Map<String, Object> extrasCopy = copyNestedMap(map);
+                record.getExtras().clear();
+                record.getExtras().putAll(extrasCopy);
+                return;
+            }
             if ("clientProtocolVersion".equals(key)) {
                 record.setClientProtocolVersion(parseProtocolVersion(value));
                 return;
@@ -342,6 +348,14 @@ public class PlayerSessionService {
             LOGGER.log(Level.SEVERE, "Failed to parse session payload for " + playerId, e);
             return Optional.empty();
         }
+    }
+
+    public Optional<PlayerSessionRecord> reload(UUID playerId) {
+        if (playerId == null) {
+            return Optional.empty();
+        }
+        localRecords.remove(playerId);
+        return fetchRecord(playerId);
     }
 
     private void persistRecord(PlayerSessionRecord record) {

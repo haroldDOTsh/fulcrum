@@ -18,6 +18,7 @@ public class PlayerSessionRecord {
     private final Map<String, Object> rank = new HashMap<>();
     private final Map<String, Object> minigames = new HashMap<>();
     private final Map<String, Object> extras = new HashMap<>();
+    private final Map<String, Map<String, Object>> scopedData = new HashMap<>();
     private final List<Segment> segments = new ArrayList<>();
     private UUID playerId;
     private String sessionId;
@@ -131,6 +132,11 @@ public class PlayerSessionRecord {
     }
 
     @JsonIgnore
+    public Map<String, Object> mutableSettings() {
+        return getSettingsInternal(true);
+    }
+
+    @JsonIgnore
     public PlayerDebugLevel getDebugLevel() {
         Map<String, Object> settings = getSettingsInternal(false);
         if (settings == null) {
@@ -217,6 +223,45 @@ public class PlayerSessionRecord {
         Map<String, Object> copy = new LinkedHashMap<>();
         map.forEach((key, value) -> copy.put(String.valueOf(key), value));
         return copy;
+    }
+
+    @JsonProperty("scoped")
+    public Map<String, Map<String, Object>> getScopedData() {
+        return scopedData;
+    }
+
+    @JsonProperty("scoped")
+    public void setScopedData(Map<String, Map<String, Object>> data) {
+        scopedData.clear();
+        if (data != null) {
+            data.forEach((family, value) -> {
+                if (family != null && !family.isBlank() && value != null) {
+                    scopedData.put(family, new LinkedHashMap<>(value));
+                }
+            });
+        }
+    }
+
+    @JsonIgnore
+    public Map<String, Object> ensureScopedFamily(String family) {
+        Map<String, Object> familyState = scopedData.computeIfAbsent(family, ignored -> new LinkedHashMap<>());
+        familyState.putIfAbsent("settings", new LinkedHashMap<>());
+        return familyState;
+    }
+
+    @JsonIgnore
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getScopedSettings(String family) {
+        Map<String, Object> familyState = ensureScopedFamily(family);
+        Object settings = familyState.get("settings");
+        if (settings instanceof Map<?, ?> map) {
+            Map<String, Object> typed = toMutableMap(map);
+            familyState.put("settings", typed);
+            return typed;
+        }
+        Map<String, Object> created = new LinkedHashMap<>();
+        familyState.put("settings", created);
+        return created;
     }
 
     @JsonIgnore

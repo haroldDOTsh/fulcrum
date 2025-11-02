@@ -8,6 +8,7 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
@@ -22,6 +23,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     private DataAPI dataAPI;
     private ServiceLocator serviceLocator;
     private PlayerSettingsService playerSettingsService;
+    private PlayerCache playerCache;
 
     @Override
     public String getName() {
@@ -43,7 +45,9 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         this.dataAPI = serviceLocator.getService(DataAPI.class).orElseThrow(
                 () -> new RuntimeException("DataAPI not available"));
 
-        this.playerSettingsService = new VelocityPlayerSettingsService(dataAPI, sessionService);
+        this.playerCache = new VelocityPlayerCache(dataAPI, sessionService);
+        this.playerSettingsService = new VelocityPlayerSettingsService(playerCache, sessionService);
+        serviceLocator.register(PlayerCache.class, playerCache);
         serviceLocator.register(PlayerSettingsService.class, playerSettingsService);
 
         // Register event listeners - MUST use plugin instance as container
@@ -77,8 +81,11 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
             proxy.getEventManager().unregisterListeners(plugin);
         }
         if (serviceLocator != null) {
+            serviceLocator.unregister(PlayerCache.class);
             serviceLocator.unregister(PlayerSettingsService.class);
         }
+        playerCache = null;
+        playerSettingsService = null;
         logger.info("Shutting down PlayerDataFeature for Velocity");
     }
 

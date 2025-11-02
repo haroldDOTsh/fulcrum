@@ -56,12 +56,47 @@ public interface PlayerSettingsService {
     }
 
     /**
-     * Obtain a scoped accessor for minigame-specific settings.
+     * Retrieve a typed value for the provided key from the global settings namespace.
      */
-    GameSettingsScope forGame(String gameId);
+    default <T> CompletionStage<Optional<T>> getSetting(UUID playerId, String key, Class<T> type) {
+        return CompletableFuture.completedFuture(Optional.empty());
+    }
 
     /**
-     * Represents settings tied to a specific minigame or experience.
+     * Set or replace the value for the provided key in the global settings namespace.
+     */
+    default CompletionStage<Void> setSetting(UUID playerId, String key, Object value) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Remove a value for the provided key in the global settings namespace, if present.
+     */
+    default CompletionStage<Void> removeSetting(UUID playerId, String key) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Convenience accessor for minigame-specific settings.
+     */
+    default GameSettingsScope forGame(String gameId) {
+        return forScope(gameId, null);
+    }
+
+    /**
+     * Obtain a scoped accessor for a family without a variant.
+     */
+    default GameSettingsScope forFamily(String family) {
+        return forScope(family, null);
+    }
+
+    /**
+     * Obtain a scoped accessor for settings persisted under a specific family/variant pair.
+     */
+    GameSettingsScope forScope(String family, String variant);
+
+    /**
+     * Represents settings tied to a specific experience family/variant.
      */
     interface GameSettingsScope {
 

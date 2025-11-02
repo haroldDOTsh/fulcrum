@@ -1,7 +1,6 @@
 package sh.harold.fulcrum.fundamentals.playerdata;
 
-import sh.harold.fulcrum.api.data.DataAPI;
-import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.common.settings.PlayerDebugLevel;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.common.settings.SettingLevel;
@@ -11,18 +10,13 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
-/**
- * Paper-side implementation of the shared player settings facade.
- */
-public class RuntimePlayerSettingsService implements PlayerSettingsService {
-    private static final String PLAYERS_COLLECTION = "players";
-    private static final String SETTINGS_PREFIX = "settings";
+public final class RuntimePlayerSettingsService implements PlayerSettingsService {
 
-    private final DataAPI dataAPI;
+    private final PlayerCache playerCache;
     private final PlayerSessionService sessionService;
 
-    public RuntimePlayerSettingsService(DataAPI dataAPI, PlayerSessionService sessionService) {
-        this.dataAPI = Objects.requireNonNull(dataAPI, "dataAPI");
+    public RuntimePlayerSettingsService(PlayerCache playerCache, PlayerSessionService sessionService) {
+        this.playerCache = Objects.requireNonNull(playerCache, "playerCache");
         this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
     }
 
@@ -35,15 +29,15 @@ public class RuntimePlayerSettingsService implements PlayerSettingsService {
         return CompletableFuture.completedFuture(readDebugLevel(playerId));
     }
 
-    @Override
-    public CompletionStage<Void> setDebugLevel(UUID playerId, PlayerDebugLevel level) {
-        if (playerId == null) {
-            return CompletableFuture.completedFuture(null);
+    private static String normalizeVariant(String variant) {
+        if (variant == null) {
+            return null;
         }
-        PlayerDebugLevel sanitized = PlayerDebugLevel.sanitize(level);
-        sessionService.setDebugLevel(playerId, sanitized);
-        writePlayerSetting(playerId, "debug.level", sanitized.name());
-        return CompletableFuture.completedFuture(null);
+        String normalized = variant.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        return normalized.replace(' ', '_').toLowerCase(Locale.ROOT);
     }
 
     @Override
@@ -52,130 +46,118 @@ public class RuntimePlayerSettingsService implements PlayerSettingsService {
         return CompletableFuture.completedFuture(resolved);
     }
 
+    private static String normalizeFamily(String family) {
+        String normalizedFamily = Objects.requireNonNull(family, "family").trim();
+        if (normalizedFamily.isEmpty()) {
+            throw new IllegalArgumentException("family must not be empty");
+        }
+        return normalizedFamily.replace(' ', '_').toLowerCase(Locale.ROOT);
+    }
+
     @Override
-    public CompletionStage<Void> setLevel(UUID playerId, String key, SettingLevel level) {
-        writePlayerSetting(playerId, key, level.name());
+    public CompletionStage<Void> setDebugLevel(UUID playerId, PlayerDebugLevel level) {
+        if (playerId == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        PlayerDebugLevel sanitized = PlayerDebugLevel.sanitize(level);
+        sessionService.setDebugLevel(playerId, sanitized);
+        playerCache.root(playerId).set("debug.level", sanitized.name());
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public GameSettingsScope forGame(String gameId) {
-        return new RuntimeGameSettingsScope(dataAPI, gameId);
+    public CompletionStage<Void> setLevel(UUID playerId, String key, SettingLevel level) {
+        playerCache.root(playerId).set(key, level.name());
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public <T> CompletionStage<Optional<T>> getSetting(UUID playerId, String key, Class<T> type) {
+        if (playerId == null || key == null || key.isBlank() || type == null) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        Optional<T> value = readPlayerSetting(playerId, key, type);
+        return CompletableFuture.completedFuture(value);
+    }
+
+    @Override
+    public CompletionStage<Void> setSetting(UUID playerId, String key, Object value) {
+        if (playerId == null || key == null || key.isBlank()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        playerCache.root(playerId).set(key, value);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletionStage<Void> removeSetting(UUID playerId, String key) {
+        if (playerId == null || key == null || key.isBlank()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        playerCache.root(playerId).remove(key);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public GameSettingsScope forScope(String family, String variant) {
+        return new RuntimeScopedSettingsScope(playerCache, normalizeFamily(family), normalizeVariant(variant));
     }
 
     private <E extends Enum<E>> E readEnumSetting(UUID playerId, String path, Class<E> type, E fallback) {
-        Document document = dataAPI.collection(PLAYERS_COLLECTION).document(playerId.toString());
-        if (!document.exists()) {
-            return fallback;
-        }
-        Object value = document.get(SETTINGS_PREFIX + "." + path, null);
-        if (value == null) {
-            return fallback;
-        }
-        try {
-            return Enum.valueOf(type, String.valueOf(value));
-        } catch (IllegalArgumentException ex) {
-            return fallback;
-        }
+        return playerCache.root(playerId)
+                .get(path, String.class)
+                .map(raw -> {
+                    try {
+                        return Enum.valueOf(type, raw);
+                    } catch (IllegalArgumentException ignored) {
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .orElse(fallback);
     }
 
-    private void writePlayerSetting(UUID playerId, String path, Object value) {
-        Document document = dataAPI.collection(PLAYERS_COLLECTION).document(playerId.toString());
-        if (!document.exists()) {
-            Map<String, Object> seeded = new LinkedHashMap<>();
-            seeded.put(SETTINGS_PREFIX, new LinkedHashMap<>());
-            dataAPI.collection(PLAYERS_COLLECTION).create(playerId.toString(), seeded);
-            document = dataAPI.collection(PLAYERS_COLLECTION).document(playerId.toString());
-        }
-        document.set(SETTINGS_PREFIX + "." + path, value);
+    private <T> Optional<T> readPlayerSetting(UUID playerId, String path, Class<T> type) {
+        return playerCache.root(playerId).get(path, type);
     }
 
     private PlayerDebugLevel readDebugLevel(UUID playerId) {
-        Document document = dataAPI.collection(PLAYERS_COLLECTION).document(playerId.toString());
-        if (!document.exists()) {
-            return PlayerDebugLevel.NONE;
-        }
-        Object levelValue = document.get(SETTINGS_PREFIX + ".debug.level", null);
-        if (levelValue != null) {
-            return PlayerDebugLevel.from(levelValue);
-        }
-        return PlayerDebugLevel.NONE;
+        return playerCache.root(playerId)
+                .get("debug.level", String.class)
+                .map(PlayerDebugLevel::from)
+                .orElse(PlayerDebugLevel.NONE);
     }
 
-    private record RuntimeGameSettingsScope(DataAPI dataAPI, String collectionName) implements GameSettingsScope {
-            private RuntimeGameSettingsScope(DataAPI dataAPI, String collectionName) {
-                this.dataAPI = dataAPI;
-                this.collectionName = "minigame_" + collectionName;
+    private record RuntimeScopedSettingsScope(PlayerCache playerCache, String family,
+                                              String variant) implements GameSettingsScope {
+            private RuntimeScopedSettingsScope(PlayerCache playerCache, String family, String variant) {
+                this.playerCache = playerCache;
+                this.family = Objects.requireNonNull(family, "family");
+                this.variant = variant;
             }
 
             @Override
             public CompletionStage<Map<String, Object>> getAll(UUID playerId) {
-                Document document = document(playerId);
-                if (!document.exists()) {
-                    return CompletableFuture.completedFuture(Collections.emptyMap());
-                }
-                Object raw = document.get(SETTINGS_PREFIX);
-                if (raw instanceof Map<?, ?> map) {
-                    return CompletableFuture.completedFuture(Collections.unmodifiableMap(castMap(map)));
-                }
-                return CompletableFuture.completedFuture(Collections.emptyMap());
+                Map<String, Object> snapshot = playerCache.scoped(family, variant, playerId).snapshot();
+                return CompletableFuture.completedFuture(Collections.unmodifiableMap(snapshot));
             }
 
             @Override
             public <T> CompletionStage<Optional<T>> get(UUID playerId, String key, Class<T> type) {
-                Document document = document(playerId);
-                if (!document.exists()) {
-                    return CompletableFuture.completedFuture(Optional.empty());
-                }
-                Object value = document.get(SETTINGS_PREFIX + "." + key, null);
-                if (type.isInstance(value)) {
-                    return CompletableFuture.completedFuture(Optional.of(type.cast(value)));
-                }
-                return CompletableFuture.completedFuture(Optional.empty());
+                Optional<T> value = playerCache.scoped(family, variant, playerId).get(key, type);
+                return CompletableFuture.completedFuture(value);
             }
 
             @Override
             public CompletionStage<Void> set(UUID playerId, String key, Object value) {
-                Document document = ensureDocument(playerId);
-                document.set(SETTINGS_PREFIX + "." + key, value);
+                playerCache.scoped(family, variant, playerId).set(key, value);
                 return CompletableFuture.completedFuture(null);
             }
 
             @Override
             public CompletionStage<Void> remove(UUID playerId, String key) {
-                Document document = document(playerId);
-                if (document.exists()) {
-                    Map<String, Object> settings = castMap(document.get(SETTINGS_PREFIX));
-                    if (settings.remove(key) != null) {
-                        document.set(SETTINGS_PREFIX, settings);
-                    }
-                }
+                playerCache.scoped(family, variant, playerId).remove(key);
                 return CompletableFuture.completedFuture(null);
-            }
-
-            private Document document(UUID playerId) {
-                return dataAPI.collection(collectionName).document(playerId.toString());
-            }
-
-            private Document ensureDocument(UUID playerId) {
-                Document document = document(playerId);
-                if (!document.exists()) {
-                    Map<String, Object> payload = new LinkedHashMap<>();
-                    payload.put(SETTINGS_PREFIX, new LinkedHashMap<>());
-                    dataAPI.collection(collectionName).create(playerId.toString(), payload);
-                    document = document(playerId);
-                }
-                return document;
-            }
-
-            @SuppressWarnings("unchecked")
-            private Map<String, Object> castMap(Object raw) {
-                if (raw instanceof Map<?, ?> map) {
-                    Map<String, Object> copy = new LinkedHashMap<>();
-                    map.forEach((k, v) -> copy.put(String.valueOf(k), v));
-                    return copy;
-                }
-                return new LinkedHashMap<>();
             }
         }
 }

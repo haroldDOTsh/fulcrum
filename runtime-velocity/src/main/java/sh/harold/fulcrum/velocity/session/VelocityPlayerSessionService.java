@@ -147,6 +147,12 @@ public class VelocityPlayerSessionService {
                 }
                 return;
             }
+            if ("extras".equals(key) && value instanceof Map<?, ?> map) {
+                Map<String, Object> extrasCopy = copyNestedMap(map);
+                record.getExtras().clear();
+                record.getExtras().putAll(extrasCopy);
+                return;
+            }
             if ("clientProtocolVersion".equals(key)) {
                 record.setClientProtocolVersion(parseProtocolVersion(value));
                 return;

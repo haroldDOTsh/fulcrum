@@ -11,6 +11,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -39,6 +40,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private PlayerSessionService sessionService;
     private sh.harold.fulcrum.fundamentals.session.PlayerSessionLogRepository sessionLogRepository;
     private PlayerSettingsService playerSettingsService;
+    private PlayerCache playerCache;
 
     private static Map<String, Object> buildDefaultSettings() {
         Map<String, Object> debug = new LinkedHashMap<>();
@@ -69,10 +71,13 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         // Register event listeners
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
 
-        this.playerSettingsService = new RuntimePlayerSettingsService(dataAPI, sessionService);
+        this.playerCache = new sh.harold.fulcrum.fundamentals.playerdata.cache.RuntimePlayerCache(dataAPI, sessionService);
+        this.playerSettingsService = new RuntimePlayerSettingsService(playerCache, sessionService);
+        container.register(PlayerCache.class, playerCache);
         container.register(PlayerSettingsService.class, playerSettingsService);
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
+            locator.registerService(PlayerCache.class, playerCache);
             locator.registerService(PlayerSettingsService.class, playerSettingsService);
         }
 
@@ -149,6 +154,8 @@ public class PlayerDataFeature implements PluginFeature, Listener {
 
         sessionService.endActiveSegment(playerId);
 
+        sessionService.reload(playerId);
+
         PlayerSessionService.PlayerSessionHandle handle = activeHandles.remove(playerId);
         if (handle == null) {
             return;
@@ -183,12 +190,15 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     public void shutdown() {
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
+            locator.unregisterService(PlayerCache.class);
             locator.unregisterService(PlayerSettingsService.class);
         }
         if (container != null) {
+            container.unregister(PlayerCache.class);
             container.unregister(PlayerSettingsService.class);
         }
         playerSettingsService = null;
+        playerCache = null;
         logger.info("Shutting down PlayerDataFeature");
     }
 
@@ -258,6 +268,10 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             if (settings instanceof Map<?, ?> map && !map.isEmpty()) {
                 filtered.put("settings", copyNestedMap(map));
             }
+            Object extras = source.get("extras");
+            if (extras instanceof Map<?, ?> map && !map.isEmpty()) {
+                filtered.put("extras", copyNestedMap(map));
+            }
             filtered.putIfAbsent("settings", buildDefaultSettings());
             return new PersistedState(filtered, true);
         }
@@ -276,6 +290,8 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             dataAPI.collection(PLAYERS_COLLECTION).create(record.getPlayerId().toString(), payload);
         }
         logger.fine(() -> "Persisted session for " + record.getPlayerId());
+
+        persistScopedDocuments(record);
     }
 
     private Map<String, Object> buildPersistencePayload(PlayerSessionRecord record) {
@@ -323,7 +339,43 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             payload.put("clientBrand", brand);
         }
 
+        if (!record.getExtras().isEmpty()) {
+            payload.put("extras", copyNestedMap(record.getExtras()));
+        }
+
         return payload;
+    }
+
+    private void persistScopedDocuments(PlayerSessionRecord record) {
+        Map<String, Map<String, Object>> scoped = record.getScopedData();
+        if (scoped.isEmpty()) {
+            return;
+        }
+        String playerId = record.getPlayerId().toString();
+        scoped.forEach((family, state) -> {
+            if (state == null || state.isEmpty()) {
+                return;
+            }
+            Object settingsObj = state.get("settings");
+            Map<String, Object> settings = settingsObj instanceof Map<?, ?> map ? copyNestedMap(map) : new LinkedHashMap<>();
+            boolean loaded = Boolean.TRUE.equals(state.get("__loaded"));
+            if (!loaded && settings.isEmpty()) {
+                return;
+            }
+            String collection = "player_data_" + family;
+            Document document = dataAPI.collection(collection).document(playerId);
+            if (settings.isEmpty()) {
+                if (document.exists()) {
+                    document.set("settings", new LinkedHashMap<>());
+                }
+            } else if (document.exists()) {
+                document.set("settings", settings);
+            } else {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("settings", settings);
+                dataAPI.collection(collection).create(playerId, payload);
+            }
+        });
     }
 
     private Map<String, Object> copyNestedMap(Map<?, ?> source) {

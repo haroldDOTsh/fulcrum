@@ -322,7 +322,7 @@ public class HeartbeatMonitor {
         }
 
         if (shouldLogInvalidProxyHeartbeat(targetId)) {
-            LOGGER.warn("Received heartbeat from proxy {} in state {} – ignoring until it re-registers",
+            LOGGER.warn("Received heartbeat from proxy {} in state {} - ignoring until it re-registers",
                     targetId, state);
         }
 
