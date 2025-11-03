@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.fundamentals.staff.command;
+package sh.harold.fulcrum.fundamentals.fun.command;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.context.CommandContext;
