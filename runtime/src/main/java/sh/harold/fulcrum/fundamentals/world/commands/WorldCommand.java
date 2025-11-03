@@ -322,8 +322,8 @@ public class WorldCommand {
                         return;
                     }
 
-                    if (result == null || !result.isSuccess()) {
-                        String message = result != null ? result.getMessage() : "Unknown paste failure";
+                    if (result == null || !result.success()) {
+                        String message = result != null ? result.message() : "Unknown paste failure";
                         sender.sendMessage(Component.text("Failed to paste world: " + message, NamedTextColor.RED));
                         Bukkit.unloadWorld(debugWorld, false);
                         return;
