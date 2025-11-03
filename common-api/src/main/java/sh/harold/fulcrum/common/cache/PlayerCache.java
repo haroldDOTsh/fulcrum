@@ -17,7 +17,7 @@ public interface PlayerCache {
     CachedDocument root(UUID playerId);
 
     /**
-     * Obtain a cache-backed view of a scoped player document (`player_data_<family>` collection).
+     * Obtain a cache-backed view of a scoped player document (for example a {@code player_data_xxx} collection).
      *
      * @param family  logical family identifier
      * @param variant optional variant identifier (may be {@code null})
