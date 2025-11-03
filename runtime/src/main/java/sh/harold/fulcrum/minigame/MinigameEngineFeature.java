@@ -187,6 +187,9 @@ public class MinigameEngineFeature implements PluginFeature {
         if (engine != null) {
             engine.shutdown();
         }
+        if (environmentService != null) {
+            environmentService.shutdown();
+        }
         if (routingListener != null) {
             routingListener.shutdown();
             if (ServiceLocatorImpl.getInstance() != null) {
@@ -204,6 +207,9 @@ public class MinigameEngineFeature implements PluginFeature {
             if (matchLogWriter != null) {
                 ServiceLocatorImpl.getInstance().unregisterService(MatchLogWriter.class);
             }
+            if (environmentService != null) {
+                ServiceLocatorImpl.getInstance().unregisterService(MinigameEnvironmentService.class);
+            }
         }
         if (containerRef != null) {
             if (dataRegistry != null) {
@@ -214,6 +220,9 @@ public class MinigameEngineFeature implements PluginFeature {
             }
             if (matchLogWriter != null) {
                 containerRef.unregister(MatchLogWriter.class);
+            }
+            if (environmentService != null) {
+                containerRef.unregister(MinigameEnvironmentService.class);
             }
         }
         routeRegistry = null;

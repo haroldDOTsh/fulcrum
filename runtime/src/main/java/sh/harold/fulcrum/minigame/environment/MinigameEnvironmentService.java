@@ -85,9 +85,9 @@ public class MinigameEnvironmentService {
             return null;
         }
 
-        if (pasteResult == null || !pasteResult.isSuccess()) {
+        if (pasteResult == null || !pasteResult.success()) {
             logger.warning("Unable to prepare map '" + resolvedMapId + "' for slot " + slotId + ": "
-                    + (pasteResult != null ? pasteResult.getMessage() : "unknown"));
+                    + (pasteResult != null ? pasteResult.message() : "unknown"));
             cleanupWorld(worldName);
             return null;
         }
@@ -109,9 +109,21 @@ public class MinigameEnvironmentService {
     }
 
     public void cleanup(String slotId) {
+        if (slotId == null) {
+            return;
+        }
         MatchEnvironment environment = environments.remove(slotId);
         if (environment != null) {
             cleanupWorld(environment.worldName());
+        }
+    }
+
+    public void shutdown() {
+        for (String slotId : new ArrayList<>(environments.keySet())) {
+            MatchEnvironment environment = environments.remove(slotId);
+            if (environment != null) {
+                cleanupWorld(environment.worldName());
+            }
         }
     }
 
@@ -200,6 +212,9 @@ public class MinigameEnvironmentService {
         }
 
         Path worldPath = Bukkit.getServer().getWorldContainer().toPath().resolve(worldName);
+        if (worldManager != null) {
+            worldManager.clearWorldPois(worldName);
+        }
         if (!Files.exists(worldPath)) {
             return;
         }

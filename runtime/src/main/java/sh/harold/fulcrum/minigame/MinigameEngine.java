@@ -451,6 +451,9 @@ public final class MinigameEngine {
             tickTask.cancel();
             tickTask = null;
         }
+        if (environmentService != null) {
+            environmentService.shutdown();
+        }
         activeMatches.clear();
         provisioningSlots.clear();
         cleaningSlots.clear();
@@ -477,6 +480,7 @@ public final class MinigameEngine {
     }
 
     private void processProvisionedSlot(SimpleSlotOrchestrator.ProvisionedSlot slot) {
+        final String slotId = slot.slotId();
         try {
             Optional<MinigameRegistration> registrationOpt = getRegistration(slot.familyId());
             if (registrationOpt.isEmpty()) {
@@ -505,6 +509,7 @@ public final class MinigameEngine {
                 if (slotOrchestrator != null) {
                     slotOrchestrator.disableFamily(slot.familyId(), "environment-unavailable");
                 }
+                cleanupEnvironment(slotId);
                 markSlotFault(slot.slotId(), "environment-unavailable");
                 return;
             }
@@ -516,6 +521,7 @@ public final class MinigameEngine {
             String worldName = environment.worldName();
             if (lobbySpawn == null || worldName == null || worldName.isBlank()) {
                 plugin.getLogger().warning("Environment for slot " + slot.slotId() + " did not provide a valid spawn location");
+                cleanupEnvironment(slotId);
                 markSlotFault(slot.slotId(), "spawn-unavailable");
                 return;
             }
@@ -533,6 +539,7 @@ public final class MinigameEngine {
                     + " (world=" + worldName + ")");
         } catch (Exception exception) {
             plugin.getLogger().log(Level.WARNING, "Failed to finalize provisioning for slot " + slot.slotId(), exception);
+            cleanupEnvironment(slotId);
             markSlotFault(slot.slotId(), "provisioning-error");
         } finally {
             provisioningSlots.remove(slot.slotId());
@@ -547,6 +554,7 @@ public final class MinigameEngine {
                 slotOrchestrator.updateSlotStatus(slotId, SlotLifecycleStatus.FAULTED, 0, metadata);
             }
         }
+        cleanupEnvironment(slotId);
     }
 
     private void ensureTicking() {
@@ -746,6 +754,17 @@ public final class MinigameEngine {
                 cleaningSlots.remove(slotId);
             }
         }, POST_MATCH_CLEANUP_DELAY_TICKS);
+    }
+
+    private void cleanupEnvironment(String slotId) {
+        if (environmentService == null || slotId == null || slotId.isBlank()) {
+            return;
+        }
+        try {
+            environmentService.cleanup(slotId);
+        } catch (Exception exception) {
+            plugin.getLogger().log(Level.WARNING, "Failed to cleanup environment for slot " + slotId, exception);
+        }
     }
 
     public void refreshSlotMetadata(String slotId, Map<String, String> metadata) {

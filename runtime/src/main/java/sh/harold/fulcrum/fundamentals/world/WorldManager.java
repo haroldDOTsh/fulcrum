@@ -107,32 +107,17 @@ public class WorldManager {
         }
     }
 
-    public static class WorldPasteResult {
-        private final boolean success;
-        private final String message;
-        private final LoadedWorld world;
-
-        public WorldPasteResult(boolean success, String message) {
-            this(success, message, null);
+    public void clearWorldPois(String worldName) {
+        if (worldName == null || worldName.isBlank()) {
+            return;
         }
+        poiRegistry.clearWorldPOIs(worldName);
+    }
 
-        public WorldPasteResult(boolean success, String message, LoadedWorld world) {
-            this.success = success;
-            this.message = message;
-            this.world = world;
-        }
+    public record WorldPasteResult(boolean success, String message, LoadedWorld world) {
+            public WorldPasteResult(boolean success, String message) {
+                this(success, message, null);
+            }
 
-        public boolean isSuccess() {
-            return success;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public LoadedWorld getWorld() {
-            return world;
-        }
     }
 }
-
