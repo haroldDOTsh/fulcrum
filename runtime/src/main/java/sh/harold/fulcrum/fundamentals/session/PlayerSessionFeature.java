@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
 import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
@@ -67,24 +66,14 @@ public class PlayerSessionFeature implements PluginFeature {
                 : plugin.getServer().getName();
         String environment = resolveEnvironment(resolvedIdentifier);
         ObjectMapper mapper = new ObjectMapper();
-        playtimeTracker = container.getOptional(MongoConnectionAdapter.class)
-                .map(MongoConnectionAdapter::getMongoDatabase)
-                .map(database -> new PlaytimeTracker(database, plugin.getLogger()))
-                .orElse(null);
-        if (playtimeTracker == null) {
-            logger.warning("PlaytimeTracker disabled (Mongo adapter unavailable). Playtime totals will not update.");
-        }
+        playtimeTracker = new PlaytimeTracker(plugin.getLogger());
         sessionService = new PlayerSessionService(redisOperations, mapper, serverId, environment, resolvedIdentifier, playtimeTracker);
 
         container.register(PlayerSessionService.class, sessionService);
-        if (playtimeTracker != null) {
-            container.register(PlaytimeTracker.class, playtimeTracker);
-        }
+        container.register(PlaytimeTracker.class, playtimeTracker);
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(PlayerSessionService.class, sessionService);
-            if (playtimeTracker != null) {
-                ServiceLocatorImpl.getInstance().registerService(PlaytimeTracker.class, playtimeTracker);
-            }
+            ServiceLocatorImpl.getInstance().registerService(PlaytimeTracker.class, playtimeTracker);
         }
 
         messageBus = container.getOptional(MessageBus.class).orElse(null);

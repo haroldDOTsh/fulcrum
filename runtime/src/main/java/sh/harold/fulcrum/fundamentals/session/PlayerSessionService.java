@@ -194,11 +194,7 @@ public class PlayerSessionService {
     public void endActiveSegment(UUID playerId) {
         withActiveSession(playerId, record -> {
             long now = System.currentTimeMillis();
-            PlayerSessionRecord.Segment active = record.getActiveSegment();
             record.endActiveSegment(now);
-            if (playtimeTracker != null && active != null) {
-                playtimeTracker.recordSegment(record, active);
-            }
         });
     }
 
@@ -263,6 +259,10 @@ public class PlayerSessionService {
                 if (settingsCopy != null) {
                     core.put("settings", settingsCopy);
                 }
+                return;
+            }
+            if ("playtime".equals(key) && value instanceof Map<?, ?> map) {
+                record.setPlaytime(copyNestedMap(map));
                 return;
             }
             if ("extras".equals(key) && value instanceof Map<?, ?> map) {

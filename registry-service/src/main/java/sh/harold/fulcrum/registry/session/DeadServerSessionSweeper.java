@@ -18,10 +18,7 @@ import sh.harold.fulcrum.data.playtime.PlaytimeTracker;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 
 /**
@@ -64,7 +61,7 @@ public class DeadServerSessionSweeper implements AutoCloseable {
         this.mongoClient = mongoConfig != null ? MongoClients.create(mongoConfig.connectionString()) : null;
         MongoDatabase database = mongoClient != null ? mongoClient.getDatabase(mongoConfig.database()) : null;
         this.playersCollection = database != null ? database.getCollection("players") : null;
-        this.playtimeTracker = database != null ? new PlaytimeTracker(database, null) : null;
+        this.playtimeTracker = new PlaytimeTracker();
         if (playersCollection == null) {
             logger.warn("Session sweeper running without Mongo persistence; configure storage.mongodb to enable");
         }
@@ -267,12 +264,10 @@ public class DeadServerSessionSweeper implements AutoCloseable {
     }
 
     private void persistRecord(PlayerSessionRecord record, long endedAt) {
-        if (playtimeTracker != null) {
-            try {
-                playtimeTracker.recordCompletedSegments(record);
-            } catch (Exception exception) {
-                logger.warn("Failed to process playtime for session {}", record.getSessionId(), exception);
-            }
+        try {
+            playtimeTracker.recordCompletedSegments(record);
+        } catch (Exception exception) {
+            logger.warn("Failed to process playtime for session {}", record.getSessionId(), exception);
         }
 
         Map<String, Object> payload = buildPersistencePayload(record);
@@ -315,6 +310,10 @@ public class DeadServerSessionSweeper implements AutoCloseable {
             payload.put("minigames", new HashMap<>(record.getMinigames()));
         }
 
+        if (!record.getPlaytime().isEmpty()) {
+            payload.put("playtime", copyNestedMap(record.getPlaytime()));
+        }
+
         payload.put("lastUpdatedAt", record.getLastUpdatedAt());
         Integer protocolVersion = record.getClientProtocolVersion();
         if (protocolVersion != null) {
@@ -329,6 +328,24 @@ public class DeadServerSessionSweeper implements AutoCloseable {
 
     private void copyIfPresent(Map<String, Object> source, Map<String, Object> target, String key) {
         Optional.ofNullable(source.get(key)).ifPresent(value -> target.put(key, value));
+    }
+
+    private Map<String, Object> copyNestedMap(Map<?, ?> source) {
+        Map<String, Object> copy = new HashMap<>();
+        if (source == null) {
+            return copy;
+        }
+        source.forEach((key, value) -> {
+            String stringKey = String.valueOf(key);
+            if (value instanceof Map<?, ?> map) {
+                copy.put(stringKey, copyNestedMap(map));
+            } else if (value instanceof List<?> list) {
+                copy.put(stringKey, new java.util.ArrayList<>(list));
+            } else {
+                copy.put(stringKey, value);
+            }
+        });
+        return copy;
     }
 
     private record SweepResult(int processed, int persisted, long finishedAt) {

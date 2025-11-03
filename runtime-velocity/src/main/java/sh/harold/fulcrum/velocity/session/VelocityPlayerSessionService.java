@@ -147,6 +147,10 @@ public class VelocityPlayerSessionService {
                 }
                 return;
             }
+            if ("playtime".equals(key) && value instanceof Map<?, ?> map) {
+                record.setPlaytime(copyNestedMap(map));
+                return;
+            }
             if ("extras".equals(key) && value instanceof Map<?, ?> map) {
                 Map<String, Object> extrasCopy = copyNestedMap(map);
                 record.getExtras().clear();

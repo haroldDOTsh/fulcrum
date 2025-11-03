@@ -19,6 +19,7 @@ public class PlayerSessionRecord {
     private final Map<String, Object> minigames = new HashMap<>();
     private final Map<String, Object> extras = new HashMap<>();
     private final Map<String, Map<String, Object>> scopedData = new HashMap<>();
+    private final Map<String, Object> playtime = new LinkedHashMap<>();
     private final List<Segment> segments = new ArrayList<>();
     private UUID playerId;
     private String sessionId;
@@ -262,6 +263,24 @@ public class PlayerSessionRecord {
         Map<String, Object> created = new LinkedHashMap<>();
         familyState.put("settings", created);
         return created;
+    }
+
+    @JsonProperty("playtime")
+    public Map<String, Object> getPlaytime() {
+        return playtime;
+    }
+
+    @JsonProperty("playtime")
+    public void setPlaytime(Map<String, Object> data) {
+        playtime.clear();
+        if (data != null) {
+            playtime.putAll(toMutableMap(data));
+        }
+    }
+
+    @JsonIgnore
+    public Map<String, Object> mutablePlaytime() {
+        return playtime;
     }
 
     @JsonIgnore

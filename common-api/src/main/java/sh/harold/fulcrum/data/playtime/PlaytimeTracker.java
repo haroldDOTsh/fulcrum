@@ -1,39 +1,48 @@
 package sh.harold.fulcrum.data.playtime;
 
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.UpdateOptions;
-import org.bson.Document;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Helper that maintains hierarchical playtime counters inside the core
- * {@code players} Mongo collection. The tracker increments totals for each
- * completed gameplay segment while ensuring idempotency by recording processed
- * segment identifiers on the document itself.
+ * Updates playtime counters on the session record so they can be flushed to Mongo at logout.
  */
 public final class PlaytimeTracker {
 
-    private static final String DEFAULT_COLLECTION = "players";
-    private final MongoCollection<Document> players;
     private final Logger logger;
 
-    public PlaytimeTracker(MongoDatabase database, Logger logger) {
-        this(database, DEFAULT_COLLECTION, logger);
+    public PlaytimeTracker(Logger logger) {
+        this.logger = logger != null ? logger : Logger.getLogger(PlaytimeTracker.class.getName());
     }
 
-    public PlaytimeTracker(MongoDatabase database, String collectionName, Logger logger) {
-        Objects.requireNonNull(database, "database");
-        Objects.requireNonNull(collectionName, "collectionName");
-        this.players = database.getCollection(collectionName);
-        this.logger = logger != null ? logger : Logger.getLogger(PlaytimeTracker.class.getName());
+    public PlaytimeTracker() {
+        this(null);
+    }
+
+    private static Map<String, Object> ensureMap(Map<String, Object> root, String key) {
+        Object existing = root.get(key);
+        if (existing instanceof Map<?, ?> map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) map;
+            return typed;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> created = new java.util.LinkedHashMap<>();
+        root.put(key, created);
+        return created;
+    }
+
+    private static void increment(Map<String, Object> map, String key, long delta) {
+        long current = 0L;
+        Object value = map.get(key);
+        if (value instanceof Number number) {
+            current = number.longValue();
+        }
+        map.put(key, current + delta);
     }
 
     private static boolean isTrue(Object value) {
@@ -44,22 +53,10 @@ public final class PlaytimeTracker {
             return number.intValue() != 0;
         }
         if (value instanceof String text) {
-            String normalised = text.trim().toLowerCase();
-            return "true".equals(normalised) || "yes".equals(normalised) || "1".equals(normalised);
+            String normalised = text.trim().toLowerCase(Locale.ROOT);
+            return Objects.equals(normalised, "true") || Objects.equals(normalised, "yes") || Objects.equals(normalised, "1");
         }
         return false;
-    }
-
-    private static String stringValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        String text = value.toString();
-        return text != null && !text.isBlank() ? text : null;
-    }
-
-    private static String sanitiseKey(String key) {
-        return key.replace('.', '_').replace('$', '_');
     }
 
     private static String buildSegmentKey(PlayerSessionRecord session, PlayerSessionRecord.Segment segment) {
@@ -71,14 +68,70 @@ public final class PlaytimeTracker {
         return sessionId + ":" + segmentId;
     }
 
+    private static long resolvePlayStart(Map<String, Object> metadata, long defaultStart) {
+        if (metadata == null) {
+            return defaultStart;
+        }
+        Object value = metadata.get("playStartedAt");
+        if (value instanceof Number number) {
+            return Math.max(number.longValue(), defaultStart);
+        }
+        if (value instanceof String text) {
+            try {
+                long parsed = Long.parseLong(text.trim());
+                return Math.max(parsed, defaultStart);
+            } catch (NumberFormatException ignored) {
+                return defaultStart;
+            }
+        }
+        return defaultStart;
+    }
+
+    private static String resolveFamily(PlayerSessionRecord session, Map<String, Object> metadata) {
+        String family = metadata != null ? stringValue(metadata.get("family")) : null;
+        if (family != null && !family.isBlank()) {
+            return family;
+        }
+        return activeMinigameValue(session, "family");
+    }
+
+    private static String resolveVariant(PlayerSessionRecord session, Map<String, Object> metadata) {
+        String variant = metadata != null ? stringValue(metadata.get("variant")) : null;
+        if (variant != null && !variant.isBlank()) {
+            return variant;
+        }
+        return activeMinigameValue(session, "variant");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String activeMinigameValue(PlayerSessionRecord session, String key) {
+        if (session == null || session.getMinigames() == null) {
+            return null;
+        }
+        Object active = session.getMinigames().get("active");
+        if (active instanceof Map<?, ?> activeMap) {
+            Object value = ((Map<String, Object>) activeMap).get(key);
+            return stringValue(value);
+        }
+        return null;
+    }
+
+    private static String stringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.toString();
+        return text != null && !text.isBlank() ? text : null;
+    }
+
     private static String nullSafe(String value) {
         return value != null ? value : "";
     }
 
-    /**
-     * Record playtime for a single segment. Segments flagged as queue time or
-     * without gameplay metadata are ignored.
-     */
+    private static String sanitiseKey(String key) {
+        return key.replace('.', '_').replace('$', '_');
+    }
+
     public void recordSegment(PlayerSessionRecord session, PlayerSessionRecord.Segment segment) {
         if (session == null || segment == null) {
             return;
@@ -113,112 +166,43 @@ public final class PlaytimeTracker {
             return;
         }
 
-        String playerId = session.getPlayerId() != null ? session.getPlayerId().toString() : null;
-        if (playerId == null) {
+        Map<String, Object> playtime = session.mutablePlaytime();
+        Map<String, Object> processed = ensureMap(playtime, "processedSegments");
+        String segmentKey = buildSegmentKey(session, segment);
+        if (processed.containsKey(segmentKey)) {
             return;
         }
+        processed.put(segmentKey, endedAt);
 
-        String segmentKey = buildSegmentKey(session, segment);
-        String familyPath = "playtime.families." + sanitiseKey(family);
-        Document inc = new Document("playtime.totalMs", duration)
-                .append(familyPath + ".totalMs", duration);
+        increment(playtime, "totalMs", duration);
+
+        Map<String, Object> families = ensureMap(playtime, "families");
+        String familyKey = sanitiseKey(family);
+        Map<String, Object> familyEntry = ensureMap(families, familyKey);
+        familyEntry.put("familyId", family);
+        increment(familyEntry, "totalMs", duration);
+
         if (variant != null && !variant.isBlank()) {
-            String variantPath = familyPath + ".variants." + sanitiseKey(variant);
-            inc.append(variantPath + ".totalMs", duration);
-        }
-
-        String processedPath = "playtime.processedSegments." + segmentKey;
-        Document set = new Document(processedPath, endedAt);
-        set.append("playtime.families." + sanitiseKey(family) + ".familyId", family);
-        if (variant != null && !variant.isBlank()) {
-            set.append(familyPath + ".variants." + sanitiseKey(variant) + ".variantId", variant);
-        }
-
-        Document update = new Document()
-                .append("$inc", inc)
-                .append("$set", set);
-
-        try {
-            // Ensure the base document exists without interfering with existing players
-            players.updateOne(
-                    Filters.eq("_id", playerId),
-                    new Document("$setOnInsert", new Document("playtime", new Document())),
-                    new UpdateOptions().upsert(true)
-            );
-
-            players.updateOne(
-                    Filters.and(
-                            Filters.eq("_id", playerId),
-                            Filters.exists(processedPath, false)
-                    ),
-                    update,
-                    new UpdateOptions()
-            );
-        } catch (Exception exception) {
-            logger.log(Level.WARNING, "Failed to update playtime for " + playerId + " (segment=" + segmentKey + ")", exception);
+            Map<String, Object> variants = ensureMap(familyEntry, "variants");
+            String variantKey = sanitiseKey(variant);
+            Map<String, Object> variantEntry = ensureMap(variants, variantKey);
+            variantEntry.put("variantId", variant);
+            increment(variantEntry, "totalMs", duration);
         }
     }
 
-    /**
-     * Iterate over all completed segments on the session record and persist
-     * their playtime totals.
-     */
     public void recordCompletedSegments(PlayerSessionRecord session) {
         if (session == null) {
             return;
         }
         for (PlayerSessionRecord.Segment segment : session.getSegments()) {
             if (segment != null && segment.getEndedAt() != null) {
-                recordSegment(session, segment);
+                try {
+                    recordSegment(session, segment);
+                } catch (Exception exception) {
+                    logger.warning(() -> "Failed to record playtime segment: " + exception.getMessage());
+                }
             }
         }
-    }
-
-    private long resolvePlayStart(Map<String, Object> metadata, long defaultStart) {
-        if (metadata == null) {
-            return defaultStart;
-        }
-        Object value = metadata.get("playStartedAt");
-        if (value instanceof Number number) {
-            return Math.max(number.longValue(), defaultStart);
-        }
-        if (value instanceof String text) {
-            try {
-                long parsed = Long.parseLong(text.trim());
-                return Math.max(parsed, defaultStart);
-            } catch (NumberFormatException ignored) {
-                return defaultStart;
-            }
-        }
-        return defaultStart;
-    }
-
-    private String resolveFamily(PlayerSessionRecord session, Map<String, Object> metadata) {
-        String family = metadata != null ? stringValue(metadata.get("family")) : null;
-        if (family != null && !family.isBlank()) {
-            return family;
-        }
-        return activeMinigameValue(session, "family");
-    }
-
-    private String resolveVariant(PlayerSessionRecord session, Map<String, Object> metadata) {
-        String variant = metadata != null ? stringValue(metadata.get("variant")) : null;
-        if (variant != null && !variant.isBlank()) {
-            return variant;
-        }
-        return activeMinigameValue(session, "variant");
-    }
-
-    @SuppressWarnings("unchecked")
-    private String activeMinigameValue(PlayerSessionRecord session, String key) {
-        if (session == null || session.getMinigames() == null) {
-            return null;
-        }
-        Object active = session.getMinigames().get("active");
-        if (active instanceof Map<?, ?> activeMap) {
-            Object value = ((Map<String, Object>) activeMap).get(key);
-            return stringValue(value);
-        }
-        return null;
     }
 }

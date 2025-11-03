@@ -268,6 +268,10 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             if (settings instanceof Map<?, ?> map && !map.isEmpty()) {
                 filtered.put("settings", copyNestedMap(map));
             }
+            Object playtime = source.get("playtime");
+            if (playtime instanceof Map<?, ?> map && !map.isEmpty()) {
+                filtered.put("playtime", copyNestedMap(map));
+            }
             Object extras = source.get("extras");
             if (extras instanceof Map<?, ?> map && !map.isEmpty()) {
                 filtered.put("extras", copyNestedMap(map));
@@ -328,6 +332,10 @@ public class PlayerDataFeature implements PluginFeature, Listener {
 
         if (!record.getMinigames().isEmpty()) {
             payload.put("minigames", new HashMap<>(record.getMinigames()));
+        }
+
+        if (!record.getPlaytime().isEmpty()) {
+            payload.put("playtime", copyNestedMap(record.getPlaytime()));
         }
 
         Integer protocolVersion = record.getClientProtocolVersion();
