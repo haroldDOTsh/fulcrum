@@ -28,6 +28,7 @@ import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.fundamentals.props.PropFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
+import sh.harold.fulcrum.fundamentals.staff.KaboomFeature;
 import sh.harold.fulcrum.fundamentals.world.WorldFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -93,6 +94,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ChatChannelFeature());
         FeatureManager.register(new ModuleFeature());
         FeatureManager.register(new GamemodeFeature());
+        FeatureManager.register(new KaboomFeature());
         FeatureManager.register(new ScoreboardFeature());
         FeatureManager.register(new MenuFeature());
         FeatureManager.register(new ActionFlagFeature());
