@@ -13,6 +13,7 @@ import sh.harold.fulcrum.message.Message;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 
 import java.security.SecureRandom;
+import java.text.DecimalFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -32,6 +33,12 @@ public final class QuickMathsManager {
     };
     private static final QuickMathsScope GLOBAL_SCOPE = QuickMathsScope.global();
     private static final int MAX_WINNERS = 10;
+    private static final double EXACT_TOLERANCE = 0.0D;
+    private static final ThreadLocal<DecimalFormat> DECIMAL_FORMAT = ThreadLocal.withInitial(() -> {
+        DecimalFormat format = new DecimalFormat("0.###");
+        format.setGroupingUsed(false);
+        return format;
+    });
 
     private final JavaPlugin plugin;
     private final Supplier<MinigameEngine> engineSupplier;
@@ -86,45 +93,11 @@ public final class QuickMathsManager {
         return true;
     }
 
-    public void handleChat(Player player, String plainMessage) {
-        if (player == null || plainMessage == null) {
-            return;
+    private static String formatPlain(double value) {
+        if (Math.abs(value - Math.rint(value)) < 1.0E-9) {
+            return Long.toString(Math.round(value));
         }
-        String trimmed = plainMessage.trim();
-        if (trimmed.isEmpty() || !trimmed.matches("-?\\d+")) {
-            return;
-        }
-
-        QuickMathsSession session = findSessionForPlayer(player);
-        if (session == null) {
-            return;
-        }
-        if (session.scope.type == ScopeType.SLOT) {
-            MinigameEngine engine = engineSupplier.get();
-            if (engine == null) {
-                return;
-            }
-            Optional<String> slotId = engine.resolveSlotId(player.getUniqueId());
-            if (slotId.isEmpty() || !slotId.get().equalsIgnoreCase(session.scope.slotId)) {
-                return;
-            }
-        }
-
-        long guess;
-        try {
-            guess = Long.parseLong(trimmed);
-        } catch (NumberFormatException ex) {
-            return;
-        }
-        if (!session.matchesAnswer(guess)) {
-            return;
-        }
-
-        WinnerPlacement placement = session.tryRecordWinner(player.getUniqueId());
-        if (placement == null) {
-            return;
-        }
-        plugin.getServer().getScheduler().runTask(plugin, () -> announceWinner(session, player, placement));
+        return DECIMAL_FORMAT.get().format(value);
     }
 
     private ScopeResolution resolveScope(CommandSender initiator) {
@@ -180,24 +153,8 @@ public final class QuickMathsManager {
         sendToScope(session.scope, announcement, initiator);
     }
 
-    private void announceWinner(QuickMathsSession session, Player player, WinnerPlacement placement) {
-        Component base = prefixComponent()
-                .append(Component.text("#" + placement.position + " ", NamedTextColor.LIGHT_PURPLE))
-                .append(player.displayName())
-                .append(Component.space())
-                .append(Component.text("answered in ", NamedTextColor.GRAY))
-                .append(Component.text(placement.elapsedMillis + "ms", NamedTextColor.YELLOW));
-        sendToScope(session.scope, base, player);
-
-        if (session.isComplete()) {
-            activeSessions.remove(session.scope, session);
-            Component over = prefixComponent()
-                    .append(Component.text("OVER! ", NamedTextColor.GRAY))
-                    .append(session.equation.display)
-                    .append(Component.text(" = ", NamedTextColor.GRAY))
-                    .append(Component.text(session.equation.answer, NamedTextColor.YELLOW));
-            sendToScope(session.scope, over, null);
-        }
+    private static Component formatNumber(double value) {
+        return Component.text(formatPlain(value), NamedTextColor.WHITE);
     }
 
     private void sendToScope(QuickMathsScope scope, Component message, CommandSender fallback) {
@@ -230,7 +187,79 @@ public final class QuickMathsManager {
                 .decoration(TextDecoration.BOLD, true);
     }
 
+    public void handleChat(Player player, String plainMessage) {
+        if (player == null || plainMessage == null) {
+            return;
+        }
+        String trimmed = plainMessage.trim();
+        if (trimmed.isEmpty()) {
+            return;
+        }
+
+        QuickMathsSession session = findSessionForPlayer(player);
+        if (session == null) {
+            return;
+        }
+        if (session.scope.type == ScopeType.SLOT) {
+            MinigameEngine engine = engineSupplier.get();
+            if (engine == null) {
+                return;
+            }
+            Optional<String> slotId = engine.resolveSlotId(player.getUniqueId());
+            if (slotId.isEmpty() || !slotId.get().equalsIgnoreCase(session.scope.slotId)) {
+                return;
+            }
+        }
+
+        double guess;
+        try {
+            guess = Double.parseDouble(trimmed.replace(",", ""));
+        } catch (NumberFormatException ex) {
+            return;
+        }
+        if (!session.matchesAnswer(guess)) {
+            return;
+        }
+
+        WinnerPlacement placement = session.tryRecordWinner(player.getUniqueId());
+        if (placement == null) {
+            return;
+        }
+        plugin.getServer().getScheduler().runTask(plugin, () -> announceWinner(session, player, placement));
+    }
+
+    private void announceWinner(QuickMathsSession session, Player player, WinnerPlacement placement) {
+        Component base = prefixComponent()
+                .append(Component.text("#" + placement.position + " ", NamedTextColor.LIGHT_PURPLE))
+                .append(player.displayName())
+                .append(Component.space())
+                .append(Component.text("answered in ", NamedTextColor.GRAY))
+                .append(Component.text(placement.elapsedMillis + "ms", NamedTextColor.YELLOW));
+        sendToScope(session.scope, base, player);
+
+        if (session.isComplete()) {
+            activeSessions.remove(session.scope, session);
+            Component over = prefixComponent()
+                    .append(Component.text("OVER! ", NamedTextColor.GRAY))
+                    .append(session.equation.display)
+                    .append(Component.text(" = ", NamedTextColor.GRAY))
+                    .append(Component.text(formatPlain(session.equation.answer), NamedTextColor.YELLOW));
+            sendToScope(session.scope, over, null);
+        }
+    }
+
     private QuickMathEquation generateEquation(Difficulty difficulty) {
+        if (difficulty.advancedOps) {
+            return generateAdvancedEquation(difficulty);
+        }
+        return generateIntegerEquation(difficulty);
+    }
+
+    private int randomOperand(Difficulty difficulty) {
+        return ThreadLocalRandom.current().nextInt(difficulty.minOperand, difficulty.maxOperand + 1);
+    }
+
+    private QuickMathEquation generateIntegerEquation(Difficulty difficulty) {
         int termCount = difficulty.termCount;
         List<Expression> expressions = new ArrayList<>();
         ThreadLocalRandom random = ThreadLocalRandom.current();
@@ -246,37 +275,109 @@ public final class QuickMathsManager {
         }
         Expression root = expressions.get(0);
         Component rendered = root.renderComponent(0, true);
-        long answer = root.evaluate();
-        return new QuickMathEquation(rendered, answer);
+        double answer = root.evaluate();
+        return new QuickMathEquation(rendered, answer, EXACT_TOLERANCE);
     }
 
-    private int randomOperand(Difficulty difficulty) {
-        return ThreadLocalRandom.current().nextInt(difficulty.minOperand, difficulty.maxOperand + 1);
+    private QuickMathEquation generateAdvancedEquation(Difficulty difficulty) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        List<Expression> expressions = new ArrayList<>();
+        for (int i = 0; i < difficulty.termCount; i++) {
+            expressions.add(randomAdvancedTerminal(random, difficulty));
+        }
+        while (expressions.size() > 1) {
+            Expression left = expressions.remove(random.nextInt(expressions.size()));
+            Expression right = expressions.remove(random.nextInt(expressions.size()));
+            Operation op = difficulty.randomOperation(secureRandom);
+            boolean wrap = random.nextBoolean();
+            if (op == Operation.DIVIDE) {
+                right = ensureNonZero(right);
+            }
+            expressions.add(new BinaryExpression(left, right, op, wrap));
+        }
+        Expression root = expressions.get(0);
+        if (difficulty.hasFunctions() && random.nextDouble() < difficulty.functionChance && difficulty.functionPool.length > 0) {
+            FunctionOperation function = difficulty.randomFunction(secureRandom);
+            root = new FunctionExpression(function, root);
+        }
+        if (difficulty.allowCalculus && random.nextDouble() < 0.5D) {
+            Expression derivative = createDerivativeExpression(random);
+            root = new BinaryExpression(root, derivative, Operation.ADD, true);
+        }
+        Component rendered = root.renderComponent(0, true);
+        double answer = root.evaluate();
+        return new QuickMathEquation(rendered, answer, difficulty.tolerance);
+    }
+
+    private Expression randomAdvancedTerminal(ThreadLocalRandom random, Difficulty difficulty) {
+        if (!difficulty.chaoticNumbers) {
+            return new ValueExpression(random.nextInt(2, 16));
+        }
+        int roll = random.nextInt(6);
+        return switch (roll) {
+            case 0 -> new ConstantExpression("pi", Math.PI);
+            case 1 -> new ConstantExpression("e", Math.E);
+            case 2 -> new ValueExpression(random.nextDouble(1.5D, 18.0D));
+            case 3 -> new ValueExpression(random.nextDouble(0.5D, 9.0D));
+            case 4 -> new ValueExpression(random.nextInt(2, 12));
+            default -> new ValueExpression(random.nextDouble(2.0D, 5.0D) * Math.E);
+        };
+    }
+
+    private Expression ensureNonZero(Expression expression) {
+        return new FunctionExpression(FunctionOperation.ABSOLUTE, expression);
+    }
+
+    private Expression createDerivativeExpression(ThreadLocalRandom random) {
+        int coefficient = random.nextInt(2, 9);
+        int exponent = random.nextInt(2, 6);
+        int evaluationPoint = random.nextInt(1, 6);
+        return new DerivativeExpression(coefficient, exponent, evaluationPoint);
     }
 
     public enum Difficulty {
-        EASY(2, 6, 18, EnumSet.of(Operation.ADD, Operation.SUBTRACT), 0.0),
-        NORMAL(3, 4, 16, EnumSet.of(Operation.ADD, Operation.SUBTRACT, Operation.MULTIPLY), 0.35),
-        HARD(4, 3, 14, EnumSet.of(Operation.ADD, Operation.SUBTRACT, Operation.MULTIPLY), 0.55),
-        EXTREME(5, 2, 12, EnumSet.of(Operation.ADD, Operation.SUBTRACT, Operation.MULTIPLY), 0.7),
-        NIGHTMARE(6, 2, 10, EnumSet.of(Operation.ADD, Operation.SUBTRACT, Operation.MULTIPLY), 0.85);
+        EASY(2, 6, 18, EnumSet.of(Operation.ADD, Operation.SUBTRACT), 0.0, false, false, 0.0, new FunctionOperation[0], false, 0.0),
+        NORMAL(3, 4, 16, EnumSet.of(Operation.ADD, Operation.SUBTRACT, Operation.MULTIPLY), 0.35, false, false, 0.0, new FunctionOperation[0], false, 0.0),
+        HARD(4, 3, 14, EnumSet.of(Operation.ADD, Operation.SUBTRACT, Operation.MULTIPLY), 0.55, false, false, 0.0, new FunctionOperation[0], false, 0.0),
+        EXTREME(5, 2, 12, EnumSet.of(Operation.ADD, Operation.SUBTRACT, Operation.MULTIPLY, Operation.POWER),
+                0.7, true, false, 0.0, new FunctionOperation[0], false, 0.0),
+        NIGHTMARE(6, 2, 10, EnumSet.of(Operation.ADD, Operation.SUBTRACT, Operation.MULTIPLY, Operation.DIVIDE, Operation.POWER),
+                0.85, true, true, 0.01, new FunctionOperation[]{FunctionOperation.SQRT, FunctionOperation.LN, FunctionOperation.SIN, FunctionOperation.COS, FunctionOperation.EXP}, true, 0.5);
 
         private final int termCount;
         private final int minOperand;
         private final int maxOperand;
         private final EnumSet<Operation> operations;
         private final double wrapChance;
+        private final boolean advancedOps;
+        private final boolean allowCalculus;
+        private final double tolerance;
+        private final FunctionOperation[] functionPool;
+        private final boolean chaoticNumbers;
+        private final double functionChance;
 
         Difficulty(int termCount,
                    int minOperand,
                    int maxOperand,
                    EnumSet<Operation> operations,
-                   double wrapChance) {
+                   double wrapChance,
+                   boolean advancedOps,
+                   boolean allowCalculus,
+                   double tolerance,
+                   FunctionOperation[] functionPool,
+                   boolean chaoticNumbers,
+                   double functionChance) {
             this.termCount = termCount;
             this.minOperand = minOperand;
             this.maxOperand = maxOperand;
             this.operations = operations;
             this.wrapChance = wrapChance;
+            this.advancedOps = advancedOps;
+            this.allowCalculus = allowCalculus;
+            this.tolerance = tolerance;
+            this.functionPool = functionPool;
+            this.chaoticNumbers = chaoticNumbers;
+            this.functionChance = functionChance;
         }
 
         public static Optional<Difficulty> parse(String input) {
@@ -294,25 +395,51 @@ public final class QuickMathsManager {
             Operation[] values = operations.toArray(Operation[]::new);
             return values[random.nextInt(values.length)];
         }
+
+        private FunctionOperation randomFunction(SecureRandom random) {
+            if (functionPool.length == 0) {
+                return FunctionOperation.SQRT;
+            }
+            return functionPool[random.nextInt(functionPool.length)];
+        }
+
+        private boolean hasFunctions() {
+            return functionPool.length > 0;
+        }
     }
 
     private enum Operation {
         ADD("+") {
             @Override
-            long eval(long a, long b) {
+            double eval(double a, double b) {
                 return a + b;
             }
         },
         SUBTRACT("-") {
             @Override
-            long eval(long a, long b) {
+            double eval(double a, double b) {
                 return a - b;
             }
         },
         MULTIPLY("*") {
             @Override
-            long eval(long a, long b) {
+            double eval(double a, double b) {
                 return a * b;
+            }
+        },
+        DIVIDE("/") {
+            @Override
+            double eval(double a, double b) {
+                double denominator = Math.abs(b) < 0.001D ? 1.0D : b;
+                return a / denominator;
+            }
+        },
+        POWER("^") {
+            @Override
+            double eval(double a, double b) {
+                double base = clampMagnitude(a, 10.0D);
+                double exponent = clampMagnitude(b, 5.0D);
+                return Math.pow(base, exponent);
             }
         };
 
@@ -322,7 +449,11 @@ public final class QuickMathsManager {
             this.symbol = symbol;
         }
 
-        abstract long eval(long a, long b);
+        private static double clampMagnitude(double value, double maxMagnitude) {
+            return Math.max(-maxMagnitude, Math.min(maxMagnitude, value));
+        }
+
+        abstract double eval(double a, double b);
     }
 
     private enum ScopeType {
@@ -330,22 +461,70 @@ public final class QuickMathsManager {
         SLOT
     }
 
-    private sealed interface Expression permits BinaryExpression, ValueExpression {
-        long evaluate();
+    private enum FunctionOperation {
+        SQRT("sqrt") {
+            @Override
+            double apply(double input) {
+                return Math.sqrt(Math.abs(input));
+            }
+        },
+        LN("ln") {
+            @Override
+            double apply(double input) {
+                return Math.log(Math.max(Math.abs(input), 0.001D));
+            }
+        },
+        EXP("exp") {
+            @Override
+            double apply(double input) {
+                return Math.exp(Math.min(input, 5.0D));
+            }
+        },
+        SIN("sin") {
+            @Override
+            double apply(double input) {
+                return Math.sin(input);
+            }
+        },
+        COS("cos") {
+            @Override
+            double apply(double input) {
+                return Math.cos(input);
+            }
+        },
+        ABSOLUTE("abs") {
+            @Override
+            double apply(double input) {
+                double value = Math.abs(input);
+                return value < 0.001D ? 1.0D : value;
+            }
+        };
+
+        private final String display;
+
+        FunctionOperation(String display) {
+            this.display = display;
+        }
+
+        abstract double apply(double input);
+    }
+
+    private sealed interface Expression permits BinaryExpression, ValueExpression, ConstantExpression, FunctionExpression, DerivativeExpression {
+        double evaluate();
 
         Component renderComponent(int depth, boolean root);
     }
 
-    private record ValueExpression(int value) implements Expression {
+    private record ValueExpression(double value) implements Expression {
 
         @Override
-            public long evaluate() {
+            public double evaluate() {
                 return value;
             }
 
             @Override
             public Component renderComponent(int depth, boolean root) {
-                return Component.text(value, NamedTextColor.WHITE);
+                return formatNumber(value);
             }
         }
 
@@ -353,7 +532,7 @@ public final class QuickMathsManager {
                                     boolean forceWrap) implements Expression {
 
         @Override
-            public long evaluate() {
+            public double evaluate() {
                 return operation.eval(left.evaluate(), right.evaluate());
             }
 
@@ -375,7 +554,55 @@ public final class QuickMathsManager {
             }
         }
 
-    private record QuickMathEquation(Component display, long answer) {
+    private record ConstantExpression(String label, double value) implements Expression {
+
+        @Override
+            public double evaluate() {
+                return value;
+            }
+
+            @Override
+            public Component renderComponent(int depth, boolean root) {
+                return Component.text(label, NamedTextColor.AQUA);
+            }
+        }
+
+    private record FunctionExpression(FunctionOperation function, Expression input) implements Expression {
+
+        @Override
+            public double evaluate() {
+                return function.apply(input.evaluate());
+            }
+
+            @Override
+            public Component renderComponent(int depth, boolean root) {
+                TextComponent.Builder builder = Component.text();
+                builder.append(Component.text(function.display + "(", NamedTextColor.DARK_AQUA));
+                builder.append(input.renderComponent(depth + 1, false));
+                builder.append(Component.text(")", NamedTextColor.DARK_AQUA));
+                return builder.build();
+            }
+        }
+
+    private record DerivativeExpression(int coefficient, int exponent, int evaluationPoint) implements Expression {
+
+        @Override
+            public double evaluate() {
+                return coefficient * exponent * Math.pow(evaluationPoint, exponent - 1);
+            }
+
+            @Override
+            public Component renderComponent(int depth, boolean root) {
+                TextComponent.Builder builder = Component.text();
+                builder.append(Component.text("d/dx ", NamedTextColor.BLUE));
+                builder.append(Component.text("(" + coefficient + "x^" + exponent + ")", NamedTextColor.WHITE));
+                builder.append(Component.text(" | x = ", NamedTextColor.GRAY));
+                builder.append(Component.text(evaluationPoint, NamedTextColor.YELLOW));
+                return builder.build();
+            }
+        }
+
+    private record QuickMathEquation(Component display, double answer, double tolerance) {
     }
 
     private static final class QuickMathsSession {
@@ -394,8 +621,8 @@ public final class QuickMathsManager {
             this.startedAt = System.currentTimeMillis();
         }
 
-        private boolean matchesAnswer(long guess) {
-            return guess == equation.answer;
+        private boolean matchesAnswer(double guess) {
+            return Math.abs(guess - equation.answer) <= equation.tolerance;
         }
 
         private WinnerPlacement tryRecordWinner(UUID playerId) {
