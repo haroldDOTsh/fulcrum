@@ -77,4 +77,11 @@ public interface StorageBackend {
      * @return CompletableFuture with all documents
      */
     CompletableFuture<List<Document>> getAllDocuments(String collection);
+
+    /**
+     * Shutdown hook for releasing any resources held by the backend.
+     */
+    default void shutdown() {
+        // no-op by default
+    }
 }

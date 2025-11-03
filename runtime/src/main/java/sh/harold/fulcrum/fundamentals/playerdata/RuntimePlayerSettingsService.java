@@ -26,7 +26,11 @@ public final class RuntimePlayerSettingsService implements PlayerSettingsService
         if (level.isEnabled()) {
             return CompletableFuture.completedFuture(level);
         }
-        return CompletableFuture.completedFuture(readDebugLevel(playerId));
+        return playerCache.root(playerId)
+                .getAsync("debug.level", String.class)
+                .thenApply(optional -> optional
+                        .map(PlayerDebugLevel::from)
+                        .orElse(PlayerDebugLevel.NONE));
     }
 
     private static String normalizeVariant(String variant) {
@@ -42,8 +46,7 @@ public final class RuntimePlayerSettingsService implements PlayerSettingsService
 
     @Override
     public CompletionStage<SettingLevel> getLevel(UUID playerId, String key, SettingLevel fallback) {
-        SettingLevel resolved = readEnumSetting(playerId, key, SettingLevel.class, fallback);
-        return CompletableFuture.completedFuture(resolved);
+        return readEnumSettingAsync(playerId, key, SettingLevel.class, fallback);
     }
 
     private static String normalizeFamily(String family) {
@@ -61,14 +64,12 @@ public final class RuntimePlayerSettingsService implements PlayerSettingsService
         }
         PlayerDebugLevel sanitized = PlayerDebugLevel.sanitize(level);
         sessionService.setDebugLevel(playerId, sanitized);
-        playerCache.root(playerId).set("debug.level", sanitized.name());
-        return CompletableFuture.completedFuture(null);
+        return playerCache.root(playerId).setAsync("debug.level", sanitized.name());
     }
 
     @Override
     public CompletionStage<Void> setLevel(UUID playerId, String key, SettingLevel level) {
-        playerCache.root(playerId).set(key, level.name());
-        return CompletableFuture.completedFuture(null);
+        return playerCache.root(playerId).setAsync(key, level.name());
     }
 
     @Override
@@ -76,8 +77,7 @@ public final class RuntimePlayerSettingsService implements PlayerSettingsService
         if (playerId == null || key == null || key.isBlank() || type == null) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
-        Optional<T> value = readPlayerSetting(playerId, key, type);
-        return CompletableFuture.completedFuture(value);
+        return playerCache.root(playerId).getAsync(key, type);
     }
 
     @Override
@@ -85,8 +85,7 @@ public final class RuntimePlayerSettingsService implements PlayerSettingsService
         if (playerId == null || key == null || key.isBlank()) {
             return CompletableFuture.completedFuture(null);
         }
-        playerCache.root(playerId).set(key, value);
-        return CompletableFuture.completedFuture(null);
+        return playerCache.root(playerId).setAsync(key, value);
     }
 
     @Override
@@ -94,8 +93,7 @@ public final class RuntimePlayerSettingsService implements PlayerSettingsService
         if (playerId == null || key == null || key.isBlank()) {
             return CompletableFuture.completedFuture(null);
         }
-        playerCache.root(playerId).remove(key);
-        return CompletableFuture.completedFuture(null);
+        return playerCache.root(playerId).removeAsync(key);
     }
 
     @Override
@@ -103,29 +101,19 @@ public final class RuntimePlayerSettingsService implements PlayerSettingsService
         return new RuntimeScopedSettingsScope(playerCache, normalizeFamily(family), normalizeVariant(variant));
     }
 
-    private <E extends Enum<E>> E readEnumSetting(UUID playerId, String path, Class<E> type, E fallback) {
+    private <E extends Enum<E>> CompletionStage<E> readEnumSettingAsync(UUID playerId, String path, Class<E> type, E fallback) {
         return playerCache.root(playerId)
-                .get(path, String.class)
-                .map(raw -> {
-                    try {
-                        return Enum.valueOf(type, raw);
-                    } catch (IllegalArgumentException ignored) {
-                        return null;
-                    }
-                })
-                .filter(Objects::nonNull)
-                .orElse(fallback);
-    }
-
-    private <T> Optional<T> readPlayerSetting(UUID playerId, String path, Class<T> type) {
-        return playerCache.root(playerId).get(path, type);
-    }
-
-    private PlayerDebugLevel readDebugLevel(UUID playerId) {
-        return playerCache.root(playerId)
-                .get("debug.level", String.class)
-                .map(PlayerDebugLevel::from)
-                .orElse(PlayerDebugLevel.NONE);
+                .getAsync(path, String.class)
+                .thenApply(optional -> optional
+                        .map(raw -> {
+                            try {
+                                return Enum.valueOf(type, raw);
+                            } catch (IllegalArgumentException ignored) {
+                                return null;
+                            }
+                        })
+                        .filter(Objects::nonNull)
+                        .orElse(fallback));
     }
 
     private record RuntimeScopedSettingsScope(PlayerCache playerCache, String family,
@@ -138,26 +126,24 @@ public final class RuntimePlayerSettingsService implements PlayerSettingsService
 
             @Override
             public CompletionStage<Map<String, Object>> getAll(UUID playerId) {
-                Map<String, Object> snapshot = playerCache.scoped(family, variant, playerId).snapshot();
-                return CompletableFuture.completedFuture(Collections.unmodifiableMap(snapshot));
+                return playerCache.scoped(family, variant, playerId)
+                        .snapshotAsync()
+                        .thenApply(Collections::unmodifiableMap);
             }
 
             @Override
             public <T> CompletionStage<Optional<T>> get(UUID playerId, String key, Class<T> type) {
-                Optional<T> value = playerCache.scoped(family, variant, playerId).get(key, type);
-                return CompletableFuture.completedFuture(value);
+                return playerCache.scoped(family, variant, playerId).getAsync(key, type);
             }
 
             @Override
             public CompletionStage<Void> set(UUID playerId, String key, Object value) {
-                playerCache.scoped(family, variant, playerId).set(key, value);
-                return CompletableFuture.completedFuture(null);
+                return playerCache.scoped(family, variant, playerId).setAsync(key, value);
             }
 
             @Override
             public CompletionStage<Void> remove(UUID playerId, String key) {
-                playerCache.scoped(family, variant, playerId).remove(key);
-                return CompletableFuture.completedFuture(null);
+                return playerCache.scoped(family, variant, playerId).removeAsync(key);
             }
         }
 }

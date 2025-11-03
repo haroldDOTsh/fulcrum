@@ -34,24 +34,32 @@ public class JsonStorageBackend implements StorageBackend {
     private static final int DEFAULT_CACHE_SIZE = 1000;
     private final Path basePath;
     private final Gson gson;
-    private final ExecutorService executor;
+    private final Executor executor;
     private final Map<String, ReadWriteLock> collectionLocks;
     private final LRUCache<String, Map<String, Object>> cache;
     private final int cacheSize;
     private final boolean enableCache;
 
     public JsonStorageBackend(Path basePath) {
-        this(basePath, DEFAULT_CACHE_SIZE, true);
+        this(basePath, ForkJoinPool.commonPool(), DEFAULT_CACHE_SIZE, true);
     }
 
     public JsonStorageBackend(Path basePath, int cacheSize, boolean enableCache) {
+        this(basePath, ForkJoinPool.commonPool(), cacheSize, enableCache);
+    }
+
+    public JsonStorageBackend(Path basePath, Executor executor) {
+        this(basePath, executor, DEFAULT_CACHE_SIZE, true);
+    }
+
+    public JsonStorageBackend(Path basePath, Executor executor, int cacheSize, boolean enableCache) {
         this.basePath = basePath;
         this.cacheSize = cacheSize;
         this.enableCache = enableCache;
         this.gson = new GsonBuilder()
                 .setPrettyPrinting()
                 .create();
-        this.executor = ForkJoinPool.commonPool();
+        this.executor = executor != null ? executor : ForkJoinPool.commonPool();
         this.collectionLocks = new ConcurrentHashMap<>();
         this.cache = enableCache ? new LRUCache<>(cacheSize) : null;
 
@@ -386,10 +394,9 @@ public class JsonStorageBackend implements StorageBackend {
     /**
      * Shutdown the executor service
      */
+    @Override
     public void shutdown() {
-        if (executor instanceof ExecutorService) {
-            executor.shutdown();
-        }
+        // executor lifecycle is managed by the owning DataAPI
     }
 
     /**

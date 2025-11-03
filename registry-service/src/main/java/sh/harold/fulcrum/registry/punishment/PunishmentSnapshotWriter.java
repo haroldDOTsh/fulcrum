@@ -70,6 +70,6 @@ public final class PunishmentSnapshotWriter implements AutoCloseable {
 
     @Override
     public void close() {
-        // Mongo adapter lifecycle managed by registry service; no-op
+        dataAPI.shutdown();
     }
 }

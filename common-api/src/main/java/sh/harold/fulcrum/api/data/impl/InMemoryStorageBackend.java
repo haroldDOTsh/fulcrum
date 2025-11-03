@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 
 /**
@@ -21,6 +23,15 @@ public class InMemoryStorageBackend implements StorageBackend {
 
     // Structure: collection name -> document id -> document data
     private final Map<String, Map<String, Map<String, Object>>> storage = new ConcurrentHashMap<>();
+    private final Executor executor;
+
+    public InMemoryStorageBackend() {
+        this(ForkJoinPool.commonPool());
+    }
+
+    public InMemoryStorageBackend(Executor executor) {
+        this.executor = executor != null ? executor : ForkJoinPool.commonPool();
+    }
 
     @Override
     public CompletableFuture<Document> getDocument(String collection, String id) {
@@ -31,7 +42,7 @@ public class InMemoryStorageBackend implements StorageBackend {
             }
             Map<String, Object> documentData = collectionData.get(id);
             return new DocumentImpl(collection, id, documentData, this);
-        });
+        }, executor);
     }
 
     @Override
@@ -39,7 +50,7 @@ public class InMemoryStorageBackend implements StorageBackend {
         return CompletableFuture.runAsync(() -> {
             storage.computeIfAbsent(collection, k -> new ConcurrentHashMap<>())
                     .put(id, new HashMap<>(data));
-        });
+        }, executor);
     }
 
     @Override
@@ -61,7 +72,7 @@ public class InMemoryStorageBackend implements StorageBackend {
             Map<String, Object> updated = existed ? new HashMap<>(existing) : new HashMap<>();
             patch.applyToMap(updated, !existed);
             collectionData.put(id, updated);
-        });
+        }, executor);
     }
 
     @Override
@@ -73,7 +84,7 @@ public class InMemoryStorageBackend implements StorageBackend {
                 return removed != null;
             }
             return false;
-        });
+        }, executor);
     }
 
     @Override
@@ -92,7 +103,7 @@ public class InMemoryStorageBackend implements StorageBackend {
             // The QueryImpl will handle filtering, sorting, and pagination
             // when execute() is called
             return documents;
-        });
+        }, executor);
     }
 
     @Override
@@ -129,7 +140,7 @@ public class InMemoryStorageBackend implements StorageBackend {
             }
 
             return (long) documents.size();
-        });
+        }, executor);
     }
 
     @Override
@@ -143,6 +154,6 @@ public class InMemoryStorageBackend implements StorageBackend {
             return collectionData.entrySet().stream()
                     .map(entry -> new DocumentImpl(collection, entry.getKey(), entry.getValue(), this))
                     .collect(Collectors.toList());
-        });
+        }, executor);
     }
 }

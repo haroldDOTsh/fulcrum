@@ -20,8 +20,8 @@ import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 public class PlayerDataFeature implements PluginFeature, Listener {
@@ -41,6 +41,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private sh.harold.fulcrum.fundamentals.session.PlayerSessionLogRepository sessionLogRepository;
     private PlayerSettingsService playerSettingsService;
     private PlayerCache playerCache;
+    private ExecutorService playerCacheExecutor;
 
     private static Map<String, Object> buildDefaultSettings() {
         Map<String, Object> debug = new LinkedHashMap<>();
@@ -71,7 +72,15 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         // Register event listeners
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
 
-        this.playerCache = new sh.harold.fulcrum.fundamentals.playerdata.cache.RuntimePlayerCache(dataAPI, sessionService);
+        this.playerCacheExecutor = Executors.newFixedThreadPool(
+                Math.max(4, Runtime.getRuntime().availableProcessors()),
+                new NamedThreadFactory("fulcrum-player-cache")
+        );
+        this.playerCache = new sh.harold.fulcrum.fundamentals.playerdata.cache.RuntimePlayerCache(
+                dataAPI,
+                sessionService,
+                playerCacheExecutor
+        );
         this.playerSettingsService = new RuntimePlayerSettingsService(playerCache, sessionService);
         container.register(PlayerCache.class, playerCache);
         container.register(PlayerSettingsService.class, playerSettingsService);
@@ -199,6 +208,10 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         }
         playerSettingsService = null;
         playerCache = null;
+        if (playerCacheExecutor != null) {
+            playerCacheExecutor.shutdown();
+            playerCacheExecutor = null;
+        }
         logger.info("Shutting down PlayerDataFeature");
     }
 
@@ -405,5 +418,23 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     }
 
     private record PersistedState(Map<String, Object> data, boolean exists) {
+    }
+
+    private static final class NamedThreadFactory implements ThreadFactory {
+        private final AtomicInteger counter = new AtomicInteger();
+        private final ThreadFactory delegate = Executors.defaultThreadFactory();
+        private final String baseName;
+
+        private NamedThreadFactory(String baseName) {
+            this.baseName = baseName;
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread thread = delegate.newThread(r);
+            thread.setName(baseName + "-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 }

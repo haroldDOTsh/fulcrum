@@ -15,6 +15,11 @@ import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 import sh.harold.fulcrum.velocity.session.VelocityPlayerSessionService;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class VelocityPlayerDataFeature implements VelocityFeature {
     private Logger logger;
     private ProxyServer proxy;
@@ -24,6 +29,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     private ServiceLocator serviceLocator;
     private PlayerSettingsService playerSettingsService;
     private PlayerCache playerCache;
+    private ExecutorService playerCacheExecutor;
 
     @Override
     public String getName() {
@@ -45,7 +51,11 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         this.dataAPI = serviceLocator.getService(DataAPI.class).orElseThrow(
                 () -> new RuntimeException("DataAPI not available"));
 
-        this.playerCache = new VelocityPlayerCache(dataAPI, sessionService);
+        this.playerCacheExecutor = Executors.newFixedThreadPool(
+                Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
+                new NamedThreadFactory("velocity-player-cache")
+        );
+        this.playerCache = new VelocityPlayerCache(dataAPI, sessionService, playerCacheExecutor);
         this.playerSettingsService = new VelocityPlayerSettingsService(playerCache, sessionService);
         serviceLocator.register(PlayerCache.class, playerCache);
         serviceLocator.register(PlayerSettingsService.class, playerSettingsService);
@@ -84,6 +94,10 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
             serviceLocator.unregister(PlayerCache.class);
             serviceLocator.unregister(PlayerSettingsService.class);
         }
+        if (playerCacheExecutor != null) {
+            playerCacheExecutor.shutdown();
+            playerCacheExecutor = null;
+        }
         playerCache = null;
         playerSettingsService = null;
         logger.info("Shutting down PlayerDataFeature for Velocity");
@@ -94,4 +108,21 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         return 50; // After DataAPI (20)
     }
 
+    private static final class NamedThreadFactory implements ThreadFactory {
+        private final AtomicInteger counter = new AtomicInteger();
+        private final ThreadFactory delegate = Executors.defaultThreadFactory();
+        private final String baseName;
+
+        private NamedThreadFactory(String baseName) {
+            this.baseName = baseName;
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread thread = delegate.newThread(r);
+            thread.setName(baseName + "-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
 }

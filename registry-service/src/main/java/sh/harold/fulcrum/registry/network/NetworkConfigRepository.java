@@ -124,6 +124,7 @@ public final class NetworkConfigRepository implements AutoCloseable {
 
     @Override
     public void close() {
+        dataAPI.shutdown();
         // Mongo adapter lifecycle managed by registry service
     }
 

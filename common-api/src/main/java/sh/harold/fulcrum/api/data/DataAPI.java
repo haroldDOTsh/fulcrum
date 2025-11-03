@@ -6,6 +6,8 @@ import sh.harold.fulcrum.api.data.storage.StorageBackend;
 import sh.harold.fulcrum.api.data.transaction.Transaction;
 
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 
 /**
  * Main entry point for the Data API.
@@ -82,4 +84,20 @@ public interface DataAPI {
      * @return The storage backend implementation
      */
     StorageBackend getStorageBackend();
+
+    /**
+     * Executor used for asynchronous persistence work.
+     *
+     * @return executor for DataAPI operations
+     */
+    default Executor executor() {
+        return ForkJoinPool.commonPool();
+    }
+
+    /**
+     * Shutdown hook for releasing resources (executors, connections).
+     */
+    default void shutdown() {
+        // no-op by default
+    }
 }

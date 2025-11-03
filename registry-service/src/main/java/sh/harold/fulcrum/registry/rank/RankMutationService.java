@@ -299,6 +299,7 @@ public final class RankMutationService implements AutoCloseable {
     @Override
     public void close() {
         messageBus.unsubscribe(ChannelConstants.REGISTRY_RANK_MUTATION_REQUEST, requestHandler);
+        dataAPI.shutdown();
     }
 
     public record RankSnapshot(Rank primary, List<Rank> ranks) {

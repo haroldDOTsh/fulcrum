@@ -80,6 +80,11 @@ public class DataAPIFeature implements PluginFeature {
     public void shutdown() {
         logger.info("Shutting down Data API feature...");
 
+        if (dataAPI != null) {
+            dataAPI.shutdown();
+            dataAPI = null;
+        }
+
         if (connectionAdapter != null) {
             connectionAdapter.shutdown();
         }

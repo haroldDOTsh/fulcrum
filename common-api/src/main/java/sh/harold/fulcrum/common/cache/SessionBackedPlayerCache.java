@@ -5,6 +5,8 @@ import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.util.*;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -17,10 +19,16 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
 
     protected final DataAPI dataAPI;
     private final SessionAccess sessionAccess;
+    private final Executor asyncExecutor;
 
     protected SessionBackedPlayerCache(DataAPI dataAPI, SessionAccess sessionAccess) {
+        this(dataAPI, sessionAccess, ForkJoinPool.commonPool());
+    }
+
+    protected SessionBackedPlayerCache(DataAPI dataAPI, SessionAccess sessionAccess, Executor asyncExecutor) {
         this.dataAPI = Objects.requireNonNull(dataAPI, "dataAPI");
         this.sessionAccess = Objects.requireNonNull(sessionAccess, "sessionAccess");
+        this.asyncExecutor = Objects.requireNonNull(asyncExecutor, "asyncExecutor");
     }
 
     @SuppressWarnings("unchecked")
@@ -127,6 +135,11 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
         return new ScopedDocument(playerId, Objects.requireNonNull(family, "family"), variant);
     }
 
+    @Override
+    public Executor asyncExecutor() {
+        return asyncExecutor;
+    }
+
     protected interface SessionAccess {
         Optional<PlayerSessionRecord> getSession(UUID playerId);
 
@@ -138,6 +151,11 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
 
         private AbstractDocument(UUID playerId) {
             this.playerId = Objects.requireNonNull(playerId, "playerId");
+        }
+
+        @Override
+        public Executor asyncExecutor() {
+            return SessionBackedPlayerCache.this.asyncExecutor();
         }
 
         @Override

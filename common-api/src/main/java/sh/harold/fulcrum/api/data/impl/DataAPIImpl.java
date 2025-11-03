@@ -13,20 +13,23 @@ import sh.harold.fulcrum.api.data.transaction.TransactionImpl;
 
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Default implementation of the DataAPI interface.
  * Routes operations to the appropriate storage backend.
  */
-public class DataAPIImpl implements DataAPI {
+public class DataAPIImpl implements DataAPI, AutoCloseable {
 
     private final ConnectionAdapter adapter;
     private final StorageBackend backend;
     private final Map<String, Collection> collectionCache;
+    private final ExecutorService executor;
 
     private DataAPIImpl(ConnectionAdapter adapter) {
         this.adapter = adapter;
+        this.executor = createExecutor();
         this.backend = createBackend(adapter.getStorageType());
         this.collectionCache = new ConcurrentHashMap<>();
     }
@@ -46,22 +49,22 @@ public class DataAPIImpl implements DataAPI {
             case MONGODB:
                 // MongoDB backend needs MongoConnectionAdapter
                 if (adapter instanceof sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter) {
-                    return new MongoStorageBackend((sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter) adapter);
+                    return new MongoStorageBackend((sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter) adapter, executor);
                 }
                 throw new IllegalStateException("MongoDB connection adapter not available");
 
             case JSON:
                 // JSON backend needs the storage path from adapter
                 if (adapter.getJsonStoragePath() != null) {
-                    return new JsonStorageBackend(adapter.getJsonStoragePath());
+                    return new JsonStorageBackend(adapter.getJsonStoragePath(), executor);
                 }
                 throw new IllegalStateException("JSON storage path not available");
 
             case IN_MEMORY:
-                return new InMemoryStorageBackend();
+                return new InMemoryStorageBackend(executor);
 
             default:
-                return new InMemoryStorageBackend();
+                return new InMemoryStorageBackend(executor);
         }
     }
 
@@ -104,5 +107,39 @@ public class DataAPIImpl implements DataAPI {
     @Override
     public StorageBackend getStorageBackend() {
         return backend;
+    }
+
+    @Override
+    public Executor executor() {
+        return executor;
+    }
+
+    @Override
+    public void shutdown() {
+        backend.shutdown();
+        executor.shutdown();
+    }
+
+    @Override
+    public void close() {
+        shutdown();
+    }
+
+    private ExecutorService createExecutor() {
+        int threads = Math.max(4, Runtime.getRuntime().availableProcessors());
+        return Executors.newFixedThreadPool(threads, new DataThreadFactory());
+    }
+
+    private static final class DataThreadFactory implements ThreadFactory {
+        private final ThreadFactory backing = Executors.defaultThreadFactory();
+        private final AtomicInteger counter = new AtomicInteger();
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread thread = backing.newThread(r);
+            thread.setName("fulcrum-data-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 }

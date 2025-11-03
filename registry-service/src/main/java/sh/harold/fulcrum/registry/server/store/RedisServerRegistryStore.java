@@ -68,6 +68,13 @@ public class RedisServerRegistryStore {
         RedisCommands<String, String> commands = redisManager.sync();
         List<RegisteredServerData> results = new ArrayList<>();
         for (String key : commands.keys(SERVER_KEY_PREFIX + "*")) {
+            if (TEMP_INDEX_KEY.equals(key)) {
+                continue;
+            }
+            String type = commands.type(key);
+            if (!"string".equalsIgnoreCase(type)) {
+                continue;
+            }
             String payload = commands.get(key);
             if (payload == null || payload.isBlank()) {
                 continue;
