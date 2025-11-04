@@ -10,6 +10,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
+import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
@@ -299,16 +300,23 @@ public class PlayerDataFeature implements PluginFeature, Listener {
 
     private void persistSession(PlayerSessionRecord record) {
         Map<String, Object> payload = buildPersistencePayload(record);
-        Document document = dataAPI.collection(PLAYERS_COLLECTION).document(record.getPlayerId().toString());
+        String playerId = record.getPlayerId().toString();
 
-        if (document.exists()) {
-            payload.forEach((key, value) -> document.set(key, value));
-        } else {
-            dataAPI.collection(PLAYERS_COLLECTION).create(record.getPlayerId().toString(), payload);
-        }
-        logger.fine(() -> "Persisted session for " + record.getPlayerId());
+        DocumentPatch.Builder builder = DocumentPatch.builder().upsert(true);
+        payload.forEach(builder::set);
+        DocumentPatch patch = builder.build();
 
-        persistScopedDocuments(record);
+        dataAPI.collection(PLAYERS_COLLECTION)
+                .selectAsync(playerId)
+                .thenCompose(document -> document.patchAsync(patch))
+                .thenCompose(ignored -> persistScopedDocuments(record))
+                .whenComplete((ignored, throwable) -> {
+                    if (throwable != null) {
+                        logger.warning("Failed to persist session for " + record.getPlayerId() + ": " + throwable.getMessage());
+                    } else {
+                        logger.fine(() -> "Persisted session for " + record.getPlayerId());
+                    }
+                });
     }
 
     private Map<String, Object> buildPersistencePayload(PlayerSessionRecord record) {
@@ -367,12 +375,13 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         return payload;
     }
 
-    private void persistScopedDocuments(PlayerSessionRecord record) {
+    private CompletableFuture<Void> persistScopedDocuments(PlayerSessionRecord record) {
         Map<String, Map<String, Object>> scoped = record.getScopedData();
         if (scoped.isEmpty()) {
-            return;
+            return CompletableFuture.completedFuture(null);
         }
         String playerId = record.getPlayerId().toString();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
         scoped.forEach((family, state) -> {
             if (state == null || state.isEmpty()) {
                 return;
@@ -384,19 +393,25 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                 return;
             }
             String collection = "player_data_" + family;
-            Document document = dataAPI.collection(collection).document(playerId);
-            if (settings.isEmpty()) {
-                if (document.exists()) {
-                    document.set("settings", new LinkedHashMap<>());
-                }
-            } else if (document.exists()) {
-                document.set("settings", settings);
-            } else {
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("settings", settings);
-                dataAPI.collection(collection).create(playerId, payload);
-            }
+
+            CompletableFuture<Void> future = dataAPI.collection(collection)
+                    .selectAsync(playerId)
+                    .thenCompose(document -> {
+                        if (!document.exists() && settings.isEmpty()) {
+                            return CompletableFuture.completedFuture(null);
+                        }
+                        DocumentPatch patch = DocumentPatch.builder()
+                                .upsert(!document.exists())
+                                .set("settings", settings)
+                                .build();
+                        return document.patchAsync(patch).thenApply(ignored -> null);
+                    });
+            futures.add(future);
         });
+        if (futures.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
     }
 
     private Map<String, Object> copyNestedMap(Map<?, ?> source) {

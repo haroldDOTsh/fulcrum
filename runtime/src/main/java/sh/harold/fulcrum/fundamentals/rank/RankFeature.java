@@ -320,17 +320,21 @@ public final class RankFeature implements PluginFeature, RankService, Listener {
     }
 
     private CompletableFuture<Set<Rank>> loadPlayerRanks(UUID playerId) {
-        return CompletableFuture.supplyAsync(() -> {
-            Set<Rank> ranks = readRanksFromPlayerDocument(playerId);
-            rankCache.put(playerId, ranks);
-            primaryRankCache.put(playerId, getEffectiveRankFromSet(ranks));
-            return ranks;
-        });
+        if (playersCollection == null) {
+            return CompletableFuture.completedFuture(new HashSet<>());
+        }
+        return playersCollection
+                .selectAsync(playerId.toString())
+                .thenApplyAsync(document -> {
+                    Set<Rank> ranks = readRanksFromDocument(document);
+                    rankCache.put(playerId, ranks);
+                    primaryRankCache.put(playerId, getEffectiveRankFromSet(ranks));
+                    return ranks;
+                }, dataAPI.executor());
     }
 
-    private Set<Rank> readRanksFromPlayerDocument(UUID playerId) {
+    private Set<Rank> readRanksFromDocument(Document doc) {
         try {
-            Document doc = playersCollection.document(playerId.toString());
             Set<Rank> ranks = new HashSet<>();
 
             Object storedRanks = doc.get("rankInfo.all");
@@ -351,7 +355,7 @@ public final class RankFeature implements PluginFeature, RankService, Listener {
 
             return ranks;
         } catch (Exception e) {
-            logger.log(Level.WARNING, "Failed to load rank data for " + playerId, e);
+            logger.log(Level.WARNING, "Failed to load rank data from document " + doc.getId(), e);
             return new HashSet<>();
         }
     }

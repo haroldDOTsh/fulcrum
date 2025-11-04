@@ -76,6 +76,11 @@ public class VelocityDataAPIFeature implements VelocityFeature {
     public void shutdown() {
         logger.info("Shutting down Data API feature...");
 
+        if (dataAPI != null) {
+            dataAPI.shutdown();
+            dataAPI = null;
+        }
+
         if (connectionAdapter != null) {
             connectionAdapter.shutdown();
         }

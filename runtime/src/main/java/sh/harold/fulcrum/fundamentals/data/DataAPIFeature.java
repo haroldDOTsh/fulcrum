@@ -82,8 +82,8 @@ public class DataAPIFeature implements PluginFeature {
 
         if (dataAPI != null) {
             dataAPI.shutdown();
-            dataAPI = null;
         }
+        dataAPI = null;
 
         if (connectionAdapter != null) {
             connectionAdapter.shutdown();
