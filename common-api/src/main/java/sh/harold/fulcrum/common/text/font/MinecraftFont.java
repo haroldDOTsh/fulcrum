@@ -34,7 +34,7 @@ public final class MinecraftFont {
     }
 
     /**
-     * Measures a legacy (§ / & colour code) formatted string and returns its rendered pixel width.
+     * Measures a legacy (\u00A7 or &amp; colour code) formatted string and returns its rendered pixel width.
      */
     public float measureLegacyText(String text) {
         if (text == null || text.isEmpty()) {

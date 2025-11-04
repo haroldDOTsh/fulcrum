@@ -29,6 +29,7 @@ import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.fundamentals.props.PropFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
+import sh.harold.fulcrum.fundamentals.staff.StaffFeature;
 import sh.harold.fulcrum.fundamentals.world.WorldFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -98,6 +99,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ScoreboardFeature());
         FeatureManager.register(new MenuFeature());
         FeatureManager.register(new ActionFlagFeature());
+        FeatureManager.register(new StaffFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
         FeatureManager.register(new PropFeature()); // Prop catalog (cages, pre-lobbies, etc.)
         FeatureManager.register(new MinigameEngineFeature());
