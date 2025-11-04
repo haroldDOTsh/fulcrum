@@ -636,7 +636,7 @@ public class HeartbeatMonitor {
     }
 
     private void requestReregistrationForNode(String nodeId, String reason) {
-        if (messageBus == null) {
+        if (messageBus == null || nodeId == null || nodeId.isBlank()) {
             return;
         }
 
@@ -645,7 +645,15 @@ public class HeartbeatMonitor {
         payload.put("forceReregistration", true);
         payload.put("targetId", nodeId);
         payload.put("reason", reason);
-        messageBus.broadcast(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, payload);
+
+        if (looksLikeProxy(nodeId)) {
+            // Broadcast on both legacy and standardized proxy channels for compatibility
+            String legacyChannel = "proxy:" + nodeId + ":reregister";
+            messageBus.broadcast(legacyChannel, payload);
+            messageBus.broadcast(ChannelConstants.getProxyReregisterChannel(nodeId), payload);
+        } else {
+            messageBus.broadcast(ChannelConstants.getServerReregisterChannel(nodeId), payload);
+        }
     }
 
     /**

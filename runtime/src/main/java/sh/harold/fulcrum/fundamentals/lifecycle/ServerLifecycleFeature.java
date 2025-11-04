@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.fundamentals.lifecycle;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
@@ -679,6 +680,71 @@ public class ServerLifecycleFeature implements PluginFeature {
 
     // Message handlers
 
+    private static Object firstNonNull(Object... values) {
+        for (Object value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+
+    private void handleProxyAnnouncement(ProxyAnnouncementMessage announcement) {
+        String proxyId = announcement.getProxyId();
+        knownProxies.put(proxyId, announcement);
+        LOGGER.info("=== PROXY ANNOUNCEMENT RECEIVED ===");
+        LOGGER.info("Proxy ID: " + proxyId);
+        LOGGER.info("Current Load: " + announcement.getCurrentPlayerCount() + "/" + announcement.getHardCap());
+        LOGGER.info("===================================");
+
+        // If we haven't registered yet, send our registration
+        if (!registered.get()) {
+            LOGGER.info("New proxy detected, sending registration");
+            sendInitialRegistration();
+        }
+    }
+
+
+    private void handleProxyRegistrationResponse(ServerRegistrationResponse response) {
+        if (response.isSuccess()) {
+            String proxyId = response.getProxyId();
+            LOGGER.info("Successfully registered with proxy: " + proxyId);
+
+            registeredProxyId.set(proxyId);
+
+            // Cancel timeout task if it exists
+            if (registrationTimeoutTask != null && !registrationTimeoutTask.isDone()) {
+                registrationTimeoutTask.cancel(false);
+            }
+
+            // Update server identifier if new ID was assigned (only if we had temporary ID)
+            if (response.getAssignedServerId() != null &&
+                    serverIdentifier.getServerId().startsWith("temp-")) {
+                String oldId = serverIdentifier.getServerId();
+                serverIdentifier.updateServerId(response.getAssignedServerId());
+                LOGGER.info("Server ID updated: " + oldId + " -> " + response.getAssignedServerId());
+                registered.set(true);
+                startHeartbeat();
+            } else if (!registered.get()) {
+                // First time registration
+                registered.set(true);
+                startHeartbeat();
+            } else {
+                // Already registered, just adding to new proxy
+                LOGGER.info("Added to new proxy's server list (keeping existing ID: " +
+                        serverIdentifier.getServerId() + ")");
+            }
+        } else {
+            LOGGER.warning("Registration rejected by proxy: " + response.getMessage());
+            // Don't retry - wait for proxy announcements
+        }
+    }
+
+    public Optional<String> getCurrentProxyId() {
+        return Optional.ofNullable(registeredProxyId.get());
+    }
+
     private void setupMessageHandlers() {
         subscribeToSlotProvisionChannel(serverIdentifier.getServerId());
         subscribeToPlayerRouteChannel(serverIdentifier.getServerId());
@@ -708,6 +774,11 @@ public class ServerLifecycleFeature implements PluginFeature {
         // Handle registry re-registration requests (when registry restarts)
         messageBus.subscribe(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, envelope -> {
             try {
+                if (!shouldProcessReregistrationPayload(envelope.payload(), serverIdentifier.getServerId())) {
+                    LOGGER.fine("Ignoring re-registration request targeted at a different server");
+                    return;
+                }
+
                 LOGGER.info("Registry Service requested re-registration - sending our current registration");
                 boolean wasRegistered = registered.getAndSet(false);
                 resetRegistrationBackoff();
@@ -819,60 +890,35 @@ public class ServerLifecycleFeature implements PluginFeature {
         });
     }
 
-
-    private void handleProxyAnnouncement(ProxyAnnouncementMessage announcement) {
-        String proxyId = announcement.getProxyId();
-        knownProxies.put(proxyId, announcement);
-        LOGGER.info("=== PROXY ANNOUNCEMENT RECEIVED ===");
-        LOGGER.info("Proxy ID: " + proxyId);
-        LOGGER.info("Current Load: " + announcement.getCurrentPlayerCount() + "/" + announcement.getHardCap());
-        LOGGER.info("===================================");
-
-        // If we haven't registered yet, send our registration
-        if (!registered.get()) {
-            LOGGER.info("New proxy detected, sending registration");
-            sendInitialRegistration();
+    private boolean shouldProcessReregistrationPayload(Object payload, String selfId) {
+        String targetId = extractTargetId(payload);
+        if (targetId == null || targetId.isBlank()) {
+            return true;
         }
+        return targetId.equalsIgnoreCase(selfId);
     }
 
-
-    private void handleProxyRegistrationResponse(ServerRegistrationResponse response) {
-        if (response.isSuccess()) {
-            String proxyId = response.getProxyId();
-            LOGGER.info("Successfully registered with proxy: " + proxyId);
-
-            registeredProxyId.set(proxyId);
-
-            // Cancel timeout task if it exists
-            if (registrationTimeoutTask != null && !registrationTimeoutTask.isDone()) {
-                registrationTimeoutTask.cancel(false);
+    private String extractTargetId(Object payload) {
+        if (payload instanceof JsonNode jsonNode) {
+            if (jsonNode.hasNonNull("targetId")) {
+                return jsonNode.get("targetId").asText();
             }
-
-            // Update server identifier if new ID was assigned (only if we had temporary ID)
-            if (response.getAssignedServerId() != null &&
-                    serverIdentifier.getServerId().startsWith("temp-")) {
-                String oldId = serverIdentifier.getServerId();
-                serverIdentifier.updateServerId(response.getAssignedServerId());
-                LOGGER.info("Server ID updated: " + oldId + " -> " + response.getAssignedServerId());
-                registered.set(true);
-                startHeartbeat();
-            } else if (!registered.get()) {
-                // First time registration
-                registered.set(true);
-                startHeartbeat();
-            } else {
-                // Already registered, just adding to new proxy
-                LOGGER.info("Added to new proxy's server list (keeping existing ID: " +
-                        serverIdentifier.getServerId() + ")");
+            if (jsonNode.hasNonNull("serverId")) {
+                return jsonNode.get("serverId").asText();
             }
-        } else {
-            LOGGER.warning("Registration rejected by proxy: " + response.getMessage());
-            // Don't retry - wait for proxy announcements
+            if (jsonNode.hasNonNull("proxyId")) {
+                return jsonNode.get("proxyId").asText();
+            }
+        } else if (payload instanceof Map<?, ?> map) {
+            Object rawTarget = firstNonNull(
+                    map.get("targetId"),
+                    map.get("serverId"),
+                    map.get("proxyId"));
+            if (rawTarget instanceof String target) {
+                return target;
+            }
         }
-    }
-
-    public Optional<String> getCurrentProxyId() {
-        return Optional.ofNullable(registeredProxyId.get());
+        return null;
     }
 
     private void handleEvacuationRequest(ServerEvacuationRequest request) {

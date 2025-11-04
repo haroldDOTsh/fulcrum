@@ -268,376 +268,13 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         messageBus.broadcast(ChannelConstants.PROXY_ANNOUNCEMENT, currentProxyData);
     }
 
-    private void setupMessageHandlers() {
-        // NOTE: Proxy no longer handles server registration directly
-        // The Registry Service handles all registrations and broadcasts updates
-
-        // Only use MessageBus subscription for proxy registration responses
-        // Remove direct Redis listener to avoid duplicate processing
-
-        // Listen for server additions from Registry Service
-        messageBus.subscribe(ChannelConstants.REGISTRY_SERVER_ADDED, envelope -> {
-            logger.info("=== SERVER ADDED BY REGISTRY ===");
-            Object payload = envelope.payload();
-
-            try {
-                ObjectMapper mapper = new ObjectMapper();
-                Map<String, Object> serverInfo = null;
-
-                if (payload instanceof JsonNode) {
-                    serverInfo = mapper.treeToValue((JsonNode) payload, Map.class);
-                } else if (payload instanceof Map) {
-                    serverInfo = (Map<String, Object>) payload;
-                } else if (payload instanceof String) {
-                    // Try parsing as JSON string
-                    serverInfo = mapper.readValue((String) payload, Map.class);
-                }
-
-                if (serverInfo != null) {
-                    String serverId = (String) serverInfo.get("serverId");
-                    String serverType = (String) serverInfo.get("serverType");
-                    String role = (String) serverInfo.getOrDefault("role", "default");
-                    String address = (String) serverInfo.get("address");
-                    Integer port = (Integer) serverInfo.get("port");
-                    Integer maxCapacity = (Integer) serverInfo.get("maxCapacity");
-
-                    logger.info("Registry added server: {} ({}:{}) - Type: {}, Role: {}, Capacity: {}",
-                            serverId, address, port, serverType, role, maxCapacity);
-
-                    // Store server info
-                    ServerIdentifier serverIdentifier = new BackendServerIdentifier(
-                            serverId, serverType, role, address, port, maxCapacity
-                    );
-                    backendServers.put(serverId, serverIdentifier);
-                    serverHeartbeats.put(serverId, System.currentTimeMillis());
-
-                    // Add to Velocity
-                    addServerToVelocity(serverId, address, port);
-                }
-            } catch (Exception e) {
-                logger.error("Failed to process server addition from Registry", e);
+    private static Object firstNonNull(Object... values) {
+        for (Object value : values) {
+            if (value != null) {
+                return value;
             }
-        });
-
-        // Listen for server removals from Registry Service
-        messageBus.subscribe(ChannelConstants.REGISTRY_SERVER_REMOVED, envelope -> {
-            logger.info("=== SERVER REMOVED BY REGISTRY ===");
-            Object payload = envelope.payload();
-
-            try {
-                ObjectMapper mapper = new ObjectMapper();
-                Map<String, Object> removal = null;
-
-                if (payload instanceof JsonNode) {
-                    removal = mapper.treeToValue((JsonNode) payload, Map.class);
-                } else if (payload instanceof Map) {
-                    removal = (Map<String, Object>) payload;
-                } else if (payload instanceof String) {
-                    // Try parsing as JSON string
-                    removal = mapper.readValue((String) payload, Map.class);
-                }
-
-                if (removal != null) {
-                    String serverId = (String) removal.get("serverId");
-                    logger.info("Registry removed server: {}", serverId);
-
-                    // Remove from local tracking
-                    backendServers.remove(serverId);
-                    serverHeartbeats.remove(serverId);
-                    if (connectionHandler != null) {
-                        connectionHandler.removeServerMetrics(serverId);
-                    }
-
-                    // Remove from Velocity
-                    proxy.getServer(serverId).ifPresent(rs -> {
-                        proxy.unregisterServer(rs.getServerInfo());
-                        logger.info("Unregistered server from Velocity: {}", serverId);
-                    });
-                }
-            } catch (Exception e) {
-                logger.error("Failed to process server removal from Registry", e);
-            }
-        });
-
-        // Handle server removal notifications (for evacuation scenarios)
-        messageBus.subscribe(ChannelConstants.SERVER_EVACUATION_REQUEST, envelope -> {
-            try {
-                ObjectMapper mapper = new ObjectMapper();
-                ServerRemovalNotification notification = null;
-                Object payload = envelope.payload();
-
-                if (payload instanceof JsonNode) {
-                    notification = mapper.treeToValue((JsonNode) payload, ServerRemovalNotification.class);
-                } else if (payload instanceof ServerRemovalNotification) {
-                    notification = (ServerRemovalNotification) payload;
-                }
-
-                if (notification != null) {
-                    handleServerRemoval(notification);
-                }
-            } catch (Exception e) {
-                logger.error("Failed to process server removal notification", e);
-            }
-        });
-
-        // Handle server heartbeats
-        messageBus.subscribe(ChannelConstants.SERVER_HEARTBEAT, envelope -> {
-            Object payload = envelope.payload();
-            ServerHeartbeatMessage heartbeat = null;
-
-            // Handle ObjectNode from deserialization
-            if (payload instanceof JsonNode) {
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    heartbeat = mapper.treeToValue((JsonNode) payload, ServerHeartbeatMessage.class);
-                } catch (Exception e) {
-                    logger.warn("Failed to deserialize ServerHeartbeatMessage from ObjectNode: {}", e.getMessage());
-                    return;
-                }
-            } else if (payload instanceof ServerHeartbeatMessage) {
-                heartbeat = (ServerHeartbeatMessage) payload;
-            } else {
-                return;
-            }
-
-            String serverId = heartbeat.getServerId();
-            serverHeartbeats.put(serverId, System.currentTimeMillis());
-            updateServerCapacity(serverId, heartbeat.getPlayerCount());
-
-            // Update metrics in connection handler for optimal selection
-            if (connectionHandler != null) {
-                connectionHandler.updateServerMetrics(
-                        serverId,
-                        heartbeat.getRole(),
-                        heartbeat.getPlayerCount(),
-                        heartbeat.getMaxCapacity(),
-                        heartbeat.getTps()
-                );
-            }
-
-            logger.debug("Heartbeat from server {}: {} players, TPS: {}",
-                    serverId, heartbeat.getPlayerCount(), heartbeat.getTps());
-        });
-
-        // Handle server announcements (post-approval)
-        messageBus.subscribe(ChannelConstants.SERVER_ANNOUNCEMENT, envelope -> {
-            Object payload = envelope.payload();
-            ServerAnnouncementMessage announcement = null;
-
-            // Handle ObjectNode from deserialization
-            if (payload instanceof JsonNode) {
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    announcement = mapper.treeToValue((JsonNode) payload, ServerAnnouncementMessage.class);
-                } catch (Exception e) {
-                    logger.warn("Failed to deserialize ServerAnnouncementMessage from ObjectNode: {}", e.getMessage());
-                    return;
-                }
-            } else if (payload instanceof ServerAnnouncementMessage) {
-                announcement = (ServerAnnouncementMessage) payload;
-            } else {
-                return;
-            }
-
-            // Update backend server info
-            ServerIdentifier serverInfo = new BackendServerIdentifier(
-                    announcement.getServerId(),
-                    announcement.getServerType(),
-                    announcement.getRole(),
-                    announcement.getAddress(),
-                    announcement.getPort(),
-                    announcement.getCapacity()
-            );
-            backendServers.put(announcement.getServerId(), serverInfo);
-            serverHeartbeats.put(announcement.getServerId(), System.currentTimeMillis());
-
-            logger.debug("Registered backend server: {} - Type: {}, Capacity: {}",
-                    announcement.getServerId(), announcement.getServerType(),
-                    announcement.getCapacity());
-        });
-
-        // Handle proxy registration response from Registry Service via MessageBus
-        messageBus.subscribe(ChannelConstants.PROXY_REGISTRATION_RESPONSE, envelope -> {
-            logger.info("[PROXY RESPONSE RECEIVED] Received proxy registration response on channel: {}",
-                    ChannelConstants.PROXY_REGISTRATION_RESPONSE);
-
-            try {
-                Object payload = envelope.payload();
-                Map<String, Object> response = null;
-
-                if (payload instanceof JsonNode) {
-                    ObjectMapper mapper = new ObjectMapper();
-                    response = mapper.treeToValue((JsonNode) payload, Map.class);
-                } else if (payload instanceof Map) {
-                    response = (Map<String, Object>) payload;
-                } else if (payload instanceof String) {
-                    ObjectMapper mapper = new ObjectMapper();
-                    response = mapper.readValue((String) payload, Map.class);
-                }
-
-                if (response != null) {
-                    logger.info("[PROXY RESPONSE] Processing response: tempId={}, proxyId={}, success={}",
-                            response.get("tempId"), response.get("proxyId"), response.get("success"));
-                    handleProxyRegistrationResponse(response);
-                } else {
-                    logger.error("Failed to extract response from payload");
-                }
-            } catch (Exception e) {
-                logger.error("Failed to process proxy registration response", e);
-            }
-        });
-
-        // Handle proxy discovery requests - for OTHER servers discovering this proxy
-        messageBus.subscribe(ChannelConstants.PROXY_DISCOVERY_REQUEST, envelope -> {
-            logger.debug("Proxy discovery request received");
-            Object payload = envelope.payload();
-            ProxyDiscoveryRequest request = null;
-
-            // Handle ObjectNode from deserialization
-            if (payload instanceof JsonNode) {
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    request = mapper.treeToValue((JsonNode) payload, ProxyDiscoveryRequest.class);
-                } catch (Exception e) {
-                    logger.warn("Failed to deserialize ProxyDiscoveryRequest from ObjectNode: {}", e.getMessage());
-                    return;
-                }
-            } else if (payload instanceof ProxyDiscoveryRequest) {
-                request = (ProxyDiscoveryRequest) payload;
-            } else {
-                // This might be our own registration request - ignore it
-                logger.debug("Ignoring non-discovery message on proxy:discovery channel");
-                return;
-            }
-
-            logger.debug("Discovery request from server: {} (type: {})", request.requesterId(), request.serverType());
-
-            // Only respond if we have been registered with Registry Service
-            if (registeredWithRegistry && proxyId != null && !ProxyIdentifier.isTemporary(proxyId)) {
-                // Create response with our proxy info
-                ProxyDiscoveryResponse response = new ProxyDiscoveryResponse(proxyId);
-                ProxyDiscoveryResponse.ProxyInfo proxyInfo = new ProxyDiscoveryResponse.ProxyInfo(
-                        proxyId,
-                        proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort(),
-                        proxy.getConfiguration().getShowMaxPlayers(),
-                        proxy.getPlayerCount()
-                );
-                response.addProxy(proxyInfo);
-
-                messageBus.broadcast(ChannelConstants.PROXY_DISCOVERY_RESPONSE, response);
-                logger.debug("Sent discovery response for proxy: {}", proxyId);
-            } else {
-                logger.debug("Not responding to discovery request - proxy not yet registered");
-            }
-        });
-
-        // Handle registry re-registration requests (when registry restarts)
-        messageBus.subscribe(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, envelope -> {
-            try {
-                logger.info("[RE-REGISTRATION] Registry Service requested re-registration");
-                logger.info("[RE-REGISTRATION] Current proxy ID: {} (registered: {}, temp: {})",
-                        proxyId, registeredWithRegistry, ProxyIdentifier.isTemporary(proxyId));
-
-                // DIAGNOSTIC: Log timing information
-                long timeSinceStart = System.currentTimeMillis() - startTime;
-                logger.warn("[DIAGNOSTIC] Re-registration request received {} ms after proxy startup", timeSinceStart);
-
-                if (timeSinceStart < 10000) {  // Less than 10 seconds since startup
-                    logger.warn("[DIAGNOSTIC] Re-registration requested very soon after startup!");
-                    logger.warn("[DIAGNOSTIC] This might cause duplicate registration if we just registered!");
-                }
-
-                // IMPORTANT: When registry restarts, we need to reset our registration state
-                // The registry has lost our permanent ID, so we need to get a new one
-                if (registeredWithRegistry) {
-                    logger.info("[RE-REGISTRATION] Was previously registered, resetting state for new registration");
-                    logger.warn("[DIAGNOSTIC] RESETTING registration state - will register again!");
-                    registeredWithRegistry = false;
-                    resetRegistrationBackoff();
-                }
-
-                logger.warn("[DIAGNOSTIC] About to send ANOTHER registration request!");
-                // Re-send our proxy registration
-                sendProxyRegistrationToRegistry();
-
-                // DON'T send heartbeat here - wait for new permanent ID from registry
-                // The old permanent ID is no longer valid after registry restart
-                logger.info("[RE-REGISTRATION] Registration request sent, waiting for new permanent ID assignment");
-            } catch (Exception e) {
-                logger.error("Failed to handle re-registration request", e);
-            }
-        });
-
-        // Handle targeted re-registration request for this specific proxy
-        String reregisterChannel = "proxy:" + proxyId + ":reregister";
-        messageBus.subscribe(reregisterChannel, envelope -> {
-            try {
-                logger.info("[TARGETED RE-REG] Registry requested targeted re-registration for this proxy");
-                logger.info("[TARGETED RE-REG] Current proxy ID: {} (registered: {})",
-                        proxyId, registeredWithRegistry);
-
-                // Check if we're using temp ID - this subscription might be stale
-                if (ProxyIdentifier.isTemporary(proxyId)) {
-                    logger.warn("[TARGETED RE-REG] Still using temp ID, ignoring targeted re-registration");
-                    return;
-                }
-
-                // Reset registration state for re-registration
-                if (registeredWithRegistry) {
-                    logger.info("[TARGETED RE-REG] Resetting registration state");
-                    registeredWithRegistry = false;
-                    resetRegistrationBackoff();
-                }
-
-                sendProxyRegistrationToRegistry();
-
-                // Don't send heartbeat - wait for permanent ID
-                logger.info("[TARGETED RE-REG] Registration request sent, waiting for permanent ID");
-            } catch (Exception e) {
-                logger.error("Failed to handle targeted re-registration request", e);
-            }
-        });
-
-        // Handle server status change messages from registry
-        messageBus.subscribe(ChannelConstants.REGISTRY_STATUS_CHANGE, envelope -> {
-            Object payload = envelope.payload();
-            ServerStatusChangeMessage statusChange = null;
-
-            // Handle ObjectNode from deserialization
-            if (payload instanceof JsonNode) {
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    statusChange = mapper.treeToValue((JsonNode) payload, ServerStatusChangeMessage.class);
-                } catch (Exception e) {
-                    logger.warn("Failed to deserialize ServerStatusChangeMessage: {}", e.getMessage());
-                    return;
-                }
-            } else if (payload instanceof ServerStatusChangeMessage) {
-                statusChange = (ServerStatusChangeMessage) payload;
-            } else {
-                return;
-            }
-
-            String serverId = statusChange.getServerId();
-
-            logger.info("Server {} status changed: {} -> {}",
-                    serverId, statusChange.getOldStatus(), statusChange.getNewStatus());
-
-            // Update metrics in connection handler
-            if (connectionHandler != null) {
-                if (statusChange.getNewStatus() == ServerStatusChangeMessage.Status.AVAILABLE) {
-                    connectionHandler.updateServerMetrics(
-                            serverId,
-                            statusChange.getRole(),
-                            statusChange.getPlayerCount(),
-                            statusChange.getMaxPlayers(),
-                            statusChange.getTps()
-                    );
-                } else if (statusChange.getNewStatus() == ServerStatusChangeMessage.Status.DEAD) {
-                    connectionHandler.removeServerMetrics(serverId);
-                }
-            }
-        });
+        }
+        return null;
     }
 
     // Removed handleServerRegistration method - Registry Service handles this now
@@ -999,6 +636,423 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                         proxy.getConfiguration().getShowMaxPlayers(),
                         proxy.getConfiguration().getShowMaxPlayers() / 2,  // Default soft cap at 50%
                         proxy.getPlayerCount()));
+    }
+
+    private void setupMessageHandlers() {
+        // NOTE: Proxy no longer handles server registration directly
+        // The Registry Service handles all registrations and broadcasts updates
+
+        // Only use MessageBus subscription for proxy registration responses
+        // Remove direct Redis listener to avoid duplicate processing
+
+        // Listen for server additions from Registry Service
+        messageBus.subscribe(ChannelConstants.REGISTRY_SERVER_ADDED, envelope -> {
+            logger.info("=== SERVER ADDED BY REGISTRY ===");
+            Object payload = envelope.payload();
+
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                Map<String, Object> serverInfo = null;
+
+                if (payload instanceof JsonNode) {
+                    serverInfo = mapper.treeToValue((JsonNode) payload, Map.class);
+                } else if (payload instanceof Map) {
+                    serverInfo = (Map<String, Object>) payload;
+                } else if (payload instanceof String) {
+                    // Try parsing as JSON string
+                    serverInfo = mapper.readValue((String) payload, Map.class);
+                }
+
+                if (serverInfo != null) {
+                    String serverId = (String) serverInfo.get("serverId");
+                    String serverType = (String) serverInfo.get("serverType");
+                    String role = (String) serverInfo.getOrDefault("role", "default");
+                    String address = (String) serverInfo.get("address");
+                    Integer port = (Integer) serverInfo.get("port");
+                    Integer maxCapacity = (Integer) serverInfo.get("maxCapacity");
+
+                    logger.info("Registry added server: {} ({}:{}) - Type: {}, Role: {}, Capacity: {}",
+                            serverId, address, port, serverType, role, maxCapacity);
+
+                    // Store server info
+                    ServerIdentifier serverIdentifier = new BackendServerIdentifier(
+                            serverId, serverType, role, address, port, maxCapacity
+                    );
+                    backendServers.put(serverId, serverIdentifier);
+                    serverHeartbeats.put(serverId, System.currentTimeMillis());
+
+                    // Add to Velocity
+                    addServerToVelocity(serverId, address, port);
+                }
+            } catch (Exception e) {
+                logger.error("Failed to process server addition from Registry", e);
+            }
+        });
+
+        // Listen for server removals from Registry Service
+        messageBus.subscribe(ChannelConstants.REGISTRY_SERVER_REMOVED, envelope -> {
+            logger.info("=== SERVER REMOVED BY REGISTRY ===");
+            Object payload = envelope.payload();
+
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                Map<String, Object> removal = null;
+
+                if (payload instanceof JsonNode) {
+                    removal = mapper.treeToValue((JsonNode) payload, Map.class);
+                } else if (payload instanceof Map) {
+                    removal = (Map<String, Object>) payload;
+                } else if (payload instanceof String) {
+                    // Try parsing as JSON string
+                    removal = mapper.readValue((String) payload, Map.class);
+                }
+
+                if (removal != null) {
+                    String serverId = (String) removal.get("serverId");
+                    logger.info("Registry removed server: {}", serverId);
+
+                    // Remove from local tracking
+                    backendServers.remove(serverId);
+                    serverHeartbeats.remove(serverId);
+                    if (connectionHandler != null) {
+                        connectionHandler.removeServerMetrics(serverId);
+                    }
+
+                    // Remove from Velocity
+                    proxy.getServer(serverId).ifPresent(rs -> {
+                        proxy.unregisterServer(rs.getServerInfo());
+                        logger.info("Unregistered server from Velocity: {}", serverId);
+                    });
+                }
+            } catch (Exception e) {
+                logger.error("Failed to process server removal from Registry", e);
+            }
+        });
+
+        // Handle server removal notifications (for evacuation scenarios)
+        messageBus.subscribe(ChannelConstants.SERVER_EVACUATION_REQUEST, envelope -> {
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                ServerRemovalNotification notification = null;
+                Object payload = envelope.payload();
+
+                if (payload instanceof JsonNode) {
+                    notification = mapper.treeToValue((JsonNode) payload, ServerRemovalNotification.class);
+                } else if (payload instanceof ServerRemovalNotification) {
+                    notification = (ServerRemovalNotification) payload;
+                }
+
+                if (notification != null) {
+                    handleServerRemoval(notification);
+                }
+            } catch (Exception e) {
+                logger.error("Failed to process server removal notification", e);
+            }
+        });
+
+        // Handle server heartbeats
+        messageBus.subscribe(ChannelConstants.SERVER_HEARTBEAT, envelope -> {
+            Object payload = envelope.payload();
+            ServerHeartbeatMessage heartbeat = null;
+
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    heartbeat = mapper.treeToValue((JsonNode) payload, ServerHeartbeatMessage.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ServerHeartbeatMessage from ObjectNode: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ServerHeartbeatMessage) {
+                heartbeat = (ServerHeartbeatMessage) payload;
+            } else {
+                return;
+            }
+
+            String serverId = heartbeat.getServerId();
+            serverHeartbeats.put(serverId, System.currentTimeMillis());
+            updateServerCapacity(serverId, heartbeat.getPlayerCount());
+
+            // Update metrics in connection handler for optimal selection
+            if (connectionHandler != null) {
+                connectionHandler.updateServerMetrics(
+                        serverId,
+                        heartbeat.getRole(),
+                        heartbeat.getPlayerCount(),
+                        heartbeat.getMaxCapacity(),
+                        heartbeat.getTps()
+                );
+            }
+
+            logger.debug("Heartbeat from server {}: {} players, TPS: {}",
+                    serverId, heartbeat.getPlayerCount(), heartbeat.getTps());
+        });
+
+        // Handle server announcements (post-approval)
+        messageBus.subscribe(ChannelConstants.SERVER_ANNOUNCEMENT, envelope -> {
+            Object payload = envelope.payload();
+            ServerAnnouncementMessage announcement = null;
+
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    announcement = mapper.treeToValue((JsonNode) payload, ServerAnnouncementMessage.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ServerAnnouncementMessage from ObjectNode: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ServerAnnouncementMessage) {
+                announcement = (ServerAnnouncementMessage) payload;
+            } else {
+                return;
+            }
+
+            // Update backend server info
+            ServerIdentifier serverInfo = new BackendServerIdentifier(
+                    announcement.getServerId(),
+                    announcement.getServerType(),
+                    announcement.getRole(),
+                    announcement.getAddress(),
+                    announcement.getPort(),
+                    announcement.getCapacity()
+            );
+            backendServers.put(announcement.getServerId(), serverInfo);
+            serverHeartbeats.put(announcement.getServerId(), System.currentTimeMillis());
+
+            logger.debug("Registered backend server: {} - Type: {}, Capacity: {}",
+                    announcement.getServerId(), announcement.getServerType(),
+                    announcement.getCapacity());
+        });
+
+        // Handle proxy registration response from Registry Service via MessageBus
+        messageBus.subscribe(ChannelConstants.PROXY_REGISTRATION_RESPONSE, envelope -> {
+            logger.info("[PROXY RESPONSE RECEIVED] Received proxy registration response on channel: {}",
+                    ChannelConstants.PROXY_REGISTRATION_RESPONSE);
+
+            try {
+                Object payload = envelope.payload();
+                Map<String, Object> response = null;
+
+                if (payload instanceof JsonNode) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    response = mapper.treeToValue((JsonNode) payload, Map.class);
+                } else if (payload instanceof Map) {
+                    response = (Map<String, Object>) payload;
+                } else if (payload instanceof String) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    response = mapper.readValue((String) payload, Map.class);
+                }
+
+                if (response != null) {
+                    logger.info("[PROXY RESPONSE] Processing response: tempId={}, proxyId={}, success={}",
+                            response.get("tempId"), response.get("proxyId"), response.get("success"));
+                    handleProxyRegistrationResponse(response);
+                } else {
+                    logger.error("Failed to extract response from payload");
+                }
+            } catch (Exception e) {
+                logger.error("Failed to process proxy registration response", e);
+            }
+        });
+
+        // Handle proxy discovery requests - for OTHER servers discovering this proxy
+        messageBus.subscribe(ChannelConstants.PROXY_DISCOVERY_REQUEST, envelope -> {
+            logger.debug("Proxy discovery request received");
+            Object payload = envelope.payload();
+            ProxyDiscoveryRequest request = null;
+
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    request = mapper.treeToValue((JsonNode) payload, ProxyDiscoveryRequest.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ProxyDiscoveryRequest from ObjectNode: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ProxyDiscoveryRequest) {
+                request = (ProxyDiscoveryRequest) payload;
+            } else {
+                // This might be our own registration request - ignore it
+                logger.debug("Ignoring non-discovery message on proxy:discovery channel");
+                return;
+            }
+
+            logger.debug("Discovery request from server: {} (type: {})", request.requesterId(), request.serverType());
+
+            // Only respond if we have been registered with Registry Service
+            if (registeredWithRegistry && proxyId != null && !ProxyIdentifier.isTemporary(proxyId)) {
+                // Create response with our proxy info
+                ProxyDiscoveryResponse response = new ProxyDiscoveryResponse(proxyId);
+                ProxyDiscoveryResponse.ProxyInfo proxyInfo = new ProxyDiscoveryResponse.ProxyInfo(
+                        proxyId,
+                        proxy.getBoundAddress().getHostString() + ":" + proxy.getBoundAddress().getPort(),
+                        proxy.getConfiguration().getShowMaxPlayers(),
+                        proxy.getPlayerCount()
+                );
+                response.addProxy(proxyInfo);
+
+                messageBus.broadcast(ChannelConstants.PROXY_DISCOVERY_RESPONSE, response);
+                logger.debug("Sent discovery response for proxy: {}", proxyId);
+            } else {
+                logger.debug("Not responding to discovery request - proxy not yet registered");
+            }
+        });
+
+        // Handle registry re-registration requests (when registry restarts)
+        messageBus.subscribe(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, envelope -> {
+            try {
+                if (!shouldProcessReregistrationPayload(envelope.payload())) {
+                    logger.debug("[RE-REGISTRATION] Ignoring request targeted at other node");
+                    return;
+                }
+
+                logger.info("[RE-REGISTRATION] Registry Service requested re-registration");
+                logger.info("[RE-REGISTRATION] Current proxy ID: {} (registered: {}, temp: {})",
+                        proxyId, registeredWithRegistry, ProxyIdentifier.isTemporary(proxyId));
+
+                // DIAGNOSTIC: Log timing information
+                long timeSinceStart = System.currentTimeMillis() - startTime;
+                logger.warn("[DIAGNOSTIC] Re-registration request received {} ms after proxy startup", timeSinceStart);
+
+                if (timeSinceStart < 10000) {  // Less than 10 seconds since startup
+                    logger.warn("[DIAGNOSTIC] Re-registration requested very soon after startup!");
+                    logger.warn("[DIAGNOSTIC] This might cause duplicate registration if we just registered!");
+                }
+
+                // IMPORTANT: When registry restarts, we need to reset our registration state
+                // The registry has lost our permanent ID, so we need to get a new one
+                if (registeredWithRegistry) {
+                    logger.info("[RE-REGISTRATION] Was previously registered, resetting state for new registration");
+                    logger.warn("[DIAGNOSTIC] RESETTING registration state - will register again!");
+                    registeredWithRegistry = false;
+                    resetRegistrationBackoff();
+                }
+
+                logger.warn("[DIAGNOSTIC] About to send ANOTHER registration request!");
+                // Re-send our proxy registration
+                sendProxyRegistrationToRegistry();
+
+                // DON'T send heartbeat here - wait for new permanent ID from registry
+                // The old permanent ID is no longer valid after registry restart
+                logger.info("[RE-REGISTRATION] Registration request sent, waiting for new permanent ID assignment");
+            } catch (Exception e) {
+                logger.error("Failed to handle re-registration request", e);
+            }
+        });
+
+        // Handle targeted re-registration request for this specific proxy
+        String legacyReregisterChannel = "proxy:" + proxyId + ":reregister";
+        subscribeToProxyReregisterChannel(legacyReregisterChannel);
+        String targetedChannel = ChannelConstants.getProxyReregisterChannel(proxyId);
+        if (!targetedChannel.equals(legacyReregisterChannel)) {
+            subscribeToProxyReregisterChannel(targetedChannel);
+        }
+
+        // Handle server status change messages from registry
+        messageBus.subscribe(ChannelConstants.REGISTRY_STATUS_CHANGE, envelope -> {
+            Object payload = envelope.payload();
+            ServerStatusChangeMessage statusChange = null;
+
+            // Handle ObjectNode from deserialization
+            if (payload instanceof JsonNode) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    statusChange = mapper.treeToValue((JsonNode) payload, ServerStatusChangeMessage.class);
+                } catch (Exception e) {
+                    logger.warn("Failed to deserialize ServerStatusChangeMessage: {}", e.getMessage());
+                    return;
+                }
+            } else if (payload instanceof ServerStatusChangeMessage) {
+                statusChange = (ServerStatusChangeMessage) payload;
+            } else {
+                return;
+            }
+
+            String serverId = statusChange.getServerId();
+
+            logger.info("Server {} status changed: {} -> {}",
+                    serverId, statusChange.getOldStatus(), statusChange.getNewStatus());
+
+            // Update metrics in connection handler
+            if (connectionHandler != null) {
+                if (statusChange.getNewStatus() == ServerStatusChangeMessage.Status.AVAILABLE) {
+                    connectionHandler.updateServerMetrics(
+                            serverId,
+                            statusChange.getRole(),
+                            statusChange.getPlayerCount(),
+                            statusChange.getMaxPlayers(),
+                            statusChange.getTps()
+                    );
+                } else if (statusChange.getNewStatus() == ServerStatusChangeMessage.Status.DEAD) {
+                    connectionHandler.removeServerMetrics(serverId);
+                }
+            }
+        });
+    }
+
+    private boolean shouldProcessReregistrationPayload(Object payload) {
+        String targetId = extractTargetId(payload);
+        if (targetId == null || targetId.isBlank()) {
+            return true;
+        }
+        return targetId.equalsIgnoreCase(proxyId);
+    }
+
+    private String extractTargetId(Object payload) {
+        if (payload instanceof JsonNode jsonNode) {
+            if (jsonNode.hasNonNull("targetId")) {
+                return jsonNode.get("targetId").asText();
+            }
+            if (jsonNode.hasNonNull("proxyId")) {
+                return jsonNode.get("proxyId").asText();
+            }
+            if (jsonNode.hasNonNull("serverId")) {
+                return jsonNode.get("serverId").asText();
+            }
+        } else if (payload instanceof Map<?, ?> map) {
+            Object rawTarget = firstNonNull(
+                    map.get("targetId"),
+                    map.get("proxyId"),
+                    map.get("serverId"));
+            if (rawTarget instanceof String target) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private void subscribeToProxyReregisterChannel(String channel) {
+        messageBus.subscribe(channel, envelope -> {
+            try {
+                logger.info("[TARGETED RE-REG] Registry requested targeted re-registration for this proxy (channel: {})",
+                        channel);
+                logger.info("[TARGETED RE-REG] Current proxy ID: {} (registered: {})",
+                        proxyId, registeredWithRegistry);
+
+                // Check if we're using temp ID - this subscription might be stale
+                if (ProxyIdentifier.isTemporary(proxyId)) {
+                    logger.warn("[TARGETED RE-REG] Still using temp ID, ignoring targeted re-registration");
+                    return;
+                }
+
+                // Reset registration state for re-registration
+                if (registeredWithRegistry) {
+                    logger.info("[TARGETED RE-REG] Resetting registration state");
+                    registeredWithRegistry = false;
+                    resetRegistrationBackoff();
+                }
+
+                sendProxyRegistrationToRegistry();
+
+                // Don't send heartbeat - wait for permanent ID
+                logger.info("[TARGETED RE-REG] Registration request sent, waiting for permanent ID");
+            } catch (Exception e) {
+                logger.error("Failed to handle targeted re-registration request", e);
+            }
+        });
     }
 
     /**

@@ -101,8 +101,12 @@ public class ServerStatusChangeMessage implements Serializable {
     }
 
     public enum Status {
+        STARTING,
         AVAILABLE,
         UNAVAILABLE,
+        RUNNING,
+        STOPPING,
+        EVACUATING,
         DEAD
     }
 }
