@@ -39,6 +39,8 @@ public final class QuickMathsCommand {
     public LiteralCommandNode<CommandSourceStack> build() {
         return literal("quickmaths")
                 .requires(source -> RankUtils.hasRankOrHigher(source.getSender(), Rank.STAFF))
+                .then(literal("cancel")
+                        .executes(this::executeCancel))
                 .then(argument("difficulty", StringArgumentType.word())
                         .suggests(DIFFICULTY_SUGGESTIONS)
                         .then(argument("winners", IntegerArgumentType.integer(1, manager.maxWinnersPerRound()))
@@ -61,6 +63,12 @@ public final class QuickMathsCommand {
         int winners = IntegerArgumentType.getInteger(context, "winners");
         boolean started = manager.startRound(sender, difficulty.get(), winners);
         return started ? Command.SINGLE_SUCCESS : 0;
+    }
+
+    private int executeCancel(CommandContext<CommandSourceStack> context) {
+        CommandSender sender = context.getSource().getSender();
+        boolean cancelled = manager.cancelRound(sender);
+        return cancelled ? Command.SINGLE_SUCCESS : 0;
     }
 
     private String readableDifficulties() {
