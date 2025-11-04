@@ -157,7 +157,11 @@ public final class EnvironmentDirectoryManager implements Closeable {
                     document.id(),
                     document.tag(),
                     document.modules(),
-                    document.description()
+                    document.description(),
+                    document.minPlayers(),
+                    document.maxPlayers(),
+                    document.playerFactor(),
+                    document.settings()
             ));
         }
         String revision = UUID.randomUUID().toString();
@@ -190,7 +194,11 @@ public final class EnvironmentDirectoryManager implements Closeable {
                         id,
                         descriptor.tag(),
                         descriptor.modules(),
-                        descriptor.description()
+                        descriptor.description(),
+                        descriptor.minPlayers(),
+                        descriptor.maxPlayers(),
+                        descriptor.playerFactor(),
+                        descriptor.settings()
                 );
                 repository.save(doc);
                 seeded.add(doc);

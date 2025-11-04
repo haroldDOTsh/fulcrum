@@ -48,6 +48,10 @@ public final class EnvironmentDirectoryRepository implements AutoCloseable {
         payload.put("tag", document.tag());
         payload.put("modules", document.modules());
         payload.put("description", document.description());
+        payload.put("minPlayers", document.minPlayers());
+        payload.put("maxPlayers", document.maxPlayers());
+        payload.put("playerFactor", document.playerFactor());
+        payload.put("settings", new LinkedHashMap<>(document.settings()));
 
         Document target = environments.document(document.id());
         if (!target.exists()) {
@@ -56,6 +60,10 @@ public final class EnvironmentDirectoryRepository implements AutoCloseable {
             target.set("tag", document.tag());
             target.set("modules", document.modules());
             target.set("description", document.description());
+            target.set("minPlayers", document.minPlayers());
+            target.set("maxPlayers", document.maxPlayers());
+            target.set("playerFactor", document.playerFactor());
+            target.set("settings", new LinkedHashMap<>(document.settings()));
         }
     }
 
@@ -81,6 +89,62 @@ public final class EnvironmentDirectoryRepository implements AutoCloseable {
             }
         }
         String description = raw.get("description") != null ? raw.get("description").toString() : "";
-        return Optional.of(new EnvironmentDirectoryDocument(id, tag, modules, description));
+        int minPlayers = readInt(raw.get("minPlayers"), 0);
+        int maxPlayers = readInt(raw.get("maxPlayers"), minPlayers);
+        if (maxPlayers < minPlayers) {
+            maxPlayers = minPlayers;
+        }
+        double playerFactor = readDouble(raw.get("playerFactor"), 1.0D);
+        Map<String, Object> settings = readSettings(raw.get("settings"));
+        return Optional.of(new EnvironmentDirectoryDocument(
+                id,
+                tag,
+                modules,
+                description,
+                minPlayers,
+                maxPlayers,
+                playerFactor,
+                settings
+        ));
+    }
+
+    private int readInt(Object value, int fallback) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String str) {
+            try {
+                return Integer.parseInt(str.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return fallback;
+    }
+
+    private double readDouble(Object value, double fallback) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value instanceof String str) {
+            try {
+                return Double.parseDouble(str.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return fallback;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readSettings(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new LinkedHashMap<>();
+            map.forEach((k, v) -> {
+                if (k != null) {
+                    copy.put(k.toString(), v);
+                }
+            });
+            return copy;
+        }
+        return Map.of();
     }
 }

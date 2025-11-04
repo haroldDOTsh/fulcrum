@@ -6,6 +6,12 @@
       "debug-minigame",
       "slot-watchdog"
     ],
-    "description": "Default development environment"
+    "description": "Default development environment",
+    "minPlayers": 0,
+    "maxPlayers": 50,
+    "playerFactor": 1.0,
+    "settings": {
+      "routeThreshold": 0.75
+    }
   }
 }
