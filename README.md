@@ -14,7 +14,7 @@ that can be built on top of Paper and Velocity.
 
 - Minecraft Version: `1.21.10`
 - Protocol Version: `773`
-- Toolchain: Java 21, Gradle 8.14, Paper + Velocity APIs
+- Toolchain: Java 21, Gradle 9.2, Paper + Velocity APIs
 
 ## Quick Start
 
@@ -59,9 +59,9 @@ wire your own Gradle build like this:
 2. **Pull the modules you need.**
    ```kotlin
    dependencies {
-       implementation("com.github.haroldDOTsh.fulcrum:common-api:3.0.3") // Contracts, ranks, session/message APIs
-       compileOnly("com.github.haroldDOTsh.fulcrum:runtime:3.0.3") // Paper runtime hooks (module development)
-       compileOnly("com.github.haroldDOTsh.fulcrum:runtime-velocity:3.0.3") // Proxy hooks (if you extend the proxy stack)
+       implementation("com.github.haroldDOTsh.fulcrum:common-api:4.6.4") // Contracts, ranks, session/message APIs
+       compileOnly("com.github.haroldDOTsh.fulcrum:runtime:4.6.4") // Paper runtime hooks (module development)
+       compileOnly("com.github.haroldDOTsh.fulcrum:runtime-velocity:4.6.4") // Proxy hooks (if you extend the proxy stack)
    }
    ```
    Every published artifact keeps the `com.github.haroldDOTsh.fulcrum` group, so switching between tags or snapshots is

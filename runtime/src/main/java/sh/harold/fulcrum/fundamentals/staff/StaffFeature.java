@@ -2,6 +2,8 @@ package sh.harold.fulcrum.fundamentals.staff;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.fundamentals.actionflag.ActionFlagService;
+import sh.harold.fulcrum.fundamentals.staff.command.LoopCommand;
+import sh.harold.fulcrum.fundamentals.staff.command.SudoCommand;
 import sh.harold.fulcrum.fundamentals.staff.command.VanishCommand;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -29,6 +31,8 @@ public final class StaffFeature implements PluginFeature {
                 .ifPresent(locator -> locator.registerService(StaffVanishService.class, vanishService));
 
         CommandRegistrar.register(new VanishCommand(vanishService).build());
+        CommandRegistrar.register(new SudoCommand().build());
+        CommandRegistrar.register(new LoopCommand(plugin).build());
         plugin.getLogger().info("[STAFF] Staff feature initialized");
     }
 
