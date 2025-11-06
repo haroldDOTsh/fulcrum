@@ -79,9 +79,9 @@ class PlayerRoutingServiceStatelessIntegrationTest extends RedisIntegrationTestS
 
             firstInstance.shutdown();
 
-            RegisteredServerData serverData = new RegisteredServerData("server-1", "temp-server-1", "mini", "127.0.0.1", 25565, 100);
+            RegisteredServerData serverData = new RegisteredServerData("mini1", "temp-mini1", "mini", "127.0.0.1", 25565, 100);
             serverData.setStatus(RegisteredServerData.Status.RUNNING);
-            LogicalSlotRecord slotRecord = new LogicalSlotRecord("server-1A", "A", "server-1");
+            LogicalSlotRecord slotRecord = new LogicalSlotRecord("mini1A", "A", "mini1");
             slotRecord.setStatus(SlotLifecycleStatus.AVAILABLE);
             slotRecord.setMaxPlayers(16);
             slotRecord.setOnlinePlayers(0);
@@ -89,7 +89,7 @@ class PlayerRoutingServiceStatelessIntegrationTest extends RedisIntegrationTestS
             serverData.putSlot(slotRecord);
             currentServers.set(List.of(serverData));
 
-            when(serverRegistry.updateSlot(eq("server-1"), any(SlotStatusUpdateMessage.class))).thenAnswer(invocation -> {
+            when(serverRegistry.updateSlot(eq("mini1"), any(SlotStatusUpdateMessage.class))).thenAnswer(invocation -> {
                 SlotStatusUpdateMessage update = invocation.getArgument(1);
                 slotRecord.applyUpdate(update);
                 return slotRecord;
@@ -106,7 +106,7 @@ class PlayerRoutingServiceStatelessIntegrationTest extends RedisIntegrationTestS
                     .ifPresent(reservation -> {
                         PlayerReservationResponse response = new PlayerReservationResponse();
                         response.setRequestId(reservation.getRequestId());
-                        String serverId = reservation.getServerId() != null ? reservation.getServerId() : "server-1";
+                        String serverId = reservation.getServerId() != null ? reservation.getServerId() : "mini1";
                         response.setServerId(serverId);
                         response.setAccepted(true);
                         response.setReservationToken(UUID.randomUUID().toString());

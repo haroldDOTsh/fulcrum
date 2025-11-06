@@ -2,11 +2,11 @@ package sh.harold.fulcrum.api.data;
 
 import com.mongodb.client.MongoDatabase;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.CacheProvider;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageType;
@@ -26,6 +26,9 @@ class DataAPITest {
     private ConnectionAdapter connectionAdapter;
 
     @Mock
+    private MongoConnectionAdapter mongoConnectionAdapter;
+
+    @Mock
     private MongoDatabase mongoDatabase;
 
     @Mock
@@ -34,19 +37,20 @@ class DataAPITest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
+        when(mongoConnectionAdapter.getStorageType()).thenReturn(StorageType.MONGODB);
+        when(mongoConnectionAdapter.getMongoDatabase()).thenReturn(mongoDatabase);
+        when(mongoConnectionAdapter.getCacheProvider()).thenReturn(Optional.empty());
+        when(mongoConnectionAdapter.getJsonStoragePath()).thenReturn(null);
     }
 
     @Test
-    @Disabled("Requires MongoDB server")
     @DisplayName("Should create DataAPI with MongoDB adapter")
     void shouldCreateDataAPIWithMongoDBAdapter() {
         // Given
-        when(connectionAdapter.getStorageType()).thenReturn(StorageType.MONGODB);
-        when(connectionAdapter.getMongoDatabase()).thenReturn(mongoDatabase);
-        when(connectionAdapter.getCacheProvider()).thenReturn(Optional.empty());
+        when(mongoConnectionAdapter.getCacheProvider()).thenReturn(Optional.empty());
 
         // When
-        DataAPI dataAPI = DataAPI.create(connectionAdapter);
+        DataAPI dataAPI = DataAPI.create(mongoConnectionAdapter);
 
         // Then
         assertThat(dataAPI).isNotNull();
@@ -69,29 +73,23 @@ class DataAPITest {
     }
 
     @Test
-    @Disabled("Requires MongoDB server")
     @DisplayName("Should create DataAPI with cache provider")
     void shouldCreateDataAPIWithCacheProvider() {
         // Given
-        when(connectionAdapter.getStorageType()).thenReturn(StorageType.MONGODB);
-        when(connectionAdapter.getMongoDatabase()).thenReturn(mongoDatabase);
-        when(connectionAdapter.getCacheProvider()).thenReturn(Optional.of(cacheProvider));
+        when(mongoConnectionAdapter.getCacheProvider()).thenReturn(Optional.of(cacheProvider));
 
         // When
-        DataAPI dataAPI = DataAPI.create(connectionAdapter);
+        DataAPI dataAPI = DataAPI.create(mongoConnectionAdapter);
 
         // Then
         assertThat(dataAPI).isNotNull();
     }
 
     @Test
-    @Disabled("Requires MongoDB server")
     @DisplayName("Should access collections using from() method")
     void shouldAccessCollectionUsingFromMethod() {
         // Given
-        when(connectionAdapter.getStorageType()).thenReturn(StorageType.MONGODB);
-        when(connectionAdapter.getMongoDatabase()).thenReturn(mongoDatabase);
-        DataAPI dataAPI = DataAPI.create(connectionAdapter);
+        DataAPI dataAPI = DataAPI.create(mongoConnectionAdapter);
 
         // When
         Collection usersCollection = dataAPI.from("users");
@@ -101,13 +99,10 @@ class DataAPITest {
     }
 
     @Test
-    @Disabled("Requires MongoDB server")
     @DisplayName("Should access collections using collection() method")
     void shouldAccessCollectionUsingCollectionMethod() {
         // Given
-        when(connectionAdapter.getStorageType()).thenReturn(StorageType.MONGODB);
-        when(connectionAdapter.getMongoDatabase()).thenReturn(mongoDatabase);
-        DataAPI dataAPI = DataAPI.create(connectionAdapter);
+        DataAPI dataAPI = DataAPI.create(mongoConnectionAdapter);
 
         // When
         Collection itemsCollection = dataAPI.collection("items");
@@ -117,13 +112,10 @@ class DataAPITest {
     }
 
     @Test
-    @Disabled("Requires MongoDB server")
     @DisplayName("Should provide direct access to players collection")
     void shouldProvideDirectAccessToPlayersCollection() {
         // Given
-        when(connectionAdapter.getStorageType()).thenReturn(StorageType.MONGODB);
-        when(connectionAdapter.getMongoDatabase()).thenReturn(mongoDatabase);
-        DataAPI dataAPI = DataAPI.create(connectionAdapter);
+        DataAPI dataAPI = DataAPI.create(mongoConnectionAdapter);
 
         // When
         Collection playersCollection = dataAPI.players();
@@ -133,14 +125,11 @@ class DataAPITest {
     }
 
     @Test
-    @Disabled("Requires MongoDB server")
     @DisplayName("Should provide direct access to specific player document")
     void shouldProvideDirectAccessToPlayerDocument() {
         // Given
         UUID playerId = UUID.randomUUID();
-        when(connectionAdapter.getStorageType()).thenReturn(StorageType.MONGODB);
-        when(connectionAdapter.getMongoDatabase()).thenReturn(mongoDatabase);
-        DataAPI dataAPI = DataAPI.create(connectionAdapter);
+        DataAPI dataAPI = DataAPI.create(mongoConnectionAdapter);
 
         // When
         Document playerDoc = dataAPI.player(playerId);
@@ -150,13 +139,10 @@ class DataAPITest {
     }
 
     @Test
-    @Disabled("Requires MongoDB server")
     @DisplayName("Should provide direct access to guilds collection")
     void shouldProvideDirectAccessToGuildsCollection() {
         // Given
-        when(connectionAdapter.getStorageType()).thenReturn(StorageType.MONGODB);
-        when(connectionAdapter.getMongoDatabase()).thenReturn(mongoDatabase);
-        DataAPI dataAPI = DataAPI.create(connectionAdapter);
+        DataAPI dataAPI = DataAPI.create(mongoConnectionAdapter);
 
         // When
         Collection guildsCollection = dataAPI.guilds();

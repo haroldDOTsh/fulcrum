@@ -25,8 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-@Testcontainers
-@Disabled("Requires MongoDB server - tests require Testcontainers with Docker")
+@Testcontainers(disabledWithoutDocker = true)
 class MongoStorageBackendTest {
 
     @Container

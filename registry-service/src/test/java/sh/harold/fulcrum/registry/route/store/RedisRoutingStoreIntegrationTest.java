@@ -91,14 +91,14 @@ class RedisRoutingStoreIntegrationTest extends RedisIntegrationTestSupport {
                     1
             );
 
-            RedisRoutingStore.RouteEntry entry = new RedisRoutingStore.RouteEntry(context, "server-1A", System.currentTimeMillis());
+            RedisRoutingStore.RouteEntry entry = new RedisRoutingStore.RouteEntry(context, "mini1A", System.currentTimeMillis());
             store.storeInFlightRoute(requestId, entry);
 
             assertThat(store.getInFlightRoute(requestId))
                     .isPresent()
                     .get()
                     .extracting(RedisRoutingStore.RouteEntry::getSlotId)
-                    .isEqualTo("server-1A");
+                    .isEqualTo("mini1A");
 
             assertThat(store.removeInFlightRoute(requestId))
                     .isPresent()
@@ -126,14 +126,14 @@ class RedisRoutingStoreIntegrationTest extends RedisIntegrationTestSupport {
                     partyId,
                     playerId,
                     "Member",
-                    "server-1",
+                    "mini1",
                     System.currentTimeMillis() + 30_000
             );
 
             PartyReservationSnapshot snapshot = new PartyReservationSnapshot(reservationId, partyId);
             snapshot.setFamilyId("mini");
             snapshot.setVariantId("rush");
-            snapshot.setTargetServerId("server-1");
+            snapshot.setTargetServerId("mini1");
             snapshot.setTokens(Map.of(playerId, token));
 
             RedisRoutingStore.PartyAllocationEntry allocation = new RedisRoutingStore.PartyAllocationEntry(
@@ -141,9 +141,9 @@ class RedisRoutingStoreIntegrationTest extends RedisIntegrationTestSupport {
                     reservationId,
                     "mini",
                     "rush",
-                    "server-1A",
+                    "mini1A",
                     "A",
-                    "server-1",
+                    "mini1",
                     1,
                     0,
                     false,
@@ -159,7 +159,7 @@ class RedisRoutingStoreIntegrationTest extends RedisIntegrationTestSupport {
                     .isPresent()
                     .get()
                     .extracting(RedisRoutingStore.PartyAllocationEntry::getSlotId)
-                    .isEqualTo("server-1A");
+                    .isEqualTo("mini1A");
 
             assertThat(store.removePartyAllocation(reservationId))
                     .isPresent()
