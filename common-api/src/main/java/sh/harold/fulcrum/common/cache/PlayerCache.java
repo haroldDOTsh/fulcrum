@@ -29,6 +29,15 @@ public interface PlayerCache {
     CachedDocument scoped(String family, String variant, UUID playerId);
 
     /**
+     * Obtain a cache-backed view of the cosmetics section in the player document.
+     *
+     * @param playerId player identifier
+     */
+    default CachedDocument cosmetics(UUID playerId) {
+        return root(playerId);
+    }
+
+    /**
      * Executor used to run asynchronous cache operations.
      */
     default Executor asyncExecutor() {

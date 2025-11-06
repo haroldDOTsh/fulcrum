@@ -8,6 +8,7 @@ import org.bukkit.event.player.PlayerCommandSendEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.chat.ChatEmojiPackService;
 import sh.harold.fulcrum.api.chat.ChatEmojiService;
 import sh.harold.fulcrum.api.chat.ChatFormatService;
 import sh.harold.fulcrum.api.chat.channel.ChatChannelService;
@@ -15,6 +16,7 @@ import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.messages.chat.ChatChannelMessage;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyUpdateMessage;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.fundamentals.chat.command.ChatCommands;
 import sh.harold.fulcrum.fundamentals.chat.command.DisableMeCommand;
 import sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature;
@@ -33,6 +35,7 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
     private JavaPlugin plugin;
     private Logger logger;
     private ChatChannelServiceImpl service;
+    private ChatEmojiPackService chatEmojiPackService;
     private ChatEmojiService chatEmojiService;
     private MessageBus messageBus;
     private MessageHandler chatHandler;
@@ -52,6 +55,10 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
         this.messageBus = container.getOptional(MessageBus.class).orElse(null);
         ChatFormatService chatFormatService = container.getOptional(ChatFormatService.class).orElse(null);
         RankService rankService = container.getOptional(RankService.class).orElse(null);
+        PlayerCache playerCache = container.getOptional(PlayerCache.class)
+                .orElseGet(() -> Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                        .flatMap(locator -> locator.findService(PlayerCache.class))
+                        .orElse(null));
         LettuceRedisOperations redis = container.getOptional(LettuceRedisOperations.class).orElse(null);
         java.util.function.Supplier<MinigameEngine> engineSupplier = () -> container.getOptional(MinigameEngine.class)
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
@@ -68,7 +75,15 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
                                 ? ServiceLocatorImpl.getInstance().findService(RuntimePunishmentFeature.RuntimePunishmentManager.class).orElse(null)
                                 : null);
 
-        this.chatEmojiService = new ChatEmojiServiceImpl(rankService);
+        if (playerCache == null) {
+            throw new IllegalStateException("PlayerCache unavailable; chat emoji packs require player data persistence.");
+        }
+        this.chatEmojiPackService = new PersistentChatEmojiPackService(playerCache);
+        container.register(ChatEmojiPackService.class, this.chatEmojiPackService);
+        Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                .ifPresent(locator -> locator.registerService(ChatEmojiPackService.class, this.chatEmojiPackService));
+
+        this.chatEmojiService = new ChatEmojiServiceImpl(rankService, this.chatEmojiPackService);
 
         container.register(ChatEmojiService.class, this.chatEmojiService);
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
@@ -108,6 +123,8 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
                 .ifPresent(locator -> locator.unregisterService(ChatChannelService.class));
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
                 .ifPresent(locator -> locator.unregisterService(ChatEmojiService.class));
+        Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                .ifPresent(locator -> locator.unregisterService(ChatEmojiPackService.class));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

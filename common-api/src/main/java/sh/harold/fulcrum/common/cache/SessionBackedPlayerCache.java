@@ -136,6 +136,11 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
     }
 
     @Override
+    public CachedDocument cosmetics(UUID playerId) {
+        return new CosmeticsDocument(playerId);
+    }
+
+    @Override
     public Executor asyncExecutor() {
         return asyncExecutor;
     }
@@ -237,7 +242,7 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
             return document.get(prefixPath(key), null);
         }
 
-        private Map<String, Object> readDocumentSnapshot() {
+        protected Map<String, Object> readDocumentSnapshot() {
             Document document = targetDocument();
             if (!document.exists()) {
                 return Collections.emptyMap();
@@ -253,15 +258,19 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
             Document document = targetDocument();
             String fullPath = prefixPath(key);
             if (!document.exists()) {
-                Map<String, Object> settingsMap = new LinkedHashMap<>();
-                String relative = stripSettingsPrefix(fullPath);
+                String root = rootKey();
+                if (root.isEmpty()) {
+                    throw new IllegalStateException("Document prefix not configured");
+                }
+                Map<String, Object> rootMap = new LinkedHashMap<>();
+                String relative = stripRootPrefix(fullPath);
                 if (relative.isEmpty() && value instanceof Map<?, ?> map) {
-                    settingsMap.putAll(deepCopy(map));
+                    rootMap.putAll(deepCopy(map));
                 } else if (!relative.isEmpty()) {
-                    writeToMap(settingsMap, relative, value);
+                    writeToMap(rootMap, relative, value);
                 }
                 Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("settings", settingsMap);
+                payload.put(root, rootMap);
                 dataAPI.collection(collectionName()).create(playerId.toString(), payload);
                 return;
             }
@@ -273,15 +282,16 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
             if (!document.exists()) {
                 return;
             }
-            Object raw = document.get("settings", null);
-            Map<String, Object> settingsMap = raw instanceof Map<?, ?> map ? deepCopy(map) : new LinkedHashMap<>();
-            String relative = stripSettingsPrefix(prefixPath(key));
+            String root = rootKey();
+            Object raw = document.get(root, null);
+            Map<String, Object> rootMap = raw instanceof Map<?, ?> map ? deepCopy(map) : new LinkedHashMap<>();
+            String relative = stripRootPrefix(prefixPath(key));
             if (relative.isEmpty()) {
-                settingsMap.clear();
+                rootMap.clear();
             } else {
-                removeFromMap(settingsMap, relative);
+                removeFromMap(rootMap, relative);
             }
-            document.set("settings", settingsMap);
+            document.set(root, rootMap);
         }
 
         private String prefixPath(String key) {
@@ -292,17 +302,31 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
             return prefix + "." + key;
         }
 
-        private String stripSettingsPrefix(String fullPath) {
+        private String rootKey() {
+            String prefix = documentPrefix();
+            if (prefix == null || prefix.isBlank()) {
+                return "";
+            }
+            int dot = prefix.indexOf('.');
+            return dot == -1 ? prefix : prefix.substring(0, dot);
+        }
+
+        private String stripRootPrefix(String fullPath) {
             if (fullPath == null || fullPath.isBlank()) {
                 return "";
             }
-            if (!fullPath.startsWith("settings")) {
+            String root = rootKey();
+            if (root.isEmpty() || !fullPath.startsWith(root)) {
                 return fullPath;
             }
-            if (fullPath.equals("settings")) {
+            if (fullPath.length() == root.length()) {
                 return "";
             }
-            return fullPath.substring("settings".length() + 1);
+            int next = root.length();
+            if (fullPath.charAt(next) == '.') {
+                return fullPath.substring(next + 1);
+            }
+            return fullPath.substring(next);
         }
     }
 
@@ -334,6 +358,43 @@ public abstract class SessionBackedPlayerCache implements PlayerCache {
         @Override
         protected void ensureSessionData(PlayerSessionRecord record) {
             // Global settings are loaded as part of the base bootstrap state.
+        }
+    }
+
+    private final class CosmeticsDocument extends AbstractDocument {
+        private CosmeticsDocument(UUID playerId) {
+            super(playerId);
+        }
+
+        @Override
+        protected Map<String, Object> targetMap(PlayerSessionRecord record, boolean create) {
+            return record.getCosmetics();
+        }
+
+        @Override
+        protected Document targetDocument() {
+            return dataAPI.collection("players").document(playerId.toString());
+        }
+
+        @Override
+        protected String collectionName() {
+            return "players";
+        }
+
+        @Override
+        protected String documentPrefix() {
+            return "cosmetics";
+        }
+
+        @Override
+        protected void ensureSessionData(PlayerSessionRecord record) {
+            if (!record.getCosmetics().isEmpty()) {
+                return;
+            }
+            Map<String, Object> snapshot = readDocumentSnapshot();
+            if (!snapshot.isEmpty()) {
+                record.getCosmetics().putAll(snapshot);
+            }
         }
     }
 

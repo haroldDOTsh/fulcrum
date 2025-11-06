@@ -271,6 +271,12 @@ public class PlayerSessionService {
                 record.getExtras().putAll(extrasCopy);
                 return;
             }
+            if ("cosmetics".equals(key) && value instanceof Map<?, ?> map) {
+                Map<String, Object> cosmeticsCopy = copyNestedMap(map);
+                record.getCosmetics().clear();
+                record.getCosmetics().putAll(cosmeticsCopy);
+                return;
+            }
             if ("clientProtocolVersion".equals(key)) {
                 record.setClientProtocolVersion(parseProtocolVersion(value));
                 return;

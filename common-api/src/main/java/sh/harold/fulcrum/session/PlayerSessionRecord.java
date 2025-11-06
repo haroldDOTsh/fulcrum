@@ -18,6 +18,7 @@ public class PlayerSessionRecord {
     private final Map<String, Object> rank = new HashMap<>();
     private final Map<String, Object> minigames = new HashMap<>();
     private final Map<String, Object> extras = new HashMap<>();
+    private final Map<String, Object> cosmetics = new HashMap<>();
     private final Map<String, Map<String, Object>> scopedData = new HashMap<>();
     private final Map<String, Object> playtime = new LinkedHashMap<>();
     private final List<Segment> segments = new ArrayList<>();
@@ -185,6 +186,11 @@ public class PlayerSessionRecord {
     @JsonProperty("segments")
     public List<Segment> getSegments() {
         return segments;
+    }
+
+    @JsonProperty("cosmetics")
+    public Map<String, Object> getCosmetics() {
+        return cosmetics;
     }
 
     @JsonProperty("segments")
