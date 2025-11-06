@@ -8,10 +8,7 @@ import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
-import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest;
-import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
-import sh.harold.fulcrum.api.messagebus.messages.SlotFamilyAdvertisementMessage;
-import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
+import sh.harold.fulcrum.api.messagebus.messages.*;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -756,20 +753,33 @@ public class RegistrationHandler {
             String reason = (String) request.get("reason");
 
             if (serverId != null) {
+                RegisteredServerData server = serverRegistry.getServer(serverId);
+                if (server == null) {
+                    LOGGER.warn("Evacuation request received for unknown server {}", serverId);
+                    return;
+                }
+
+                RegisteredServerData.Status previousStatus = server.getStatus();
+                RegisteredServerData.Status newStatus = RegisteredServerData.Status.EVACUATING;
+
                 // Essential log - always show evacuation requests
                 LOGGER.info("Evacuation requested for server {} - Reason: {}", serverId, reason);
 
                 // Update server status to EVACUATING
-                serverRegistry.updateStatus(serverId, "EVACUATING");
+                serverRegistry.updateStatus(serverId, newStatus.name());
 
-                // Broadcast status change
-                Map<String, Object> statusChange = new HashMap<>();
-                statusChange.put("serverId", serverId);
-                statusChange.put("status", "EVACUATING");
-                statusChange.put("reason", reason);
-                statusChange.put("timestamp", System.currentTimeMillis());
+                RegisteredServerData refreshed = serverRegistry.getServer(serverId);
+                ServerStatusChangeMessage statusChange = new ServerStatusChangeMessage();
+                statusChange.setServerId(serverId);
+                statusChange.setRole(refreshed != null && refreshed.getRole() != null ? refreshed.getRole() : "default");
+                statusChange.setOldStatus(previousStatus != null
+                        ? ServerStatusChangeMessage.Status.valueOf(previousStatus.name())
+                        : ServerStatusChangeMessage.Status.RUNNING);
+                statusChange.setNewStatus(ServerStatusChangeMessage.Status.EVACUATING);
+                statusChange.setPlayerCount(refreshed != null ? refreshed.getPlayerCount() : 0);
+                statusChange.setMaxPlayers(refreshed != null ? refreshed.getMaxCapacity() : 0);
+                statusChange.setTps(refreshed != null ? refreshed.getTps() : 0.0);
 
-                // Broadcast status change via MessageBus (standardized only)
                 messageBus.broadcast(ChannelConstants.REGISTRY_STATUS_CHANGE, statusChange);
 
                 // Send evacuation response

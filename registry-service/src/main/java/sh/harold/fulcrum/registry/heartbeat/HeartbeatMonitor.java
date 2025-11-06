@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.messagebus.messages.ServerStatusChangeMessage;
 import sh.harold.fulcrum.registry.heartbeat.store.RedisHeartbeatStore;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
@@ -219,6 +220,7 @@ public class HeartbeatMonitor {
                     if (oldStatus != newStatus) {
                         LOGGER.info("Proxy {} status changed from {} to {} (heartbeat via temp ID)",
                                 permanentId, oldStatus, newStatus);
+                        broadcastProxyStatusChange(permanentId, oldStatus, newStatus);
                     }
                     LOGGER.debug("Heartbeat from proxy: {} (via temp ID: {})", permanentId, proxyId);
                     return;
@@ -270,6 +272,7 @@ public class HeartbeatMonitor {
             if (oldStatus != newStatus) {
                 LOGGER.info("Proxy {} status changed from {} to {} (state: {})",
                         effectiveId, oldStatus, newStatus, updatedState);
+                broadcastProxyStatusChange(effectiveId, oldStatus, newStatus);
             }
 
             LOGGER.debug("Heartbeat from proxy: {} (state: {})", effectiveId, updatedState);
@@ -484,6 +487,7 @@ public class HeartbeatMonitor {
                             LOGGER.warn("Proxy {} status changed to UNAVAILABLE (no heartbeat for {}s)",
                                     proxyId, secondsSinceHeartbeat);
                             proxyRegistry.updateProxyStatus(proxyId, newStatus);
+                            broadcastProxyStatusChange(proxyId, oldStatus, newStatus);
                             break;
                         case DEAD: {
                             LOGGER.error("Proxy {} status changed to DEAD (no heartbeat for {}s) - removing from registry",
@@ -502,6 +506,7 @@ public class HeartbeatMonitor {
                             }
 
                             proxyRegistry.updateProxyStatus(proxyId, newStatus);
+                            broadcastProxyStatusChange(proxyId, oldStatus, newStatus);
                             proxyRegistry.deregisterProxy(proxyId);
                             break;
                         }
@@ -597,27 +602,22 @@ public class HeartbeatMonitor {
     private void broadcastStatusChange(RegisteredServerData server,
                                        RegisteredServerData.Status oldStatus,
                                        RegisteredServerData.Status newStatus) {
+        if (messageBus == null) {
+            LOGGER.debug("No messaging system available, skipping status change broadcast");
+            return;
+        }
         try {
-            Map<String, Object> message = new HashMap<>();
-            message.put("serverId", server.getServerId());
-            message.put("role", server.getRole() != null ? server.getRole() : "default");
-            message.put("oldStatus", oldStatus.toString());
-            message.put("newStatus", newStatus.toString());
-            message.put("timestamp", System.currentTimeMillis());
-
-            // Include current metrics
-            message.put("playerCount", server.getPlayerCount());
-            message.put("maxPlayers", server.getMaxCapacity());
-            message.put("tps", server.getTps());
-
-            // Use MessageBus if available
-            if (messageBus != null) {
-                messageBus.broadcast(ChannelConstants.REGISTRY_STATUS_CHANGE, message);
-                LOGGER.debug("Broadcast status change via MessageBus for server {}: {} -> {}",
-                        server.getServerId(), oldStatus, newStatus);
-            } else {
-                LOGGER.debug("No messaging system available, skipping status change broadcast");
-            }
+            ServerStatusChangeMessage message = new ServerStatusChangeMessage();
+            message.setServerId(server.getServerId());
+            message.setRole(server.getRole() != null ? server.getRole() : "default");
+            message.setOldStatus(convertStatus(oldStatus));
+            message.setNewStatus(convertStatus(newStatus));
+            message.setPlayerCount(server.getPlayerCount());
+            message.setMaxPlayers(server.getMaxCapacity());
+            message.setTps(server.getTps());
+            messageBus.broadcast(ChannelConstants.REGISTRY_STATUS_CHANGE, message);
+            LOGGER.debug("Broadcast status change via MessageBus for server {}: {} -> {}",
+                    server.getServerId(), oldStatus, newStatus);
         } catch (Exception e) {
             LOGGER.error("Failed to broadcast status change for server {}", server.getServerId(), e);
         }
@@ -642,6 +642,44 @@ public class HeartbeatMonitor {
                     serverId, snapshot.getAddress(), snapshot.getPort());
         }
         return restored;
+    }
+
+    private ServerStatusChangeMessage.Status convertStatus(RegisteredServerData.Status status) {
+        if (status == null) {
+            return ServerStatusChangeMessage.Status.RUNNING;
+        }
+        return ServerStatusChangeMessage.Status.valueOf(status.name());
+    }
+
+    private ServerStatusChangeMessage.Status convertStatus(RegisteredProxyData.Status status) {
+        if (status == null) {
+            return ServerStatusChangeMessage.Status.UNAVAILABLE;
+        }
+        return ServerStatusChangeMessage.Status.valueOf(status.name());
+    }
+
+    private void broadcastProxyStatusChange(String proxyId,
+                                            RegisteredProxyData.Status oldStatus,
+                                            RegisteredProxyData.Status newStatus) {
+        if (messageBus == null) {
+            LOGGER.debug("No messaging system available, skipping proxy status change broadcast");
+            return;
+        }
+        try {
+            ServerStatusChangeMessage message = new ServerStatusChangeMessage();
+            message.setServerId(proxyId);
+            message.setRole("proxy");
+            message.setOldStatus(convertStatus(oldStatus));
+            message.setNewStatus(convertStatus(newStatus));
+            message.setPlayerCount(0);
+            message.setMaxPlayers(0);
+            message.setTps(20.0);
+            messageBus.broadcast(ChannelConstants.REGISTRY_STATUS_CHANGE, message);
+            LOGGER.debug("Broadcast proxy status change via MessageBus for {}: {} -> {}",
+                    proxyId, oldStatus, newStatus);
+        } catch (Exception e) {
+            LOGGER.error("Failed to broadcast proxy status change for {}", proxyId, e);
+        }
     }
 
     private boolean looksLikeProxy(String serverId) {
