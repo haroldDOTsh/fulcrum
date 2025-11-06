@@ -1123,6 +1123,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 });
                 serviceLocator.getService(sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature.class)
                         .ifPresent(feature -> feature.onProxyIdUpdated(assignedProxyId));
+                serviceLocator.getService(sh.harold.fulcrum.velocity.fundamentals.shutdown.ProxyShutdownFeature.class)
+                        .ifPresent(feature -> feature.onProxyIdUpdated(assignedProxyId));
             }
 
             // Now register in Redis with permanent ID

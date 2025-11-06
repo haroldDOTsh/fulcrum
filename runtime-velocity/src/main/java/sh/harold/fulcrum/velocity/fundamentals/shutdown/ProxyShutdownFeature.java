@@ -126,11 +126,15 @@ public final class ProxyShutdownFeature implements VelocityFeature {
         if (services == null || services.isEmpty()) {
             return false;
         }
+        String id = ensureProxyId();
+        return id != null && services.stream().anyMatch(id::equalsIgnoreCase);
+    }
+
+    private String ensureProxyId() {
         if (proxyId == null) {
             proxyId = lifecycleFeature.getCurrentProxyId().orElse(null);
         }
-        String id = proxyId;
-        return id != null && services.stream().anyMatch(id::equalsIgnoreCase);
+        return proxyId;
     }
 
     private void applyIntent(ShutdownIntentMessage message) {
@@ -206,9 +210,14 @@ public final class ProxyShutdownFeature implements VelocityFeature {
         if (context == null) {
             return;
         }
+        String currentId = ensureProxyId();
+        if (currentId == null) {
+            logger.warn("Unable to publish shutdown phase {}; proxyId unknown", phase);
+            return;
+        }
         ShutdownIntentUpdateMessage update = new ShutdownIntentUpdateMessage();
         update.setIntentId(context.intentId);
-        update.setServiceId(proxyId);
+        update.setServiceId(currentId);
         update.setPhase(phase);
         if (phase == ShutdownIntentUpdateMessage.Phase.EVACUATE) {
             update.setPlayerIds(proxy.getAllPlayers().stream()
@@ -248,14 +257,23 @@ public final class ProxyShutdownFeature implements VelocityFeature {
 
     private Optional<ProxyEndpoint> findAlternateProxy() {
         pruneStaleEndpoints();
+        String currentId = ensureProxyId();
         return proxyEndpoints.values().stream()
-                .filter(endpoint -> !endpoint.proxyId.equalsIgnoreCase(proxyId))
+                .filter(endpoint -> !endpoint.proxyId.equalsIgnoreCase(currentId))
                 .min(Comparator.comparingInt(ProxyEndpoint::playerCount));
     }
 
     private void pruneStaleEndpoints() {
         long cutoff = System.currentTimeMillis() - ENDPOINT_STALE.toMillis();
         proxyEndpoints.values().removeIf(endpoint -> endpoint.updatedAt < cutoff);
+    }
+
+    public void onProxyIdUpdated(String newProxyId) {
+        if (newProxyId == null || newProxyId.isBlank()) {
+            return;
+        }
+        this.proxyId = newProxyId;
+        logger.info("ProxyShutdownFeature updated proxyId to {}", newProxyId);
     }
 
     private void handleProxyAnnouncement(MessageEnvelope envelope) {
