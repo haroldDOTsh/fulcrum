@@ -37,16 +37,21 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Handles matchmaking requests, route commands, and acknowledgements on the Velocity proxy.
  */
 public class PlayerRoutingFeature implements VelocityFeature {
     private static final ChannelIdentifier ROUTE_CHANNEL = MinecraftChannelIdentifier.from("fulcrum:route");
+    private static final Duration INITIAL_ROUTE_TIMEOUT = Duration.ofSeconds(5);
+    private static final String INITIAL_ROUTE_FLAG = "initial-route";
 
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private final ConcurrentMap<UUID, PlayerLocationRecord> playerLocations = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, PendingInitialRoute> pendingInitialRoutes = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, PlayerRouteCommand> initialRoutePayloads = new ConcurrentHashMap<>();
     private ProxyServer proxy;
     private Logger logger;
     private MessageBus messageBus;
@@ -213,6 +218,14 @@ public class PlayerRoutingFeature implements VelocityFeature {
             if (ack.getStatus() != PlayerRouteAck.Status.FAILED) {
                 return;
             }
+
+            PendingInitialRoute pending = pendingInitialRoutes.remove(ack.getRequestId());
+            if (pending != null) {
+                pending.future().completeExceptionally(
+                        new IllegalStateException(ack.getReason() != null ? ack.getReason() : "route-failed"));
+                return;
+            }
+
             UUID playerId = ack.getPlayerId();
             if (playerId == null) {
                 return;
@@ -235,6 +248,10 @@ public class PlayerRoutingFeature implements VelocityFeature {
     }
 
     private void handleRouteCommand(PlayerRouteCommand command) {
+        if (maybeHandleInitialRoute(command)) {
+            return;
+        }
+
         Optional<Player> playerOpt = proxy.getPlayer(command.getPlayerId());
         if (playerOpt.isEmpty()) {
             sendFailureAck(command, "player-offline");
@@ -289,6 +306,16 @@ public class PlayerRoutingFeature implements VelocityFeature {
                     .schedule();
             recordPlayerLocation(command, player);
         });
+    }
+
+    private boolean maybeHandleInitialRoute(PlayerRouteCommand command) {
+        PendingInitialRoute pending = pendingInitialRoutes.remove(command.getRequestId());
+        if (pending == null) {
+            return false;
+        }
+        initialRoutePayloads.put(command.getPlayerId(), command);
+        pending.future().complete(command);
+        return true;
     }
 
     private void handleDisconnectCommand(PlayerRouteCommand command) {
@@ -383,6 +410,34 @@ public class PlayerRoutingFeature implements VelocityFeature {
         return CompletableFuture.completedFuture(request.getRequestId());
     }
 
+    public CompletableFuture<PlayerRouteCommand> requestInitialRoute(Player player,
+                                                                     String familyId,
+                                                                     Map<String, String> extraMetadata) {
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(familyId, "familyId");
+        Map<String, String> metadata = new ConcurrentHashMap<>(extraMetadata != null ? extraMetadata : Map.of());
+        metadata.put("reason", "command:lobby");
+        metadata.put("source", "initial-connect");
+        metadata.put(INITIAL_ROUTE_FLAG, "true");
+
+        UUID requestId = sendSlotRequest(player, familyId, metadata).join();
+        CompletableFuture<PlayerRouteCommand> future = new CompletableFuture<>();
+        PendingInitialRoute pending = new PendingInitialRoute(player.getUniqueId(), requestId, future);
+        pendingInitialRoutes.put(requestId, pending);
+        scheduler.buildTask(plugin, () -> timeoutInitialRoute(requestId, pending))
+                .delay(INITIAL_ROUTE_TIMEOUT)
+                .schedule();
+        future.whenComplete((result, error) -> pendingInitialRoutes.remove(requestId, pending));
+        return future;
+    }
+
+    private void timeoutInitialRoute(UUID requestId, PendingInitialRoute pending) {
+        if (pendingInitialRoutes.remove(requestId, pending)) {
+            logger.warn("Initial lobby route timed out for request {} (player={})", requestId, pending.playerId());
+            pending.future().completeExceptionally(new TimeoutException("No lobby route available"));
+        }
+    }
+
     private <T> T convert(Object payload, Class<T> type) {
         if (type.isInstance(payload)) {
             return type.cast(payload);
@@ -422,7 +477,10 @@ public class PlayerRoutingFeature implements VelocityFeature {
 
     @Subscribe
     public void onPlayerDisconnect(DisconnectEvent event) {
-        forgetPlayerLocation(event.getPlayer().getUniqueId());
+        UUID playerId = event.getPlayer().getUniqueId();
+        forgetPlayerLocation(playerId);
+        initialRoutePayloads.remove(playerId);
+        pendingInitialRoutes.entrySet().removeIf(entry -> entry.getValue().playerId().equals(playerId));
     }
 
     @Subscribe
@@ -437,6 +495,22 @@ public class PlayerRoutingFeature implements VelocityFeature {
             }
             return existing.withServer(server.getServerInfo().getName());
         }));
+
+        PlayerRouteCommand pending = initialRoutePayloads.remove(player.getUniqueId());
+        if (pending != null) {
+            scheduler.buildTask(plugin, () -> {
+                        logger.info("Delivering initial route payload to {} (slotId={}, world={})",
+                                player.getUsername(), pending.getSlotId(), pending.getTargetWorld());
+                        sendRoutePluginMessage(player, pending);
+                        recordPlayerLocation(pending, player);
+                    }).delay(Duration.ofMillis(50))
+                    .schedule();
+        }
+    }
+
+    private record PendingInitialRoute(UUID playerId,
+                                       UUID requestId,
+                                       CompletableFuture<PlayerRouteCommand> future) {
     }
 
     private record PlayerLocationRecord(

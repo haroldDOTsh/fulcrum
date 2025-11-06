@@ -133,7 +133,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         logger.info("Heartbeat will start after successful registration with Registry Service");
 
         // Register connection handler for when no backend servers are available
-        connectionHandler = new ProxyConnectionHandler(proxy, proxyId, logger, this);
+        connectionHandler = new ProxyConnectionHandler(proxy, proxyId, logger, this, services);
 
         // Get the plugin instance from service locator to register event
         services.getService(FulcrumVelocityPlugin.class).ifPresent(plugin -> {

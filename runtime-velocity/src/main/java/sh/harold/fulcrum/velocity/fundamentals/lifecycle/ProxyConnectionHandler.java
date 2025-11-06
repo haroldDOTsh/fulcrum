@@ -13,9 +13,13 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
 import sh.harold.fulcrum.velocity.api.ProxyIdentifier;
 import sh.harold.fulcrum.velocity.api.ServerIdentifier;
+import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
+import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -24,19 +28,27 @@ import java.util.stream.Collectors;
 
 public class ProxyConnectionHandler {
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final Duration LOBBY_ROUTE_TIMEOUT = Duration.ofSeconds(5);
 
     private final ProxyServer proxy;
     private final Logger logger;
     private final VelocityServerLifecycleFeature lifecycleFeature;
+    private final ServiceLocator serviceLocator;
     // Cache server metrics for optimal selection
     private final Map<String, ServerMetrics> serverMetricsCache = new ConcurrentHashMap<>();
     private ProxyIdentifier proxyId;  // Changed to use ProxyIdentifier
+    private volatile PlayerRoutingFeature cachedRoutingFeature;
 
-    public ProxyConnectionHandler(ProxyServer proxy, String proxyIdString, Logger logger, VelocityServerLifecycleFeature lifecycleFeature) {
+    public ProxyConnectionHandler(ProxyServer proxy,
+                                  String proxyIdString,
+                                  Logger logger,
+                                  VelocityServerLifecycleFeature lifecycleFeature,
+                                  ServiceLocator serviceLocator) {
         this.proxy = proxy;
         this.proxyId = ProxyIdentifier.fromString(proxyIdString);
         this.logger = logger;
         this.lifecycleFeature = lifecycleFeature;
+        this.serviceLocator = serviceLocator;
     }
 
     /**
@@ -94,66 +106,16 @@ public class ProxyConnectionHandler {
     @Subscribe
     public EventTask onPlayerChooseInitialServer(PlayerChooseInitialServerEvent event) {
         return EventTask.async(() -> {
-            String playerName = event.getPlayer().getUsername();
-            logger.debug("Player {} choosing initial server", playerName);
-
-            // For initial connections, use the special method that can fall back to any server
-            RegisteredServer targetServer = findAnyOptimalServer();
-
-            // Set the selected server or disconnect if none available
-            if (targetServer != null) {
-                event.setInitialServer(targetServer);
-
-                // Check if it's a lobby server or fallback
-                ServerMetrics metrics = serverMetricsCache.get(targetServer.getServerInfo().getName());
-                String serverRole = metrics != null ? metrics.role : "unknown";
-
-                if ("lobby".equalsIgnoreCase(serverRole)) {
-                    logger.info("Player {} connecting to lobby server: {}",
-                            playerName, targetServer.getServerInfo().getName());
-                } else {
-                    logger.warn("Player {} connecting to non-lobby server '{}' (role: {}) - no lobby servers available",
-                            playerName, targetServer.getServerInfo().getName(), serverRole);
-                }
-            } else {
-                // No servers available at all
-                String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
-                String playerUuid = event.getPlayer().getUniqueId().toString();
-
-                // Log with current proxy ID
-                String currentProxyId = this.proxyId.getFormattedId();
-                logger.error("No servers available for player {} ({}) [Timestamp: {}, Proxy: {} (is permanent: {})]",
-                        playerName, playerUuid, timestamp, currentProxyId, this.proxyId.isPermanent());
-
-                // Build the disconnection message
-                Component mainMessage = Component.text()
-                        .append(Component.text("A connection could not be made at this moment.", NamedTextColor.RED, TextDecoration.BOLD))
-                        .append(Component.newline())
-                        .append(Component.text("Try again momentarily!", NamedTextColor.YELLOW))
-                        .append(Component.newline())
-                        .append(Component.text("If this persists, contact a staff member", NamedTextColor.YELLOW))
-                        .build();
-
-                Component traceInfo = Component.text()
-                        .append(Component.newline())
-                        .append(Component.newline())
-                        .append(Component.text("Connection Trace:", NamedTextColor.GRAY))
-                        .append(Component.newline())
-                        .append(Component.text("Timestamp: ", NamedTextColor.GRAY))
-                        .append(Component.text(timestamp, NamedTextColor.WHITE))
-                        .append(Component.newline())
-                        .append(Component.text("Proxy ID: ", NamedTextColor.GRAY))
-                        .append(Component.text(this.proxyId.getFormattedId(), NamedTextColor.WHITE))
-                        .build();
-
-                Component fullMessage = Component.text()
-                        .append(mainMessage)
-                        .append(traceInfo)
-                        .build();
-
-                event.getPlayer().disconnect(fullMessage);
-                event.setInitialServer(null);
+            InitialRouteResult result = routeViaRegistry(event);
+            if (result == InitialRouteResult.SUCCESS) {
+                return;
             }
+            if (result == InitialRouteResult.NOT_SUPPORTED) {
+                logger.warn("PlayerRoutingFeature unavailable; using legacy lobby selection for {}", event.getPlayer().getUsername());
+                legacyInitialRoute(event);
+                return;
+            }
+            disconnectNoServers(event);
         });
     }
 
@@ -348,6 +310,116 @@ public class ProxyConnectionHandler {
         logger.debug("Player {} connected to server {}",
                 player.getUsername(),
                 server.getServerInfo().getName());
+    }
+
+    private InitialRouteResult routeViaRegistry(PlayerChooseInitialServerEvent event) {
+        Optional<PlayerRoutingFeature> routingFeature = routingFeature();
+        if (routingFeature.isEmpty()) {
+            return InitialRouteResult.NOT_SUPPORTED;
+        }
+
+        Player player = event.getPlayer();
+        try {
+            PlayerRouteCommand command = routingFeature.get()
+                    .requestInitialRoute(player, "lobby", Map.of())
+                    .get(LOBBY_ROUTE_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+
+            Optional<RegisteredServer> target = proxy.getServer(command.getServerId());
+            if (target.isEmpty()) {
+                logger.error("Registry routed {} to unknown server {}", player.getUsername(), command.getServerId());
+                return InitialRouteResult.FAILED;
+            }
+
+            event.setInitialServer(target.get());
+            logger.info("Player {} routed to lobby server {} via registry", player.getUsername(), command.getServerId());
+            return InitialRouteResult.SUCCESS;
+        } catch (Exception ex) {
+            if (ex instanceof InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                logger.error("Lobby route request interrupted for {}", player.getUsername(), interrupted);
+            } else {
+                logger.error("Failed to obtain lobby route for {}: {}", player.getUsername(), ex.getMessage());
+            }
+            return InitialRouteResult.FAILED;
+        }
+    }
+
+    private void legacyInitialRoute(PlayerChooseInitialServerEvent event) {
+        String playerName = event.getPlayer().getUsername();
+        logger.debug("Player {} choosing initial server (legacy fallback)", playerName);
+
+        RegisteredServer targetServer = findAnyOptimalServer();
+        if (targetServer == null) {
+            disconnectNoServers(event);
+            return;
+        }
+
+        event.setInitialServer(targetServer);
+        ServerMetrics metrics = serverMetricsCache.get(targetServer.getServerInfo().getName());
+        String serverRole = metrics != null ? metrics.role : "unknown";
+
+        if ("lobby".equalsIgnoreCase(serverRole)) {
+            logger.info("Player {} connecting to lobby server: {}", playerName, targetServer.getServerInfo().getName());
+        } else {
+            logger.warn("Player {} connecting to non-lobby server '{}' (role: {}) - no lobby servers available",
+                    playerName, targetServer.getServerInfo().getName(), serverRole);
+        }
+    }
+
+    private void disconnectNoServers(PlayerChooseInitialServerEvent event) {
+        Player player = event.getPlayer();
+        String playerName = player.getUsername();
+        String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        String playerUuid = player.getUniqueId().toString();
+        String currentProxyId = this.proxyId.getFormattedId();
+
+        logger.error("No lobby servers available for player {} ({}) [Timestamp: {}, Proxy: {} (is permanent: {})]",
+                playerName, playerUuid, timestamp, currentProxyId, this.proxyId.isPermanent());
+
+        Component mainMessage = Component.text()
+                .append(Component.text("A connection could not be made at this moment.", NamedTextColor.RED, TextDecoration.BOLD))
+                .append(Component.newline())
+                .append(Component.text("Try again momentarily!", NamedTextColor.YELLOW))
+                .append(Component.newline())
+                .append(Component.text("If this persists, contact a staff member", NamedTextColor.YELLOW))
+                .build();
+
+        Component traceInfo = Component.text()
+                .append(Component.newline())
+                .append(Component.newline())
+                .append(Component.text("Connection Trace:", NamedTextColor.GRAY))
+                .append(Component.newline())
+                .append(Component.text("Timestamp: ", NamedTextColor.GRAY))
+                .append(Component.text(timestamp, NamedTextColor.WHITE))
+                .append(Component.newline())
+                .append(Component.text("Proxy ID: ", NamedTextColor.GRAY))
+                .append(Component.text(currentProxyId, NamedTextColor.WHITE))
+                .build();
+
+        Component fullMessage = Component.text()
+                .append(mainMessage)
+                .append(traceInfo)
+                .build();
+
+        player.disconnect(fullMessage);
+        event.setInitialServer(null);
+    }
+
+    private Optional<PlayerRoutingFeature> routingFeature() {
+        if (cachedRoutingFeature != null) {
+            return Optional.of(cachedRoutingFeature);
+        }
+        if (serviceLocator == null) {
+            return Optional.empty();
+        }
+        cachedRoutingFeature = serviceLocator.getService(PlayerRoutingFeature.class).orElse(null);
+        return Optional.ofNullable(cachedRoutingFeature);
+    }
+
+    private enum InitialRouteResult {
+        SUCCESS,
+        FAILED,
+        NOT_SUPPORTED
     }
 
     /**
