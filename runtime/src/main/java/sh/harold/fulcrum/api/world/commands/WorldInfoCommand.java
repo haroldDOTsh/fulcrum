@@ -16,7 +16,7 @@ import sh.harold.fulcrum.api.rank.RankUtils;
 
 /**
  * Command to show detailed world information including metadata.
- * Usage: /world info <name>
+ * Usage: {@code /world info <name>}
  * Permission: fulcrum.world.admin
  */
 public class WorldInfoCommand {

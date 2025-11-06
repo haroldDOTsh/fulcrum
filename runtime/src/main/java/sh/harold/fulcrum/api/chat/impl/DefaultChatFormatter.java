@@ -11,7 +11,7 @@ import sh.harold.fulcrum.api.rank.RankService;
 /**
  * Default Hypixel-style formatter.
  * Format: [RANK] Username: message
- * Supports & color codes through Adventure API's LegacyComponentSerializer
+ * Supports &amp; color codes through Adventure API's LegacyComponentSerializer
  */
 public class DefaultChatFormatter implements ChatFormatter {
     private final RankService rankService;

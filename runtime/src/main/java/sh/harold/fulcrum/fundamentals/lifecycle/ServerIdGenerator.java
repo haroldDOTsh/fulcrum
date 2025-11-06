@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Generates server IDs in the format: <servertype><number>[<poolslot>]
+ * Generates server IDs in the format: {@code <servertype><number>[<poolslot>]}
  * Examples: mini1, mini2, mega3, lobby1a, lobby1b
  */
 public class ServerIdGenerator {

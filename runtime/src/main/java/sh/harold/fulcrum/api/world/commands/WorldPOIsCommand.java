@@ -21,7 +21,7 @@ import java.util.Map;
 
 /**
  * Command to list all POIs in a world with their configurations.
- * Usage: /world pois <name>
+ * Usage: {@code /world pois <name>}
  * Permission: fulcrum.world.admin
  */
 public class WorldPOIsCommand {
