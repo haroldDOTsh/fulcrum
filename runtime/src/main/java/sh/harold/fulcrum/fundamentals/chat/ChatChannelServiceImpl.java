@@ -11,6 +11,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.chat.ChatEmojiService;
 import sh.harold.fulcrum.api.chat.ChatFormatService;
 import sh.harold.fulcrum.api.chat.channel.ChatChannelRef;
 import sh.harold.fulcrum.api.chat.channel.ChatChannelService;
@@ -45,6 +46,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     private final MessageBus messageBus;
     private final ChatFormatService chatFormatService;
     private final RankService rankService;
+    private final ChatEmojiService chatEmojiService;
     private final LettuceRedisOperations redisOperations;
     private final Supplier<MinigameEngine> engineSupplier;
     private volatile MinigameEngine cachedEngine;
@@ -64,7 +66,8 @@ final class ChatChannelServiceImpl implements ChatChannelService {
                            RankService rankService,
                            LettuceRedisOperations redisOperations,
                            Supplier<MinigameEngine> engineSupplier,
-                           RuntimePunishmentFeature.RuntimePunishmentManager punishmentManager) {
+                           RuntimePunishmentFeature.RuntimePunishmentManager punishmentManager,
+                           ChatEmojiService chatEmojiService) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.messageBus = messageBus;
@@ -74,6 +77,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         this.engineSupplier = engineSupplier;
         this.mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         this.punishmentManager = punishmentManager;
+        this.chatEmojiService = chatEmojiService;
     }
 
     @Override
@@ -106,8 +110,9 @@ final class ChatChannelServiceImpl implements ChatChannelService {
             return;
         }
 
-        Component messageComponent = Component.text(rawMessage);
-        String plain = rawMessage;
+        Component baseMessage = Component.text(rawMessage);
+        Component messageComponent = applyEmojis(player, baseMessage);
+        String plain = PLAIN.serialize(messageComponent);
 
         switch (type) {
             case PARTY -> findPartyId(player.getUniqueId()).ifPresentOrElse(
@@ -145,6 +150,9 @@ final class ChatChannelServiceImpl implements ChatChannelService {
             return;
         }
         ChatChannelRef current = getActiveChannel(player.getUniqueId());
+        Component message = applyEmojis(player, event.message());
+        event.message(message);
+        String plain = PLAIN.serialize(message);
 
         if (current.type() == ChatChannelType.ALL) {
             restrictViewersToSlot(event);
@@ -161,8 +169,6 @@ final class ChatChannelServiceImpl implements ChatChannelService {
             }
             recipients.add(player);
 
-            Component message = event.message();
-            String plain = PLAIN.serialize(message);
             UUID messageId = UUID.randomUUID();
             Component formatted = buildFormattedMessage(player, current, message);
 
@@ -173,9 +179,9 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         }
 
         suppressChatEvent(event);
-        Component message = event.message();
-        String plain = PLAIN.serialize(message);
-        runSync(() -> sendChannelMessage(player, current, message, plain));
+        Component finalMessage = message;
+        String finalPlain = plain;
+        runSync(() -> sendChannelMessage(player, current, finalMessage, finalPlain));
     }
 
     private void restrictViewersToSlot(AsyncChatEvent event) {
@@ -572,6 +578,13 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         }
         activeChannels.put(playerId, ChatChannelRef.all());
         player.sendMessage(Component.text("Party chat closed; you have been moved to ALL.", NamedTextColor.YELLOW));
+    }
+
+    private Component applyEmojis(Player player, Component message) {
+        if (chatEmojiService == null || message == null) {
+            return message;
+        }
+        return chatEmojiService.apply(player, message);
     }
 
     private void runSync(Runnable runnable) {

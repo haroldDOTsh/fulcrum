@@ -8,6 +8,7 @@ import org.bukkit.event.player.PlayerCommandSendEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.chat.ChatEmojiService;
 import sh.harold.fulcrum.api.chat.ChatFormatService;
 import sh.harold.fulcrum.api.chat.channel.ChatChannelService;
 import sh.harold.fulcrum.api.messagebus.*;
@@ -32,6 +33,7 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
     private JavaPlugin plugin;
     private Logger logger;
     private ChatChannelServiceImpl service;
+    private ChatEmojiService chatEmojiService;
     private MessageBus messageBus;
     private MessageHandler chatHandler;
     private MessageHandler partyHandler;
@@ -66,7 +68,13 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
                                 ? ServiceLocatorImpl.getInstance().findService(RuntimePunishmentFeature.RuntimePunishmentManager.class).orElse(null)
                                 : null);
 
-        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, engineSupplier, punishmentManager);
+        this.chatEmojiService = new ChatEmojiServiceImpl(rankService);
+
+        container.register(ChatEmojiService.class, this.chatEmojiService);
+        Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                .ifPresent(locator -> locator.registerService(ChatEmojiService.class, this.chatEmojiService));
+
+        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, engineSupplier, punishmentManager, this.chatEmojiService);
 
         container.register(ChatChannelService.class, service);
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
@@ -98,6 +106,8 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
         unsubscribeMessageBus();
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
                 .ifPresent(locator -> locator.unregisterService(ChatChannelService.class));
+        Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                .ifPresent(locator -> locator.unregisterService(ChatEmojiService.class));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

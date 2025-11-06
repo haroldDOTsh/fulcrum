@@ -1,0 +1,9 @@
+{
+  "feature": "message-tags",
+  "locale": "en-US",
+  "tags": {
+    "daemon": "<dark_blue>[DAEMON]</dark_blue>",
+    "halcyon": "<green>[HALCYON]</green>",
+    "staff": "<aqua>[STAFF]</aqua>"
+  }
+}
