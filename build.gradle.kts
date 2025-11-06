@@ -1,6 +1,6 @@
 allprojects {
     group = "sh.harold.fulcrum"
-    version = "4.7.0"
+    version = "4.7.1"
 
     repositories {
         mavenCentral()
