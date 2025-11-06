@@ -10,8 +10,6 @@ import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -29,19 +27,16 @@ import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerSlotRequest;
 import sh.harold.fulcrum.api.messagebus.messages.ShutdownIntentMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ShutdownIntentUpdateMessage;
-import sh.harold.fulcrum.api.messagebus.messages.chat.ChatChannelMessage;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
-import sh.harold.fulcrum.message.Message;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry.RouteAssignment;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.papermc.paper.command.brigadier.Commands.literal;
@@ -153,7 +148,6 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
         shuttingDown.set(false);
         startCountdown();
         publishPhase(ShutdownIntentUpdateMessage.Phase.EVACUATE);
-        broadcastStaffNotice("EVACUATE state", message.getReason());
         Bukkit.getOnlinePlayers().forEach(player -> showInitialTitle(player, message));
         sendCountdownBroadcast(currentContext.secondsRemaining);
     }
@@ -211,7 +205,6 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
             currentContext.countdownTask.cancel();
         }
         publishPhase(ShutdownIntentUpdateMessage.Phase.EVICT);
-        broadcastStaffNotice("EVICT state", currentContext.reason);
         String destination = currentContext.fallbackFamily != null && !currentContext.fallbackFamily.isBlank()
                 ? currentContext.fallbackFamily
                 : "lobby";
@@ -229,7 +222,6 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
             return;
         }
         publishPhase(ShutdownIntentUpdateMessage.Phase.SHUTDOWN);
-        broadcastStaffNotice("SHUTDOWN state", currentContext.reason);
         if (renderingPipeline != null) {
             renderingPipeline.clearHeaderOverride();
         }
@@ -290,10 +282,9 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
         if (currentContext == null) {
             return;
         }
-        Component reasonLine = Message.success("This server will restart soon: <aqua>{arg0}</aqua>", currentContext.reason)
-                .tag("daemon")
-                .skipTranslation()
-                .component();
+        Component reasonLine = Component.text("[DAEMON] ", NamedTextColor.DARK_BLUE)
+                .append(Component.text("This server will restart soon: ", NamedTextColor.YELLOW))
+                .append(Component.text(currentContext.reason, NamedTextColor.AQUA));
         player.sendMessage(reasonLine);
 
         TextComponent clickable = Component.text("You have ", NamedTextColor.YELLOW)
@@ -317,21 +308,6 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
         player.showTitle(title);
     }
 
-    private void broadcastStaffNotice(String phase, String reason) {
-        String safeReason = reason != null ? reason : "Unspecified";
-        Component payload = Message.success("Service {arg0} now in {arg1}! ({arg2})",
-                        serverIdentifier.getServerId(),
-                        phase,
-                        safeReason)
-                .tag("daemon")
-                .skipTranslation()
-                .component();
-
-        sendStaffChannel(payload);
-        Component consoleComponent = Component.text("Staff > ", NamedTextColor.AQUA).append(payload);
-        Bukkit.getConsoleSender().sendMessage(consoleComponent);
-    }
-
     private String formatHeaderLine(int seconds) {
         return "&cServer Restarting: " + seconds + "s &f" + serverIdentifier.getServerId();
     }
@@ -344,25 +320,6 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
         int rem = seconds % 60;
         String secondsPart = rem < 10 ? "0" + rem : Integer.toString(rem);
         return minutes + ":" + secondsPart;
-    }
-
-    private void sendStaffChannel(Component component) {
-        if (messageBus == null) {
-            // Fallback to local delivery if the bus is unavailable
-            Component fallback = Component.text("Staff > ", NamedTextColor.AQUA).append(component);
-            Bukkit.getOnlinePlayers().stream()
-                    .filter(player -> player.hasPermission("fulcrum.staff"))
-                    .forEach(player -> player.sendMessage(fallback));
-            return;
-        }
-        ChatChannelMessage chat = new ChatChannelMessage();
-        chat.setMessageId(UUID.randomUUID());
-        chat.setChannelId("staff");
-        chat.setSenderId(new UUID(0L, 0L));
-        chat.setComponentJson(GsonComponentSerializer.gson().serialize(component));
-        chat.setPlainText(PlainTextComponentSerializer.plainText().serialize(component));
-        chat.setTimestamp(System.currentTimeMillis());
-        messageBus.broadcast(ChannelConstants.CHAT_CHANNEL_MESSAGE, chat);
     }
 
     private static final class EvacuationContext {
