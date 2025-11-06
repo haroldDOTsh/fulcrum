@@ -28,6 +28,7 @@ import sh.harold.fulcrum.fundamentals.network.NetworkConfigFeature;
 import sh.harold.fulcrum.fundamentals.playerdata.PlayerDataFeature;
 import sh.harold.fulcrum.fundamentals.props.PropFeature;
 import sh.harold.fulcrum.fundamentals.rank.RankFeature;
+import sh.harold.fulcrum.fundamentals.shutdown.ServerShutdownFeature;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 import sh.harold.fulcrum.fundamentals.staff.StaffFeature;
 import sh.harold.fulcrum.fundamentals.world.WorldFeature;
@@ -82,6 +83,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new MessageFeature());
         FeatureManager.register(new MessageBusFeature());
         FeatureManager.register(new ServerLifecycleFeature());
+        FeatureManager.register(new ServerShutdownFeature());
         FeatureManager.register(new JoinMessageFeature());
         FeatureManager.register(new DataAPIFeature()); // Register DataAPI before PlayerData
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.session.PlayerSessionFeature());

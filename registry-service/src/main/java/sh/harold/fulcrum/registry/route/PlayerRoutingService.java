@@ -26,6 +26,7 @@ import sh.harold.fulcrum.registry.route.util.SlotIdUtils;
 import sh.harold.fulcrum.registry.route.util.SlotSelectionRules;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
+import sh.harold.fulcrum.registry.shutdown.ShutdownIntentManager;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService.ProvisionResult;
@@ -69,6 +70,7 @@ public class PlayerRoutingService {
     private final ActivePlayerTracker activePlayerTracker;
     private final MatchRosterService matchRosterService;
     private final PartyReservationCoordinator partyCoordinator;
+    private final ShutdownIntentManager shutdownIntentManager;
 
     private final ConcurrentMap<UUID, ScheduledFuture<?>> routeTimeouts = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, CompletableFuture<PlayerReservationResponse>> pendingReservations = new ConcurrentHashMap<>();
@@ -88,7 +90,8 @@ public class PlayerRoutingService {
                                 ServerRegistry serverRegistry,
                                 ProxyRegistry proxyRegistry,
                                 RedisSlotStore slotStore,
-                                RedisRoutingStore routingStore) {
+                                RedisRoutingStore routingStore,
+                                ShutdownIntentManager shutdownIntentManager) {
         this.messageBus = Objects.requireNonNull(messageBus, "messageBus");
         this.slotProvisionService = Objects.requireNonNull(slotProvisionService, "slotProvisionService");
         this.serverRegistry = Objects.requireNonNull(serverRegistry, "serverRegistry");
@@ -137,6 +140,7 @@ public class PlayerRoutingService {
                     }
                 }
         );
+        this.shutdownIntentManager = shutdownIntentManager;
     }
 
     public void initialize() {
@@ -160,6 +164,9 @@ public class PlayerRoutingService {
 
     private void seedAvailableSlots() {
         for (RegisteredServerData server : serverRegistry.getAllServers()) {
+            if (shutdownIntentManager != null && shutdownIntentManager.isServerEvacuating(server.getServerId())) {
+                continue;
+            }
             for (LogicalSlotRecord slot : server.getSlots()) {
                 if (SlotLifecycleStatus.AVAILABLE == slot.getStatus()) {
                     String familyId = slot.getMetadata().get("family");
@@ -196,6 +203,9 @@ public class PlayerRoutingService {
             SlotStatusUpdateMessage update = convert(envelope.payload(), SlotStatusUpdateMessage.class);
             LogicalSlotRecord slot = serverRegistry.updateSlot(update.getServerId(), update);
             if (slot == null) {
+                return;
+            }
+            if (shutdownIntentManager != null && shutdownIntentManager.isServerEvacuating(slot.getServerId())) {
                 return;
             }
 
@@ -244,6 +254,10 @@ public class PlayerRoutingService {
         try {
             PlayerSlotRequest request = convert(envelope.payload(), PlayerSlotRequest.class);
             request.validate();
+
+            if (!processShutdownTicketIfRequired(request)) {
+                return;
+            }
 
             Map<String, String> requestMetadata = request.getMetadata();
             String reservationId = requestMetadata != null ? requestMetadata.get("partyReservationId") : null;
@@ -689,6 +703,31 @@ public class PlayerRoutingService {
         routingStore.enqueuePlayer(context.request().getFamilyId(), entry);
     }
 
+    private boolean processShutdownTicketIfRequired(PlayerSlotRequest request) {
+        if (shutdownIntentManager == null) {
+            return true;
+        }
+        Map<String, String> metadata = request.getMetadata();
+        if (metadata == null) {
+            return true;
+        }
+        String intentId = metadata.get("shutdownIntentId");
+        if (intentId == null || intentId.isBlank()) {
+            return true;
+        }
+        Optional<ShutdownIntentManager.ShutdownTicket> ticket = shutdownIntentManager.consumeTicket(request.getPlayerId(), intentId);
+        if (ticket.isEmpty()) {
+            LOGGER.warn("Rejecting shutdown evacuation for {} - ticket missing or expired (intent {})",
+                    request.getPlayerName(), intentId);
+            sendDisconnectCommand(request, "shutdown-ticket-missing");
+            return false;
+        }
+        ShutdownIntentManager.ShutdownTicket snapshot = ticket.get();
+        request.setFamilyId(snapshot.fallbackFamily());
+        metadata.put("shutdownServiceId", snapshot.serviceId());
+        return true;
+    }
+
     private void triggerProvisionIfNeeded(String familyId, Map<String, String> metadata) {
         if (familyId == null || familyId.isBlank()) {
             return;
@@ -723,6 +762,9 @@ public class PlayerRoutingService {
         int order = 0;
 
         for (RegisteredServerData server : serverRegistry.getAllServers()) {
+            if (shutdownIntentManager != null && shutdownIntentManager.isServerEvacuating(server.getServerId())) {
+                continue;
+            }
             for (LogicalSlotRecord slot : server.getSlots()) {
                 if (!SlotSelectionRules.isSlotEligible(slot)) {
                     continue;
@@ -804,6 +846,11 @@ public class PlayerRoutingService {
         }
 
         partyCoordinator.processPendingReservations(familyId, slot);
+
+        if (shutdownIntentManager != null && shutdownIntentManager.isServerEvacuating(slot.getServerId())) {
+            routingStore.releaseProvisionLock(familyId);
+            return;
+        }
 
         if (SlotSelectionRules.remainingCapacity(slot, routingStore) <= 0) {
             routingStore.releaseProvisionLock(familyId);

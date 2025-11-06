@@ -402,7 +402,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                         proxyIndex,
                         config.getHardCap(),
                         config.getSoftCap(),
-                        currentPlayers
+                        currentPlayers,
+                        buildProxyAddress(),
+                        System.currentTimeMillis()
                 );
 
                 // Send heartbeat to Registry Service via MessageBus
@@ -550,7 +552,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 proxyIndex,
                 0,  // Hard cap
                 0,  // Soft cap
-                -1  // Indicates shutdown
+                -1,
+                buildProxyAddress(),
+                System.currentTimeMillis()
         );
         messageBus.broadcast(ChannelConstants.PROXY_SHUTDOWN, shutdown);
         try {
@@ -622,6 +626,14 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         return Optional.empty();
     }
 
+    private String buildProxyAddress() {
+        InetSocketAddress bound = proxy.getBoundAddress();
+        if (bound == null) {
+            return null;
+        }
+        return bound.getHostString() + ":" + bound.getPort();
+    }
+
     /**
      * Send a request for all backend servers to register
      * This is called when a new proxy starts up
@@ -635,7 +647,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                         proxyIndex,
                         proxy.getConfiguration().getShowMaxPlayers(),
                         proxy.getConfiguration().getShowMaxPlayers() / 2,  // Default soft cap at 50%
-                        proxy.getPlayerCount()));
+                        proxy.getPlayerCount(),
+                        buildProxyAddress(),
+                        System.currentTimeMillis()));
     }
 
     private void setupMessageHandlers() {
@@ -1121,7 +1135,9 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                     proxyIndex,
                     config.getHardCap(),
                     config.getSoftCap(),
-                    proxy.getPlayerCount()
+                    proxy.getPlayerCount(),
+                    buildProxyAddress(),
+                    System.currentTimeMillis()
             );
 
             // Final safety check before starting heartbeat
@@ -1313,6 +1329,10 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         }
 
         return stats;
+    }
+
+    public Optional<String> getCurrentProxyId() {
+        return Optional.ofNullable(proxyId);
     }
 
     /**

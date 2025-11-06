@@ -73,7 +73,9 @@ public class VelocityFeatureManager {
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.session.VelocityPlayerSessionFeature());
         registerFeature(new sh.harold.fulcrum.velocity.rank.VelocityRankFeature());
         registerFeature(new SlotFamilyFeature());
-        registerFeature(new VelocityServerLifecycleFeature(proxyServer, logger, lifecycleConfig, scheduler, developmentMode));
+        VelocityServerLifecycleFeature lifecycleFeature = new VelocityServerLifecycleFeature(proxyServer, logger, lifecycleConfig, scheduler, developmentMode);
+        registerFeature(lifecycleFeature);
+        registerFeature(new sh.harold.fulcrum.velocity.fundamentals.shutdown.ProxyShutdownFeature());
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature());
         registerFeature(new VelocityPlayerDataFeature());
         registerFeature(new VelocityPartyFeature());

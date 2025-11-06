@@ -39,6 +39,7 @@ import sh.harold.fulcrum.registry.route.store.RedisRoutingStore;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.session.DeadServerSessionSweeper;
+import sh.harold.fulcrum.registry.shutdown.ShutdownIntentManager;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.slot.store.RedisSlotStore;
 
@@ -80,6 +81,7 @@ public class RegistryService {
     private RedisManager redisManager;
     private RedisHeartbeatStore redisHeartbeatStore;
     private RedisRegistryInspector redisRegistryInspector;
+    private ShutdownIntentManager shutdownIntentManager;
     private final Map<String, MongoConnectionAdapter> mongoAdapters = new ConcurrentHashMap<>();
 
     public RegistryService() {
@@ -289,7 +291,8 @@ public class RegistryService {
             serverRegistry.setSlotStore(redisSlotStore);
 
             slotProvisionService = new SlotProvisionService(serverRegistry, messageBus, redisSlotStore);
-            playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry, redisSlotStore, redisRoutingStore);
+            shutdownIntentManager = new ShutdownIntentManager(messageBus, serverRegistry, proxyRegistry);
+            playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry, redisSlotStore, redisRoutingStore, shutdownIntentManager);
             playerRoutingService.initialize();
 
             sessionSweeper = createSessionSweeper();
@@ -408,6 +411,9 @@ public class RegistryService {
         commandRegistry.register("reload", new ReloadCommand(this));
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
         commandRegistry.register("locateplayer", new LocatePlayerCommand(messageBus));
+        if (shutdownIntentManager != null) {
+            commandRegistry.register("shutdown", new ShutdownCommand(shutdownIntentManager, serverRegistry, proxyRegistry));
+        }
         if (rankMutationService != null) {
             commandRegistry.register("rank", new RankCommand(rankMutationService));
         }
@@ -824,6 +830,10 @@ public class RegistryService {
             // Stop console
             if (console != null) {
                 console.stop();
+            }
+
+            if (shutdownIntentManager != null) {
+                shutdownIntentManager.close();
             }
 
             // Stop heartbeat monitoring

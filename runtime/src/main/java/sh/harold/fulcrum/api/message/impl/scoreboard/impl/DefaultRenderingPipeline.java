@@ -31,6 +31,7 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
     private static final DateTimeFormatter HEADER_DATE_FORMATTER = DateTimeFormatter.ofPattern("MM/dd/yy");
     private final ServerIdentifier initialServerIdentifier;
     private final ColorCodeProcessor colorProcessor;
+    private volatile String headerOverride;
 
     private final int maxLines = 15;
     private String staticBottomLine = "&eplay.harold.sh"; // Default static bottom line
@@ -387,6 +388,9 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
     }
 
     private String buildHeaderLine(ScoreboardDefinition definition) {
+        if (headerOverride != null && !headerOverride.isBlank()) {
+            return headerOverride;
+        }
         String datePart = HEADER_DATE_FORMATTER.format(LocalDate.now());
         String label = resolveHeaderLabel(definition);
         return "&7" + datePart + " &8" + label;
@@ -416,5 +420,15 @@ public class DefaultRenderingPipeline implements RenderingPipeline {
             }
         }
         return "unknown";
+    }
+
+    @Override
+    public void setHeaderOverride(String header) {
+        this.headerOverride = header;
+    }
+
+    @Override
+    public void clearHeaderOverride() {
+        this.headerOverride = null;
     }
 }

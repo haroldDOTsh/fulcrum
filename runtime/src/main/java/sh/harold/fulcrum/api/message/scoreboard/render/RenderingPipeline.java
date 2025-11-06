@@ -91,6 +91,14 @@ public interface RenderingPipeline {
      */
     List<String> addStaticBottomLine(List<String> content);
 
+    default void setHeaderOverride(String header) {
+        // optional
+    }
+
+    default void clearHeaderOverride() {
+        // optional
+    }
+
     /**
      * Processes color codes in the given text.
      *

@@ -62,7 +62,7 @@ class PlayerRoutingServiceStatelessIntegrationTest extends RedisIntegrationTestS
             RegisteredProxyData proxyData = new RegisteredProxyData(ProxyIdentifier.parse("fulcrum-proxy-1"), "127.0.0.1", 25565);
             when(proxyRegistry.getProxy("fulcrum-proxy-1")).thenReturn(proxyData);
 
-            PlayerRoutingService firstInstance = new PlayerRoutingService(firstBus, slotProvisionService, serverRegistry, proxyRegistry, slotStore, routingStore);
+            PlayerRoutingService firstInstance = new PlayerRoutingService(firstBus, slotProvisionService, serverRegistry, proxyRegistry, slotStore, routingStore, null);
             firstInstance.initialize();
 
             PlayerSlotRequest request = new PlayerSlotRequest();
@@ -96,7 +96,7 @@ class PlayerRoutingServiceStatelessIntegrationTest extends RedisIntegrationTestS
             });
 
             TestMessageBus secondBus = new TestMessageBus();
-            PlayerRoutingService secondInstance = new PlayerRoutingService(secondBus, slotProvisionService, serverRegistry, proxyRegistry, slotStore, routingStore);
+            PlayerRoutingService secondInstance = new PlayerRoutingService(secondBus, slotProvisionService, serverRegistry, proxyRegistry, slotStore, routingStore, null);
             secondInstance.initialize();
 
             secondBus.broadcasts().stream()

@@ -128,6 +128,7 @@ public class RegisteredProxyData {
      */
     public enum Status {
         AVAILABLE,
+        EVACUATING,
         UNAVAILABLE,
         DEAD
     }

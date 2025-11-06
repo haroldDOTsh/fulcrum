@@ -88,6 +88,9 @@ public class BackendRegistryCommand implements CommandHandler {
                 case AVAILABLE:
                     statusColored = TableFormatter.color(status, TableFormatter.BRIGHT_GREEN);
                     break;
+                case EVACUATING:
+                    statusColored = TableFormatter.color(status, TableFormatter.YELLOW);
+                    break;
                 case UNAVAILABLE:
                     statusColored = TableFormatter.color(status, TableFormatter.YELLOW);
                     break;

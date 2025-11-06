@@ -185,6 +185,14 @@ public final class ChannelConstants {
      */
     public static final String PROXY_SHUTDOWN = "fulcrum.proxy.lifecycle.shutdown";
     /**
+     * Registry-issued shutdown intents
+     */
+    public static final String REGISTRY_SHUTDOWN_INTENT = "fulcrum.registry.shutdown.intent";
+    /**
+     * Service shutdown status updates
+     */
+    public static final String REGISTRY_SHUTDOWN_UPDATE = "fulcrum.registry.shutdown.update";
+    /**
      * Request servers to register with new proxy
      */
     public static final String PROXY_REQUEST_REGISTRATIONS = "fulcrum.proxy.registration.request_servers";

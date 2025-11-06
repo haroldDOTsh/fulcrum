@@ -40,7 +40,7 @@ public class StopCommand implements CommandHandler {
 
     @Override
     public String[] getAliases() {
-        return new String[]{"exit", "quit", "shutdown"};
+        return new String[]{"exit", "quit"};
     }
 
     @Override
