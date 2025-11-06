@@ -310,9 +310,9 @@ class MongoStorageBackendTest {
         List<Document> results = storageBackend.query(collection, query).get(5, TimeUnit.SECONDS);
 
         // Then
-        assertThat(results).hasSize(4);
+        assertThat(results).hasSize(5);
         assertThat(results.get(0).get("name")).isEqualTo("Laptop");
-        assertThat(results.get(3).get("name")).isEqualTo("Book");
+        assertThat(results.get(4).get("name")).isEqualTo("Notebook");
     }
 
     @Test
@@ -329,8 +329,8 @@ class MongoStorageBackendTest {
 
         // Then
         assertThat(results).hasSize(2);
-        assertThat(results.get(0).get("name")).isEqualTo("Headphones");
-        assertThat(results.get(1).get("name")).isEqualTo("Chair");
+        assertThat(results.get(0).get("name")).isEqualTo("Book");
+        assertThat(results.get(1).get("name")).isEqualTo("Headphones");
     }
 
     @Test
@@ -360,7 +360,7 @@ class MongoStorageBackendTest {
         Long count = storageBackend.count(collection, null).get(5, TimeUnit.SECONDS);
 
         // Then
-        assertThat(count).isEqualTo(4);
+        assertThat(count).isEqualTo(5);
     }
 
     @Test
@@ -374,7 +374,7 @@ class MongoStorageBackendTest {
         List<Document> documents = storageBackend.getAllDocuments(collection).get(5, TimeUnit.SECONDS);
 
         // Then
-        assertThat(documents).hasSize(4);
+        assertThat(documents).hasSize(5);
     }
 
     @Test
@@ -482,5 +482,11 @@ class MongoStorageBackendTest {
         doc4.put("category", "furniture");
         doc4.put("price", 150.00);
         storageBackend.saveDocument(collection, "prod4", doc4).get(5, TimeUnit.SECONDS);
+
+        Map<String, Object> doc5 = new HashMap<>();
+        doc5.put("name", "Notebook");
+        doc5.put("category", "stationery");
+        doc5.put("price", 12.50);
+        storageBackend.saveDocument(collection, "prod5", doc5).get(5, TimeUnit.SECONDS);
     }
 }

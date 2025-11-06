@@ -14,6 +14,7 @@ import sh.harold.fulcrum.api.data.storage.StorageBackend;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -28,6 +29,7 @@ public class MongoStorageBackend implements StorageBackend {
     private final MongoDatabase database;
     private final MongoClient mongoClient;
     private final Executor executor;
+    private final ThreadLocal<ClientSession> activeSession = new ThreadLocal<>();
 
     public MongoStorageBackend(MongoConnectionAdapter connectionAdapter) {
         this(connectionAdapter, java.util.concurrent.ForkJoinPool.commonPool());
@@ -42,30 +44,24 @@ public class MongoStorageBackend implements StorageBackend {
 
     @Override
     public CompletableFuture<sh.harold.fulcrum.api.data.Document> getDocument(String collection, String id) {
-        return CompletableFuture.supplyAsync(() -> {
-            MongoCollection<Document> mongoCollection = database.getCollection(collection);
-            Document mongoDoc = mongoCollection.find(Filters.eq(ID_FIELD, id)).first();
-
-            Map<String, Object> data = null;
-            if (mongoDoc != null) {
-                data = documentToMap(mongoDoc);
-            }
-
-            return new DocumentImpl(collection, id, data, this);
-        }, executor);
+        return supplyWithSession(session -> fetchDocument(collection, id, session));
     }
 
     @Override
     public CompletableFuture<Void> saveDocument(String collection, String id, Map<String, Object> data) {
-        return CompletableFuture.runAsync(() -> {
+        return runWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
 
             Document mongoDoc = mapToDocument(data);
             mongoDoc.put(ID_FIELD, id);
 
             ReplaceOptions options = new ReplaceOptions().upsert(true);
-            mongoCollection.replaceOne(Filters.eq(ID_FIELD, id), mongoDoc, options);
-        }, executor);
+            if (session != null) {
+                mongoCollection.replaceOne(session, Filters.eq(ID_FIELD, id), mongoDoc, options);
+            } else {
+                mongoCollection.replaceOne(Filters.eq(ID_FIELD, id), mongoDoc, options);
+            }
+        });
     }
 
     @Override
@@ -74,7 +70,7 @@ public class MongoStorageBackend implements StorageBackend {
             return CompletableFuture.completedFuture(null);
         }
 
-        return CompletableFuture.runAsync(() -> {
+        return runWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
 
             Document update = new Document();
@@ -95,88 +91,58 @@ public class MongoStorageBackend implements StorageBackend {
             }
 
             UpdateOptions options = new UpdateOptions().upsert(patch.isUpsert());
-            mongoCollection.updateOne(Filters.eq(ID_FIELD, id), update, options);
-        }, executor);
+            if (session != null) {
+                mongoCollection.updateOne(session, Filters.eq(ID_FIELD, id), update, options);
+            } else {
+                mongoCollection.updateOne(Filters.eq(ID_FIELD, id), update, options);
+            }
+        });
     }
 
     @Override
     public CompletableFuture<Boolean> deleteDocument(String collection, String id) {
-        return CompletableFuture.supplyAsync(() -> {
+        return supplyWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
-            DeleteResult result = mongoCollection.deleteOne(Filters.eq(ID_FIELD, id));
+            DeleteResult result = session != null
+                    ? mongoCollection.deleteOne(session, Filters.eq(ID_FIELD, id))
+                    : mongoCollection.deleteOne(Filters.eq(ID_FIELD, id));
             return result.getDeletedCount() > 0;
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<List<sh.harold.fulcrum.api.data.Document>> query(String collection, Query query) {
-        return CompletableFuture.supplyAsync(() -> {
-            MongoCollection<Document> mongoCollection = database.getCollection(collection);
-
-            FindIterable<Document> find;
-            if (query instanceof QueryImpl queryImpl) {
-                Bson filter = buildMongoFilter(queryImpl);
-                find = mongoCollection.find(filter);
-
-                // Apply sorting
-                Bson sort = buildSort(queryImpl);
-                if (sort != null) {
-                    find = find.sort(sort);
-                }
-
-                // Apply pagination
-                Integer skip = getSkip(queryImpl);
-                if (skip != null && skip > 0) {
-                    find = find.skip(skip);
-                }
-
-                Integer limit = getLimit(queryImpl);
-                if (limit != null && limit > 0) {
-                    find = find.limit(limit);
-                }
-            } else {
-                find = mongoCollection.find();
-            }
-
-            List<sh.harold.fulcrum.api.data.Document> results = new ArrayList<>();
-            try (MongoCursor<Document> cursor = find.iterator()) {
-                while (cursor.hasNext()) {
-                    Document mongoDoc = cursor.next();
-                    String docId = mongoDoc.getString(ID_FIELD);
-                    Map<String, Object> data = documentToMap(mongoDoc);
-                    results.add(new DocumentImpl(collection, docId, data, this));
-                }
-            }
-
-            return results;
-        }, executor);
+        return supplyWithSession(session -> executeQuery(collection, query, session));
     }
 
     @Override
     public CompletableFuture<Long> count(String collection, Query query) {
-        return CompletableFuture.supplyAsync(() -> {
+        return supplyWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
 
             if (query == null) {
-                return mongoCollection.countDocuments();
+                return session != null ? mongoCollection.countDocuments(session) : mongoCollection.countDocuments();
             }
 
             if (query instanceof QueryImpl queryImpl) {
                 Bson filter = buildMongoFilter(queryImpl);
-                return mongoCollection.countDocuments(filter);
+                return session != null
+                        ? mongoCollection.countDocuments(session, filter)
+                        : mongoCollection.countDocuments(filter);
             }
 
-            return mongoCollection.countDocuments();
-        }, executor);
+            return session != null ? mongoCollection.countDocuments(session) : mongoCollection.countDocuments();
+        });
     }
 
     @Override
     public CompletableFuture<List<sh.harold.fulcrum.api.data.Document>> getAllDocuments(String collection) {
-        return CompletableFuture.supplyAsync(() -> {
+        return supplyWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
 
             List<sh.harold.fulcrum.api.data.Document> results = new ArrayList<>();
-            try (MongoCursor<Document> cursor = mongoCollection.find().iterator()) {
+            FindIterable<Document> iterable = session != null ? mongoCollection.find(session) : mongoCollection.find();
+            try (MongoCursor<Document> cursor = iterable.iterator()) {
                 while (cursor.hasNext()) {
                     Document mongoDoc = cursor.next();
                     String docId = mongoDoc.getString(ID_FIELD);
@@ -193,7 +159,7 @@ public class MongoStorageBackend implements StorageBackend {
      * Update a specific field in a document.
      */
     public CompletableFuture<Void> updateField(String collection, String id, String path, Object value) {
-        return CompletableFuture.runAsync(() -> {
+        return runWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
 
             // Convert path to MongoDB dot notation
@@ -203,15 +169,19 @@ public class MongoStorageBackend implements StorageBackend {
             Bson update = Updates.set(mongoPath, value);
 
             UpdateOptions options = new UpdateOptions().upsert(false);
-            mongoCollection.updateOne(filter, update, options);
-        }, executor);
+            if (session != null) {
+                mongoCollection.updateOne(session, filter, update, options);
+            } else {
+                mongoCollection.updateOne(filter, update, options);
+            }
+        });
     }
 
     /**
      * Increment a numeric field atomically.
      */
     public CompletableFuture<Void> incrementField(String collection, String id, String path, Number amount) {
-        return CompletableFuture.runAsync(() -> {
+        return runWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
 
             String mongoPath = convertToMongoPath(path);
@@ -220,7 +190,11 @@ public class MongoStorageBackend implements StorageBackend {
             Bson update = Updates.inc(mongoPath, amount);
 
             UpdateOptions options = new UpdateOptions().upsert(false);
-            mongoCollection.updateOne(filter, update, options);
+            if (session != null) {
+                mongoCollection.updateOne(session, filter, update, options);
+            } else {
+                mongoCollection.updateOne(filter, update, options);
+            }
         });
     }
 
@@ -228,7 +202,7 @@ public class MongoStorageBackend implements StorageBackend {
      * Push a value to an array field.
      */
     public CompletableFuture<Void> pushToArray(String collection, String id, String path, Object value) {
-        return CompletableFuture.runAsync(() -> {
+        return runWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
 
             String mongoPath = convertToMongoPath(path);
@@ -237,7 +211,11 @@ public class MongoStorageBackend implements StorageBackend {
             Bson update = Updates.push(mongoPath, value);
 
             UpdateOptions options = new UpdateOptions().upsert(false);
-            mongoCollection.updateOne(filter, update, options);
+            if (session != null) {
+                mongoCollection.updateOne(session, filter, update, options);
+            } else {
+                mongoCollection.updateOne(filter, update, options);
+            }
         });
     }
 
@@ -245,7 +223,7 @@ public class MongoStorageBackend implements StorageBackend {
      * Pull a value from an array field.
      */
     public CompletableFuture<Void> pullFromArray(String collection, String id, String path, Object value) {
-        return CompletableFuture.runAsync(() -> {
+        return runWithSession(session -> {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
 
             String mongoPath = convertToMongoPath(path);
@@ -254,7 +232,11 @@ public class MongoStorageBackend implements StorageBackend {
             Bson update = Updates.pull(mongoPath, value);
 
             UpdateOptions options = new UpdateOptions().upsert(false);
-            mongoCollection.updateOne(filter, update, options);
+            if (session != null) {
+                mongoCollection.updateOne(session, filter, update, options);
+            } else {
+                mongoCollection.updateOne(filter, update, options);
+            }
         });
     }
 
@@ -265,6 +247,8 @@ public class MongoStorageBackend implements StorageBackend {
         return CompletableFuture.supplyAsync(() -> {
             try (ClientSession session = mongoClient.startSession()) {
                 session.startTransaction();
+                ClientSession previous = activeSession.get();
+                activeSession.set(session);
                 try {
                     T result = operations.apply(session);
                     session.commitTransaction();
@@ -272,9 +256,81 @@ public class MongoStorageBackend implements StorageBackend {
                 } catch (Exception e) {
                     session.abortTransaction();
                     throw new RuntimeException("Transaction failed", e);
+                } finally {
+                    activeSession.set(previous);
                 }
             }
-        });
+        }, executor);
+    }
+
+    private CompletableFuture<Void> runWithSession(Consumer<ClientSession> action) {
+        ClientSession session = activeSession.get();
+        if (session != null) {
+            action.accept(session);
+            return CompletableFuture.completedFuture(null);
+        }
+        return CompletableFuture.runAsync(() -> action.accept(null), executor);
+    }
+
+    private <T> CompletableFuture<T> supplyWithSession(Function<ClientSession, T> supplier) {
+        ClientSession session = activeSession.get();
+        if (session != null) {
+            return CompletableFuture.completedFuture(supplier.apply(session));
+        }
+        return CompletableFuture.supplyAsync(() -> supplier.apply(null), executor);
+    }
+
+    private sh.harold.fulcrum.api.data.Document fetchDocument(String collection, String id, ClientSession session) {
+        MongoCollection<Document> mongoCollection = database.getCollection(collection);
+        Document mongoDoc = session != null
+                ? mongoCollection.find(session, Filters.eq(ID_FIELD, id)).first()
+                : mongoCollection.find(Filters.eq(ID_FIELD, id)).first();
+
+        Map<String, Object> data = null;
+        if (mongoDoc != null) {
+            data = documentToMap(mongoDoc);
+        }
+
+        return new DocumentImpl(collection, id, data, this);
+    }
+
+    private List<sh.harold.fulcrum.api.data.Document> executeQuery(String collection, Query query, ClientSession session) {
+        MongoCollection<Document> mongoCollection = database.getCollection(collection);
+
+        FindIterable<Document> find;
+        if (query instanceof QueryImpl queryImpl) {
+            Bson filter = buildMongoFilter(queryImpl);
+            find = session != null ? mongoCollection.find(session, filter) : mongoCollection.find(filter);
+
+            Bson sort = buildSort(queryImpl);
+            if (sort != null) {
+                find = find.sort(sort);
+            }
+
+            Integer skip = getSkip(queryImpl);
+            if (skip != null && skip > 0) {
+                find = find.skip(skip);
+            }
+
+            Integer limit = getLimit(queryImpl);
+            if (limit != null && limit > 0) {
+                find = find.limit(limit);
+            }
+        } else {
+            find = session != null ? mongoCollection.find(session) : mongoCollection.find();
+        }
+
+        List<sh.harold.fulcrum.api.data.Document> results = new ArrayList<>();
+        try (MongoCursor<Document> cursor = find.iterator()) {
+            while (cursor.hasNext()) {
+                Document mongoDoc = cursor.next();
+                String docId = mongoDoc.getString(ID_FIELD);
+                Map<String, Object> data = documentToMap(mongoDoc);
+                results.add(new DocumentImpl(collection, docId, data, this));
+            }
+        }
+
+        return results;
     }
 
     /**
