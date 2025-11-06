@@ -62,12 +62,16 @@ public final class ServiceStatusBroadcastFeature implements PluginFeature {
             return;
         }
 
+        String previousState = statusChange.getOldStatus() != null
+                ? statusChange.getOldStatus().name()
+                : "UNKNOWN";
         String nextState = statusChange.getNewStatus() != null
                 ? statusChange.getNewStatus().name()
                 : "UNKNOWN";
 
-        Component payload = Message.debug("Service {arg0} now in {arg1}!",
+        Component payload = Message.debug("Service {arg0}: {arg1} ➜ {arg2}",
                         statusChange.getServerId(),
+                        previousState,
                         nextState)
                 .tag("debug")
                 .skipTranslation()

@@ -8,6 +8,7 @@ import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.messages.ServerStatusChangeMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ShutdownIntentMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ShutdownIntentUpdateMessage;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -80,7 +81,8 @@ public final class ShutdownIntentManager implements AutoCloseable {
                 evacuatingServers.add(target.serviceId());
                 serverRegistry.updateStatus(target.serviceId(), RegisteredServerData.Status.EVACUATING.name());
             } else if (target.type() == ServiceType.PROXY) {
-                proxyRegistry.updateProxyStatus(target.serviceId(), RegisteredProxyData.Status.EVACUATING);
+                updateProxyStatus(target.serviceId(), RegisteredProxyData.Status.EVACUATING,
+                        "shutdown-intent " + intentId + " start");
             }
         });
 
@@ -199,7 +201,8 @@ public final class ShutdownIntentManager implements AutoCloseable {
                 evacuatingServers.remove(serviceId);
                 serverRegistry.updateStatus(serviceId, RegisteredServerData.Status.STOPPING.name());
             } else if (status.type == ServiceType.PROXY) {
-                proxyRegistry.updateProxyStatus(serviceId, RegisteredProxyData.Status.UNAVAILABLE);
+                updateProxyStatus(serviceId, RegisteredProxyData.Status.UNAVAILABLE,
+                        "shutdown-intent " + state.payload.getId() + " finalized");
             }
         }
 
@@ -223,7 +226,8 @@ public final class ShutdownIntentManager implements AutoCloseable {
     private void restoreProxyStatuses(IntentState state) {
         state.targets.values().stream()
                 .filter(target -> target.type == ServiceType.PROXY)
-                .forEach(target -> proxyRegistry.updateProxyStatus(target.serviceId, RegisteredProxyData.Status.AVAILABLE));
+                .forEach(target -> updateProxyStatus(target.serviceId, RegisteredProxyData.Status.AVAILABLE,
+                        "shutdown-intent " + state.payload.getId() + " cancelled"));
     }
 
     @Override
@@ -232,6 +236,52 @@ public final class ShutdownIntentManager implements AutoCloseable {
         intents.clear();
         serviceToIntent.clear();
         evacuatingServers.clear();
+    }
+
+    private void updateProxyStatus(String proxyId,
+                                   RegisteredProxyData.Status newStatus,
+                                   String reason) {
+        RegisteredProxyData proxy = proxyRegistry.getProxy(proxyId);
+        if (proxy == null) {
+            LOGGER.warn("Attempted to update status for unknown proxy {} ({})", proxyId, reason);
+            return;
+        }
+        RegisteredProxyData.Status oldStatus = proxy.getStatus();
+        if (oldStatus == newStatus) {
+            return;
+        }
+        proxyRegistry.updateProxyStatus(proxyId, newStatus);
+        broadcastProxyStatus(proxyId, oldStatus, newStatus, reason);
+    }
+
+    private void broadcastProxyStatus(String proxyId,
+                                      RegisteredProxyData.Status oldStatus,
+                                      RegisteredProxyData.Status newStatus,
+                                      String context) {
+        try {
+            ServerStatusChangeMessage message = new ServerStatusChangeMessage();
+            message.setServerId(proxyId);
+            message.setRole("proxy");
+            message.setOldStatus(mapProxyStatus(oldStatus));
+            message.setNewStatus(mapProxyStatus(newStatus));
+            messageBus.broadcast(ChannelConstants.REGISTRY_STATUS_CHANGE, message);
+            LOGGER.info("Proxy {} status changed: {} -> {} ({})",
+                    proxyId, oldStatus, newStatus, context);
+        } catch (Exception exception) {
+            LOGGER.error("Failed to broadcast proxy status change for {}", proxyId, exception);
+        }
+    }
+
+    private ServerStatusChangeMessage.Status mapProxyStatus(RegisteredProxyData.Status status) {
+        if (status == null) {
+            return ServerStatusChangeMessage.Status.UNAVAILABLE;
+        }
+        return switch (status) {
+            case AVAILABLE -> ServerStatusChangeMessage.Status.AVAILABLE;
+            case EVACUATING -> ServerStatusChangeMessage.Status.EVACUATING;
+            case UNAVAILABLE -> ServerStatusChangeMessage.Status.UNAVAILABLE;
+            case DEAD -> ServerStatusChangeMessage.Status.DEAD;
+        };
     }
 
     public enum ServiceType {

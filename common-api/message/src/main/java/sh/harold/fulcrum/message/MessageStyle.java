@@ -10,7 +10,7 @@ import net.kyori.adventure.text.format.TextColor;
 public enum MessageStyle {
     SUCCESS(NamedTextColor.GREEN, NamedTextColor.YELLOW),
     INFO(NamedTextColor.GRAY, NamedTextColor.AQUA),
-    DEBUG(NamedTextColor.DARK_GRAY, NamedTextColor.GOLD),
+    DEBUG(NamedTextColor.GRAY, NamedTextColor.DARK_GRAY),
     ERROR(NamedTextColor.RED, NamedTextColor.RED);
 
     private final NamedTextColor bodyColor;

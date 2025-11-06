@@ -7,7 +7,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
@@ -36,17 +36,20 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ProxyShutdownFeature implements VelocityFeature {
     private static final Duration EVICT_BUFFER = Duration.ofSeconds(3);
     private static final Duration ENDPOINT_STALE = Duration.ofSeconds(45);
+    private static final int EXTRA_COUNTDOWN_SECONDS = 8;
     private final Map<String, ProxyEndpoint> proxyEndpoints = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper()
             .findAndRegisterModules()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
     private ProxyServer proxy;
     private Logger logger;
     private MessageBus messageBus;
     private VelocityServerLifecycleFeature lifecycleFeature;
     private FulcrumVelocityPlugin plugin;
     private String proxyId;
-    private String serverIp = "play.harold.sh";
+    private static final String NETWORK_FALLBACK_IP = "play.harold.sh";
+    private String serverIp = NETWORK_FALLBACK_IP;
     private EvacuationContext context;
     private MessageHandler shutdownHandler;
     private MessageHandler announcementHandler;
@@ -73,7 +76,10 @@ public final class ProxyShutdownFeature implements VelocityFeature {
 
         locator.getService(NetworkConfigService.class)
                 .flatMap(service -> service.getString("serverIp"))
-                .ifPresent(ip -> this.serverIp = ip);
+                .ifPresentOrElse(
+                        ip -> this.serverIp = ip,
+                        () -> this.serverIp = NETWORK_FALLBACK_IP
+                );
 
         shutdownHandler = this::handleShutdownIntent;
         announcementHandler = this::handleProxyAnnouncement;
@@ -181,7 +187,8 @@ public final class ProxyShutdownFeature implements VelocityFeature {
                 beginEviction();
                 return;
             }
-            if (context.secondsRemaining % 10 == 0 || context.secondsRemaining <= 5) {
+            if (!context.fifteenSecondWarningSent && context.secondsRemaining <= 15) {
+                context.fifteenSecondWarningSent = true;
                 broadcastWarning();
             }
         }).repeat(Duration.ofSeconds(1)).schedule();
@@ -231,14 +238,16 @@ public final class ProxyShutdownFeature implements VelocityFeature {
         if (context == null) {
             return;
         }
-        Component prefix = Component.text("AA", NamedTextColor.GOLD).decorate(TextDecoration.OBFUSCATED);
-        Component lineOne = prefix.append(Component.text(" This proxy is restarting soon.", NamedTextColor.GOLD));
-        Component lineTwo = prefix.append(Component.text(" Please reconnect to ", NamedTextColor.YELLOW))
-                .append(Component.text(serverIp, NamedTextColor.WHITE))
-                .append(Component.text(".", NamedTextColor.YELLOW));
+        Component spacer = Component.empty();
+        Component lineOne = MINI_MESSAGE.deserialize(
+                "<gold><obfuscated>AA</obfuscated></gold><reset> <red>This proxy is restarting soon.</red>");
+        Component lineTwo = MINI_MESSAGE.deserialize(
+                "<gold><obfuscated>AA</obfuscated></gold><reset> <red>Please reconnect to </red><aqua>" + serverIp + "</aqua><red>.</red>");
         for (Player player : proxy.getAllPlayers()) {
+            player.sendMessage(spacer);
             player.sendMessage(lineOne);
             player.sendMessage(lineTwo);
+            player.sendMessage(spacer);
         }
     }
 
@@ -250,7 +259,7 @@ public final class ProxyShutdownFeature implements VelocityFeature {
                 player.transferToHost(fallback.socketAddress());
                 player.sendMessage(Component.text("Transferring you to another proxy…", NamedTextColor.YELLOW));
             } else {
-                player.disconnect(Component.text("Proxy restarting — please rejoin " + serverIp, NamedTextColor.RED));
+                player.disconnect(Component.text("Proxy restarting - please rejoin " + serverIp, NamedTextColor.RED));
             }
         }
     }
@@ -309,10 +318,11 @@ public final class ProxyShutdownFeature implements VelocityFeature {
         private int secondsRemaining;
         private ScheduledTask countdownTask;
         private ScheduledTask shutdownTask;
+        private boolean fifteenSecondWarningSent;
 
         private EvacuationContext(ShutdownIntentMessage message) {
             this.intentId = message.getId();
-            this.secondsRemaining = Math.max(1, message.getCountdownSeconds());
+            this.secondsRemaining = Math.max(1, message.getCountdownSeconds()) + EXTRA_COUNTDOWN_SECONDS;
             this.force = message.isForce();
         }
     }

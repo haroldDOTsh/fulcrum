@@ -672,6 +672,7 @@ public class ProxyRegistry {
         }
 
         proxy.setStatus(status);
+        persistActiveProxy(proxy);
 
         RegistrationState currentState = proxy.getRegistrationState();
         boolean keepRegistered = status == RegisteredProxyData.Status.EVACUATING;
