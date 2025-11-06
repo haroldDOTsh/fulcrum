@@ -19,6 +19,7 @@ import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.fundamentals.chat.command.ChatCommands;
 import sh.harold.fulcrum.fundamentals.chat.command.DisableMeCommand;
+import sh.harold.fulcrum.fundamentals.chat.command.EmojiListCommand;
 import sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -102,6 +103,11 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
         CommandRegistrar.register(commands.buildRoot());
         CommandRegistrar.register(commands.buildPartySend());
         CommandRegistrar.register(commands.buildStaffSend());
+
+        EmojiListCommand emojiCommand = new EmojiListCommand(this.chatEmojiPackService);
+        CommandRegistrar.register(emojiCommand.build("emotes"));
+        CommandRegistrar.register(emojiCommand.build("emojis"));
+
         var disabledMe = new DisableMeCommand().build();
         CommandRegistrar.register(disabledMe);
         CommandRegistrar.mutate(registrar -> {
