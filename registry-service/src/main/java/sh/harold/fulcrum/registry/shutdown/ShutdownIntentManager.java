@@ -199,7 +199,7 @@ public final class ShutdownIntentManager implements AutoCloseable {
                 evacuatingServers.remove(serviceId);
                 serverRegistry.updateStatus(serviceId, RegisteredServerData.Status.STOPPING.name());
             } else if (status.type == ServiceType.PROXY) {
-                proxyRegistry.updateProxyStatus(serviceId, RegisteredProxyData.Status.AVAILABLE);
+                proxyRegistry.updateProxyStatus(serviceId, RegisteredProxyData.Status.UNAVAILABLE);
             }
         }
 
@@ -214,7 +214,10 @@ public final class ShutdownIntentManager implements AutoCloseable {
     private void releaseEvacuatingServers(IntentState state) {
         state.targets.values().stream()
                 .filter(target -> target.type == ServiceType.BACKEND)
-                .forEach(target -> evacuatingServers.remove(target.serviceId));
+                .forEach(target -> {
+                    evacuatingServers.remove(target.serviceId);
+                    serverRegistry.updateStatus(target.serviceId, RegisteredServerData.Status.AVAILABLE.name());
+                });
     }
 
     private void restoreProxyStatuses(IntentState state) {

@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.Locale;
 
 public class StandardMessageFacade implements MessageFacade {
+    private static final String GLOBAL_TAG_FEATURE = "message-tags";
+
     private final TranslationCache translationCache;
     private final AudienceLocaleResolver localeResolver;
     private final DebugGate debugGate;
@@ -78,14 +80,15 @@ public class StandardMessageFacade implements MessageFacade {
         Component baseComponent = miniMessage.deserialize(baseString);
 
         List<Component> tagComponents = new ArrayList<>();
+        TranslationBundle localeGlobalTags = translationCache.bundle(GLOBAL_TAG_FEATURE, targetLocale);
+        TranslationBundle defaultGlobalTags = targetLocale.equals(translationCache.defaultLocale())
+                ? localeGlobalTags
+                : translationCache.bundle(GLOBAL_TAG_FEATURE, translationCache.defaultLocale());
         for (String tagId : descriptor.tags()) {
-            bundle.tag(tagId).ifPresent(value -> {
-                try {
-                    tagComponents.add(miniMessage.deserialize(value));
-                } catch (Exception ignored) {
-                    // invalid tag formatting, skip
-                }
-            });
+            Component tagComponent = resolveTagComponent(bundle, localeGlobalTags, defaultGlobalTags, tagId);
+            if (tagComponent != null) {
+                tagComponents.add(tagComponent);
+            }
         }
 
         if (tagComponents.isEmpty()) {
@@ -116,6 +119,29 @@ public class StandardMessageFacade implements MessageFacade {
     @Override
     public DebugGate debugGate() {
         return debugGate;
+    }
+
+    private Component resolveTagComponent(TranslationBundle messageBundle,
+                                          TranslationBundle localeGlobalTags,
+                                          TranslationBundle defaultGlobalTags,
+                                          String tagId) {
+        if (tagId == null || tagId.isBlank()) {
+            return null;
+        }
+        Component component = messageBundle.tagComponent(tagId);
+        if (component != null) {
+            return component;
+        }
+        if (localeGlobalTags != null) {
+            component = localeGlobalTags.tagComponent(tagId);
+            if (component != null) {
+                return component;
+            }
+        }
+        if (defaultGlobalTags != null) {
+            return defaultGlobalTags.tagComponent(tagId);
+        }
+        return null;
     }
 
     private String applyArguments(String template, Object[] args, MessageStyle style) {

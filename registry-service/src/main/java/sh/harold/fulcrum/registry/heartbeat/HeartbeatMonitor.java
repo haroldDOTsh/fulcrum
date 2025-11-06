@@ -157,14 +157,19 @@ public class HeartbeatMonitor {
 
             RegisteredServerData.Status oldStatus = server.getStatus();
             serverRegistry.updateServerMetrics(permanentId, playerCount, tps);
-            server.setStatus(RegisteredServerData.Status.AVAILABLE);
 
-            if (oldStatus != RegisteredServerData.Status.AVAILABLE) {
-                LOGGER.info("Server {} status changed from {} to AVAILABLE (heartbeat received)",
+            if (!isShutdownManagedStatus(oldStatus)) {
+                if (oldStatus != RegisteredServerData.Status.AVAILABLE) {
+                    server.setStatus(RegisteredServerData.Status.AVAILABLE);
+                    LOGGER.info("Server {} status changed from {} to AVAILABLE (heartbeat received)",
+                            permanentId, oldStatus);
+
+                    // Broadcast status change
+                    broadcastStatusChange(server, oldStatus, RegisteredServerData.Status.AVAILABLE);
+                }
+            } else {
+                LOGGER.debug("Heartbeat from {} while in shutdown-managed state {}; leaving status unchanged",
                         permanentId, oldStatus);
-
-                // Broadcast status change
-                broadcastStatusChange(server, oldStatus, RegisteredServerData.Status.AVAILABLE);
             }
 
             LOGGER.debug("Heartbeat from {}: {} players, {:.1f} TPS",
@@ -210,9 +215,10 @@ public class HeartbeatMonitor {
                     }
                     RegisteredProxyData.Status oldStatus = proxy.getStatus();
                     proxyRegistry.updateHeartbeat(permanentId);
-                    if (oldStatus != RegisteredProxyData.Status.AVAILABLE) {
-                        LOGGER.info("Proxy {} status changed from {} to AVAILABLE (heartbeat via temp ID)",
-                                permanentId, oldStatus);
+                    RegisteredProxyData.Status newStatus = proxy.getStatus();
+                    if (oldStatus != newStatus) {
+                        LOGGER.info("Proxy {} status changed from {} to {} (heartbeat via temp ID)",
+                                permanentId, oldStatus, newStatus);
                     }
                     LOGGER.debug("Heartbeat from proxy: {} (via temp ID: {})", permanentId, proxyId);
                     return;
@@ -260,9 +266,10 @@ public class HeartbeatMonitor {
             proxyRegistry.updateHeartbeat(effectiveId);
 
             RegistrationState updatedState = proxy.getRegistrationState();
-            if (oldStatus != RegisteredProxyData.Status.AVAILABLE) {
-                LOGGER.info("Proxy {} status changed from {} to AVAILABLE (state: {})",
-                        effectiveId, oldStatus, updatedState);
+            RegisteredProxyData.Status newStatus = proxy.getStatus();
+            if (oldStatus != newStatus) {
+                LOGGER.info("Proxy {} status changed from {} to {} (state: {})",
+                        effectiveId, oldStatus, newStatus, updatedState);
             }
 
             LOGGER.debug("Heartbeat from proxy: {} (state: {})", effectiveId, updatedState);
@@ -404,6 +411,11 @@ public class HeartbeatMonitor {
                 deadServersList.add(serverId);
             }
 
+            boolean managedStatus = isShutdownManagedStatus(oldStatus);
+            if (managedStatus && newStatus != RegisteredServerData.Status.DEAD) {
+                continue;
+            }
+
             if (oldStatus != newStatus) {
                 server.setStatus(newStatus);
                 long secondsSinceHeartbeat = timeSinceHeartbeat / 1000;
@@ -454,7 +466,9 @@ public class HeartbeatMonitor {
                 RegisteredProxyData.Status newStatus;
 
                 if (timeSinceHeartbeat < UNAVAILABLE_TIMEOUT_MS) {
-                    newStatus = RegisteredProxyData.Status.AVAILABLE;
+                    newStatus = proxy.getStatus() == RegisteredProxyData.Status.EVACUATING
+                            ? RegisteredProxyData.Status.EVACUATING
+                            : RegisteredProxyData.Status.AVAILABLE;
                 } else if (timeSinceHeartbeat < DEAD_TIMEOUT_MS) {
                     newStatus = RegisteredProxyData.Status.UNAVAILABLE;
                 } else {
@@ -709,6 +723,14 @@ public class HeartbeatMonitor {
             }
             return false;
         });
+    }
+
+    private boolean isShutdownManagedStatus(RegisteredServerData.Status status) {
+        if (status == null) {
+            return false;
+        }
+        return status == RegisteredServerData.Status.EVACUATING
+                || status == RegisteredServerData.Status.STOPPING;
     }
 
     /**

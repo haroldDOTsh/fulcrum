@@ -638,7 +638,9 @@ public class ProxyRegistry {
         RegisteredProxyData proxy = getProxy(proxyIdString);
         if (proxy != null) {
             proxy.setLastHeartbeat(System.currentTimeMillis());
-            proxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
+            if (proxy.getStatus() != RegisteredProxyData.Status.EVACUATING) {
+                proxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
+            }
             if (debugMode) {
                 LOGGER.debug("Updated heartbeat for proxy: {}", proxyIdString);
             }
@@ -672,6 +674,8 @@ public class ProxyRegistry {
         proxy.setStatus(status);
 
         RegistrationState currentState = proxy.getRegistrationState();
+        boolean keepRegistered = status == RegisteredProxyData.Status.EVACUATING;
+
         if (status == RegisteredProxyData.Status.AVAILABLE) {
             if (currentState == RegistrationState.DISCONNECTED) {
                 proxy.transitionTo(RegistrationState.RE_REGISTERING, "Proxy heartbeat restored");
@@ -679,7 +683,7 @@ public class ProxyRegistry {
             } else if (currentState == RegistrationState.RE_REGISTERING) {
                 proxy.transitionTo(RegistrationState.REGISTERED, "Proxy marked available");
             }
-        } else if (currentState == RegistrationState.REGISTERED) {
+        } else if (!keepRegistered && currentState == RegistrationState.REGISTERED) {
             proxy.transitionTo(RegistrationState.DISCONNECTED,
                     "Proxy marked " + status.name().toLowerCase(Locale.ROOT));
         }

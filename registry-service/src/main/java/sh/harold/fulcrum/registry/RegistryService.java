@@ -11,6 +11,8 @@ import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
+import sh.harold.fulcrum.message.storage.TranslationRepository;
+import sh.harold.fulcrum.message.storage.mongo.MongoTranslationRepository;
 import sh.harold.fulcrum.registry.adapter.RegistryMessageBusAdapter;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
@@ -23,6 +25,7 @@ import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryRepository;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.heartbeat.store.RedisHeartbeatStore;
+import sh.harold.fulcrum.registry.message.MessageTagSeeder;
 import sh.harold.fulcrum.registry.network.NetworkConfigCache;
 import sh.harold.fulcrum.registry.network.NetworkConfigManager;
 import sh.harold.fulcrum.registry.network.NetworkConfigRepository;
@@ -55,6 +58,7 @@ import java.util.concurrent.*;
  */
 public class RegistryService {
     private static final Logger LOGGER = LoggerFactory.getLogger(RegistryService.class);
+    private static final int MESSAGE_TRANSLATION_SCHEMA = 1;
 
     private final Map<String, Object> config;
     private final RedisConfiguration redisConfiguration;
@@ -316,6 +320,8 @@ public class RegistryService {
             if (environmentDirectoryManager != null) {
                 environmentDirectoryManager.initialize();
             }
+
+            seedMessageTags();
 
             // Log which implementation was created
             String busClassName = messageBus.getClass().getSimpleName();
@@ -670,6 +676,42 @@ public class RegistryService {
                 discardMongoAdapter(connectionString, database, adapter);
             }
             return null;
+        }
+    }
+
+    private void seedMessageTags() {
+        Map<String, Object> storage = (Map<String, Object>) config.get("storage");
+        if (storage == null) {
+            LOGGER.warn("Storage configuration missing; message tag seed skipped");
+            return;
+        }
+
+        Map<String, Object> mongoSection = (Map<String, Object>) storage.get("mongodb");
+        if (mongoSection == null) {
+            LOGGER.warn("MongoDB configuration missing; message tag seed skipped");
+            return;
+        }
+
+        String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
+        String database = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
+
+        boolean adapterPreExisting = mongoAdapters.containsKey(mongoKey(connectionString, database));
+        MongoConnectionAdapter adapter = null;
+        DataAPI dataAPI = null;
+        try {
+            adapter = getMongoAdapter("message-tags", connectionString, database);
+            dataAPI = DataAPI.create(adapter);
+            TranslationRepository repository = new MongoTranslationRepository(dataAPI, "message_translations", MESSAGE_TRANSLATION_SCHEMA);
+            new MessageTagSeeder(repository, LOGGER).seedIfMissing();
+        } catch (Exception ex) {
+            LOGGER.error("Failed to seed shared message tags", ex);
+        } finally {
+            if (dataAPI != null) {
+                dataAPI.shutdown();
+            }
+            if (!adapterPreExisting) {
+                discardMongoAdapter(connectionString, database, adapter);
+            }
         }
     }
 
