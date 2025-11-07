@@ -29,6 +29,7 @@ public class MinigameEnvironmentService {
     private final WorldService worldService;
     private final WorldManager worldManager;
     private final ConcurrentMap<String, MatchEnvironment> environments = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> worldToSlot = new ConcurrentHashMap<>();
 
     public MinigameEnvironmentService(Logger logger,
                                       WorldService worldService,
@@ -99,6 +100,7 @@ public class MinigameEnvironmentService {
         MatchEnvironment environment = new MatchEnvironment(slotId, worldName, resolvedMapId,
                 lobbySpawn, matchSpawn);
         environments.put(slotId, environment);
+        worldToSlot.put(normalize(worldName), slotId);
         logger.info(() -> "Prepared match environment '" + worldName + "' for slot " + slotId
                 + " (mapId=" + resolvedMapId + ")");
         return environment;
@@ -114,6 +116,7 @@ public class MinigameEnvironmentService {
         }
         MatchEnvironment environment = environments.remove(slotId);
         if (environment != null) {
+            worldToSlot.remove(normalize(environment.worldName()));
             cleanupWorld(environment.worldName());
         }
     }
@@ -122,9 +125,18 @@ public class MinigameEnvironmentService {
         for (String slotId : new ArrayList<>(environments.keySet())) {
             MatchEnvironment environment = environments.remove(slotId);
             if (environment != null) {
+                worldToSlot.remove(normalize(environment.worldName()));
                 cleanupWorld(environment.worldName());
             }
         }
+        worldToSlot.clear();
+    }
+
+    public Optional<String> resolveSlotIdByWorld(String worldName) {
+        if (worldName == null || worldName.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(worldToSlot.get(normalize(worldName)));
     }
 
     private Optional<LoadedWorld> resolveMap(Map<String, String> metadata) {
@@ -230,6 +242,10 @@ public class MinigameEnvironmentService {
         } catch (IOException exception) {
             logger.log(Level.WARNING, "Failed to delete world directory " + worldPath, exception);
         }
+    }
+
+    private String normalize(String worldName) {
+        return worldName == null ? null : worldName.toLowerCase(Locale.ROOT);
     }
 
     public record MatchEnvironment(String slotId,

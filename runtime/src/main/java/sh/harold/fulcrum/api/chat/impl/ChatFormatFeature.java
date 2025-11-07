@@ -9,10 +9,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.chat.ChatFormatService;
 import sh.harold.fulcrum.api.network.NetworkConfigService;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 
+import java.util.Optional;
 import java.util.logging.Logger;
 
 /**
@@ -41,9 +43,13 @@ public class ChatFormatFeature implements PluginFeature, Listener {
             }
 
             NetworkConfigService networkConfigService = container.getOptional(NetworkConfigService.class).orElse(null);
+            PlayerCache playerCache = container.getOptional(PlayerCache.class)
+                    .orElseGet(() -> Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                            .flatMap(locator -> locator.findService(PlayerCache.class))
+                            .orElse(null));
 
             // Create default formatter
-            DefaultChatFormatter defaultFormatter = new DefaultChatFormatter(rankService, networkConfigService);
+            DefaultChatFormatter defaultFormatter = new DefaultChatFormatter(rankService, networkConfigService, playerCache);
 
             // Create and register service
             chatFormatService = new DefaultChatFormatService(defaultFormatter);

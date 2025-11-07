@@ -53,12 +53,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         return settings;
     }
 
-    private static Map<String, Object> buildDefaultCosmetics() {
-        Map<String, Object> cosmetics = new LinkedHashMap<>();
-        cosmetics.put("emojiPacks", new ArrayList<>());
-        return cosmetics;
-    }
-
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
@@ -146,7 +140,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             seed.put("firstJoin", now);
             seed.put("lastSeen", now);
             seed.put("settings", buildDefaultSettings());
-            seed.put("cosmetics", buildDefaultCosmetics());
             dataAPI.collection(PLAYERS_COLLECTION).create(playerId.toString(), seed);
         }
 
@@ -302,12 +295,10 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                 filtered.put("extras", copyNestedMap(map));
             }
             filtered.putIfAbsent("settings", buildDefaultSettings());
-            filtered.putIfAbsent("cosmetics", buildDefaultCosmetics());
             return new PersistedState(filtered, true);
         }
         Map<String, Object> defaults = new HashMap<>();
         defaults.put("settings", buildDefaultSettings());
-        defaults.put("cosmetics", buildDefaultCosmetics());
         return new PersistedState(defaults, false);
     }
 
@@ -360,8 +351,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         Map<String, Object> cosmetics = record.getCosmetics();
         if (!cosmetics.isEmpty()) {
             payload.put("cosmetics", copyNestedMap(cosmetics));
-        } else {
-            payload.put("cosmetics", buildDefaultCosmetics());
         }
 
         if (record.shouldPersistRank()) {

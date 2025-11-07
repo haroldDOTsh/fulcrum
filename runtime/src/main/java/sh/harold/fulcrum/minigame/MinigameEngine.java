@@ -2,6 +2,7 @@ package sh.harold.fulcrum.minigame;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -1233,6 +1234,32 @@ public final class MinigameEngine {
             MinigameMatch match = activeMatches.get(matchId);
             if (match != null) {
                 return match.getContext().getSlotId();
+            }
+        }
+        return Optional.empty();
+    }
+
+    public Optional<String> resolveSlotId(World world) {
+        if (world == null) {
+            return Optional.empty();
+        }
+        if (environmentService != null) {
+            Optional<String> slot = environmentService.resolveSlotIdByWorld(world.getName());
+            if (slot.isPresent()) {
+                return slot;
+            }
+        }
+        for (Map.Entry<String, UUID> entry : slotMatches.entrySet()) {
+            UUID matchId = entry.getValue();
+            MinigameMatch match = activeMatches.get(matchId);
+            if (match == null) {
+                continue;
+            }
+            MatchEnvironment environment = match.getContext()
+                    .getAttributeOptional(MinigameAttributes.MATCH_ENVIRONMENT, MatchEnvironment.class)
+                    .orElse(null);
+            if (environment != null && world.getName().equalsIgnoreCase(environment.worldName())) {
+                return Optional.of(entry.getKey());
             }
         }
         return Optional.empty();
