@@ -7,6 +7,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.chat.ChatFormatService;
+import sh.harold.fulcrum.api.network.NetworkConfigService;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -39,8 +40,10 @@ public class ChatFormatFeature implements PluginFeature, Listener {
                 return;
             }
 
+            NetworkConfigService networkConfigService = container.getOptional(NetworkConfigService.class).orElse(null);
+
             // Create default formatter
-            DefaultChatFormatter defaultFormatter = new DefaultChatFormatter(rankService);
+            DefaultChatFormatter defaultFormatter = new DefaultChatFormatter(rankService, networkConfigService);
 
             // Create and register service
             chatFormatService = new DefaultChatFormatService(defaultFormatter);

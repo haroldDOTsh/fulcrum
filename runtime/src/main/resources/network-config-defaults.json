@@ -61,5 +61,33 @@
       "nameColor": "red"
     }
   },
+  "rankInfo": {
+    "HELPER": {
+      "displayName": "Helper",
+      "fullPrefix": "&9[HELPER]",
+      "infoUrl": "https://play.harold.sh/ranks/helper",
+      "tooltipLines": [
+        "{DISPLAYNAME} &7- {FULLPREFIX}",
+        "",
+        "{DISPLAYNAME} &7help run the network! These staff members have varying jobs,",
+        "such as: Moderation, Quality Assurance, Development, Support, and more!",
+        "",
+        "&e&lCLICK &eto view more information!"
+      ]
+    },
+    "STAFF": {
+      "displayName": "Staff",
+      "fullPrefix": "&c[STAFF]",
+      "infoUrl": "https://play.harold.sh/ranks/staff",
+      "tooltipLines": [
+        "{DISPLAYNAME} &7- {FULLPREFIX}",
+        "",
+        "{DISPLAYNAME} &7help run the network! These staff members have varying jobs,",
+        "such as: Moderation, Quality Assurance, Development, Support, and more!",
+        "",
+        "&e&lCLICK &eto view more information!"
+      ]
+    }
+  },
   "updatedAt": "2024-01-01T00:00:00Z"
 }

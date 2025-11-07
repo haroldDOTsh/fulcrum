@@ -82,6 +82,37 @@ public final class NetworkProfileView implements Serializable {
         ));
     }
 
+    public Optional<RankInfoView> getRankInfo(String rankId) {
+        if (rankId == null || rankId.isBlank()) {
+            return Optional.empty();
+        }
+        String basePath = "rankInfo." + rankId;
+        Optional<String> displayName = getString(basePath + ".displayName");
+        Optional<String> fullPrefix = getString(basePath + ".fullPrefix");
+        List<String> tooltipLines = getStringList(basePath + ".tooltipLines");
+        Optional<String> infoUrl = getString(basePath + ".infoUrl");
+
+        if (displayName.isEmpty()
+                && fullPrefix.isEmpty()
+                && tooltipLines.isEmpty()
+                && infoUrl.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Optional<RankVisualView> visual = getRankVisual(rankId);
+        String resolvedDisplayName = displayName.filter(value -> !value.isBlank())
+                .orElseGet(() -> visual.map(RankVisualView::displayName).orElse(""));
+        String resolvedPrefix = fullPrefix.filter(value -> !value.isBlank())
+                .orElseGet(() -> visual.map(RankVisualView::fullPrefix).orElse(""));
+
+        return Optional.of(new RankInfoView(
+                resolvedDisplayName,
+                resolvedPrefix,
+                tooltipLines,
+                infoUrl.orElse("")
+        ));
+    }
+
     public Instant updatedAt() {
         Object value = resolvePath("updatedAt");
         if (value instanceof Instant instant) {
