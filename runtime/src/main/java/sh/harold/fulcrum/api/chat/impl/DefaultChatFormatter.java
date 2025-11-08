@@ -16,10 +16,7 @@ import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Default Hypixel-style formatter.
@@ -60,7 +57,7 @@ public class DefaultChatFormatter implements ChatFormatter {
         Component tooltipComponent = rankInfoContext.tooltip();
         String infoUrl = rankInfoContext.infoUrl();
 
-        String prefixSource = cosmeticOverrides.rankVisualOverride()
+        String prefixSource = Optional.ofNullable(cosmeticOverrides.rankVisualOverride())
                 .map(RankVisualView::fullPrefix)
                 .filter(value -> !value.isBlank())
                 .orElse(rank.getFullPrefix());
