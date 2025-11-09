@@ -106,6 +106,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new StaffFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
         FeatureManager.register(new PropFeature()); // Prop catalog (cages, pre-lobbies, etc.)
+        FeatureManager.register(new sh.harold.fulcrum.npc.NpcFeature()); // Stateless NPC toolkit
         FeatureManager.register(new MinigameEngineFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.routing.EnvironmentRoutingFeature());
         if (debugMinigameEnabled) {
