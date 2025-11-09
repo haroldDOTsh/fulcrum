@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.fundamentals.props;
 
+import com.google.gson.JsonObject;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
@@ -14,14 +15,19 @@ import com.sk89q.worldedit.session.ClipboardHolder;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
+import sh.harold.fulcrum.api.world.poi.POIRegistry;
 import sh.harold.fulcrum.fundamentals.props.model.PropDefinition;
 import sh.harold.fulcrum.fundamentals.props.model.PropInstance;
 import sh.harold.fulcrum.fundamentals.props.model.PropPlacementOptions;
 import sh.harold.fulcrum.fundamentals.world.model.PoiDefinition;
+import sh.harold.fulcrum.npc.poi.PoiActivatedEvent;
+import sh.harold.fulcrum.npc.poi.PoiActivationBus;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,11 +38,18 @@ import java.util.logging.Logger;
 public class PropManager {
     private final Plugin plugin;
     private final PropService propService;
+    private final POIRegistry poiRegistry;
+    private final PoiActivationBus activationBus;
     private final Logger logger;
 
-    public PropManager(Plugin plugin, PropService propService) {
+    public PropManager(Plugin plugin,
+                       PropService propService,
+                       POIRegistry poiRegistry,
+                       PoiActivationBus activationBus) {
         this.plugin = plugin;
         this.propService = propService;
+        this.poiRegistry = poiRegistry;
+        this.activationBus = activationBus;
         this.logger = plugin.getLogger();
     }
 
@@ -95,9 +108,12 @@ public class PropManager {
             }
 
             Location spawnLocation = resolveSpawnLocation(prop, pasteOffset, world, safeOptions);
+            List<PropInstance.PoiRegistration> registrations =
+                    registerPropPois(prop, world, pasteOffset);
             BlockVector3 regionMin = clipboard.getRegion().getMinimumPoint().add(pasteOffset);
             BlockVector3 regionMax = clipboard.getRegion().getMaximumPoint().add(pasteOffset);
-            return Optional.of(new PropInstance(plugin, world, prop, regionMin, regionMax, spawnLocation));
+            return Optional.of(new PropInstance(plugin, world, prop, regionMin, regionMax,
+                    spawnLocation, poiRegistry, activationBus, registrations));
         } catch (IOException exception) {
             logger.log(Level.WARNING, "Failed to read prop schematic '" + prop.getName() + "'", exception);
         } catch (Exception exception) {
@@ -147,5 +163,26 @@ public class PropManager {
         float yaw = poi.metadata().has("yaw") ? poi.metadata().get("yaw").getAsFloat() : 0.0F;
         float pitch = poi.metadata().has("pitch") ? poi.metadata().get("pitch").getAsFloat() : 0.0F;
         return new Location(world, x, y, z, yaw, pitch);
+    }
+
+    private List<PropInstance.PoiRegistration> registerPropPois(PropDefinition prop,
+                                                                World world,
+                                                                BlockVector3 pasteOffset) {
+        List<PoiDefinition> pois = prop.getPois();
+        if (pois == null || pois.isEmpty() || poiRegistry == null) {
+            return List.of();
+        }
+
+        List<PropInstance.PoiRegistration> registrations = new ArrayList<>();
+        for (PoiDefinition poi : pois) {
+            Location absolute = toAbsolute(world, pasteOffset, poi);
+            JsonObject payload = poi.toConfigJson();
+            poiRegistry.registerPOI(world, absolute, payload);
+            if (activationBus != null) {
+                activationBus.publishActivated(new PoiActivatedEvent(world.getName(), absolute, payload));
+            }
+            registrations.add(new PropInstance.PoiRegistration(absolute, payload));
+        }
+        return registrations;
     }
 }

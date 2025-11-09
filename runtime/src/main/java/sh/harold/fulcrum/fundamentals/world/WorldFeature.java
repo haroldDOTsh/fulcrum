@@ -17,6 +17,8 @@ import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.npc.poi.PoiActivationBus;
+import sh.harold.fulcrum.npc.poi.SimplePoiActivationBus;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -36,6 +38,7 @@ public class WorldFeature implements PluginFeature {
     private POIRegistry poiRegistry;
     private WorldCommand worldCommand;
     private Logger logger;
+    private PoiActivationBus poiActivationBus;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -66,13 +69,18 @@ public class WorldFeature implements PluginFeature {
         }
 
         this.poiRegistry = new POIRegistry(logger);
-        this.worldManager = new WorldManager(plugin, worldService, poiRegistry);
+        this.poiActivationBus = new SimplePoiActivationBus();
+        this.worldManager = new WorldManager(plugin, worldService, poiRegistry, poiActivationBus);
 
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(WorldService.class, worldService);
             ServiceLocatorImpl.getInstance().registerService(WorldManager.class, worldManager);
             ServiceLocatorImpl.getInstance().registerService(POIRegistry.class, poiRegistry);
+            ServiceLocatorImpl.getInstance().registerService(PoiActivationBus.class, poiActivationBus);
         }
+
+        container.register(POIRegistry.class, poiRegistry);
+        container.register(PoiActivationBus.class, poiActivationBus);
 
         this.worldCommand = new WorldCommand(plugin, worldService, worldManager);
         LiteralCommandNode<CommandSourceStack> worldRoot = worldCommand.build();
@@ -93,6 +101,7 @@ public class WorldFeature implements PluginFeature {
             ServiceLocatorImpl.getInstance().unregisterService(WorldService.class);
             ServiceLocatorImpl.getInstance().unregisterService(WorldManager.class);
             ServiceLocatorImpl.getInstance().unregisterService(POIRegistry.class);
+            ServiceLocatorImpl.getInstance().unregisterService(PoiActivationBus.class);
         }
 
     }
@@ -165,7 +174,6 @@ public class WorldFeature implements PluginFeature {
     }
 
 }
-
 
 
 

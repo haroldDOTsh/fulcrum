@@ -4,9 +4,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.schema.SchemaDefinition;
 import sh.harold.fulcrum.api.data.schema.SchemaRegistry;
+import sh.harold.fulcrum.api.world.poi.POIRegistry;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.npc.poi.PoiActivationBus;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -20,6 +22,8 @@ public class PropFeature implements PluginFeature {
     private Logger logger;
     private PropService propService;
     private PropManager propManager;
+    private POIRegistry poiRegistry;
+    private PoiActivationBus poiActivationBus;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -40,6 +44,13 @@ public class PropFeature implements PluginFeature {
             return;
         }
 
+        this.poiRegistry = resolvePoiRegistry(container);
+        this.poiActivationBus = resolvePoiActivationBus(container);
+        if (poiRegistry == null || poiActivationBus == null) {
+            logger.severe("POI services unavailable; prop services disabled.");
+            return;
+        }
+
         this.propService = new PropService(plugin, adapter);
         try {
             propService.initialize().join();
@@ -48,7 +59,7 @@ public class PropFeature implements PluginFeature {
             return;
         }
 
-        this.propManager = new PropManager(plugin, propService);
+        this.propManager = new PropManager(plugin, propService, poiRegistry, poiActivationBus);
 
         container.register(PropService.class, propService);
         container.register(PropManager.class, propManager);
@@ -69,6 +80,20 @@ public class PropFeature implements PluginFeature {
             ServiceLocatorImpl.getInstance().unregisterService(PropService.class);
             ServiceLocatorImpl.getInstance().unregisterService(PropManager.class);
         }
+    }
+
+    private POIRegistry resolvePoiRegistry(DependencyContainer container) {
+        return container.getOptional(POIRegistry.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(POIRegistry.class).orElse(null)
+                        : null);
+    }
+
+    private PoiActivationBus resolvePoiActivationBus(DependencyContainer container) {
+        return container.getOptional(PoiActivationBus.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(PoiActivationBus.class).orElse(null)
+                        : null);
     }
 
     private boolean ensurePropSchema(PostgresConnectionAdapter adapter) {

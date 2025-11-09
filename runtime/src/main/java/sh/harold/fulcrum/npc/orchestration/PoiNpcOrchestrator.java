@@ -1,0 +1,300 @@
+package sh.harold.fulcrum.npc.orchestration;
+
+import com.google.gson.JsonObject;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
+import sh.harold.fulcrum.npc.NpcDefinition;
+import sh.harold.fulcrum.npc.NpcRegistry;
+import sh.harold.fulcrum.npc.adapter.NpcAdapter;
+import sh.harold.fulcrum.npc.adapter.NpcHandle;
+import sh.harold.fulcrum.npc.adapter.NpcSpawnRequest;
+import sh.harold.fulcrum.npc.behavior.InteractionContext;
+import sh.harold.fulcrum.npc.behavior.NpcBehavior;
+import sh.harold.fulcrum.npc.behavior.NpcInteractionHelpers;
+import sh.harold.fulcrum.npc.behavior.PassiveContext;
+import sh.harold.fulcrum.npc.poi.*;
+import sh.harold.fulcrum.npc.skin.NpcSkinCacheService;
+import sh.harold.fulcrum.npc.view.NpcViewerService;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * Listens for POI activations and spawns/despawns NPC definitions accordingly.
+ */
+public final class PoiNpcOrchestrator implements PoiActivationListener, AutoCloseable {
+    private final JavaPlugin plugin;
+    private final Logger logger;
+    private final NpcRegistry npcRegistry;
+    private final PoiDescriptorRegistry descriptorRegistry;
+    private final PoiActivationBus activationBus;
+    private final NpcAdapter adapter;
+    private final NpcSkinCacheService skinCache;
+    private final NpcViewerService viewerService;
+    private final NpcInteractionHelpers helpers;
+    private final Map<PoiInstanceKey, CopyOnWriteArrayList<NpcHandle>> activeHandles = new ConcurrentHashMap<>();
+    private final Map<UUID, ActiveNpc> activeByInstance = new ConcurrentHashMap<>();
+    private final PoiActivationBus.Subscription subscription;
+    private final NpcInstanceRegistry instanceRegistry = new NpcInstanceRegistry();
+
+    public PoiNpcOrchestrator(JavaPlugin plugin,
+                              Logger logger,
+                              NpcRegistry npcRegistry,
+                              PoiDescriptorRegistry descriptorRegistry,
+                              PoiActivationBus activationBus,
+                              NpcAdapter adapter,
+                              NpcSkinCacheService skinCache,
+                              NpcViewerService viewerService,
+                              NpcInteractionHelpers helpers) {
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.logger = Objects.requireNonNull(logger, "logger");
+        this.npcRegistry = Objects.requireNonNull(npcRegistry, "npcRegistry");
+        this.descriptorRegistry = Objects.requireNonNull(descriptorRegistry, "descriptorRegistry");
+        this.activationBus = Objects.requireNonNull(activationBus, "activationBus");
+        this.adapter = Objects.requireNonNull(adapter, "adapter");
+        this.skinCache = Objects.requireNonNull(skinCache, "skinCache");
+        this.viewerService = Objects.requireNonNull(viewerService, "viewerService");
+        this.helpers = Objects.requireNonNull(helpers, "helpers");
+        this.subscription = activationBus.subscribe(this);
+    }
+
+    @Override
+    public void onActivated(PoiActivatedEvent event) {
+        event.anchorId().ifPresent(anchor -> {
+            List<PoiNpcAssignment> assignments = descriptorRegistry.resolve(anchor);
+            if (assignments.isEmpty()) {
+                return;
+            }
+            for (PoiNpcAssignment assignment : assignments) {
+                npcRegistry.find(assignment.npcId())
+                        .ifPresentOrElse(definition ->
+                                        scheduleSpawn(event, assignment, definition),
+                                () -> logger.warning(() -> "No NPC definition registered for id " + assignment.npcId()));
+            }
+        });
+    }
+
+    @Override
+    public void onDeactivated(PoiDeactivatedEvent event) {
+        event.anchorId().ifPresent(anchor -> {
+            PoiInstanceKey key = PoiInstanceKey.from(event.worldName(), anchor, event.location());
+            List<NpcHandle> handles = activeHandles.remove(key);
+            if (handles == null) {
+                return;
+            }
+            for (NpcHandle handle : handles) {
+                despawnHandle(handle);
+            }
+        });
+    }
+
+    private void scheduleSpawn(PoiActivatedEvent event,
+                               PoiNpcAssignment assignment,
+                               NpcDefinition definition) {
+        Location location = resolveLocation(event, assignment);
+        UUID instanceId = UUID.randomUUID();
+        skinCache.resolve(definition.profile())
+                .thenCompose(payload -> adapter.spawn(
+                        new NpcSpawnRequest(instanceId, definition, location, event, assignment, payload)))
+                .thenAccept(handle -> storeHandle(event, assignment, handle))
+                .exceptionally(exception -> {
+                    logger.log(Level.WARNING,
+                            "Failed to spawn NPC " + definition.id() + " for POI " + assignment.poiAnchor(),
+                            exception);
+                    return null;
+                });
+    }
+
+    private void storeHandle(PoiActivatedEvent event, PoiNpcAssignment assignment, NpcHandle handle) {
+        PoiInstanceKey key = PoiInstanceKey.from(event.worldName(), assignment.poiAnchor(), event.location());
+        activeHandles.computeIfAbsent(key, ignored -> new CopyOnWriteArrayList<>()).add(handle);
+        viewerService.register(handle, handle.definition());
+        instanceRegistry.register(handle);
+        schedulePassive(handle);
+    }
+
+    private void schedulePassive(NpcHandle handle) {
+        NpcBehavior behavior = handle.definition().behavior();
+        if (behavior == null) {
+            return;
+        }
+        BukkitTask task = null;
+        if (behavior.passiveHandler() != null) {
+            int interval = Math.max(1, behavior.passiveIntervalTicks());
+            task = plugin.getServer().getScheduler().runTaskTimer(
+                    plugin,
+                    () -> behavior.passiveHandler().execute(new DefaultPassiveContext(handle)),
+                    interval,
+                    interval
+            );
+        }
+        activeByInstance.put(handle.instanceId(), new ActiveNpc(handle, behavior, task));
+    }
+
+    private void despawnHandle(NpcHandle handle) {
+        try {
+            adapter.despawn(handle);
+        } catch (Exception exception) {
+            logger.log(Level.WARNING, "Failed to despawn NPC " + handle.definition().id(), exception);
+        }
+        viewerService.unregister(handle.instanceId());
+        instanceRegistry.unregister(handle);
+        ActiveNpc active = activeByInstance.remove(handle.instanceId());
+        if (active != null && active.task() != null) {
+            active.task().cancel();
+        }
+    }
+
+    public void handleInteraction(UUID adapterId, Player player) {
+        if (adapterId == null || player == null || !player.isOnline()) {
+            return;
+        }
+        NpcHandle handle = instanceRegistry.findByAdapterId(adapterId);
+        if (handle == null) {
+            return;
+        }
+        ActiveNpc active = activeByInstance.get(handle.instanceId());
+        if (active == null) {
+            return;
+        }
+        if (!active.canInteract(player.getUniqueId(), handle.definition().behavior().interactionCooldownTicks())) {
+            return;
+        }
+        plugin.getServer().getScheduler().runTask(
+                plugin,
+                () -> active.behavior().interactionHandler().execute(
+                        new DefaultInteractionContext(handle, player)
+                )
+        );
+    }
+
+    private Location resolveLocation(PoiActivatedEvent event, PoiNpcAssignment assignment) {
+        Location base = event.location();
+        Location spawn = base.clone().add(assignment.relativeOffset());
+        JsonObject configuration = event.configuration();
+        float baseYaw = configuration.has("yaw") ? configuration.get("yaw").getAsFloat() : base.getYaw();
+        spawn.setYaw(baseYaw + assignment.yawOffset());
+        spawn.setPitch(assignment.pitchOffset());
+        return spawn;
+    }
+
+    @Override
+    public void close() {
+        subscription.unsubscribe();
+        activeHandles.values().forEach(handles -> handles.forEach(this::despawnHandle));
+        activeHandles.clear();
+        activeByInstance.values().forEach(active -> {
+            if (active.task() != null) {
+                active.task().cancel();
+            }
+        });
+        activeByInstance.clear();
+    }
+
+    private record PoiInstanceKey(String worldName, String anchorId, int x, int y, int z) {
+        static PoiInstanceKey from(String world, String anchor, Location location) {
+            if (anchor == null) {
+                return null;
+            }
+            return new PoiInstanceKey(
+                    world,
+                    anchor.toLowerCase(Locale.ROOT),
+                    location.getBlockX(),
+                    location.getBlockY(),
+                    location.getBlockZ()
+            );
+        }
+    }
+
+    private static final class ActiveNpc {
+        private final NpcHandle handle;
+        private final NpcBehavior behavior;
+        private final BukkitTask task;
+        private final Map<UUID, Long> cooldowns = new ConcurrentHashMap<>();
+
+        private ActiveNpc(NpcHandle handle, NpcBehavior behavior, BukkitTask task) {
+            this.handle = handle;
+            this.behavior = behavior;
+            this.task = task;
+        }
+
+        public NpcHandle handle() {
+            return handle;
+        }
+
+        public NpcBehavior behavior() {
+            return behavior;
+        }
+
+        public BukkitTask task() {
+            return task;
+        }
+
+        private boolean canInteract(UUID playerId, int cooldownTicks) {
+            long now = System.currentTimeMillis();
+            long nextAllowed = cooldowns.getOrDefault(playerId, 0L);
+            if (now < nextAllowed) {
+                return false;
+            }
+            cooldowns.put(playerId, now + (Math.max(1, cooldownTicks) * 50L));
+            return true;
+        }
+    }
+
+    private class DefaultPassiveContext implements PassiveContext {
+        private final NpcHandle handle;
+
+        private DefaultPassiveContext(NpcHandle handle) {
+            this.handle = handle;
+        }
+
+        @Override
+        public UUID npcInstanceId() {
+            return handle.instanceId();
+        }
+
+        @Override
+        public NpcDefinition definition() {
+            return handle.definition();
+        }
+
+        @Override
+        public Location location() {
+            return handle.lastKnownLocation();
+        }
+
+        @Override
+        public Collection<Player> viewers() {
+            return viewerService.viewersFor(handle.instanceId());
+        }
+
+        @Override
+        public NpcInteractionHelpers helpers() {
+            return helpers;
+        }
+    }
+
+    private final class DefaultInteractionContext extends DefaultPassiveContext implements InteractionContext {
+        private final Player player;
+
+        private DefaultInteractionContext(NpcHandle handle, Player player) {
+            super(handle);
+            this.player = player;
+        }
+
+        @Override
+        public Player player() {
+            return player;
+        }
+
+        @Override
+        public UUID playerId() {
+            return player.getUniqueId();
+        }
+    }
+}

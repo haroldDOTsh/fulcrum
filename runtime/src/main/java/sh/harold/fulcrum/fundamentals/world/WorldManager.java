@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.fundamentals.world;
 
+import com.google.gson.JsonObject;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
@@ -17,11 +18,15 @@ import org.bukkit.plugin.Plugin;
 import sh.harold.fulcrum.api.world.poi.POIRegistry;
 import sh.harold.fulcrum.fundamentals.world.model.LoadedWorld;
 import sh.harold.fulcrum.fundamentals.world.model.PoiDefinition;
+import sh.harold.fulcrum.npc.poi.PoiActivatedEvent;
+import sh.harold.fulcrum.npc.poi.PoiActivationBus;
+import sh.harold.fulcrum.npc.poi.PoiDeactivatedEvent;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
@@ -35,12 +40,17 @@ public class WorldManager {
     private final WorldService worldService;
     private final POIRegistry poiRegistry;
     private final Logger logger;
+    private final PoiActivationBus activationBus;
 
-    public WorldManager(Plugin plugin, WorldService worldService, POIRegistry poiRegistry) {
+    public WorldManager(Plugin plugin,
+                        WorldService worldService,
+                        POIRegistry poiRegistry,
+                        PoiActivationBus activationBus) {
         this.plugin = plugin;
         this.worldService = worldService;
         this.poiRegistry = poiRegistry;
         this.logger = plugin.getLogger();
+        this.activationBus = activationBus;
     }
 
     public CompletableFuture<WorldPasteResult> pasteWorld(UUID databaseRowId, World targetWorld, Location pasteLocation) {
@@ -93,7 +103,8 @@ public class WorldManager {
     }
 
     private void applyPOIs(LoadedWorld world, World targetWorld, Location baseLocation) {
-        poiRegistry.clearWorldPOIs(targetWorld.getName());
+        Map<Location, JsonObject> cleared = poiRegistry.clearWorldPOIs(targetWorld.getName());
+        publishDeactivations(targetWorld.getName(), cleared);
         List<PoiDefinition> pois = world.getPois();
         for (PoiDefinition poi : pois) {
             Location absolute = baseLocation.clone().add(
@@ -101,7 +112,9 @@ public class WorldManager {
                     poi.position().y(),
                     poi.position().z()
             );
-            poiRegistry.registerPOI(targetWorld, absolute, poi.toConfigJson());
+            JsonObject payload = poi.toConfigJson();
+            poiRegistry.registerPOI(targetWorld, absolute, payload);
+            publishActivation(targetWorld.getName(), absolute, payload);
             logger.fine(() -> String.format(Locale.ROOT,
                     "Registered POI %s[%s] at %s", poi.identifier(), poi.type(), absolute));
         }
@@ -111,7 +124,23 @@ public class WorldManager {
         if (worldName == null || worldName.isBlank()) {
             return;
         }
-        poiRegistry.clearWorldPOIs(worldName);
+        Map<Location, JsonObject> cleared = poiRegistry.clearWorldPOIs(worldName);
+        publishDeactivations(worldName, cleared);
+    }
+
+    private void publishActivation(String worldName, Location location, JsonObject payload) {
+        if (activationBus == null) {
+            return;
+        }
+        activationBus.publishActivated(new PoiActivatedEvent(worldName, location, payload));
+    }
+
+    private void publishDeactivations(String worldName, Map<Location, JsonObject> removed) {
+        if (activationBus == null || removed == null || removed.isEmpty()) {
+            return;
+        }
+        removed.forEach((location, config) ->
+                activationBus.publishDeactivated(new PoiDeactivatedEvent(worldName, location, config)));
     }
 
     public record WorldPasteResult(boolean success, String message, LoadedWorld world) {

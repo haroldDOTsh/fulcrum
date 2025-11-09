@@ -126,11 +126,13 @@ public class POIRegistry {
      *
      * @param worldName The world name
      */
-    public void clearWorldPOIs(String worldName) {
+    public Map<Location, JsonObject> clearWorldPOIs(String worldName) {
         Map<Location, JsonObject> removed = worldPOIs.remove(worldName);
         if (removed != null && !removed.isEmpty()) {
             logger.info("Cleared " + removed.size() + " POIs from world " + worldName);
+            return removed;
         }
+        return Collections.emptyMap();
     }
 
     /**

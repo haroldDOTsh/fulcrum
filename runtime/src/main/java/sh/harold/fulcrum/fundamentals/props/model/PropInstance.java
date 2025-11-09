@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.fundamentals.props.model;
 
+import com.google.gson.JsonObject;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
@@ -10,7 +11,11 @@ import com.sk89q.worldedit.world.block.BlockTypes;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
+import sh.harold.fulcrum.api.world.poi.POIRegistry;
+import sh.harold.fulcrum.npc.poi.PoiActivationBus;
+import sh.harold.fulcrum.npc.poi.PoiDeactivatedEvent;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 
@@ -24,6 +29,9 @@ public final class PropInstance {
     private final BlockVector3 regionMin;
     private final BlockVector3 regionMax;
     private final Location spawnLocation;
+    private final POIRegistry poiRegistry;
+    private final PoiActivationBus activationBus;
+    private final List<PoiRegistration> registeredPois;
     private final AtomicBoolean removed = new AtomicBoolean(false);
 
     public PropInstance(Plugin plugin,
@@ -31,13 +39,19 @@ public final class PropInstance {
                         PropDefinition definition,
                         BlockVector3 regionMin,
                         BlockVector3 regionMax,
-                        Location spawnLocation) {
+                        Location spawnLocation,
+                        POIRegistry poiRegistry,
+                        PoiActivationBus activationBus,
+                        List<PoiRegistration> registeredPois) {
         this.plugin = plugin;
         this.world = world;
         this.definition = definition;
         this.regionMin = regionMin;
         this.regionMax = regionMax;
         this.spawnLocation = spawnLocation;
+        this.poiRegistry = poiRegistry;
+        this.activationBus = activationBus;
+        this.registeredPois = registeredPois != null ? List.copyOf(registeredPois) : List.of();
     }
 
     public PropDefinition definition() {
@@ -61,6 +75,39 @@ public final class PropInstance {
             }
         } catch (Exception exception) {
             plugin.getLogger().log(Level.WARNING, "Failed to remove prop " + definition.getName(), exception);
+        } finally {
+            clearRegisteredPois();
+        }
+    }
+
+    private void clearRegisteredPois() {
+        if (registeredPois.isEmpty() || poiRegistry == null) {
+            return;
+        }
+        for (PoiRegistration registration : registeredPois) {
+            Location location = registration.location();
+            poiRegistry.removePOI(world, location);
+            if (activationBus != null) {
+                activationBus.publishDeactivated(
+                        new PoiDeactivatedEvent(world.getName(), location, registration.configuration()));
+            }
+        }
+    }
+
+    public record PoiRegistration(Location location, JsonObject configuration) {
+        public PoiRegistration {
+            location = location.clone();
+            configuration = configuration.deepCopy();
+        }
+
+        @Override
+        public Location location() {
+            return location.clone();
+        }
+
+        @Override
+        public JsonObject configuration() {
+            return configuration.deepCopy();
         }
     }
 }
