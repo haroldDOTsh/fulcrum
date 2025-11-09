@@ -46,6 +46,17 @@ import java.util.*;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private static final int CONFIG_VERSION = 3;
+    private static final List<ConfigMigration> CONFIG_MIGRATIONS = List.of(
+            new ConfigMigration(2, (plugin, config) -> false),
+            new ConfigMigration(3, (plugin, config) -> {
+                if (config.contains("module")) {
+                    config.set("module", null);
+                    plugin.getLogger().info("Removed legacy module configuration; modules now belong in the plugins directory.");
+                    return true;
+                }
+                return false;
+            })
+    );
 
     private ModuleManager moduleManager;
     private SlotFamilyService slotFamilyService;
@@ -176,44 +187,21 @@ public final class FulcrumPlugin extends JavaPlugin {
 
     private FileConfiguration loadAndMigrateConfig() {
         FileConfiguration config = getConfig();
-        int currentVersion = config.getInt("config-version", 1);
-        boolean updated = false;
-        boolean removedLegacyModuleConfig = false;
+        int storedVersion = config.getInt("config-version", 1);
+        int currentVersion = storedVersion;
+        boolean mutated = false;
 
-        if (currentVersion < 2) {
-            currentVersion = 2;
-            updated = true;
-        }
-
-        if (currentVersion < 3) {
-            if (config.contains("module")) {
-                config.set("module", null); // Remove legacy module directory config
-                removedLegacyModuleConfig = true;
+        for (ConfigMigration migration : CONFIG_MIGRATIONS) {
+            if (currentVersion < migration.version()) {
+                mutated |= migration.apply(this, config);
+                currentVersion = migration.version();
             }
-            currentVersion = 3;
-            updated = true;
         }
 
-        if (removedLegacyModuleConfig) {
-            getLogger().info("Removed legacy module configuration; modules now belong in the plugins directory.");
-        }
+        mutated |= ensureFeatureDefaults(config);
 
-        ConfigurationSection features = config.getConfigurationSection("features");
-        if (features == null) {
-            features = config.createSection("features");
-            updated = true;
-        }
-        if (!features.contains("debug-minigame")) {
-            features.set("debug-minigame", false);
-            updated = true;
-        }
-
-        if (currentVersion != CONFIG_VERSION) {
-            currentVersion = CONFIG_VERSION;
-            updated = true;
-        }
-
-        if (updated) {
+        boolean versionChanged = storedVersion != CONFIG_VERSION;
+        if (mutated || versionChanged) {
             config.set("config-version", CONFIG_VERSION);
             saveConfig();
             reloadConfig();
@@ -222,6 +210,31 @@ public final class FulcrumPlugin extends JavaPlugin {
         }
 
         return config;
+    }
+
+    private boolean ensureFeatureDefaults(FileConfiguration config) {
+        boolean mutated = false;
+        ConfigurationSection features = config.getConfigurationSection("features");
+        if (features == null) {
+            features = config.createSection("features");
+            mutated = true;
+        }
+        if (!features.contains("debug-minigame")) {
+            features.set("debug-minigame", false);
+            mutated = true;
+        }
+        return mutated;
+    }
+
+    @FunctionalInterface
+    private interface MigrationStep {
+        boolean apply(FulcrumPlugin plugin, FileConfiguration config);
+    }
+
+    private record ConfigMigration(int version, MigrationStep step) {
+        boolean apply(FulcrumPlugin plugin, FileConfiguration config) {
+            return step.apply(plugin, config);
+        }
     }
 
     @Override
