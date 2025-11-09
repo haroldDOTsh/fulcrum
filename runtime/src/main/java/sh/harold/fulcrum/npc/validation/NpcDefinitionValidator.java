@@ -49,6 +49,9 @@ public final class NpcDefinitionValidator {
         if (definition.equipment() == null) {
             errors.add(definition.id() + ": missing NPC equipment");
         }
+        if (definition.poiAnchor() == null || definition.poiAnchor().isBlank()) {
+            errors.add(definition.id() + ": missing poiAnchor");
+        }
 
         NpcProfile profile = definition.profile();
         if (profile == null) {

@@ -25,15 +25,16 @@ class NpcDefinitionValidatorTest {
                 .description("Lobby Guide")
                 .skin(NpcSkin.fromTexturePayload("value", "signature"))
                 .build();
-        return new NpcDefinition(
-                id,
-                profile,
-                NpcPose.standing(),
-                NpcBehavior.builder().build(),
-                NpcVisibility.everyone(),
-                NpcOptions.builder().build(),
-                NpcEquipment.empty()
-        );
+        return NpcDefinition.builder()
+                .id(id)
+                .profile(profile)
+                .pose(NpcPose.standing())
+                .behavior(NpcBehavior.builder().build())
+                .visibility(NpcVisibility.everyone())
+                .options(NpcOptions.builder().build())
+                .equipment(NpcEquipment.empty())
+                .poiAnchor("test.anchor")
+                .build();
     }
 
     @Test
@@ -54,15 +55,16 @@ class NpcDefinitionValidatorTest {
                 .description("Secret Keeper")
                 .skin(NpcSkin.fromTexturePayload("value", "signature"))
                 .build();
-        NpcDefinition definition = new NpcDefinition(
-                "hub:mystery",
-                profile,
-                NpcPose.standing(),
-                NpcBehavior.builder().build(),
-                NpcVisibility.everyone(),
-                NpcOptions.builder().build(),
-                NpcEquipment.empty()
-        );
+        NpcDefinition definition = NpcDefinition.builder()
+                .id("hub:mystery")
+                .profile(profile)
+                .pose(NpcPose.standing())
+                .behavior(NpcBehavior.builder().build())
+                .visibility(NpcVisibility.everyone())
+                .options(NpcOptions.builder().build())
+                .equipment(NpcEquipment.empty())
+                .poiAnchor("npc.mystery")
+                .build();
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
                 () -> validator.validateOrThrow(definition));

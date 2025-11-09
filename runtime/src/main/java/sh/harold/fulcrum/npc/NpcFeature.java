@@ -12,7 +12,6 @@ import sh.harold.fulcrum.npc.adapter.NpcAdapter;
 import sh.harold.fulcrum.npc.behavior.DefaultNpcInteractionHelpers;
 import sh.harold.fulcrum.npc.orchestration.PoiNpcOrchestrator;
 import sh.harold.fulcrum.npc.poi.PoiActivationBus;
-import sh.harold.fulcrum.npc.poi.PoiDescriptorRegistry;
 import sh.harold.fulcrum.npc.skin.HttpNpcSkinCacheService;
 import sh.harold.fulcrum.npc.skin.NpcSkinCacheService;
 import sh.harold.fulcrum.npc.view.NpcViewerService;
@@ -29,7 +28,6 @@ import java.util.logging.Logger;
 public final class NpcFeature implements PluginFeature {
     private JavaPlugin plugin;
     private NpcRegistry npcRegistry;
-    private PoiDescriptorRegistry descriptorRegistry;
     private PoiNpcOrchestrator orchestrator;
     private NpcViewerService viewerService;
     private ExecutorService skinExecutor;
@@ -40,13 +38,10 @@ public final class NpcFeature implements PluginFeature {
         Logger logger = plugin.getLogger();
 
         this.npcRegistry = new NpcRegistry();
-        this.descriptorRegistry = new PoiDescriptorRegistry();
         container.register(NpcRegistry.class, npcRegistry);
-        container.register(PoiDescriptorRegistry.class, descriptorRegistry);
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
             locator.registerService(NpcRegistry.class, npcRegistry);
-            locator.registerService(PoiDescriptorRegistry.class, descriptorRegistry);
         }
 
         PoiActivationBus activationBus = container.getOptional(PoiActivationBus.class)
@@ -80,7 +75,6 @@ public final class NpcFeature implements PluginFeature {
                 plugin,
                 logger,
                 npcRegistry,
-                descriptorRegistry,
                 activationBus,
                 adapter,
                 skinCache,
@@ -112,7 +106,6 @@ public final class NpcFeature implements PluginFeature {
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
             locator.unregisterService(NpcRegistry.class);
-            locator.unregisterService(PoiDescriptorRegistry.class);
         }
     }
 

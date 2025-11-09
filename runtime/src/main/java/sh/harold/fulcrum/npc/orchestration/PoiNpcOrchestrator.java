@@ -14,7 +14,10 @@ import sh.harold.fulcrum.npc.behavior.InteractionContext;
 import sh.harold.fulcrum.npc.behavior.NpcBehavior;
 import sh.harold.fulcrum.npc.behavior.NpcInteractionHelpers;
 import sh.harold.fulcrum.npc.behavior.PassiveContext;
-import sh.harold.fulcrum.npc.poi.*;
+import sh.harold.fulcrum.npc.poi.PoiActivatedEvent;
+import sh.harold.fulcrum.npc.poi.PoiActivationBus;
+import sh.harold.fulcrum.npc.poi.PoiActivationListener;
+import sh.harold.fulcrum.npc.poi.PoiDeactivatedEvent;
 import sh.harold.fulcrum.npc.skin.NpcSkinCacheService;
 import sh.harold.fulcrum.npc.view.NpcViewerService;
 
@@ -31,7 +34,6 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
     private final JavaPlugin plugin;
     private final Logger logger;
     private final NpcRegistry npcRegistry;
-    private final PoiDescriptorRegistry descriptorRegistry;
     private final PoiActivationBus activationBus;
     private final NpcAdapter adapter;
     private final NpcSkinCacheService skinCache;
@@ -45,7 +47,6 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
     public PoiNpcOrchestrator(JavaPlugin plugin,
                               Logger logger,
                               NpcRegistry npcRegistry,
-                              PoiDescriptorRegistry descriptorRegistry,
                               PoiActivationBus activationBus,
                               NpcAdapter adapter,
                               NpcSkinCacheService skinCache,
@@ -54,7 +55,6 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.logger = Objects.requireNonNull(logger, "logger");
         this.npcRegistry = Objects.requireNonNull(npcRegistry, "npcRegistry");
-        this.descriptorRegistry = Objects.requireNonNull(descriptorRegistry, "descriptorRegistry");
         this.activationBus = Objects.requireNonNull(activationBus, "activationBus");
         this.adapter = Objects.requireNonNull(adapter, "adapter");
         this.skinCache = Objects.requireNonNull(skinCache, "skinCache");
@@ -65,18 +65,11 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
 
     @Override
     public void onActivated(PoiActivatedEvent event) {
-        event.anchorId().ifPresent(anchor -> {
-            List<PoiNpcAssignment> assignments = descriptorRegistry.resolve(anchor);
-            if (assignments.isEmpty()) {
-                return;
-            }
-            for (PoiNpcAssignment assignment : assignments) {
-                npcRegistry.find(assignment.npcId())
-                        .ifPresentOrElse(definition ->
-                                        scheduleSpawn(event, assignment, definition),
-                                () -> logger.warning(() -> "No NPC definition registered for id " + assignment.npcId()));
-            }
-        });
+        event.anchorId().ifPresent(anchor ->
+                npcRegistry.all().stream()
+                        .filter(definition -> anchor.equalsIgnoreCase(definition.poiAnchor()))
+                        .forEach(definition -> scheduleSpawn(event, definition))
+        );
     }
 
     @Override
@@ -93,25 +86,23 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         });
     }
 
-    private void scheduleSpawn(PoiActivatedEvent event,
-                               PoiNpcAssignment assignment,
-                               NpcDefinition definition) {
-        Location location = resolveLocation(event, assignment);
+    private void scheduleSpawn(PoiActivatedEvent event, NpcDefinition definition) {
+        Location location = resolveLocation(event, definition);
         UUID instanceId = UUID.randomUUID();
         skinCache.resolve(definition.profile())
                 .thenCompose(payload -> adapter.spawn(
-                        new NpcSpawnRequest(instanceId, definition, location, event, assignment, payload)))
-                .thenAccept(handle -> storeHandle(event, assignment, handle))
+                        new NpcSpawnRequest(instanceId, definition, location, event, payload)))
+                .thenAccept(handle -> storeHandle(handle, event))
                 .exceptionally(exception -> {
                     logger.log(Level.WARNING,
-                            "Failed to spawn NPC " + definition.id() + " for POI " + assignment.poiAnchor(),
+                            "Failed to spawn NPC " + definition.id() + " for POI " + definition.poiAnchor(),
                             exception);
                     return null;
                 });
     }
 
-    private void storeHandle(PoiActivatedEvent event, PoiNpcAssignment assignment, NpcHandle handle) {
-        PoiInstanceKey key = PoiInstanceKey.from(event.worldName(), assignment.poiAnchor(), event.location());
+    private void storeHandle(NpcHandle handle, PoiActivatedEvent event) {
+        PoiInstanceKey key = PoiInstanceKey.from(event.worldName(), handle.definition().poiAnchor(), event.location());
         activeHandles.computeIfAbsent(key, ignored -> new CopyOnWriteArrayList<>()).add(handle);
         viewerService.register(handle, handle.definition());
         instanceRegistry.register(handle);
@@ -173,13 +164,13 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         );
     }
 
-    private Location resolveLocation(PoiActivatedEvent event, PoiNpcAssignment assignment) {
+    private Location resolveLocation(PoiActivatedEvent event, NpcDefinition definition) {
         Location base = event.location();
-        Location spawn = base.clone().add(assignment.relativeOffset());
+        Location spawn = base.clone().add(definition.relativeOffset());
         JsonObject configuration = event.configuration();
         float baseYaw = configuration.has("yaw") ? configuration.get("yaw").getAsFloat() : base.getYaw();
-        spawn.setYaw(baseYaw + assignment.yawOffset());
-        spawn.setPitch(assignment.pitchOffset());
+        spawn.setYaw(baseYaw + definition.yawOffset());
+        spawn.setPitch(definition.pitchOffset());
         return spawn;
     }
 

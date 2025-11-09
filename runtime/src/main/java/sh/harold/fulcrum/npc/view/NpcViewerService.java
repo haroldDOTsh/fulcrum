@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.npc.view;
 
+import io.papermc.paper.event.packet.PlayerChunkLoadEvent;
+import io.papermc.paper.event.packet.PlayerChunkUnloadEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -94,6 +96,16 @@ public final class NpcViewerService implements Listener, AutoCloseable {
                 && event.getFrom().getBlockZ() == event.getTo().getBlockZ()) {
             return;
         }
+        refreshPlayer(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onChunkLoad(PlayerChunkLoadEvent event) {
+        refreshPlayer(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onChunkUnload(PlayerChunkUnloadEvent event) {
         refreshPlayer(event.getPlayer());
     }
 

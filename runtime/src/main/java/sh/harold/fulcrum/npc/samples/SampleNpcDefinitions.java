@@ -30,15 +30,16 @@ public final class SampleNpcDefinitions {
                 })
                 .interactionCooldownTicks(20));
 
-        LOBBY_GREETER = new NpcDefinition(
-                GREETER_ID,
-                profile,
-                NpcPose.standing(),
-                behavior,
-                NpcVisibility.everyone(),
-                NpcOptions.builder().build(),
-                NpcEquipment.empty()
-        );
+        LOBBY_GREETER = NpcDefinition.builder()
+                .id(GREETER_ID)
+                .profile(profile)
+                .pose(NpcPose.standing())
+                .behavior(behavior)
+                .visibility(NpcVisibility.everyone())
+                .options(NpcOptions.builder().build())
+                .equipment(NpcEquipment.empty())
+                .poiAnchor("npc.greeter")
+                .build();
     }
 
     private SampleNpcDefinitions() {
