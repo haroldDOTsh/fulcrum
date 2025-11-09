@@ -15,13 +15,13 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public/")
     maven("https://oss.sonatype.org/content/groups/public/")
     maven("https://maven.enginehub.org/repo/") // FAWE repository
+    maven("https://maven.citizensnpcs.co/repo") // Citizens2 repository
 }
 
 dependencies {
     implementation(project(":common-api"))
     implementation(project(":common-api:message"))
 
-    // Paper API (temporary fallback until userdev configuration is resolved)
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.10-R0.1-SNAPSHOT")
 
     // Other runtime deps
@@ -45,6 +45,12 @@ dependencies {
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Core:2.11.2")
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit:2.11.2") {
         isTransitive = false
+    }
+
+    //NPCs
+
+    compileOnly("net.citizensnpcs:citizens-main:2.0.40-SNAPSHOT") {
+        exclude(group = "*", module = "*") // mirrors the wiki's <exclusions>
     }
 
     // (Optional test setup)
