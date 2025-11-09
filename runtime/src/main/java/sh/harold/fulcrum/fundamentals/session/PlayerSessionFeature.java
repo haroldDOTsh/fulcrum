@@ -13,6 +13,7 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
 import sh.harold.fulcrum.data.playtime.PlaytimeTracker;
+import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
@@ -20,6 +21,8 @@ import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 import sh.harold.fulcrum.runtime.redis.RedisConfig;
 
 import java.io.File;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
@@ -37,6 +40,8 @@ public class PlayerSessionFeature implements PluginFeature {
     private PlayerSessionLogRepository sessionLogRepository;
     private JavaPlugin plugin;
     private PlaytimeTracker playtimeTracker;
+    private final Map<String, PlayerSessionService.ServerSlotAttachment> slotAttachments = new ConcurrentHashMap<>();
+    private SimpleSlotOrchestrator slotOrchestrator;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -74,6 +79,11 @@ public class PlayerSessionFeature implements PluginFeature {
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(PlayerSessionService.class, sessionService);
             ServiceLocatorImpl.getInstance().registerService(PlaytimeTracker.class, playtimeTracker);
+        }
+
+        if (isStaticServiceNode(environment, resolvedIdentifier)) {
+            slotOrchestrator = resolveSlotOrchestrator(container);
+            wireSlotFamilyTracking();
         }
 
         messageBus = container.getOptional(MessageBus.class).orElse(null);
@@ -117,6 +127,12 @@ public class PlayerSessionFeature implements PluginFeature {
             container.unregister(PlayerReservationService.class);
             container.unregister(PlaytimeTracker.class);
         }
+        slotAttachments.values().forEach(attachment -> {
+            if (attachment != null) {
+                attachment.close();
+            }
+        });
+        slotAttachments.clear();
         if (messageBus != null && reservationHandler != null) {
             messageBus.unsubscribe(ChannelConstants.PLAYER_RESERVATION_REQUEST, reservationHandler);
         }
@@ -193,6 +209,40 @@ public class PlayerSessionFeature implements PluginFeature {
         } catch (IllegalStateException ignored) {
             return "unknown";
         }
+    }
+
+    private SimpleSlotOrchestrator resolveSlotOrchestrator(DependencyContainer container) {
+        return container.getOptional(SimpleSlotOrchestrator.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance()
+                        .findService(SimpleSlotOrchestrator.class)
+                        .orElse(null)
+                        : null);
+    }
+
+    private void wireSlotFamilyTracking() {
+        if (slotOrchestrator == null || sessionService == null) {
+            return;
+        }
+        slotOrchestrator.addProvisionListener(slot -> {
+            if (slot == null || slot.familyId() == null) {
+                return;
+            }
+            PlayerSessionService.ServerSlotAttachment attachment = sessionService.attachToSlot(slot);
+            PlayerSessionService.ServerSlotAttachment previous = slotAttachments.put(slot.slotId(), attachment);
+            if (previous != null) {
+                previous.close();
+            }
+        });
+    }
+
+    private boolean isStaticServiceNode(String environment, ServerIdentifier identifier) {
+        String role = environment != null ? environment : identifier != null ? identifier.getRole() : null;
+        if (role != null && role.equalsIgnoreCase("game")) {
+            return false;
+        }
+        String type = identifier != null ? identifier.getType() : null;
+        return type == null || (!type.equalsIgnoreCase("MINI") && !type.equalsIgnoreCase("MEGA"));
     }
 
     private RedisConfig loadRedisConfig(JavaPlugin plugin) {

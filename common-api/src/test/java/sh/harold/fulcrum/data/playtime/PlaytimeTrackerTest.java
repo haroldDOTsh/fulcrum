@@ -53,6 +53,37 @@ class PlaytimeTrackerTest {
         assertThat(processed).containsKey("session:segment-1");
     }
 
+    @Test
+    void recordSegmentCountsServerFamily() {
+        UUID playerId = UUID.fromString("c2bb920c-5ee8-40a0-9aef-8080d9fffb46");
+        PlayerSessionRecord session = PlayerSessionRecord.newSession(playerId, "session", "server");
+
+        PlayerSessionRecord.Segment segment = new PlayerSessionRecord.Segment();
+        segment.setSegmentId("segment-server");
+        segment.setType("SERVER");
+        segment.setStartedAt(5_000L);
+        segment.setEndedAt(9_000L);
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("family", "lobby.main");
+        metadata.put("variant", "main");
+        segment.setMetadata(metadata);
+
+        tracker.recordSegment(session, segment);
+
+        Map<String, Object> playtime = session.getPlaytime();
+        assertThat(playtime.get("totalMs")).isEqualTo(4_000L);
+
+        Map<String, Object> families = cast(playtime.get("families"));
+        Map<String, Object> family = cast(families.get("lobby_main"));
+        assertThat(family.get("familyId")).isEqualTo("lobby.main");
+        assertThat(family.get("totalMs")).isEqualTo(4_000L);
+
+        Map<String, Object> variants = cast(family.get("variants"));
+        Map<String, Object> variant = cast(variants.get("main"));
+        assertThat(variant.get("variantId")).isEqualTo("main");
+        assertThat(variant.get("totalMs")).isEqualTo(4_000L);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> cast(Object value) {
         return (Map<String, Object>) value;

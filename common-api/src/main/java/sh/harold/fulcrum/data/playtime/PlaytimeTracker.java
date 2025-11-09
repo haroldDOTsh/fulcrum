@@ -124,19 +124,12 @@ public final class PlaytimeTracker {
         return text != null && !text.isBlank() ? text : null;
     }
 
-    private static String nullSafe(String value) {
-        return value != null ? value : "";
-    }
-
     private static String sanitiseKey(String key) {
         return key.replace('.', '_').replace('$', '_');
     }
 
     public void recordSegment(PlayerSessionRecord session, PlayerSessionRecord.Segment segment) {
         if (session == null || segment == null) {
-            return;
-        }
-        if (!"MINIGAME".equalsIgnoreCase(nullSafe(segment.getType()))) {
             return;
         }
         if (segment.getEndedAt() == null) {

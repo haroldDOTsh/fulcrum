@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.common.settings.PlayerDebugLevel;
 import sh.harold.fulcrum.data.playtime.PlaytimeTracker;
+import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
@@ -35,6 +36,10 @@ public class PlayerSessionService {
     private final String fallbackEnvironment;
     private final ServerIdentifier serverIdentifier;
     private final PlaytimeTracker playtimeTracker;
+    private final Object serverFamilyLock = new Object();
+    private volatile String serverFamily;
+    private volatile String serverVariant;
+    private volatile String registeredSlotId;
 
     private final ConcurrentHashMap<UUID, String> activeSessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, PlayerSessionRecord> localRecords = new ConcurrentHashMap<>();
@@ -53,6 +58,40 @@ public class PlayerSessionService {
         this.serverIdentifier = serverIdentifier;
         this.playtimeTracker = playtimeTracker;
         this.redisAvailable = redisOperations != null && redisOperations.isAvailable();
+        this.serverFamily = null;
+        this.serverVariant = null;
+    }
+
+    private static String normaliseIdentifier(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Allows static-service modules to tag SERVER segments with their logical family/variant.
+     * Passing null clears the respective value so tracking falls back to minigame routes only.
+     */
+    public void registerServerFamily(String family, String variant) {
+        synchronized (serverFamilyLock) {
+            this.serverFamily = normaliseIdentifier(family);
+            this.serverVariant = normaliseIdentifier(variant);
+            this.registeredSlotId = null;
+        }
     }
 
     public PlayerSessionHandle attachOrCreateSession(UUID playerId, Map<String, Object> baseState) {
@@ -140,16 +179,33 @@ public class PlayerSessionService {
         localHandoffs.clear();
     }
 
-    public void startServerSegment(UUID playerId) {
-        String serverId = currentServerId();
-        String environment = currentEnvironment();
-        Map<String, Object> metadata = new HashMap<>();
-        if (environment != null) {
-            metadata.put("environment", environment);
+    public void clearRegisteredServerFamily() {
+        synchronized (serverFamilyLock) {
+            this.serverFamily = null;
+            this.serverVariant = null;
+            this.registeredSlotId = null;
         }
-        metadata.put("serverId", serverId);
-        String context = environment != null ? environment : serverId;
-        startSegment(playerId, "SERVER", context, metadata, serverId);
+    }
+
+    /**
+     * Convenience helper for static services: attach session tracking to a provisioned slot.
+     * Returns a handle that should be closed when the slot is torn down.
+     */
+    public ServerSlotAttachment attachToSlot(SimpleSlotOrchestrator.ProvisionedSlot slot) {
+        if (slot == null) {
+            return ServerSlotAttachment.noOp();
+        }
+        String family = normaliseIdentifier(slot.familyId());
+        if (family == null) {
+            return ServerSlotAttachment.noOp();
+        }
+        String variant = normaliseIdentifier(firstNonBlank(slot.variant(), slot.metadata().get("variant")));
+        synchronized (serverFamilyLock) {
+            this.serverFamily = family;
+            this.serverVariant = variant;
+            this.registeredSlotId = slot.slotId();
+        }
+        return new ServerSlotAttachment(this, slot.slotId());
     }
 
     public void startSegment(UUID playerId,
@@ -612,6 +668,78 @@ public class PlayerSessionService {
         String environment = currentEnvironment();
         if (environment != null && !environment.isBlank()) {
             record.getCore().put("environment", environment);
+        }
+    }
+
+    public void startServerSegment(UUID playerId) {
+        String serverId = currentServerId();
+        String environment = currentEnvironment();
+        Map<String, Object> metadata = new HashMap<>();
+        if (environment != null) {
+            metadata.put("environment", environment);
+        }
+        metadata.put("serverId", serverId);
+        applyServerDefaults(metadata);
+        String context = serverFamily != null
+                ? serverFamily
+                : environment != null ? environment : serverId;
+        startSegment(playerId, "SERVER", context, metadata, serverId);
+    }
+
+    private void applyServerDefaults(Map<String, Object> metadata) {
+        String family = serverFamily;
+        if (family == null) {
+            return;
+        }
+        metadata.putIfAbsent("family", family);
+        String variant = serverVariant;
+        if (variant != null) {
+            metadata.putIfAbsent("variant", variant);
+        }
+    }
+
+    private void detachSlot(String slotId) {
+        if (slotId == null) {
+            return;
+        }
+        synchronized (serverFamilyLock) {
+            if (Objects.equals(this.registeredSlotId, slotId)) {
+                this.serverFamily = null;
+                this.serverVariant = null;
+                this.registeredSlotId = null;
+            }
+        }
+    }
+
+    public static final class ServerSlotAttachment implements AutoCloseable {
+        private static final ServerSlotAttachment NO_OP = new ServerSlotAttachment(null, null, true);
+
+        private final PlayerSessionService owner;
+        private final String slotId;
+        private final boolean passive;
+        private boolean closed;
+
+        private ServerSlotAttachment(PlayerSessionService owner, String slotId) {
+            this(owner, slotId, false);
+        }
+
+        private ServerSlotAttachment(PlayerSessionService owner, String slotId, boolean passive) {
+            this.owner = owner;
+            this.slotId = slotId;
+            this.passive = passive;
+        }
+
+        static ServerSlotAttachment noOp() {
+            return NO_OP;
+        }
+
+        @Override
+        public void close() {
+            if (closed || passive || owner == null || slotId == null) {
+                return;
+            }
+            closed = true;
+            owner.detachSlot(slotId);
         }
     }
 
