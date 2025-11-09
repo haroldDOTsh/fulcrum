@@ -65,11 +65,9 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
 
     @Override
     public void onActivated(PoiActivatedEvent event) {
-        event.anchorId().ifPresent(anchor ->
-                npcRegistry.all().stream()
-                        .filter(definition -> anchor.equalsIgnoreCase(definition.poiAnchor()))
-                        .forEach(definition -> scheduleSpawn(event, definition))
-        );
+        event.anchorId().ifPresent(anchor -> npcRegistry.all().stream()
+                .filter(definition -> anchor.equalsIgnoreCase(definition.poiAnchor()))
+                .forEach(definition -> schedulePoiSpawn(event, definition)));
     }
 
     @Override
@@ -86,23 +84,38 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         });
     }
 
-    private void scheduleSpawn(PoiActivatedEvent event, NpcDefinition definition) {
+    private void schedulePoiSpawn(PoiActivatedEvent event, NpcDefinition definition) {
         Location location = resolveLocation(event, definition);
+        spawnFromDefinition(definition, location, event.location(), event.worldName(), definition.poiAnchor(), event, 0L);
+    }
+
+    private void spawnFromDefinition(NpcDefinition definition,
+                                     Location location,
+                                     Location keyLocation,
+                                     String worldName,
+                                     String anchor,
+                                     PoiActivatedEvent event,
+                                     long lifetimeTicks) {
         UUID instanceId = UUID.randomUUID();
+        Location spawnLocation = location.clone();
         skinCache.resolve(definition.profile())
                 .thenCompose(payload -> adapter.spawn(
-                        new NpcSpawnRequest(instanceId, definition, location, event, payload)))
-                .thenAccept(handle -> storeHandle(handle, event))
+                        new NpcSpawnRequest(instanceId, definition, spawnLocation, event, payload)))
+                .thenAccept(handle -> {
+                    storeHandle(handle, worldName, anchor, keyLocation);
+                    if (lifetimeTicks > 0) {
+                        plugin.getServer().getScheduler().runTaskLater(plugin, () -> despawnHandle(handle), lifetimeTicks);
+                    }
+                })
                 .exceptionally(exception -> {
                     logger.log(Level.WARNING,
-                            "Failed to spawn NPC " + definition.id() + " for POI " + definition.poiAnchor(),
-                            exception);
+                            "Failed to spawn NPC " + definition.id() + " (anchor=" + anchor + ")", exception);
                     return null;
                 });
     }
 
-    private void storeHandle(NpcHandle handle, PoiActivatedEvent event) {
-        PoiInstanceKey key = PoiInstanceKey.from(event.worldName(), handle.definition().poiAnchor(), event.location());
+    private void storeHandle(NpcHandle handle, String worldName, String anchor, Location keyLocation) {
+        PoiInstanceKey key = PoiInstanceKey.from(worldName, anchor, keyLocation);
         activeHandles.computeIfAbsent(key, ignored -> new CopyOnWriteArrayList<>()).add(handle);
         viewerService.register(handle, handle.definition());
         instanceRegistry.register(handle);
@@ -135,6 +148,7 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         }
         viewerService.unregister(handle.instanceId());
         instanceRegistry.unregister(handle);
+        activeHandles.values().forEach(list -> list.remove(handle));
         ActiveNpc active = activeByInstance.remove(handle.instanceId());
         if (active != null && active.task() != null) {
             active.task().cancel();
@@ -172,6 +186,12 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         spawn.setYaw(baseYaw + definition.yawOffset());
         spawn.setPitch(definition.pitchOffset());
         return spawn;
+    }
+
+    public void spawnTemporaryNpc(NpcDefinition definition, Location location, long lifetimeTicks) {
+        String anchor = definition.poiAnchor() != null ? definition.poiAnchor() : definition.id();
+        String worldName = location.getWorld() != null ? location.getWorld().getName() : "unknown";
+        spawnFromDefinition(definition, location, location, worldName, anchor, null, lifetimeTicks);
     }
 
     @Override

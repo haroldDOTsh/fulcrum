@@ -4,12 +4,14 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.menu.MenuService;
+import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.npc.adapter.CitizensNpcAdapter;
 import sh.harold.fulcrum.npc.adapter.NpcAdapter;
 import sh.harold.fulcrum.npc.behavior.DefaultNpcInteractionHelpers;
+import sh.harold.fulcrum.npc.command.NpcDebugCommand;
 import sh.harold.fulcrum.npc.orchestration.PoiNpcOrchestrator;
 import sh.harold.fulcrum.npc.poi.PoiActivationBus;
 import sh.harold.fulcrum.npc.skin.HttpNpcSkinCacheService;
@@ -84,6 +86,11 @@ public final class NpcFeature implements PluginFeature {
                         resolveService(container, MenuService.class),
                         logger)
         );
+        CommandRegistrar.register(new NpcDebugCommand(orchestrator).build());
+        container.register(PoiNpcOrchestrator.class, orchestrator);
+        if (locator != null) {
+            locator.registerService(PoiNpcOrchestrator.class, orchestrator);
+        }
         plugin.getServer().getPluginManager().registerEvents(new sh.harold.fulcrum.npc.orchestration.NpcInteractionListener(orchestrator), plugin);
 
         logger.info("NPC toolkit initialized (definitions=" + npcRegistry.size() + ")");
@@ -106,6 +113,7 @@ public final class NpcFeature implements PluginFeature {
         ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
         if (locator != null) {
             locator.unregisterService(NpcRegistry.class);
+            locator.unregisterService(PoiNpcOrchestrator.class);
         }
     }
 

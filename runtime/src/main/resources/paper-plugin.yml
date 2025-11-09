@@ -16,6 +16,9 @@ dependencies:
     FastAsyncWorldEdit:
       load: BEFORE
       required: true
+    Citizens:
+      load: AFTER
+      required: true
   bootstrap: []
 
 # Load order

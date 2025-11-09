@@ -21,7 +21,7 @@ public record NpcSpawnRequest(UUID instanceId, NpcDefinition definition, Locatio
         this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
         this.definition = Objects.requireNonNull(definition, "definition");
         this.location = Objects.requireNonNull(location, "location").clone();
-        this.activationEvent = Objects.requireNonNull(activationEvent, "activationEvent");
+        this.activationEvent = activationEvent;
         this.skin = Objects.requireNonNull(skin, "skin");
     }
 
