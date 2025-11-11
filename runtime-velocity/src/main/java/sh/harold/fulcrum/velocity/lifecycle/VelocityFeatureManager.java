@@ -65,6 +65,7 @@ public class VelocityFeatureManager {
         // Register features in dependency order
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
+        registerFeature(new sh.harold.fulcrum.velocity.fundamentals.cooldown.VelocityCooldownFeature());
         registerFeature(new VelocityEnvironmentDirectoryFeature());
         registerFeature(new VelocityNetworkConfigFeature());
         registerFeature(new VelocityMotdFeature());
