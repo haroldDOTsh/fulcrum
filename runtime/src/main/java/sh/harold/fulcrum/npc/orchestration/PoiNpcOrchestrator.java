@@ -5,6 +5,7 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+import sh.harold.fulcrum.common.cooldown.*;
 import sh.harold.fulcrum.npc.NpcDefinition;
 import sh.harold.fulcrum.npc.NpcRegistry;
 import sh.harold.fulcrum.npc.adapter.NpcAdapter;
@@ -21,6 +22,7 @@ import sh.harold.fulcrum.npc.poi.PoiDeactivatedEvent;
 import sh.harold.fulcrum.npc.skin.NpcSkinCacheService;
 import sh.harold.fulcrum.npc.view.NpcViewerService;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -39,6 +41,7 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
     private final NpcSkinCacheService skinCache;
     private final NpcViewerService viewerService;
     private final NpcInteractionHelpers helpers;
+    private final CooldownRegistry cooldownRegistry;
     private final Map<PoiInstanceKey, CopyOnWriteArrayList<NpcHandle>> activeHandles = new ConcurrentHashMap<>();
     private final Map<UUID, ActiveNpc> activeByInstance = new ConcurrentHashMap<>();
     private final PoiActivationBus.Subscription subscription;
@@ -51,6 +54,7 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
                               NpcAdapter adapter,
                               NpcSkinCacheService skinCache,
                               NpcViewerService viewerService,
+                              CooldownRegistry cooldownRegistry,
                               NpcInteractionHelpers helpers) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.logger = Objects.requireNonNull(logger, "logger");
@@ -59,6 +63,7 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         this.adapter = Objects.requireNonNull(adapter, "adapter");
         this.skinCache = Objects.requireNonNull(skinCache, "skinCache");
         this.viewerService = Objects.requireNonNull(viewerService, "viewerService");
+        this.cooldownRegistry = Objects.requireNonNull(cooldownRegistry, "cooldownRegistry");
         this.helpers = Objects.requireNonNull(helpers, "helpers");
         this.subscription = activationBus.subscribe(this);
     }
@@ -167,13 +172,48 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         if (active == null) {
             return;
         }
-        if (!active.canInteract(player.getUniqueId(), handle.definition().behavior().interactionCooldownTicks())) {
+        CooldownKey cooldownKey = CooldownKeys.npcInteraction(player.getUniqueId(), handle.instanceId());
+        int cooldownTicks = Math.max(0, handle.definition().behavior().interactionCooldownTicks());
+        if (cooldownTicks <= 0) {
+            executeInteraction(active, handle, player, cooldownKey);
             return;
         }
+        long cooldownMillis = (long) Math.max(1, cooldownTicks) * 50L;
+        Duration window = Duration.ofMillis(cooldownMillis);
+        cooldownRegistry.acquire(cooldownKey, CooldownSpec.rejecting(window))
+                .thenAccept(acquisition -> handleAcquisition(acquisition, active, handle, player, cooldownKey))
+                .exceptionally(throwable -> {
+                    logger.log(Level.WARNING, "Failed to enforce NPC interaction cooldown", throwable);
+                    return null;
+                });
+    }
+
+    private void handleAcquisition(CooldownAcquisition acquisition,
+                                   ActiveNpc active,
+                                   NpcHandle handle,
+                                   Player player,
+                                   CooldownKey cooldownKey) {
+        if (!(acquisition instanceof CooldownAcquisition.Accepted)) {
+            return;
+        }
+        if (!player.isOnline()) {
+            return;
+        }
+        ActiveNpc current = activeByInstance.get(handle.instanceId());
+        if (current != active) {
+            return;
+        }
+        executeInteraction(active, handle, player, cooldownKey);
+    }
+
+    private void executeInteraction(ActiveNpc active,
+                                    NpcHandle handle,
+                                    Player player,
+                                    CooldownKey cooldownKey) {
         plugin.getServer().getScheduler().runTask(
                 plugin,
                 () -> active.behavior().interactionHandler().execute(
-                        new DefaultInteractionContext(handle, player)
+                        new DefaultInteractionContext(handle, player, cooldownKey)
                 )
         );
     }
@@ -222,39 +262,7 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         }
     }
 
-    private static final class ActiveNpc {
-        private final NpcHandle handle;
-        private final NpcBehavior behavior;
-        private final BukkitTask task;
-        private final Map<UUID, Long> cooldowns = new ConcurrentHashMap<>();
-
-        private ActiveNpc(NpcHandle handle, NpcBehavior behavior, BukkitTask task) {
-            this.handle = handle;
-            this.behavior = behavior;
-            this.task = task;
-        }
-
-        public NpcHandle handle() {
-            return handle;
-        }
-
-        public NpcBehavior behavior() {
-            return behavior;
-        }
-
-        public BukkitTask task() {
-            return task;
-        }
-
-        private boolean canInteract(UUID playerId, int cooldownTicks) {
-            long now = System.currentTimeMillis();
-            long nextAllowed = cooldowns.getOrDefault(playerId, 0L);
-            if (now < nextAllowed) {
-                return false;
-            }
-            cooldowns.put(playerId, now + (Math.max(1, cooldownTicks) * 50L));
-            return true;
-        }
+    private record ActiveNpc(NpcHandle handle, NpcBehavior behavior, BukkitTask task) {
     }
 
     private class DefaultPassiveContext implements PassiveContext {
@@ -292,10 +300,12 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
 
     private final class DefaultInteractionContext extends DefaultPassiveContext implements InteractionContext {
         private final Player player;
+        private final CooldownKey cooldownKey;
 
-        private DefaultInteractionContext(NpcHandle handle, Player player) {
+        private DefaultInteractionContext(NpcHandle handle, Player player, CooldownKey cooldownKey) {
             super(handle);
             this.player = player;
+            this.cooldownKey = cooldownKey;
         }
 
         @Override
@@ -306,6 +316,11 @@ public final class PoiNpcOrchestrator implements PoiActivationListener, AutoClos
         @Override
         public UUID playerId() {
             return player.getUniqueId();
+        }
+
+        @Override
+        public CooldownKey cooldownKey() {
+            return cooldownKey;
         }
     }
 }

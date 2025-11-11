@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.menu.MenuService;
+import sh.harold.fulcrum.common.cooldown.CooldownRegistry;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -73,6 +74,10 @@ public final class NpcFeature implements PluginFeature {
         this.viewerService = new NpcViewerService(plugin,
                 resolveService(container, sh.harold.fulcrum.api.rank.RankService.class),
                 resolveService(container, sh.harold.fulcrum.fundamentals.session.PlayerSessionService.class));
+        CooldownRegistry cooldownRegistry = resolveService(container, CooldownRegistry.class);
+        if (cooldownRegistry == null) {
+            throw new IllegalStateException("Cooldown registry unavailable; ensure CooldownFeature initializes before NpcFeature");
+        }
         this.orchestrator = new PoiNpcOrchestrator(
                 plugin,
                 logger,
@@ -81,6 +86,7 @@ public final class NpcFeature implements PluginFeature {
                 adapter,
                 skinCache,
                 viewerService,
+                cooldownRegistry,
                 new DefaultNpcInteractionHelpers(
                         resolveService(container, sh.harold.fulcrum.api.rank.RankService.class),
                         resolveService(container, MenuService.class),
