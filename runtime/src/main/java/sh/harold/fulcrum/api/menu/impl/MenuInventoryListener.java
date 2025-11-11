@@ -43,11 +43,10 @@ public class MenuInventoryListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onInventoryClick(InventoryClickEvent event) {
-        if (!(event.getWhoClicked() instanceof Player)) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
 
-        Player player = (Player) event.getWhoClicked();
         Inventory clickedInventory = event.getClickedInventory();
         InventoryView view = event.getView();
 
@@ -106,8 +105,7 @@ public class MenuInventoryListener implements Listener {
         }
 
         // Handle button clicks
-        if (item instanceof MenuButton) {
-            MenuButton button = (MenuButton) item;
+        if (item instanceof MenuButton button) {
             try {
                 // Special handling for navigation buttons
                 if (button == MenuButton.BACK) {
@@ -119,7 +117,7 @@ public class MenuInventoryListener implements Listener {
                     menuService.refreshMenu(player);
                 } else {
                     // Regular button click
-                    button.handleClick(player, event.getClick());
+                    button.handleClick(menu, slot, player, event.getClick());
                 }
             } catch (Exception e) {
                 plugin.getLogger().log(Level.SEVERE, "Error handling button click", e);
@@ -130,11 +128,10 @@ public class MenuInventoryListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onInventoryDrag(InventoryDragEvent event) {
-        if (!(event.getWhoClicked() instanceof Player)) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
 
-        Player player = (Player) event.getWhoClicked();
         InventoryView view = event.getView();
 
         // Check if this is a menu inventory
@@ -149,11 +146,10 @@ public class MenuInventoryListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onInventoryClose(InventoryCloseEvent event) {
-        if (!(event.getPlayer() instanceof Player)) {
+        if (!(event.getPlayer() instanceof Player player)) {
             return;
         }
 
-        Player player = (Player) event.getPlayer();
         Inventory inventory = event.getInventory();
 
         // Check if this is a menu inventory
@@ -267,17 +263,8 @@ public class MenuInventoryListener implements Listener {
     }
 
     /**
-     * Record of a recent click for double-click prevention.
-     */
-    private static class ClickRecord {
-        final int slot;
-        final ClickType clickType;
-        final Instant timestamp;
-
-        ClickRecord(int slot, ClickType clickType, Instant timestamp) {
-            this.slot = slot;
-            this.clickType = clickType;
-            this.timestamp = timestamp;
-        }
+         * Record of a recent click for double-click prevention.
+         */
+        private record ClickRecord(int slot, ClickType clickType, Instant timestamp) {
     }
 }

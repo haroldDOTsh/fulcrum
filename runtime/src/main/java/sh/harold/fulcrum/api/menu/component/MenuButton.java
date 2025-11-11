@@ -12,7 +12,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import sh.harold.fulcrum.api.menu.Menu;
 import sh.harold.fulcrum.api.menu.util.ColorUtils;
+import sh.harold.fulcrum.common.cooldown.*;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -24,6 +26,9 @@ import java.util.function.Consumer;
  * Represents an interactive button in a menu with click handlers and cooldown support.
  */
 public class MenuButton implements MenuItem {
+
+    private static final String DEFAULT_COOLDOWN_NAMESPACE = "menu";
+    private static volatile CooldownRegistry sharedCooldownRegistry;
 
     // FIXED: Add &r prefix to all predefined buttons to prevent italicization
     public static final MenuButton CLOSE = builder(Material.BARRIER)
@@ -129,6 +134,8 @@ public class MenuButton implements MenuItem {
             throw new RuntimeException("MenuButton positioning validation failed: " + e.getMessage(), e);
         }
     }
+    private final Map<UUID, Instant> localCooldowns = new ConcurrentHashMap<>();
+    private final String cooldownGroup;
 
     // Slot calculation utility methods for different menu sizes
     // Standard menu sizes: 3 rows=27 slots, 4 rows=36 slots, 5 rows=45 slots, 6 rows=54 slots
@@ -137,21 +144,13 @@ public class MenuButton implements MenuItem {
     private final int slot;
     private final Map<ClickType, Consumer<Player>> clickHandlers;
     private final Duration cooldown;
-    private final Map<UUID, Instant> cooldowns = new ConcurrentHashMap<>();
-    private final Sound sound;
-    private final float volume;
-    private final float pitch;
-    private ItemStack displayItem;
-    private Component name;
-    private List<Component> lore;
-    private boolean anchored;
-
     private MenuButton(Builder builder) {
         this.slot = builder.slot;
         this.name = builder.name;
         this.lore = new ArrayList<>(builder.lore);
         this.clickHandlers = new HashMap<>(builder.clickHandlers);
         this.cooldown = builder.cooldown;
+        this.cooldownGroup = builder.cooldownGroup;
         this.sound = builder.sound;
         this.volume = builder.volume;
         this.pitch = builder.pitch;
@@ -169,6 +168,21 @@ public class MenuButton implements MenuItem {
         // Build the ItemStack
         this.displayItem = new ItemStack(builder.material, builder.amount);
         updateItemMeta();
+    }
+
+    public static void bindCooldownRegistry(CooldownRegistry registry) {
+        sharedCooldownRegistry = registry;
+    }
+    private final Sound sound;
+    private final float volume;
+    private final float pitch;
+    private ItemStack displayItem;
+    private final Component name;
+    private final List<Component> lore;
+    private boolean anchored;
+
+    public static void clearCooldownRegistry() {
+        sharedCooldownRegistry = null;
     }
 
     // Positioned button factory methods
@@ -620,25 +634,17 @@ public class MenuButton implements MenuItem {
     /**
      * Handles a click event on this button.
      *
+     * @param menu      the active menu
+     * @param slot      slot that was clicked
      * @param player    the player who clicked
      * @param clickType the type of click
      * @return true if the click was handled, false otherwise
      */
-    public boolean handleClick(Player player, ClickType clickType) {
-        // Check cooldown
+    public boolean handleClick(Menu menu, int slot, Player player, ClickType clickType) {
         if (cooldown != null && !cooldown.isZero()) {
-            UUID playerId = player.getUniqueId();
-            Instant lastClick = cooldowns.get(playerId);
-            Instant now = Instant.now();
-
-            if (lastClick != null && Duration.between(lastClick, now).compareTo(cooldown) < 0) {
-                Duration remaining = cooldown.minus(Duration.between(lastClick, now));
-                player.sendMessage(Component.text("Please wait " + formatDuration(remaining) + " before clicking again!",
-                        NamedTextColor.RED));
+            if (!acquireCooldown(menu, slot, player)) {
                 return false;
             }
-
-            cooldowns.put(playerId, now);
         }
 
         // Try specific click type first
@@ -659,6 +665,49 @@ public class MenuButton implements MenuItem {
         }
 
         return false;
+    }
+
+    private boolean acquireCooldown(Menu menu, int slot, Player player) {
+        CooldownRegistry registry = sharedCooldownRegistry;
+        if (registry != null) {
+            CooldownKey key = CooldownKeys.of(
+                    DEFAULT_COOLDOWN_NAMESPACE,
+                    resolveCooldownName(menu, slot),
+                    player.getUniqueId(),
+                    null
+            );
+            CooldownAcquisition acquisition = registry.acquire(key, CooldownSpec.rejecting(cooldown))
+                    .toCompletableFuture()
+                    .join();
+            if (acquisition instanceof CooldownAcquisition.Rejected(Duration remaining)) {
+                player.sendMessage(Component.text(
+                        "Please wait " + formatDuration(remaining) + " before clicking again!",
+                        NamedTextColor.RED
+                ));
+                return false;
+            }
+            return true;
+        }
+        // Fallback to local in-memory cooldown if registry not available
+        UUID playerId = player.getUniqueId();
+        Instant now = Instant.now();
+        Instant lastClick = localCooldowns.get(playerId);
+        if (lastClick != null && Duration.between(lastClick, now).compareTo(cooldown) < 0) {
+            Duration remaining = cooldown.minus(Duration.between(lastClick, now));
+            player.sendMessage(Component.text("Please wait " + formatDuration(remaining) + " before clicking again!",
+                    NamedTextColor.RED));
+            return false;
+        }
+        localCooldowns.put(playerId, now);
+        return true;
+    }
+
+    private String resolveCooldownName(Menu menu, int slot) {
+        if (cooldownGroup != null && !cooldownGroup.isBlank()) {
+            return cooldownGroup;
+        }
+        String menuId = menu != null ? menu.getId() : "anonymous";
+        return menuId + ":" + Math.max(0, slot);
     }
 
     private String formatDuration(Duration duration) {
@@ -728,6 +777,7 @@ public class MenuButton implements MenuItem {
         private Component name;
         private int slot = -1;
         private Duration cooldown;
+        private String cooldownGroup;
         private boolean skipClickPrompt = false;
         private Sound sound;
         private float volume = 1.0f;
@@ -940,6 +990,21 @@ public class MenuButton implements MenuItem {
          */
         public Builder cooldown(Duration cooldown) {
             this.cooldown = cooldown;
+            return this;
+        }
+
+        /**
+         * Overrides the default per-menu cooldown key so multiple buttons
+         * (or menus) can share a timer. When unset, the key becomes {@code menuId:slot}.
+         *
+         * @param group unique identifier to share across buttons
+         * @return this builder
+         */
+        public Builder cooldownGroup(String group) {
+            if (group != null && group.isBlank()) {
+                throw new IllegalArgumentException("Cooldown group must not be blank");
+            }
+            this.cooldownGroup = group;
             return this;
         }
 

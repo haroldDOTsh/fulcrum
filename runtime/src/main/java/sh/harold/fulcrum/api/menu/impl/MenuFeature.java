@@ -4,8 +4,12 @@ import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.menu.MenuRegistry;
 import sh.harold.fulcrum.api.menu.MenuService;
+import sh.harold.fulcrum.api.menu.component.MenuButton;
+import sh.harold.fulcrum.common.cooldown.CooldownRegistry;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+
+import java.util.Optional;
 
 public class MenuFeature implements PluginFeature {
 
@@ -21,6 +25,11 @@ public class MenuFeature implements PluginFeature {
         // Create simplified menu service
         menuService = new DefaultMenuService(plugin, menuRegistry);
         container.register(MenuService.class, menuService);
+
+        container.getOptional(CooldownRegistry.class)
+                .or(() -> Optional.ofNullable(sh.harold.fulcrum.lifecycle.ServiceLocatorImpl.getInstance())
+                        .flatMap(locator -> locator.findService(CooldownRegistry.class)))
+                .ifPresent(MenuButton::bindCooldownRegistry);
 
         // Register MenuService with Bukkit's ServicesManager for access from other components
         plugin.getServer().getServicesManager().register(
@@ -48,6 +57,7 @@ public class MenuFeature implements PluginFeature {
 
             System.out.println("[MENU] Shutdown complete");
         }
+        MenuButton.clearCooldownRegistry();
     }
 
     @Override
