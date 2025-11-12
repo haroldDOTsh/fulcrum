@@ -5,6 +5,7 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.menu.MenuService;
 import sh.harold.fulcrum.common.cooldown.CooldownRegistry;
+import sh.harold.fulcrum.dialogue.DialogueService;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -78,6 +79,10 @@ public final class NpcFeature implements PluginFeature {
         if (cooldownRegistry == null) {
             throw new IllegalStateException("Cooldown registry unavailable; ensure CooldownFeature initializes before NpcFeature");
         }
+        DialogueService dialogueService = resolveService(container, DialogueService.class);
+        if (dialogueService == null) {
+            throw new IllegalStateException("Dialogue service unavailable; ensure DialogueFeature initializes before NpcFeature");
+        }
         this.orchestrator = new PoiNpcOrchestrator(
                 plugin,
                 logger,
@@ -90,6 +95,7 @@ public final class NpcFeature implements PluginFeature {
                 new DefaultNpcInteractionHelpers(
                         resolveService(container, sh.harold.fulcrum.api.rank.RankService.class),
                         resolveService(container, MenuService.class),
+                        dialogueService,
                         logger)
         );
         CommandRegistrar.register(new NpcDebugCommand(orchestrator).build());
