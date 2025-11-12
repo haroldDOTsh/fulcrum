@@ -14,6 +14,8 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.api.ProxyIdentifier;
 import sh.harold.fulcrum.velocity.api.ServerIdentifier;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
@@ -38,6 +40,7 @@ public class ProxyConnectionHandler {
     private final Map<String, ServerMetrics> serverMetricsCache = new ConcurrentHashMap<>();
     private ProxyIdentifier proxyId;  // Changed to use ProxyIdentifier
     private volatile PlayerRoutingFeature cachedRoutingFeature;
+    private volatile RankService cachedRankService;
 
     public ProxyConnectionHandler(ProxyServer proxy,
                                   String proxyIdString,
@@ -113,6 +116,9 @@ public class ProxyConnectionHandler {
             if (result == InitialRouteResult.NOT_SUPPORTED) {
                 logger.warn("PlayerRoutingFeature unavailable; using legacy lobby selection for {}", event.getPlayer().getUsername());
                 legacyInitialRoute(event);
+                return;
+            }
+            if (tryStaffDevFallback(event)) {
                 return;
             }
             disconnectNoServers(event);
@@ -350,6 +356,9 @@ public class ProxyConnectionHandler {
 
         RegisteredServer targetServer = findAnyOptimalServer();
         if (targetServer == null) {
+            if (tryStaffDevFallback(event)) {
+                return;
+            }
             disconnectNoServers(event);
             return;
         }
@@ -414,6 +423,61 @@ public class ProxyConnectionHandler {
         }
         cachedRoutingFeature = serviceLocator.getService(PlayerRoutingFeature.class).orElse(null);
         return Optional.ofNullable(cachedRoutingFeature);
+    }
+
+    private Optional<RankService> rankService() {
+        if (cachedRankService != null) {
+            return Optional.of(cachedRankService);
+        }
+        if (serviceLocator == null) {
+            return Optional.empty();
+        }
+        cachedRankService = serviceLocator.getService(RankService.class).orElse(null);
+        return Optional.ofNullable(cachedRankService);
+    }
+
+    private boolean tryStaffDevFallback(PlayerChooseInitialServerEvent event) {
+        Player player = event.getPlayer();
+        if (player == null) {
+            return false;
+        }
+        if (hasActiveServersForRole("lobby")) {
+            return false;
+        }
+
+        Optional<RankService> rankService = rankService();
+        if (rankService.isEmpty()) {
+            logger.debug("Cannot evaluate staff fallback for {} - RankService unavailable", player.getUsername());
+            return false;
+        }
+
+        Rank effectiveRank = rankService.get().getEffectiveRankSync(player.getUniqueId());
+        if (effectiveRank == null || !effectiveRank.isStaff()) {
+            return false;
+        }
+
+        RegisteredServer devServer = findOptimalServer("dev");
+        if (devServer == null) {
+            logger.info("Staff {} requested development fallback, but no dev servers are online", player.getUsername());
+            return false;
+        }
+
+        event.setInitialServer(devServer);
+        Component fallbackNotice = Component.text()
+                .append(Component.text("No lobby servers are online. Routing you to ", NamedTextColor.YELLOW))
+                .append(Component.text(devServer.getServerInfo().getName(), NamedTextColor.GREEN))
+                .append(Component.text(" (dev).", NamedTextColor.YELLOW))
+                .build();
+        player.sendMessage(fallbackNotice);
+        logger.info("Staff {} routed to dev server {} because no lobby servers are online",
+                player.getUsername(), devServer.getServerInfo().getName());
+        return true;
+    }
+
+    private boolean hasActiveServersForRole(String role) {
+        return lifecycleFeature.getServersByRole(role).stream()
+                .map(ServerIdentifier::getServerId)
+                .anyMatch(lifecycleFeature::isServerActive);
     }
 
     private enum InitialRouteResult {
