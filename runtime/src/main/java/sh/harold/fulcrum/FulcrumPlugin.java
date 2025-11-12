@@ -104,6 +104,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.environment.EnvironmentDirectoryFeature());
         FeatureManager.register(new NetworkConfigFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.cooldown.CooldownFeature());
+        FeatureManager.register(new sh.harold.fulcrum.dialogue.DialogueFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.punishment.PunishmentBroadcastFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature());
         FeatureManager.register(new RankFeature()); // Register Rank system after DataAPI
