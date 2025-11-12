@@ -17,7 +17,7 @@ public final class NpcProfile {
     private static final LegacyComponentSerializer LEGACY_SERIALIZER =
             LegacyComponentSerializer.legacySection();
     private static final String DEFAULT_DESCRIPTOR_COLOR = "&7";
-    private static final String DEFAULT_INTERACTION_HINT = "&e&lCLICK &eto interact!";
+    private static final String DEFAULT_INTERACTION_HINT = "&e&lCLICK &r&eto interact!";
 
     private final String displayName;
     private final String descriptor;
@@ -142,6 +142,7 @@ public final class NpcProfile {
 
     public List<String> hologramLines() {
         List<String> lines = new ArrayList<>();
+        lines.add(displayName);
         lines.add(descriptor);
         interactionHint().ifPresent(lines::add);
         lines.addAll(lore);

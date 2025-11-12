@@ -150,7 +150,7 @@ public final class DefaultDialogueService implements DialogueService {
 
     private void sendLine(Session session, DialogueLine line, DialogueProgress progress) {
         Component displayNameComponent = session.displayNameComponent;
-        Component stepComponent = LEGACY.deserialize("&8[" + progress.stepNumber() + "/" + progress.totalSteps() + "]");
+        Component stepComponent = LEGACY.deserialize("&7[" + progress.stepNumber() + "/" + progress.totalSteps() + "]");
         Component messageComponent = Component.empty()
                 .color(NamedTextColor.WHITE)
                 .append(renderLine(line, progress.context()));

@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.npc.command;
 
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
@@ -26,11 +27,13 @@ import sh.harold.fulcrum.npc.visibility.NpcVisibility;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
+import static io.papermc.paper.command.brigadier.Commands.argument;
 import static io.papermc.paper.command.brigadier.Commands.literal;
 
 public final class NpcDebugCommand {
-    private final PoiNpcOrchestrator orchestrator;
+    private final Supplier<PoiNpcOrchestrator> orchestratorSupplier;
     private static final Dialogue DEBUG_DIALOGUE = Dialogue.builder()
             .id("debug.greeter")
             .cooldown(Duration.ofSeconds(8))
@@ -43,26 +46,36 @@ public final class NpcDebugCommand {
             ))
             .build();
 
-    public NpcDebugCommand(PoiNpcOrchestrator orchestrator) {
-        this.orchestrator = orchestrator;
+    public NpcDebugCommand(Supplier<PoiNpcOrchestrator> orchestratorSupplier) {
+        this.orchestratorSupplier = orchestratorSupplier;
     }
 
     public LiteralCommandNode<CommandSourceStack> build() {
         return literal("npcdebugtest")
                 .requires(stack -> RankUtils.isStaff(stack.getSender()))
-                .executes(context -> {
-                    CommandSender sender = context.getSource().getSender();
-                    if (!(sender instanceof Player player)) {
-                        sender.sendMessage(Component.text("Only players can run this command.", NamedTextColor.RED));
-                        return Command.SINGLE_SUCCESS;
-                    }
-                    spawnDebugNpc(player);
-                    return Command.SINGLE_SUCCESS;
-                })
+                .executes(context -> execute(context.getSource().getSender(), 5))
+                .then(argument("seconds", IntegerArgumentType.integer(1, 600))
+                        .executes(context -> execute(
+                                context.getSource().getSender(),
+                                IntegerArgumentType.getInteger(context, "seconds"))))
                 .build();
     }
 
-    private void spawnDebugNpc(Player player) {
+    private int execute(CommandSender sender, int lifetimeSeconds) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Component.text("Only players can run this command.", NamedTextColor.RED));
+            return Command.SINGLE_SUCCESS;
+        }
+        spawnDebugNpc(player, lifetimeSeconds);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private void spawnDebugNpc(Player player, int lifetimeSeconds) {
+        PoiNpcOrchestrator orchestrator = orchestratorSupplier.get();
+        if (orchestrator == null) {
+            player.sendMessage(Component.text("NPC toolkit is still starting; try again in a moment.", NamedTextColor.RED));
+            return;
+        }
         UUID uniqueId = UUID.randomUUID();
         String anchor = "debug:" + uniqueId;
         NpcProfile profile = NpcProfile.builder()
@@ -90,7 +103,10 @@ public final class NpcDebugCommand {
                 .relativeOffset(new Vector(0, 0, 0))
                 .build();
 
-        orchestrator.spawnTemporaryNpc(definition, player.getLocation(), 100L); // 5 seconds
-        player.sendMessage(Component.text("Spawned debug NPC; despawns in 5 seconds.", NamedTextColor.AQUA));
+        long ticks = Math.max(20L, lifetimeSeconds * 20L);
+        orchestrator.spawnTemporaryNpc(definition, player.getLocation(), ticks);
+        player.sendMessage(Component.text(
+                "Spawned debug NPC; despawns in " + lifetimeSeconds + "s.",
+                NamedTextColor.AQUA));
     }
 }

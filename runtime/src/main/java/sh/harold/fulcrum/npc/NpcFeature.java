@@ -65,6 +65,7 @@ public final class NpcFeature implements PluginFeature {
             return;
         }
 
+        CommandRegistrar.register(new NpcDebugCommand(() -> orchestrator).build());
         logger.info("NPC toolkit awaiting post-world initialization (Citizens loads after Fulcrum).");
     }
 
@@ -129,7 +130,6 @@ public final class NpcFeature implements PluginFeature {
                         dialogueService,
                         logger)
         );
-        CommandRegistrar.register(new NpcDebugCommand(orchestrator).build());
         container.register(PoiNpcOrchestrator.class, orchestrator);
         if (locatorRef != null) {
             locatorRef.registerService(PoiNpcOrchestrator.class, orchestrator);
