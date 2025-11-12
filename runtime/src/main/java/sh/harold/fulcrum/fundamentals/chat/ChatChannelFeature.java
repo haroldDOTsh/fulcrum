@@ -44,8 +44,8 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
 
     @Override
     public int getPriority() {
-        // After chat formatting (60) so prefixes can reuse it
-        return 65;
+        // After chat formatting (60) and MinigameEngineFeature (220) so slot isolation is available
+        return 260;
     }
 
     @Override

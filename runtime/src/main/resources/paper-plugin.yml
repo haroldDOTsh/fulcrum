@@ -17,7 +17,7 @@ dependencies:
       load: BEFORE
       required: true
     Citizens:
-      load: AFTER
+      load: BEFORE
       required: true
   bootstrap: []
 
