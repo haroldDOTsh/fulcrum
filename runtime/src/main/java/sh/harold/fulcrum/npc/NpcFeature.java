@@ -35,22 +35,29 @@ public final class NpcFeature implements PluginFeature {
     private PoiNpcOrchestrator orchestrator;
     private NpcViewerService viewerService;
     private ExecutorService skinExecutor;
+    private DependencyContainer containerRef;
+    private ServiceLocatorImpl locatorRef;
+    private PoiActivationBus activationBus;
+    private boolean toolkitInitialized;
+    private Logger logger;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
-        Logger logger = plugin.getLogger();
+        this.containerRef = container;
+        this.locatorRef = ServiceLocatorImpl.getInstance();
+        this.logger = plugin.getLogger();
+        Logger logger = this.logger;
 
         this.npcRegistry = new NpcRegistry();
         container.register(NpcRegistry.class, npcRegistry);
-        ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
-        if (locator != null) {
-            locator.registerService(NpcRegistry.class, npcRegistry);
+        if (locatorRef != null) {
+            locatorRef.registerService(NpcRegistry.class, npcRegistry);
         }
 
-        PoiActivationBus activationBus = container.getOptional(PoiActivationBus.class)
-                .orElseGet(() -> locator != null
-                        ? locator.findService(PoiActivationBus.class).orElse(null)
+        this.activationBus = container.getOptional(PoiActivationBus.class)
+                .orElseGet(() -> locatorRef != null
+                        ? locatorRef.findService(PoiActivationBus.class).orElse(null)
                         : null);
 
         if (activationBus == null) {
@@ -58,6 +65,30 @@ public final class NpcFeature implements PluginFeature {
             return;
         }
 
+        logger.info("NPC toolkit awaiting post-world initialization (Citizens loads after Fulcrum).");
+    }
+
+    @Override
+    public boolean requiresPostWorldPass() {
+        return true;
+    }
+
+    @Override
+    public void postWorldInitialize(JavaPlugin plugin, DependencyContainer container) {
+        if (toolkitInitialized || activationBus == null) {
+            return;
+        }
+        DependencyContainer target = container != null ? container : containerRef;
+        if (target == null) {
+            return;
+        }
+        attemptCitizensInitialization(target);
+    }
+
+    private void attemptCitizensInitialization(DependencyContainer container) {
+        if (toolkitInitialized) {
+            return;
+        }
         if (!isCitizensPresent()) {
             logger.warning("Citizens plugin not detected; NPC toolkit will not spawn entities.");
             return;
@@ -100,12 +131,13 @@ public final class NpcFeature implements PluginFeature {
         );
         CommandRegistrar.register(new NpcDebugCommand(orchestrator).build());
         container.register(PoiNpcOrchestrator.class, orchestrator);
-        if (locator != null) {
-            locator.registerService(PoiNpcOrchestrator.class, orchestrator);
+        if (locatorRef != null) {
+            locatorRef.registerService(PoiNpcOrchestrator.class, orchestrator);
         }
         plugin.getServer().getPluginManager().registerEvents(new sh.harold.fulcrum.npc.orchestration.NpcInteractionListener(orchestrator), plugin);
 
         logger.info("NPC toolkit initialized (definitions=" + npcRegistry.size() + ")");
+        toolkitInitialized = true;
     }
 
     @Override

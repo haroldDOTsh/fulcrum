@@ -34,6 +34,23 @@ public interface PluginFeature {
     }
 
     /**
+     * Whether the feature needs an additional pass after the server finishes loading worlds.
+     * Only fundamentals that depend on POSTWORLD plugins should override this.
+     */
+    default boolean requiresPostWorldPass() {
+        return false;
+    }
+
+    /**
+     * Optional hook invoked after Paper fires {@link org.bukkit.event.server.ServerLoadEvent}
+     * with {@link org.bukkit.event.server.ServerLoadEvent.LoadType#STARTUP}.
+     * Runs on the main thread, after all dependencies declared in paper-plugin.yml have loaded.
+     */
+    default void postWorldInitialize(JavaPlugin plugin, DependencyContainer container) {
+        // Default no-op
+    }
+
+    /**
      * Get the initialization priority for this feature.
      * Lower values initialize first. Default is 100.
      * Core features should use 0-50, normal features 50-100,
