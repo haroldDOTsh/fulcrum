@@ -15,6 +15,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -93,8 +94,10 @@ public final class CitizensNpcAdapter implements NpcAdapter {
         HologramTrait hologram = npc.getOrAddTrait(HologramTrait.class);
         hologram.clear();
         hologram.setLineHeight(0.3D);
-        for (String line : request.definition().profile().hologramLines()) {
-            hologram.addLine(line);
+        List<String> hologramLines = request.definition().profile().hologramLines();
+        // Citizens stacks hologram lines from the bottom up, so write from prompt -> name to keep name at the top.
+        for (int index = hologramLines.size() - 1; index >= 0; index--) {
+            hologram.addLine(hologramLines.get(index));
         }
         applyEquipment(npc, request);
     }

@@ -79,7 +79,7 @@ public final class NpcDebugCommand {
         UUID uniqueId = UUID.randomUUID();
         String anchor = "debug:" + uniqueId;
         NpcProfile profile = NpcProfile.builder()
-                .displayName("&a" + player.getName() + " (DEBUG)")
+                .displayName("&a" + player.getName())
                 .description("Debug NPC")
                 .interactable(true)
                 .skin(NpcSkin.fromMojangProfile(player.getUniqueId()))

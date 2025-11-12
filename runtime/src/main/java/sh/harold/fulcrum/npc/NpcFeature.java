@@ -128,7 +128,8 @@ public final class NpcFeature implements PluginFeature {
                         resolveService(container, sh.harold.fulcrum.api.rank.RankService.class),
                         resolveService(container, MenuService.class),
                         dialogueService,
-                        logger)
+                        logger,
+                        plugin)
         );
         container.register(PoiNpcOrchestrator.class, orchestrator);
         if (locatorRef != null) {

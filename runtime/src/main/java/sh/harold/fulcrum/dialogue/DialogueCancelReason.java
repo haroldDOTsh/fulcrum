@@ -7,6 +7,7 @@ public enum DialogueCancelReason {
     PLAYER_LEFT,
     INTERRUPTED,
     REPLACED,
+    DISTANCE,
     TIMEOUT,
     UNKNOWN
 }
