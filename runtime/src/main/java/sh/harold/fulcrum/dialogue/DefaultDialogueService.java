@@ -126,7 +126,7 @@ public final class DefaultDialogueService implements DialogueService {
                 COOLDOWN_NAMESPACE,
                 groupId,
                 context.playerId(),
-                context.npcId().orElse(null)
+                context.npcIdOptional().orElse(null)
         );
     }
 

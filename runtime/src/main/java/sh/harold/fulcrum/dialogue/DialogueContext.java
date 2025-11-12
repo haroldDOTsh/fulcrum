@@ -24,7 +24,7 @@ public record DialogueContext(
         attributes = attributes == null ? Map.of() : Collections.unmodifiableMap(attributes);
     }
 
-    public Optional<UUID> npcId() {
+    public Optional<UUID> npcIdOptional() {
         return Optional.ofNullable(npcId);
     }
 
