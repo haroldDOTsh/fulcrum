@@ -2,6 +2,7 @@ package sh.harold.fulcrum.npc.behavior;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -26,7 +27,7 @@ import java.util.logging.Logger;
  * Concrete helper facade integrating with runtime services.
  */
 public final class DefaultNpcInteractionHelpers implements NpcInteractionHelpers {
-    private static final double PROXIMITY_RADIUS_BLOCKS = 6.0D;
+    private static final double PROXIMITY_RADIUS_BLOCKS = 4.0D;
     private static final double PROXIMITY_RADIUS_BLOCKS_SQUARED = PROXIMITY_RADIUS_BLOCKS * PROXIMITY_RADIUS_BLOCKS;
     private static final long PROXIMITY_POLL_INTERVAL_TICKS = 10L;
 
@@ -219,9 +220,13 @@ public final class DefaultNpcInteractionHelpers implements NpcInteractionHelpers
     }
 
     private void notifyAndCancel(Player player, UUID playerId, InteractionContext context) {
-        Component message = Component.text("You walk away from ", NamedTextColor.YELLOW)
-                .append(context.definition().profile().displayNameComponent())
-                .append(Component.text(".", NamedTextColor.YELLOW));
+        Component message = Component.text()
+                .color(NamedTextColor.GRAY)
+                .decoration(TextDecoration.ITALIC, true)
+                .append(Component.text("You walk away from "))
+                .append(context.definition().profile().displayNameComponent().color(NamedTextColor.GRAY))
+                .append(Component.text("."))
+                .build();
         player.sendMessage(message);
         cancelSession(playerId, DialogueCancelReason.DISTANCE);
     }
