@@ -12,15 +12,25 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerSlotRequest;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankUtils;
+import sh.harold.fulcrum.common.cooldown.CooldownAcquisition;
+import sh.harold.fulcrum.common.cooldown.CooldownKey;
+import sh.harold.fulcrum.common.cooldown.CooldownKeys;
+import sh.harold.fulcrum.common.cooldown.CooldownRegistry;
+import sh.harold.fulcrum.common.cooldown.CooldownSpec;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
+import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.message.Message;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 import static io.papermc.paper.command.brigadier.Commands.argument;
 import static io.papermc.paper.command.brigadier.Commands.literal;
@@ -29,8 +39,10 @@ import static io.papermc.paper.command.brigadier.Commands.literal;
  * Brigadier command that lets players join a minigame variant via the registry pipeline.
  */
 public final class PlayCommand {
-    private static final long COOLDOWN_MS = 5_000L;
-    private static final Map<UUID, Long> COOLDOWNS = new ConcurrentHashMap<>();
+    private static final Duration COOLDOWN = Duration.ofSeconds(5);
+    private static final CooldownSpec PLAY_COOLDOWN = CooldownSpec.rejecting(COOLDOWN);
+    private static final String COOLDOWN_NAMESPACE = "minigame";
+    private static final String DEFAULT_COOLDOWN_GROUP = "play-command";
 
     private final MessageBus messageBus;
     private final PlayerRouteRegistry routeRegistry;
@@ -38,6 +50,7 @@ public final class PlayCommand {
     private final ServerIdentifier serverIdentifier;
     private final ServerLifecycleFeature lifecycleFeature;
     private final MinigameEngine engine;
+    private final CooldownRegistry cooldownRegistry;
 
     public PlayCommand(MessageBus messageBus,
                        PlayerRouteRegistry routeRegistry,
@@ -45,12 +58,29 @@ public final class PlayCommand {
                        ServerIdentifier serverIdentifier,
                        ServerLifecycleFeature lifecycleFeature,
                        MinigameEngine engine) {
+        this(messageBus,
+                routeRegistry,
+                orchestrator,
+                serverIdentifier,
+                lifecycleFeature,
+                engine,
+                resolveCooldownRegistry());
+    }
+
+    public PlayCommand(MessageBus messageBus,
+                       PlayerRouteRegistry routeRegistry,
+                       SimpleSlotOrchestrator orchestrator,
+                       ServerIdentifier serverIdentifier,
+                       ServerLifecycleFeature lifecycleFeature,
+                       MinigameEngine engine,
+                       CooldownRegistry cooldownRegistry) {
         this.messageBus = messageBus;
         this.routeRegistry = routeRegistry;
         this.orchestrator = orchestrator;
         this.serverIdentifier = serverIdentifier;
         this.lifecycleFeature = lifecycleFeature;
         this.engine = engine;
+        this.cooldownRegistry = cooldownRegistry;
     }
 
     public LiteralCommandNode<CommandSourceStack> build() {
@@ -90,16 +120,6 @@ public final class PlayCommand {
             return Command.SINGLE_SUCCESS;
         }
 
-        long now = System.currentTimeMillis();
-        long last = COOLDOWNS.getOrDefault(player.getUniqueId(), 0L);
-        long elapsed = now - last;
-        if (elapsed < COOLDOWN_MS) {
-            long remaining = COOLDOWN_MS - elapsed;
-            long seconds = Math.max(1, (long) Math.ceil(remaining / 1000.0D));
-            Message.error("play.cooldown", seconds).send(player);
-            return Command.SINGLE_SUCCESS;
-        }
-
         VariantSelection selection = VariantSelection.from(raw);
         if (selection == null) {
             Message.error("play.invalid-variant", raw).send(player);
@@ -123,6 +143,10 @@ public final class PlayCommand {
             return Command.SINGLE_SUCCESS;
         }
 
+        if (!acquireCooldown(player, familyId)) {
+            return Command.SINGLE_SUCCESS;
+        }
+
         String proxyId = routeRegistry.get(player.getUniqueId())
                 .map(PlayerRouteRegistry.RouteAssignment::proxyId)
                 .filter(id -> id != null && !id.isBlank())
@@ -138,7 +162,7 @@ public final class PlayCommand {
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("source", "play-command");
         metadata.put("initiator", player.getName());
-        metadata.put("requestedAt", Long.toString(now));
+        metadata.put("requestedAt", Long.toString(System.currentTimeMillis()));
         metadata.put("requestedServer", serverIdentifier != null ? serverIdentifier.getServerId() : "unknown");
         metadata.put("family", familyId);
 
@@ -158,7 +182,6 @@ public final class PlayCommand {
             request.setFamilyId(familyId);
             request.setMetadata(metadata);
             messageBus.broadcast(ChannelConstants.REGISTRY_PLAYER_REQUEST, request);
-            COOLDOWNS.put(player.getUniqueId(), now);
             Message.success("play.queued", selection.display()).send(player);
         } catch (Exception exception) {
             Message.error("play.failed", exception.getMessage()).send(player);
@@ -177,6 +200,29 @@ public final class PlayCommand {
         }
         Map<String, Integer> active = orchestrator.getActiveSlotsByFamily();
         return active.getOrDefault(familyId, 0) > 0;
+    }
+
+    private boolean acquireCooldown(Player player, String familyId) {
+        if (cooldownRegistry == null) {
+            return true;
+        }
+        String cooldownGroup = (familyId == null || familyId.isBlank()) ? DEFAULT_COOLDOWN_GROUP : familyId;
+        CooldownKey key = CooldownKeys.playerScoped(COOLDOWN_NAMESPACE, cooldownGroup, player.getUniqueId());
+        CooldownAcquisition acquisition = cooldownRegistry.acquire(key, PLAY_COOLDOWN)
+                .toCompletableFuture()
+                .join();
+        if (acquisition instanceof CooldownAcquisition.Rejected(Duration remaining)) {
+            long seconds = Math.max(1, (long) Math.ceil(remaining.toMillis() / 1000.0D));
+            Message.error("play.cooldown", seconds).send(player);
+            return false;
+        }
+        return true;
+    }
+
+    private static CooldownRegistry resolveCooldownRegistry() {
+        return Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                .flatMap(locator -> locator.findService(CooldownRegistry.class))
+                .orElse(null);
     }
 
     private record VariantSelection(String rawInput, String familyId, String variantId,
@@ -199,30 +245,29 @@ public final class PlayCommand {
                 variant = trimmed.substring(index + 1);
             }
 
-            String familyKey = normalise(family);
-            String variantKey = normalise(variant);
-            return new VariantSelection(trimmed, family, variant, familyKey, variantKey);
-        }
+            String familyId = family.toLowerCase(Locale.ROOT);
+            String variantId = variant.toLowerCase(Locale.ROOT);
+            String familyKey = familyId.replace('-', '_');
+            String variantKey = variantId.replace('-', '_');
 
-        private static int findSeparator(String value) {
-            int colon = value.indexOf(':');
-            if (colon > 0) {
-                return colon;
-            }
-            int slash = value.indexOf('/');
-            if (slash > 0) {
-                return slash;
-            }
-            int dot = value.indexOf('.');
-            return dot > 0 ? dot : -1;
-        }
-
-        private static String normalise(String value) {
-            return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+            return new VariantSelection(trimmed, familyId, variantId, familyKey, variantKey);
         }
 
         String display() {
+            if (rawInput == null) {
+                return "unknown";
+            }
             return rawInput;
+        }
+
+        private static int findSeparator(String raw) {
+            for (char separator : new char[]{':', '/', '.', '-'}) {
+                int index = raw.indexOf(separator);
+                if (index > 0) {
+                    return index;
+                }
+            }
+            return -1;
         }
     }
 }
