@@ -1,10 +1,10 @@
 # Fulcrum
 
-Fulcrum is a personal project that digs into system design for Minecraft networks. It's my answer to *"what's a public
-plugin?"*
+Fulcrum is a personal project that digs into system design for Minecraft networks. It's my answer to *"what if we
+wrote (almost) everything in house?"*
 Fulcrum is heavily inspired by and tries to mimic Hypixel’s ecosystem as close as possible to 1:1 (just without the
-Minecraft 1.7 tech
-debt)- I tried to stay consistent to the source material whenever possible (referencing public admin statements
+Minecraft 1.7 tech debt)- I tried to stay consistent to the source material whenever possible (referencing public admin
+statements
 regarding their systems), making educated assumptions where there are uncertainties.
 
 Why? I've been a huge fan of Hypixel systems for years, and it also serves as lab for experimental minigames/features
@@ -15,8 +15,13 @@ that can be built on top of Paper and Velocity.
 - Minecraft Version: `1.21.10`
 - Protocol Version: `773`
 - Toolchain: Java 21, Gradle 9.2, Paper + Velocity APIs
+- Requires: `Citizens2`, `FAWE`
 
 ## Quick Start
+
+> [!TIP]
+> The Paper runtime **requires** the latest builds of FastAsyncWorldEdit (FAWE) and Citizens2 to be installed alongside
+> Fulcrum. Keep both plugins updated so that world pasting, prop services, and NPC orchestration work!
 
 Fulcrum expects a registry, one or more proxies, and any number of backend runtimes. Configuration for Redis, MongoDB,
 and PostgreSQL lives in `runtime/src/main/resources/database-config.yml`; copy that into your server directory and
