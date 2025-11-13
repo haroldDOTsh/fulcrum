@@ -17,10 +17,12 @@ public record Dialogue(
         List<DialogueLine> lines,
         DialogueCallbacks callbacks,
         CooldownSpec cooldownSpec,
-        String cooldownGroup
+        String cooldownGroup,
+        Duration timeout
 ) {
 
     private static final Duration DEFAULT_WINDOW = Duration.ofSeconds(5);
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
     public Dialogue {
         Objects.requireNonNull(id, "id");
@@ -30,6 +32,10 @@ public record Dialogue(
         }
         Objects.requireNonNull(callbacks, "callbacks");
         Objects.requireNonNull(cooldownSpec, "cooldownSpec");
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("Timeout must be positive for " + id);
+        }
         lines = List.copyOf(lines);
         callbacks = callbacks;
         cooldownGroup = (cooldownGroup == null || cooldownGroup.isBlank()) ? id : cooldownGroup;
@@ -43,8 +49,9 @@ public record Dialogue(
         private final List<DialogueLine> lines = new ArrayList<>();
         private String id;
         private DialogueCallbacks callbacks = DialogueCallbacks.NONE;
-        private CooldownSpec cooldownSpec = CooldownSpec.extending(DEFAULT_WINDOW);
+        private CooldownSpec cooldownSpec = CooldownSpec.rejecting(DEFAULT_WINDOW);
         private String cooldownGroup;
+        private Duration timeout = DEFAULT_TIMEOUT;
 
         private Builder() {
         }
@@ -75,7 +82,7 @@ public record Dialogue(
 
         public Builder cooldown(Duration window) {
             Objects.requireNonNull(window, "window");
-            this.cooldownSpec = CooldownSpec.extending(window);
+            this.cooldownSpec = CooldownSpec.rejecting(window);
             return this;
         }
 
@@ -96,6 +103,15 @@ public record Dialogue(
             return this;
         }
 
+        public Builder timeout(Duration timeout) {
+            Objects.requireNonNull(timeout, "timeout");
+            if (timeout.isZero() || timeout.isNegative()) {
+                throw new IllegalArgumentException("Timeout must be positive");
+            }
+            this.timeout = timeout;
+            return this;
+        }
+
         public Dialogue build() {
             if (id == null || id.isBlank()) {
                 throw new IllegalStateException("Dialogue id must be set");
@@ -107,7 +123,8 @@ public record Dialogue(
                     Collections.unmodifiableList(new ArrayList<>(lines)),
                     callbacks,
                     cooldownSpec,
-                    cooldownGroup);
+                    cooldownGroup,
+                    timeout);
         }
     }
 }

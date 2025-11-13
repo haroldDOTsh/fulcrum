@@ -9,9 +9,13 @@ import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.common.cooldown.InMemoryCooldownRegistry;
 
 import java.lang.reflect.Proxy;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,11 +31,13 @@ final class DialogueServiceTest {
     private List<Component> messages;
     private Player player;
     private UUID playerId;
+    private MutableClock clock;
 
     @BeforeEach
     void setUp() {
         registry = new InMemoryCooldownRegistry();
-        service = new DefaultDialogueService(registry, Logger.getLogger("dialogue-test"));
+        clock = new MutableClock();
+        service = new DefaultDialogueService(registry, Logger.getLogger("dialogue-test"), clock);
         messages = new ArrayList<>();
         playerId = UUID.randomUUID();
         player = fakePlayer(playerId, messages);
@@ -133,10 +139,36 @@ final class DialogueServiceTest {
         assertEquals(1, completeCalls.get());
     }
 
+    @Test
+    void timeoutReleasesStaleSessions() {
+        Dialogue dialogue = Dialogue.builder()
+                .id("conversation.timeout")
+                .cooldown(Duration.ofSeconds(60))
+                .timeout(Duration.ofSeconds(30))
+                .lines(List.of(
+                        DialogueLine.of("&fHello"),
+                        DialogueLine.of("&fGoodbye")
+                ))
+                .build();
+
+        DialogueStartRequest request = DialogueStartRequest.builder(player, dialogue)
+                .displayName("&6Rhea")
+                .build();
+
+        DialogueStartResult first = service.startConversation(request).toCompletableFuture().join();
+        assertInstanceOf(DialogueStartResult.Started.class, first);
+
+        clock.advance(Duration.ofSeconds(31));
+
+        DialogueStartResult second = service.startConversation(request).toCompletableFuture().join();
+        assertInstanceOf(DialogueStartResult.Started.class, second);
+    }
+
     private Dialogue baseDialogue() {
         return Dialogue.builder()
                 .id("tutorial.greeter")
                 .cooldown(Duration.ofSeconds(30))
+                .timeout(Duration.ofSeconds(30))
                 .lines(List.of(
                         DialogueLine.of("&fWelcome to Fulcrum!"),
                         DialogueLine.of("&fGrab a kit at the vendor to start.")
@@ -191,5 +223,33 @@ final class DialogueServiceTest {
                     return null;
                 }
         );
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant instant = Instant.parse("2025-01-01T00:00:00Z");
+        private ZoneId zone = ZoneId.of("UTC");
+
+        @Override
+        public ZoneId getZone() {
+            return zone;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            Objects.requireNonNull(zone, "zone");
+            MutableClock copy = new MutableClock();
+            copy.instant = this.instant;
+            copy.zone = zone;
+            return copy;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+
+        void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
     }
 }

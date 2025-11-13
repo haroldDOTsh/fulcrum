@@ -9,7 +9,15 @@ import sh.harold.fulcrum.common.cooldown.CooldownKey;
 import sh.harold.fulcrum.common.cooldown.CooldownKeys;
 import sh.harold.fulcrum.common.cooldown.CooldownRegistry;
 
-import java.util.*;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,10 +37,16 @@ public final class DefaultDialogueService implements DialogueService {
     private final CooldownRegistry registry;
     private final Logger logger;
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
+    private final Clock clock;
 
     public DefaultDialogueService(CooldownRegistry registry, Logger logger) {
+        this(registry, logger, Clock.systemUTC());
+    }
+
+    public DefaultDialogueService(CooldownRegistry registry, Logger logger, Clock clock) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.logger = Objects.requireNonNull(logger, "logger");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Override
@@ -41,6 +55,7 @@ public final class DefaultDialogueService implements DialogueService {
         Dialogue dialogue = request.dialogue();
         Player player = request.player();
         UUID playerId = player.getUniqueId();
+        expireTimedOutSession(playerId);
         DialogueContext context = new DialogueContext(
                 player,
                 playerId,
@@ -61,18 +76,20 @@ public final class DefaultDialogueService implements DialogueService {
                         promise.completeExceptionally(throwable);
                         return;
                     }
-                    promise.complete(handleAcquisition(acquisition, context, resolvedLines));
+                    promise.complete(handleAcquisition(acquisition, context, resolvedLines, key, dialogue.timeout()));
                 });
         return promise;
     }
 
     private DialogueStartResult handleAcquisition(CooldownAcquisition acquisition,
                                                   DialogueContext context,
-                                                  List<DialogueLine> resolvedLines) {
+                                                  List<DialogueLine> resolvedLines,
+                                                  CooldownKey cooldownKey,
+                                                  Duration timeout) {
         if (acquisition instanceof CooldownAcquisition.Rejected(java.time.Duration remaining)) {
             return new DialogueStartResult.CooldownRejected(remaining);
         }
-        Session session = new Session(context, resolvedLines);
+        Session session = new Session(context, resolvedLines, cooldownKey, timeout);
         sessions.compute(context.playerId(), (id, existing) -> {
             if (existing != null) {
                 existing.cancel(DialogueCancelReason.REPLACED);
@@ -98,6 +115,10 @@ public final class DefaultDialogueService implements DialogueService {
         }
         Session session = sessions.get(playerId);
         if (session == null) {
+            return Optional.empty();
+        }
+        if (session.hasTimedOut(clock.instant())) {
+            timeoutSession(playerId, session);
             return Optional.empty();
         }
         session.advance();
@@ -146,6 +167,25 @@ public final class DefaultDialogueService implements DialogueService {
 
     private void onSessionTerminated(Session session) {
         sessions.compute(session.playerId(), (id, existing) -> existing == session ? null : existing);
+        registry.clear(session.cooldownKey());
+    }
+
+    private void expireTimedOutSession(UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        Session session = sessions.get(playerId);
+        if (session == null) {
+            return;
+        }
+        if (session.hasTimedOut(clock.instant())) {
+            timeoutSession(playerId, session);
+        }
+    }
+
+    private void timeoutSession(UUID playerId, Session session) {
+        sessions.remove(playerId, session);
+        session.cancel(DialogueCancelReason.TIMEOUT);
     }
 
     private void sendLine(Session session, DialogueLine line, DialogueProgress progress) {
@@ -179,17 +219,27 @@ public final class DefaultDialogueService implements DialogueService {
         private final List<DialogueLine> lines;
         private final DialogueCallbacks callbacks;
         private final Component displayNameComponent;
+        private final CooldownKey cooldownKey;
+        private final Duration inactivityTimeout;
         private int index;
         private boolean complete;
+        private Instant lastInteraction;
 
-        private Session(DialogueContext context, List<DialogueLine> lines) {
+        private Session(DialogueContext context,
+                        List<DialogueLine> lines,
+                        CooldownKey cooldownKey,
+                        Duration inactivityTimeout) {
             this.context = context;
             this.lines = lines.isEmpty() ? List.of() : List.copyOf(lines);
             this.callbacks = context.dialogue().callbacks();
             this.displayNameComponent = LEGACY.deserialize(context.displayName());
+            this.cooldownKey = cooldownKey;
+            this.inactivityTimeout = inactivityTimeout;
+            this.lastInteraction = clock.instant();
         }
 
         private void start() {
+            touch();
             DialogueProgress startProgress = new DialogueProgress(context, 0, totalSteps());
             callbacks.fireStart(startProgress);
             if (lines.isEmpty()) {
@@ -210,6 +260,7 @@ public final class DefaultDialogueService implements DialogueService {
             }
             DialogueLine line = lines.get(index);
             DialogueProgress progress = new DialogueProgress(context, index, lines.size());
+            touch();
             sendLine(this, line, progress);
             callbacks.fireAdvance(progress);
             try {
@@ -275,6 +326,25 @@ public final class DefaultDialogueService implements DialogueService {
         @Override
         public boolean isComplete() {
             return complete;
+        }
+
+        private void touch() {
+            lastInteraction = clock.instant();
+        }
+
+        private boolean hasTimedOut(Instant now) {
+            if (complete) {
+                return false;
+            }
+            if (inactivityTimeout.isZero() || inactivityTimeout.isNegative()) {
+                return false;
+            }
+            Duration sinceLastInteraction = Duration.between(lastInteraction, now);
+            return sinceLastInteraction.compareTo(inactivityTimeout) >= 0;
+        }
+
+        private CooldownKey cooldownKey() {
+            return cooldownKey;
         }
     }
 }
