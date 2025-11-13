@@ -10,7 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 
-@MessageType("match.roster.created")
+@MessageType(value = "match.roster.created", version = 1)
 public final class MatchRosterCreatedMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

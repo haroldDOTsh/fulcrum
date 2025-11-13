@@ -7,7 +7,7 @@ import java.io.Serializable;
 import java.time.Instant;
 import java.util.UUID;
 
-@MessageType("match.roster.ended")
+@MessageType(value = "match.roster.ended", version = 1)
 public final class MatchRosterEndedMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

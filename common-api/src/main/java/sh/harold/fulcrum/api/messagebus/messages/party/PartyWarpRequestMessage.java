@@ -7,7 +7,7 @@ import java.io.Serializable;
 import java.time.Instant;
 import java.util.UUID;
 
-@MessageType("party.warp.request")
+@MessageType(value = "party.warp.request", version = 1)
 public final class PartyWarpRequestMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

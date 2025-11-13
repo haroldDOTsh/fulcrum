@@ -11,7 +11,7 @@ import java.util.UUID;
 /**
  * Broadcast whenever party state changes so other services can synchronize.
  */
-@MessageType("party.update")
+@MessageType(value = "party.update", version = 1)
 public final class PartyUpdateMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

@@ -11,7 +11,7 @@ import java.io.Serializable;
  * Notification sent to proxies that a server will be removed from the registry.
  * Proxies should remove the server from their internal maps and prevent new connections.
  */
-@MessageType("server.removal")
+@MessageType(value = "server.removal", version = 1)
 public record ServerRemovalNotification(String serverId, String serverType, String reason,
                                         long timestamp) implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;

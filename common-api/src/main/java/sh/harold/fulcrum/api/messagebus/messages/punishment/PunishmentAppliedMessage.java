@@ -12,7 +12,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-@MessageType("fulcrum.registry.punishment.applied")
+@MessageType(value = "fulcrum.registry.punishment.applied", version = 1)
 public final class PunishmentAppliedMessage implements BaseMessage {
 
     private final List<Effect> effects = new ArrayList<>();

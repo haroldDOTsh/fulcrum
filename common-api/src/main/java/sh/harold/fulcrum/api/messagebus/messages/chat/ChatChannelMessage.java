@@ -8,7 +8,7 @@ import java.util.UUID;
 /**
  * Payload for cross-network chat channel delivery.
  */
-@MessageType("chat.channel.message")
+@MessageType(value = "chat.channel.message", version = 1)
 public final class ChatChannelMessage implements BaseMessage {
     private static final long serialVersionUID = 1L;
 

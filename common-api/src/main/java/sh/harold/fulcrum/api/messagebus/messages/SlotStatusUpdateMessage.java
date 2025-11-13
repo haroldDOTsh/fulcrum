@@ -14,7 +14,7 @@ import java.util.Map;
  * Broadcast by backend servers to describe the current state of a logical slot.
  * The registry consumes these messages to build its availability model.
  */
-@MessageType("slot.status.update")
+@MessageType(value = "slot.status.update", version = 1)
 public class SlotStatusUpdateMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

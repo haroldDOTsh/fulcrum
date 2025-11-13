@@ -7,7 +7,7 @@ import sh.harold.fulcrum.api.punishment.PunishmentStatus;
 import java.time.Instant;
 import java.util.UUID;
 
-@MessageType("fulcrum.registry.punishment.status")
+@MessageType(value = "fulcrum.registry.punishment.status", version = 1)
 public final class PunishmentStatusMessage implements BaseMessage {
 
     private UUID punishmentId;

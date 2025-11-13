@@ -11,7 +11,7 @@ import java.io.Serializable;
  * Response message sent after server evacuation is complete.
  * Indicates whether all players were successfully evacuated.
  */
-@MessageType("server.evacuation.response")
+@MessageType(value = "server.evacuation.response", version = 1)
 public record ServerEvacuationResponse(String serverId, boolean success, int playersEvacuated, int playersFailed,
                                        String message, long timestamp) implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;

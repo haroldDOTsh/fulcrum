@@ -11,7 +11,7 @@ import java.io.Serializable;
  * Message sent to backend servers to trigger evacuation of all players.
  * Servers should move all players to available lobby servers upon receiving this message.
  */
-@MessageType("server.evacuation.request")
+@MessageType(value = "server.evacuation.request", version = 1)
 public record ServerEvacuationRequest(String serverId, String reason, long timestamp,
                                       int timeoutMillis) implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;

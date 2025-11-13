@@ -362,15 +362,7 @@ public class RedisMessageBus extends AbstractMessageBus {
 
         try {
             // Create request envelope with correlation ID
-            MessageEnvelope envelope = new MessageEnvelope(
-                    type,
-                    adapter.getServerId(),
-                    targetServerId,
-                    correlationId,
-                    System.currentTimeMillis(),
-                    1,
-                    objectMapper.valueToTree(payload)
-            );
+            MessageEnvelope envelope = createEnvelope(type, targetServerId, correlationId, payload);
 
             String serialized = serializeEnvelope(envelope);
             String channel = ChannelConstants.getRequestChannel(targetServerId);
@@ -567,14 +559,11 @@ public class RedisMessageBus extends AbstractMessageBus {
                 Map<String, String> error = new HashMap<>();
                 error.put("error", "No handler found for request type: " + requestEnvelope.type());
 
-                MessageEnvelope response = new MessageEnvelope(
+                MessageEnvelope response = createEnvelope(
                         requestEnvelope.type() + "_response",
-                        adapter.getServerId(),
                         requestEnvelope.senderId(),
                         requestEnvelope.correlationId(),
-                        System.currentTimeMillis(),
-                        1,
-                        objectMapper.valueToTree(error)
+                        error
                 );
 
                 String serialized = serializeEnvelope(response);
@@ -595,13 +584,17 @@ public class RedisMessageBus extends AbstractMessageBus {
     }
 
     private MessageEnvelope createEnvelope(String type, String targetId, Object payload) {
+        return createEnvelope(type, targetId, UUID.randomUUID(), payload);
+    }
+
+    private MessageEnvelope createEnvelope(String type, String targetId, UUID correlationId, Object payload) {
         return new MessageEnvelope(
                 type,
                 adapter.getServerId(),  // CRITICAL: Use dynamic ID from adapter instead of cached value
                 targetId,
-                UUID.randomUUID(),
+                correlationId,
                 System.currentTimeMillis(),
-                1,
+                resolveMessageVersion(type),
                 objectMapper.valueToTree(payload)
         );
     }

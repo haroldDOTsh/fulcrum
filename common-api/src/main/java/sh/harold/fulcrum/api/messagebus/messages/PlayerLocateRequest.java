@@ -13,7 +13,7 @@ import java.util.UUID;
 /**
  * Broadcast by the registry when it needs to determine which proxy currently hosts a player.
  */
-@MessageType("player.locate.request")
+@MessageType(value = "player.locate.request", version = 1)
 public class PlayerLocateRequest implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

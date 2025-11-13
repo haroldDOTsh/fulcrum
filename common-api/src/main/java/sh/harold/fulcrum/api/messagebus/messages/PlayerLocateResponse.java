@@ -9,7 +9,7 @@ import java.util.UUID;
 /**
  * Response emitted by proxies indicating whether they host a specific player.
  */
-@MessageType("player.locate.response")
+@MessageType(value = "player.locate.response", version = 1)
 public class PlayerLocateResponse implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 
