@@ -2,10 +2,7 @@
   "dev": {
     "id": "dev",
     "tag": "Development Stack",
-    "modules": [
-      "debug-minigame",
-      "slot-watchdog"
-    ],
+    "modules": [],
     "description": "Default development environment",
     "minPlayers": 0,
     "maxPlayers": 50,
