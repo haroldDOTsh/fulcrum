@@ -13,13 +13,11 @@ import java.util.stream.Collectors;
 /**
  * Command that lists logical server slots tracked by the registry.
  */
-public class LogicalServersCommand implements CommandHandler {
+public record LogicalServersCommand(RedisRegistryInspector inspector) implements CommandHandler {
     private static final int ITEMS_PER_PAGE = 15;
 
-    private final RedisRegistryInspector inspector;
-
-    public LogicalServersCommand(RedisRegistryInspector inspector) {
-        this.inspector = inspector;
+    public LogicalServersCommand {
+        Objects.requireNonNull(inspector, "inspector");
     }
 
     @Override

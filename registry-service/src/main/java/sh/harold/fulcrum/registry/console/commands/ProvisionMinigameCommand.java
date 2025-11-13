@@ -7,20 +7,18 @@ import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.Objects;
 
 /**
  * Console command that requests a backend to provision a minigame slot for a variant.
  * Mirrors the /play pipeline without routing a player.
  */
-public final class ProvisionMinigameCommand implements CommandHandler {
+public record ProvisionMinigameCommand(SlotProvisionService slotProvisionService,
+                                       RedisRegistryInspector inspector) implements CommandHandler {
 
-    private final SlotProvisionService slotProvisionService;
-    private final RedisRegistryInspector inspector;
-
-    public ProvisionMinigameCommand(SlotProvisionService slotProvisionService,
-                                    RedisRegistryInspector inspector) {
-        this.slotProvisionService = slotProvisionService;
-        this.inspector = inspector;
+    public ProvisionMinigameCommand {
+        Objects.requireNonNull(slotProvisionService, "slotProvisionService");
+        Objects.requireNonNull(inspector, "inspector");
     }
 
     private static String normalize(String value) {

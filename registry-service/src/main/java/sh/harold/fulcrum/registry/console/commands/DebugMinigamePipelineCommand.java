@@ -15,25 +15,29 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class DebugMinigamePipelineCommand implements CommandHandler {
+public record DebugMinigamePipelineCommand(MessageBus messageBus,
+                                           RedisRegistryInspector inspector,
+                                           ObjectMapper objectMapper) implements CommandHandler {
     private static final String FAMILY_ID = "debug";
     private static final String VARIANT_ID = "pipeline";
     private static final long LOCATE_TIMEOUT_MS = 2000L;
 
-    private final MessageBus messageBus;
-    private final RedisRegistryInspector inspector;
-    private final ObjectMapper objectMapper;
+    public DebugMinigamePipelineCommand {
+        Objects.requireNonNull(messageBus, "messageBus");
+        Objects.requireNonNull(inspector, "inspector");
+        Objects.requireNonNull(objectMapper, "objectMapper");
+    }
 
-    public DebugMinigamePipelineCommand(MessageBus messageBus, RedisRegistryInspector inspector) {
-        this.messageBus = messageBus;
-        this.inspector = inspector;
-        this.objectMapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    public DebugMinigamePipelineCommand(MessageBus messageBus,
+                                        RedisRegistryInspector inspector) {
+        this(messageBus, inspector, new ObjectMapper()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false));
     }
 
     @Override

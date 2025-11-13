@@ -5,12 +5,12 @@ import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryDocument;
 import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryManager;
 
 import java.util.List;
+import java.util.Objects;
 
-public final class EnvironmentDirectoryCommand implements CommandHandler {
-    private final EnvironmentDirectoryManager manager;
+public record EnvironmentDirectoryCommand(EnvironmentDirectoryManager manager) implements CommandHandler {
 
-    public EnvironmentDirectoryCommand(EnvironmentDirectoryManager manager) {
-        this.manager = manager;
+    public EnvironmentDirectoryCommand {
+        Objects.requireNonNull(manager, "manager");
     }
 
     @Override

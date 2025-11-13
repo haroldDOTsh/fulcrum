@@ -5,17 +5,16 @@ import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
  * Console command to manually request a slot provision (diagnostic tooling).
  */
-public class ProvisionSlotCommand implements CommandHandler {
+public record ProvisionSlotCommand(SlotProvisionService slotProvisionService) implements CommandHandler {
 
-    private final SlotProvisionService slotProvisionService;
-
-    public ProvisionSlotCommand(SlotProvisionService slotProvisionService) {
-        this.slotProvisionService = slotProvisionService;
+    public ProvisionSlotCommand {
+        Objects.requireNonNull(slotProvisionService, "slotProvisionService");
     }
 
     @Override

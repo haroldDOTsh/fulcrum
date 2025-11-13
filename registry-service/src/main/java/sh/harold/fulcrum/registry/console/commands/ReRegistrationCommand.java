@@ -8,19 +8,19 @@ import sh.harold.fulcrum.registry.RegistryService;
 import sh.harold.fulcrum.registry.console.CommandHandler;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Command to manually request re-registration from all servers and proxies.
  * Useful for recovering state after network issues or debugging.
  */
-public class ReRegistrationCommand implements CommandHandler {
+public record ReRegistrationCommand(RegistryService registryService,
+                                    MessageBus messageBus) implements CommandHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(ReRegistrationCommand.class);
-    private final RegistryService registryService;
-    private final MessageBus messageBus;
 
-    public ReRegistrationCommand(RegistryService registryService, MessageBus messageBus) {
-        this.registryService = registryService;
-        this.messageBus = messageBus;
+    public ReRegistrationCommand {
+        Objects.requireNonNull(registryService, "registryService");
+        Objects.requireNonNull(messageBus, "messageBus");
     }
 
     @Override

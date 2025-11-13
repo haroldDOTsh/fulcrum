@@ -4,15 +4,15 @@ import sh.harold.fulcrum.registry.RegistryService;
 import sh.harold.fulcrum.registry.console.CommandHandler;
 import sh.harold.fulcrum.registry.console.TableFormatter;
 
+import java.util.Objects;
+
 /**
  * Command to toggle debug mode on/off
  */
-public class DebugCommand implements CommandHandler {
+public record DebugCommand(RegistryService registryService) implements CommandHandler {
 
-    private final RegistryService registryService;
-
-    public DebugCommand(RegistryService registryService) {
-        this.registryService = registryService;
+    public DebugCommand {
+        Objects.requireNonNull(registryService, "registryService");
     }
 
     @Override

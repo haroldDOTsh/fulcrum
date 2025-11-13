@@ -10,23 +10,25 @@ import java.lang.management.ManagementFactory;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Command to show overall system status
  */
-public class StatusCommand implements CommandHandler {
+public record StatusCommand(RegistryService registryService,
+                            RedisRegistryInspector inspector,
+                            long startTime) implements CommandHandler {
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
-    private final RegistryService registryService;
-    private final RedisRegistryInspector inspector;
-    private final long startTime;
+    public StatusCommand {
+        Objects.requireNonNull(registryService, "registryService");
+        Objects.requireNonNull(inspector, "inspector");
+    }
 
     public StatusCommand(RegistryService registryService, RedisRegistryInspector inspector) {
-        this.registryService = registryService;
-        this.inspector = inspector;
-        this.startTime = System.currentTimeMillis();
+        this(registryService, inspector, System.currentTimeMillis());
     }
 
     @Override

@@ -8,18 +8,17 @@ import sh.harold.fulcrum.registry.proxy.RegisteredProxyData;
 import sh.harold.fulcrum.registry.server.RegisteredServerData;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Command that clears Redis and shuts the registry down after ensuring no services are alive.
  */
-public class FullShutdownIKnowWhatImDoingCommand implements CommandHandler {
+public record FullShutdownIKnowWhatImDoingCommand(RegistryService registryService) implements CommandHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(FullShutdownIKnowWhatImDoingCommand.class);
     private static final int MAX_PRINTED_ENTRIES = 10;
 
-    private final RegistryService registryService;
-
-    public FullShutdownIKnowWhatImDoingCommand(RegistryService registryService) {
-        this.registryService = registryService;
+    public FullShutdownIKnowWhatImDoingCommand {
+        Objects.requireNonNull(registryService, "registryService");
     }
 
     @Override
