@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
+import io.lettuce.core.RedisCommandInterruptedException;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -48,7 +49,8 @@ public final class ProxyShutdownFeature implements VelocityFeature {
     private VelocityServerLifecycleFeature lifecycleFeature;
     private FulcrumVelocityPlugin plugin;
     private String proxyId;
-    private static final String NETWORK_FALLBACK_IP = "play.harold.sh";
+    private static final String NETWORK_FALLBACK_IP = "???";
+    private volatile boolean shuttingDown;
     private String serverIp = NETWORK_FALLBACK_IP;
     private EvacuationContext context;
     private MessageHandler shutdownHandler;
@@ -210,6 +212,7 @@ public final class ProxyShutdownFeature implements VelocityFeature {
 
     private void finalizeShutdown() {
         publishPhase(ShutdownIntentUpdateMessage.Phase.SHUTDOWN);
+        shuttingDown = true;
         proxy.shutdown(Component.text("Proxy restarting for maintenance.", NamedTextColor.RED));
     }
 
@@ -231,7 +234,16 @@ public final class ProxyShutdownFeature implements VelocityFeature {
                     .map(Player::getUniqueId)
                     .toList());
         }
-        messageBus.broadcast(ChannelConstants.REGISTRY_SHUTDOWN_UPDATE, update);
+        try {
+            messageBus.broadcast(ChannelConstants.REGISTRY_SHUTDOWN_UPDATE, update);
+        } catch (RedisCommandInterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            if (shuttingDown) {
+                logger.debug("Suppressed shutdown phase {} publish; proxy is already stopping.", phase);
+            } else {
+                logger.warn("Interrupted while publishing shutdown phase {}", phase, interrupted);
+            }
+        }
     }
 
     private void broadcastWarning() {
