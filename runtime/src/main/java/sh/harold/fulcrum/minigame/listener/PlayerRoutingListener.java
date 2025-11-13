@@ -166,6 +166,9 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         metadata.remove("reservationToken");
         metadata.remove("partyReservationId");
         metadata.remove("partyTokenId");
+        if (command.getProxyId() != null && !command.getProxyId().isBlank()) {
+            metadata.putIfAbsent("proxyId", command.getProxyId());
+        }
         if (sessionService != null) {
             sessionService.recordHandoff(
                     playerId,

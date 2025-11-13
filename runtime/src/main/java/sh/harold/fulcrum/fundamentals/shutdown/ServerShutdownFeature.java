@@ -28,15 +28,19 @@ import sh.harold.fulcrum.api.messagebus.messages.PlayerSlotRequest;
 import sh.harold.fulcrum.api.messagebus.messages.ShutdownIntentMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ShutdownIntentUpdateMessage;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
+import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry.RouteAssignment;
+import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.papermc.paper.command.brigadier.Commands.literal;
@@ -52,24 +56,28 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
             .findAndRegisterModules()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private JavaPlugin plugin;
+    private DependencyContainer container;
     private MessageBus messageBus;
     private ServerIdentifier serverIdentifier;
     private PlayerRouteRegistry routeRegistry;
     private RenderingPipeline renderingPipeline;
     private ServerLifecycleFeature lifecycleFeature;
+    private PlayerSessionService sessionService;
     private EvacuationContext currentContext;
     private MessageHandler shutdownHandler;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
+        this.container = container;
         this.messageBus = container.getOptional(MessageBus.class)
                 .orElseThrow(() -> new IllegalStateException("MessageBus unavailable for shutdown feature"));
         this.serverIdentifier = container.getOptional(ServerIdentifier.class)
                 .orElseThrow(() -> new IllegalStateException("ServerIdentifier unavailable for shutdown feature"));
-        this.routeRegistry = container.getOptional(PlayerRouteRegistry.class).orElseGet(PlayerRouteRegistry::new);
+        this.routeRegistry = container.getOptional(PlayerRouteRegistry.class).orElse(null);
         this.renderingPipeline = container.getOptional(RenderingPipeline.class).orElse(null);
         this.lifecycleFeature = container.getOptional(ServerLifecycleFeature.class).orElse(null);
+        this.sessionService = container.getOptional(PlayerSessionService.class).orElse(null);
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
 
@@ -85,6 +93,9 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
             messageBus.unsubscribe(ChannelConstants.REGISTRY_SHUTDOWN_INTENT, shutdownHandler);
         }
         cancelContext();
+        routeRegistry = null;
+        sessionService = null;
+        container = null;
     }
 
     @EventHandler
@@ -222,6 +233,7 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
             return;
         }
         publishPhase(ShutdownIntentUpdateMessage.Phase.SHUTDOWN);
+        kickRemainingPlayers();
         if (renderingPipeline != null) {
             renderingPipeline.clearHeaderOverride();
         }
@@ -249,11 +261,18 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
             player.sendMessage(Component.text("No evacuation in progress.", NamedTextColor.GRAY));
             return;
         }
-        String proxyId = routeRegistry.get(player.getUniqueId())
+        PlayerRouteRegistry registry = resolveRouteRegistry();
+        String proxyId = registry != null
+                ? registry.get(player.getUniqueId())
                 .map(RouteAssignment::proxyId)
-                .orElseGet(() -> lifecycleFeature != null
-                        ? lifecycleFeature.getCurrentProxyId().orElse(null)
-                        : null);
+                .orElse(null)
+                : null;
+        if ((proxyId == null || proxyId.isBlank()) && lifecycleFeature != null) {
+            proxyId = lifecycleFeature.getCurrentProxyId().orElse(null);
+        }
+        if ((proxyId == null || proxyId.isBlank())) {
+            proxyId = resolveProxyIdFromSession(player.getUniqueId());
+        }
         if (proxyId == null || proxyId.isBlank()) {
             player.sendMessage(Component.text("Unable to evacuate right now (proxy unknown).", NamedTextColor.RED));
             return;
@@ -270,6 +289,69 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
         metadata.put("shutdownIntentId", currentContext.intentId);
         metadata.put("requestedAt", Long.toString(System.currentTimeMillis()));
         messageBus.broadcast(ChannelConstants.REGISTRY_PLAYER_REQUEST, request);
+    }
+
+    private String resolveProxyIdFromSession(UUID playerId) {
+        if (sessionService == null || playerId == null) {
+            return null;
+        }
+        return sessionService.getActiveSession(playerId)
+                .map(PlayerSessionRecord::getMinigames)
+                .map(minigames -> {
+                    Object active = minigames.get("active");
+                    if (active instanceof Map<?, ?> activeMap) {
+                        Object proxy = activeMap.get("proxyId");
+                        if (proxy == null) {
+                            proxy = activeMap.get("proxy");
+                        }
+                        return proxy != null ? proxy.toString() : null;
+                    }
+                    return null;
+                })
+                .filter(proxy -> proxy != null && !proxy.isBlank())
+                .orElse(null);
+    }
+
+    private PlayerRouteRegistry resolveRouteRegistry() {
+        if (routeRegistry != null) {
+            return routeRegistry;
+        }
+        if (container != null) {
+            routeRegistry = container.getOptional(PlayerRouteRegistry.class).orElse(null);
+        }
+        if (routeRegistry == null && ServiceLocatorImpl.getInstance() != null) {
+            routeRegistry = ServiceLocatorImpl.getInstance()
+                    .findService(PlayerRouteRegistry.class)
+                    .orElse(null);
+        }
+        return routeRegistry;
+    }
+
+    private void kickRemainingPlayers() {
+        if (Bukkit.getOnlinePlayers().isEmpty()) {
+            return;
+        }
+        Component message = buildKickMessage();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.kick(message);
+        }
+    }
+
+    private Component buildKickMessage() {
+        String fallback = currentContext != null && currentContext.fallbackFamily != null && !currentContext.fallbackFamily.isBlank()
+                ? currentContext.fallbackFamily
+                : "the lobby";
+        Component header = Component.text("Server rebooting now.", NamedTextColor.RED);
+        Component instructions = Component.text("Please rejoin via ", NamedTextColor.GRAY)
+                .append(Component.text(fallback, NamedTextColor.YELLOW))
+                .append(Component.text(".", NamedTextColor.GRAY));
+        Component reason = Component.text("Reason: ", NamedTextColor.GRAY)
+                .append(Component.text(currentContext != null ? currentContext.reason : "Scheduled maintenance", NamedTextColor.AQUA));
+        return header
+                .append(Component.newline())
+                .append(instructions)
+                .append(Component.newline())
+                .append(reason);
     }
 
     private void sendCountdownBroadcast(int secondsRemaining) {

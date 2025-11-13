@@ -13,6 +13,7 @@ import org.bukkit.util.Vector;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.dialogue.Dialogue;
 import sh.harold.fulcrum.dialogue.DialogueLine;
+import sh.harold.fulcrum.message.Message;
 import sh.harold.fulcrum.npc.NpcDefinition;
 import sh.harold.fulcrum.npc.behavior.NpcBehavior;
 import sh.harold.fulcrum.npc.behavior.PassiveContext;
@@ -105,8 +106,8 @@ public final class NpcDebugCommand {
 
         long ticks = Math.max(20L, lifetimeSeconds * 20L);
         orchestrator.spawnTemporaryNpc(definition, player.getLocation(), ticks);
-        player.sendMessage(Component.text(
-                "Spawned debug NPC; despawns in " + lifetimeSeconds + "s.",
-                NamedTextColor.AQUA));
+        Message.debug("Spawned debug NPC; despawns in {arg0}s.", lifetimeSeconds)
+                .skipTranslation()
+                .send(player);
     }
 }

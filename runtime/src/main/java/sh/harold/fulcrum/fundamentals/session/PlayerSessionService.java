@@ -538,7 +538,13 @@ public class PlayerSessionService {
                 String family = metadata.get("family");
                 String variant = metadata.getOrDefault("variant", "");
                 String matchId = metadata.get("matchId");
-                String proxy = currentServerId();
+                String proxy = metadata.get("proxyId");
+                if (proxy == null || proxy.isBlank()) {
+                    proxy = metadata.get("proxy");
+                }
+                if (proxy == null || proxy.isBlank()) {
+                    proxy = currentServerId();
+                }
 
                 active.put("family", family);
                 if (variant != null && !variant.isBlank()) {
