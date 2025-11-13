@@ -17,6 +17,8 @@ import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.environment.EnvironmentConfig;
 import sh.harold.fulcrum.api.environment.directory.EnvironmentDirectoryView;
 import sh.harold.fulcrum.api.module.FulcrumEnvironment;
+import sh.harold.fulcrum.environment.EnvironmentFileReader;
+import sh.harold.fulcrum.environment.EnvironmentFileSettings;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -71,19 +73,27 @@ public class FulcrumBootstrapper implements PluginBootstrap {
         Path serverRoot = Path.of(".");
         Path environmentFile = serverRoot.resolve(ENVIRONMENT_FILE);
 
-        try {
-            if (Files.exists(environmentFile)) {
-                String configuration = Files.readString(environmentFile).trim();
-                if (!configuration.isEmpty()) {
-                    logger.info("Server configuration selected from ENVIRONMENT file: " + configuration);
-                    return configuration;
+        if (Files.exists(environmentFile)) {
+            try {
+                var environmentSelection = EnvironmentFileReader.read(serverRoot);
+                if (environmentSelection.isPresent()) {
+                    EnvironmentFileSettings settings = environmentSelection.get();
+                    logger.info("Server configuration selected from ENVIRONMENT file: " + settings.role());
+                    settings.ipOverride().ifPresent(ip ->
+                            logger.info("ENVIRONMENT IP override (unused during bootstrap) detected: " + ip));
+                    return settings.role();
                 }
+                logger.warn("ENVIRONMENT file is empty, using default configuration.");
+            } catch (IOException e) {
+                logger.warn("Failed to read ENVIRONMENT file: " + e.getMessage());
             }
-        } catch (IOException e) {
-            logger.warn("Failed to read ENVIRONMENT file: " + e.getMessage());
+        } else {
+            logger.info("No ENVIRONMENT file found, using default configuration: " + DEFAULT_ENVIRONMENT);
+            logger.info("Create an ENVIRONMENT file containing a configuration name from the registry directory to select a specific server configuration");
+            return DEFAULT_ENVIRONMENT;
         }
 
-        logger.info("No ENVIRONMENT file found, using default configuration: " + DEFAULT_ENVIRONMENT);
+        logger.info("Using default configuration: " + DEFAULT_ENVIRONMENT);
         logger.info("Create an ENVIRONMENT file containing a configuration name from the registry directory to select a specific server configuration");
         return DEFAULT_ENVIRONMENT;
     }

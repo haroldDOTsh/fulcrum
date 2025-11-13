@@ -13,6 +13,8 @@ import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.*;
 import sh.harold.fulcrum.api.slot.SlotFamilyDescriptor;
+import sh.harold.fulcrum.environment.EnvironmentFileReader;
+import sh.harold.fulcrum.environment.EnvironmentFileSettings;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyFilter;
 import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
@@ -23,9 +25,9 @@ import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
@@ -41,6 +43,8 @@ import java.util.stream.Collectors;
  */
 public class ServerLifecycleFeature implements PluginFeature {
     private static final Logger LOGGER = Logger.getLogger(ServerLifecycleFeature.class.getName());
+    private static final EnvironmentFileSettings DEFAULT_ENVIRONMENT_SETTINGS =
+            new EnvironmentFileSettings("game", Optional.empty());
     // Configuration constants
     private static final long INITIAL_REGISTRATION_RETRY_DELAY_MS = 5_000L;
     private static final long MAX_REGISTRATION_RETRY_DELAY_MS = 60_000L;
@@ -64,6 +68,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     private int maxCapacity = 100;
     private long startTime;
     private String environment;  // Store the environment string directly
+    private Optional<String> environmentIpOverride = Optional.empty();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> registrationTimeoutTask;
     private ScheduledFuture<?> registrationRetryTask;
@@ -144,12 +149,14 @@ public class ServerLifecycleFeature implements PluginFeature {
         // This ensures consistent behavior across the fleet
 
         // Load environment from ENVIRONMENT file
-        String role = loadEnvironmentRole();
+        EnvironmentFileSettings environmentSettings = loadEnvironmentSelection();
+        String role = environmentSettings.role();
 
         // Create temporary server identifier
         String tempId = "temp-" + UUID.randomUUID().toString().substring(0, 8);
         UUID instanceUuid = UUID.randomUUID();
-        String address = plugin.getServer().getIp().isEmpty() ? "localhost" : plugin.getServer().getIp();
+        String defaultAddress = plugin.getServer().getIp().isEmpty() ? "localhost" : plugin.getServer().getIp();
+        String address = environmentIpOverride.orElse(defaultAddress);
         int port = plugin.getServer().getPort();
 
         // Set soft cap and hard cap based on server type
@@ -197,38 +204,41 @@ public class ServerLifecycleFeature implements PluginFeature {
     }
 
     /**
-     * Loads the server role from the ENVIRONMENT file in the server root.
-     * The role string should match one of the roles defined in environment.yml.
-     * This role determines which modules are loaded and is reported during registration.
+     * Loads the environment selection (role + optional IP override) from the ENVIRONMENT file.
      *
-     * @return The server role from the ENVIRONMENT file, or "game" as default
+     * @return Environment settings describing how this server should announce itself
      */
-    private String loadEnvironmentRole() {
+    private EnvironmentFileSettings loadEnvironmentSelection() {
+        Path serverRoot = Path.of(".");
+        Path environmentPath = serverRoot.resolve(EnvironmentFileReader.FILE_NAME);
+
+        if (Files.notExists(environmentPath)) {
+            LOGGER.warning("ENVIRONMENT file not found in server root, defaulting to 'game'");
+            this.environment = DEFAULT_ENVIRONMENT_SETTINGS.role();
+            this.environmentIpOverride = DEFAULT_ENVIRONMENT_SETTINGS.ipOverride();
+            return DEFAULT_ENVIRONMENT_SETTINGS;
+        }
+
         try {
-            File envFile = new File("ENVIRONMENT");
-            if (!envFile.exists()) {
-                LOGGER.warning("ENVIRONMENT file not found in server root, defaulting to 'game'");
-                this.environment = "game";
-                return "game";
+            var selection = EnvironmentFileReader.read(serverRoot);
+            if (selection.isPresent()) {
+                EnvironmentFileSettings settings = selection.get();
+                this.environment = settings.role();
+                this.environmentIpOverride = settings.ipOverride();
+                LOGGER.info("Server role loaded from ENVIRONMENT file: " + settings.role());
+                settings.ipOverride().ifPresent(ip ->
+                        LOGGER.info("Server IP override loaded from ENVIRONMENT file: " + ip));
+                LOGGER.info("This role will be reported during server registration");
+                return settings;
             }
-
-            String env = Files.readString(envFile.toPath()).trim();
-            if (env.isEmpty()) {
-                LOGGER.warning("ENVIRONMENT file is empty, defaulting to 'game'");
-                this.environment = "game";
-                return "game";
-            }
-
-            // Store the role for use in heartbeats and announcements
-            this.environment = env;
-            LOGGER.info("Server role loaded from ENVIRONMENT file: " + env);
-            LOGGER.info("This role will be reported during server registration");
-            return env;
+            LOGGER.warning("ENVIRONMENT file is empty, defaulting to 'game'");
         } catch (IOException e) {
             LOGGER.warning("Failed to read ENVIRONMENT file: " + e.getMessage());
-            this.environment = "game";
-            return "game";
         }
+
+        this.environment = DEFAULT_ENVIRONMENT_SETTINGS.role();
+        this.environmentIpOverride = DEFAULT_ENVIRONMENT_SETTINGS.ipOverride();
+        return DEFAULT_ENVIRONMENT_SETTINGS;
     }
 
     private SlotFamilyFilter loadSlotFamilyFilter() {

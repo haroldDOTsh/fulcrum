@@ -109,7 +109,9 @@ Fulcrum splits responsibilities so each process stays focused:
 Everything speaks through the message bus: typed envelopes, channel constants, and Jackson-serialised payloads keep
 cross service communication predictable. Environments (`ENVIRONMENT` file + `environment.yml`) decide which runtime
 features to load, which modules to activate, and which role the server should register under - allowing the same
-`/plugins` folder to boot as a lobby, a minigame shard, or a staff testing server.
+`/plugins` folder to boot as a lobby, a minigame shard, or a staff testing server. When the Paper host runs behind
+NAT/Docker, add a second line to the `ENVIRONMENT` file with the public IP so registry lookups get the reachable address
+instead of `server.properties`.
 
 > [!NOTE]
 > Fulcrum takes advantage of Paper’s bootstrap sequence: environment driven module lists translate to plugin ids that
