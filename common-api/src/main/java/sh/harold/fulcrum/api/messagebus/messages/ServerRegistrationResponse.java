@@ -8,7 +8,7 @@ import sh.harold.fulcrum.api.messagebus.MessageType;
  * Contains the assigned permanent server ID or failure information.
  * This message is also forwarded to all proxies for dynamic backend registration.
  */
-@MessageType("server.registration.response")
+@MessageType(value = "server.registration.response", version = 1)
 public class ServerRegistrationResponse implements BaseMessage {
     private static final long serialVersionUID = 1L;
 

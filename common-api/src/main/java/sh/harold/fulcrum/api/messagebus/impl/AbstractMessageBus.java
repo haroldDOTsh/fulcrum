@@ -113,6 +113,32 @@ public abstract class AbstractMessageBus implements MessageBus {
         return adapter.getServerId();
     }
 
+    /**
+     * Resolve the schema version for a message type identifier.
+     *
+     * @param messageType the message type key
+     * @return the declared version or 1 when unknown
+     */
+    protected int resolveMessageVersion(String messageType) {
+        if (messageType == null) {
+            return 0;
+        }
+        return messageTypeRegistry.getVersion(messageType);
+    }
+
+    /**
+     * Resolve the schema version for a typed message instance.
+     *
+     * @param message the message being published
+     * @return the declared version or 1 when unknown
+     */
+    protected int resolveMessageVersion(BaseMessage message) {
+        if (message == null) {
+            return 0;
+        }
+        return messageTypeRegistry.getVersion(message.getClass());
+    }
+
     @Override
     public String currentServerId() {
         return adapter.getServerId();
@@ -202,7 +228,7 @@ public abstract class AbstractMessageBus implements MessageBus {
                     targetId,
                     UUID.randomUUID(),
                     System.currentTimeMillis(),
-                    1,
+                    resolveMessageVersion(message),
                     payload
             );
 

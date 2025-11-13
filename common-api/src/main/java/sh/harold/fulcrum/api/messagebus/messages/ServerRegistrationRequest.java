@@ -7,7 +7,7 @@ import sh.harold.fulcrum.api.messagebus.MessageType;
  * Request sent by a server to register itself with the network.
  * The server uses a temporary ID initially and receives a permanent ID in the response.
  */
-@MessageType("server.registration.request")
+@MessageType(value = "server.registration.request", version = 1)
 public class ServerRegistrationRequest implements BaseMessage {
     private static final long serialVersionUID = 1L;
 

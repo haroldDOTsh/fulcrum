@@ -13,7 +13,7 @@ import java.util.UUID;
 /**
  * Emitted by proxies when a player requests a slot in a minigame family.
  */
-@MessageType("player.slot.request")
+@MessageType(value = "player.slot.request", version = 1)
 public class PlayerSlotRequest implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

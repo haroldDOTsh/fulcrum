@@ -18,12 +18,14 @@ import java.util.logging.Logger;
 public class MessageTypeRegistry {
 
     private static final Logger LOGGER = Logger.getLogger(MessageTypeRegistry.class.getName());
+    private static final int UNKNOWN_VERSION = 0;
 
     // Singleton instance
     private static final MessageTypeRegistry INSTANCE = new MessageTypeRegistry();
 
     private final Map<String, Class<? extends BaseMessage>> typeToClass = new ConcurrentHashMap<>();
     private final Map<Class<? extends BaseMessage>, String> classToType = new ConcurrentHashMap<>();
+    private final Map<String, Integer> typeToVersion = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
 
     private MessageTypeRegistry() {
@@ -146,6 +148,7 @@ public class MessageTypeRegistry {
 
         typeToClass.put(messageType, messageClass);
         classToType.put(messageClass, messageType);
+        typeToVersion.put(messageType, resolveVersion(messageClass));
 
         LOGGER.fine("Registered message type: " + messageType + " -> " + messageClass.getName());
     }
@@ -162,6 +165,11 @@ public class MessageTypeRegistry {
                     " must have @MessageType annotation");
         }
         register(annotation.value(), messageClass);
+    }
+
+    private int resolveVersion(Class<? extends BaseMessage> messageClass) {
+        MessageType annotation = messageClass.getAnnotation(MessageType.class);
+        return annotation != null ? annotation.version() : UNKNOWN_VERSION;
     }
 
     /**
@@ -303,6 +311,7 @@ public class MessageTypeRegistry {
     public void clear() {
         typeToClass.clear();
         classToType.clear();
+        typeToVersion.clear();
     }
 
     /**
@@ -310,5 +319,34 @@ public class MessageTypeRegistry {
      */
     public int size() {
         return typeToClass.size();
+    }
+
+    /**
+     * Get the declared version for a message type.
+     *
+     * @param messageType the message type identifier
+     * @return the schema version, defaulting to 0 if unknown
+     */
+    public int getVersion(String messageType) {
+        return typeToVersion.getOrDefault(messageType, UNKNOWN_VERSION);
+    }
+
+    /**
+     * Get the declared version for a message class.
+     *
+     * @param messageClass the message class
+     * @return the schema version, defaulting to 0 if unknown
+     */
+    public int getVersion(Class<? extends BaseMessage> messageClass) {
+        if (messageClass == null) {
+            return UNKNOWN_VERSION;
+        }
+
+        String messageType = classToType.get(messageClass);
+        if (messageType != null) {
+            return getVersion(messageType);
+        }
+
+        return resolveVersion(messageClass);
     }
 }

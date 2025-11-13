@@ -13,6 +13,7 @@ import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.MessageTypeRegistry;
 import sh.harold.fulcrum.api.messagebus.impl.AbstractMessageBus;
 import sh.harold.fulcrum.api.messagebus.impl.InMemoryMessageBus;
 import sh.harold.fulcrum.api.messagebus.impl.RedisMessageBus;
@@ -274,6 +275,7 @@ public class MessageDebugCommand {
     private MessageEnvelope createEnvelope(String type, JsonNode payload) {
         ServerIdentifier serverIdentifier = container.get(ServerIdentifier.class);
         String targetId = serverIdentifier != null ? serverIdentifier.getServerId() : "unknown";
+        int version = MessageTypeRegistry.getInstance().getVersion(type);
 
         return new MessageEnvelope(
                 type,
@@ -281,7 +283,7 @@ public class MessageDebugCommand {
                 targetId,
                 UUID.randomUUID(),
                 System.currentTimeMillis(),
-                1,
+                version,
                 payload
         );
     }

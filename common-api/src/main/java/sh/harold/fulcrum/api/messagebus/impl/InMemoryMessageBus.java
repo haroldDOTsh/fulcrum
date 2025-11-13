@@ -84,7 +84,7 @@ public class InMemoryMessageBus extends AbstractMessageBus {
                 targetId,
                 UUID.randomUUID(),
                 System.currentTimeMillis(),
-                1,
+                resolveMessageVersion(type),
                 objectMapper.valueToTree(payload)
         );
     }

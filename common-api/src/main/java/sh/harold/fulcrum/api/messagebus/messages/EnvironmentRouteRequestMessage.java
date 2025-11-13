@@ -11,7 +11,7 @@ import java.util.UUID;
 /**
  * Direct environment routing request emitted by backend servers.
  */
-@MessageType("environment.route.request")
+@MessageType(value = "environment.route.request", version = 1)
 public final class EnvironmentRouteRequestMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

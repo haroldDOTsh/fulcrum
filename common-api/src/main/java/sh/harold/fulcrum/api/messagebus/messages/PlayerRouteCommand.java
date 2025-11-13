@@ -13,7 +13,7 @@ import java.util.UUID;
 /**
  * Sent by the registry to a proxy to instruct it to route a player to a specific slot.
  */
-@MessageType("player.route.command")
+@MessageType(value = "player.route.command", version = 1)
 public class PlayerRouteCommand implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     private UUID requestId;

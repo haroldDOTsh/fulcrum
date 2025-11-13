@@ -14,7 +14,7 @@ import java.util.Objects;
 /**
  * Broadcast by the registry to instruct services to begin evacuation.
  */
-@MessageType(ChannelConstants.REGISTRY_SHUTDOWN_INTENT)
+@MessageType(value = ChannelConstants.REGISTRY_SHUTDOWN_INTENT, version = 1)
 public final class ShutdownIntentMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

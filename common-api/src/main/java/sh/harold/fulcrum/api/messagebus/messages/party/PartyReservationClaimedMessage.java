@@ -7,7 +7,7 @@ import java.io.Serializable;
 import java.time.Instant;
 import java.util.UUID;
 
-@MessageType("party.reservation.claimed")
+@MessageType(value = "party.reservation.claimed", version = 1)
 public final class PartyReservationClaimedMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

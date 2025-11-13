@@ -13,7 +13,7 @@ import java.util.UUID;
 /**
  * Command issued by the registry requesting that a backend provision a logical slot for a family.
  */
-@MessageType("slot.provision.command")
+@MessageType(value = "slot.provision.command", version = 1)
 public class SlotProvisionCommand implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

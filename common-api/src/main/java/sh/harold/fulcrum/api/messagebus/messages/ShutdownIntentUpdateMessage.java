@@ -14,7 +14,7 @@ import java.util.UUID;
 /**
  * Sent by services as they progress through the shutdown lifecycle.
  */
-@MessageType(ChannelConstants.REGISTRY_SHUTDOWN_UPDATE)
+@MessageType(value = ChannelConstants.REGISTRY_SHUTDOWN_UPDATE, version = 1)
 public final class ShutdownIntentUpdateMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     private String intentId;

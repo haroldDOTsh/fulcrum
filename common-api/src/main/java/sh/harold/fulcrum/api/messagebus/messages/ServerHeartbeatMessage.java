@@ -11,7 +11,7 @@ import java.util.Set;
  * Periodic heartbeat message sent by servers to indicate they are alive and their current status.
  * This message is sent every 30 seconds to maintain server registration and health tracking.
  */
-@MessageType("server.heartbeat")
+@MessageType(value = "server.heartbeat", version = 1)
 public class ServerHeartbeatMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 

@@ -9,7 +9,7 @@ import java.util.UUID;
 /**
  * Sent by proxies to acknowledge the outcome of a player routing command.
  */
-@MessageType("player.route.ack")
+@MessageType(value = "player.route.ack", version = 1)
 public class PlayerRouteAck implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     private UUID requestId;

@@ -11,7 +11,7 @@ import java.util.*;
 /**
  * Broadcast by backends to declare which slot families they can host and how many concurrent instances.
  */
-@MessageType("slot.family.advertisement")
+@MessageType(value = "slot.family.advertisement", version = 1)
 public class SlotFamilyAdvertisementMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
     private final Map<String, Integer> familyCapacities = new HashMap<>();

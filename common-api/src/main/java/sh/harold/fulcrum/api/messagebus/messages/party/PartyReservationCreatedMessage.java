@@ -8,7 +8,7 @@ import java.io.Serializable;
 import java.time.Instant;
 import java.util.UUID;
 
-@MessageType("party.reservation.created")
+@MessageType(value = "party.reservation.created", version = 1)
 public final class PartyReservationCreatedMessage implements BaseMessage, Serializable {
     private static final long serialVersionUID = 1L;
 
