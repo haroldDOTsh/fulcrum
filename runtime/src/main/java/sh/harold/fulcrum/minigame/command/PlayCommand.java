@@ -28,6 +28,7 @@ import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -206,7 +207,7 @@ public final class PlayCommand {
         if (cooldownRegistry == null) {
             return true;
         }
-        String cooldownGroup = (familyId == null || familyId.isBlank()) ? DEFAULT_COOLDOWN_GROUP : familyId;
+        String cooldownGroup = DEFAULT_COOLDOWN_GROUP;
         CooldownKey key = CooldownKeys.playerScoped(COOLDOWN_NAMESPACE, cooldownGroup, player.getUniqueId());
         CooldownAcquisition acquisition = cooldownRegistry.acquire(key, PLAY_COOLDOWN)
                 .toCompletableFuture()
