@@ -4,16 +4,15 @@ import sh.harold.fulcrum.registry.console.CommandHandler;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 
 import java.util.Comparator;
+import java.util.Objects;
 
 /**
  * Help command to list all available commands
  */
-public class HelpCommand implements CommandHandler {
+public record HelpCommand(CommandRegistry registry) implements CommandHandler {
 
-    private final CommandRegistry registry;
-
-    public HelpCommand(CommandRegistry registry) {
-        this.registry = registry;
+    public HelpCommand {
+        Objects.requireNonNull(registry, "registry");
     }
 
     @Override

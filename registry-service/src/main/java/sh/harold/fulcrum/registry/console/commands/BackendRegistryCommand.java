@@ -9,19 +9,18 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Command to list registered backend servers with pagination
  */
-public class BackendRegistryCommand implements CommandHandler {
+public record BackendRegistryCommand(RedisRegistryInspector inspector) implements CommandHandler {
 
     private static final int ITEMS_PER_PAGE = 10;
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
-    private final RedisRegistryInspector inspector;
-
-    public BackendRegistryCommand(RedisRegistryInspector inspector) {
-        this.inspector = inspector;
+    public BackendRegistryCommand {
+        Objects.requireNonNull(inspector, "inspector");
     }
 
     @Override

@@ -3,15 +3,15 @@ package sh.harold.fulcrum.registry.console.commands;
 import sh.harold.fulcrum.registry.RegistryService;
 import sh.harold.fulcrum.registry.console.CommandHandler;
 
+import java.util.Objects;
+
 /**
  * Command to reload configuration
  */
-public class ReloadCommand implements CommandHandler {
+public record ReloadCommand(RegistryService registryService) implements CommandHandler {
 
-    private final RegistryService registryService;
-
-    public ReloadCommand(RegistryService registryService) {
-        this.registryService = registryService;
+    public ReloadCommand {
+        Objects.requireNonNull(registryService, "registryService");
     }
 
     @Override

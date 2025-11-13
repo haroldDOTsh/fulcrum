@@ -7,15 +7,14 @@ import sh.harold.fulcrum.registry.console.CommandHandler;
 import sh.harold.fulcrum.registry.rank.RankMutationService;
 import sh.harold.fulcrum.registry.rank.RankMutationService.RankSnapshot;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-public final class RankCommand implements CommandHandler {
+public record RankCommand(RankMutationService rankMutationService) implements CommandHandler {
 
-    private final RankMutationService rankMutationService;
-
-    public RankCommand(RankMutationService rankMutationService) {
-        this.rankMutationService = rankMutationService;
+    public RankCommand {
+        Objects.requireNonNull(rankMutationService, "rankMutationService");
     }
 
     @Override

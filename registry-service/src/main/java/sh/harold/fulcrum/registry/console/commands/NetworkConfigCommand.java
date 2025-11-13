@@ -6,14 +6,13 @@ import sh.harold.fulcrum.registry.network.NetworkProfileValidationException;
 
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
 
-public final class NetworkConfigCommand implements CommandHandler {
+public record NetworkConfigCommand(NetworkConfigManager manager) implements CommandHandler {
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ISO_INSTANT;
 
-    private final NetworkConfigManager manager;
-
-    public NetworkConfigCommand(NetworkConfigManager manager) {
-        this.manager = manager;
+    public NetworkConfigCommand {
+        Objects.requireNonNull(manager, "manager");
     }
 
     @Override

@@ -15,17 +15,14 @@ import java.util.*;
 /**
  * CLI entry point for orchestrating graceful shutdown intents.
  */
-public final class ShutdownCommand implements CommandHandler {
-    private final ShutdownIntentManager manager;
-    private final ServerRegistry serverRegistry;
-    private final ProxyRegistry proxyRegistry;
+public record ShutdownCommand(ShutdownIntentManager manager,
+                              ServerRegistry serverRegistry,
+                              ProxyRegistry proxyRegistry) implements CommandHandler {
 
-    public ShutdownCommand(ShutdownIntentManager manager,
-                           ServerRegistry serverRegistry,
-                           ProxyRegistry proxyRegistry) {
-        this.manager = Objects.requireNonNull(manager, "manager");
-        this.serverRegistry = Objects.requireNonNull(serverRegistry, "serverRegistry");
-        this.proxyRegistry = Objects.requireNonNull(proxyRegistry, "proxyRegistry");
+    public ShutdownCommand {
+        Objects.requireNonNull(manager, "manager");
+        Objects.requireNonNull(serverRegistry, "serverRegistry");
+        Objects.requireNonNull(proxyRegistry, "proxyRegistry");
     }
 
     @Override
