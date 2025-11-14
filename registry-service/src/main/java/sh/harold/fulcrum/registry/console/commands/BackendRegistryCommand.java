@@ -72,7 +72,7 @@ public record BackendRegistryCommand(RedisRegistryInspector inspector) implement
 
         // Create table
         TableFormatter table = new TableFormatter();
-        table.addHeaders("Server ID", "Type", "Role", "Address:Port", "Players", "TPS", "Last Heartbeat", "Status");
+        table.addHeaders("Server ID", "Type", "Role", "Address:Port", "Players", "TPS", "Fulcrum", "Last Heartbeat", "Status");
 
         long currentTime = System.currentTimeMillis();
         for (int i = startIndex; i < endIndex; i++) {
@@ -115,6 +115,11 @@ public record BackendRegistryCommand(RedisRegistryInspector inspector) implement
                 tpsColored = TableFormatter.color(tpsString, TableFormatter.RED);
             }
 
+            String version = server.getFulcrumVersion();
+            String versionDisplay = (version == null || version.isBlank())
+                    ? TableFormatter.color("unknown", TableFormatter.YELLOW)
+                    : version;
+
             table.addRow(
                     server.getServerId(),
                     server.getServerType(),
@@ -122,6 +127,7 @@ public record BackendRegistryCommand(RedisRegistryInspector inspector) implement
                     addressPort,
                     playerInfo,
                     tpsColored,
+                    versionDisplay,
                     heartbeatTime,
                     statusColored
             );

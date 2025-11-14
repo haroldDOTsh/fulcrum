@@ -111,7 +111,8 @@ public class RedisRegistryInspector {
                         lastHeartbeat,
                         false,
                         0L,
-                        null
+                        null,
+                        document.fulcrumVersion()
                 ));
             } catch (IOException ex) {
                 LOGGER.warn("Failed to parse proxy document from {}", key, ex);
@@ -137,7 +138,8 @@ public class RedisRegistryInspector {
                         lastHeartbeat,
                         false,
                         0L,
-                        document.unavailableSince()
+                        document.unavailableSince(),
+                        proxy.fulcrumVersion()
                 ));
             } catch (IOException ex) {
                 LOGGER.warn("Failed to parse unavailable proxy document from {}", key, ex);
@@ -178,7 +180,8 @@ public class RedisRegistryInspector {
                     lastHeartbeat,
                     true,
                     deadSince,
-                    null
+                    null,
+                    snapshot != null ? snapshot.fulcrumVersion() : null
             ));
         }
 
@@ -290,7 +293,8 @@ public class RedisRegistryInspector {
             long lastHeartbeat,
             boolean recentlyDead,
             long deadSince,
-            Long unavailableSince
+            Long unavailableSince,
+            String fulcrumVersion
     ) {
     }
 
@@ -300,7 +304,8 @@ public class RedisRegistryInspector {
             int port,
             String status,
             long lastHeartbeat,
-            String registrationState
+            String registrationState,
+            String fulcrumVersion
     ) {
     }
 
@@ -315,7 +320,8 @@ public class RedisRegistryInspector {
             String address,
             int port,
             String status,
-            long lastHeartbeat
+            long lastHeartbeat,
+            String fulcrumVersion
     ) {
     }
 }

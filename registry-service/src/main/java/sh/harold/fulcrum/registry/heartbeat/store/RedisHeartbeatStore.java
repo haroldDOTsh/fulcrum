@@ -277,7 +277,8 @@ public class RedisHeartbeatStore {
             String address,
             int port,
             String status,
-            long lastHeartbeat
+            long lastHeartbeat,
+            String fulcrumVersion
     ) {
         static ProxySnapshot from(RegisteredProxyData proxy) {
             return new ProxySnapshot(
@@ -285,13 +286,15 @@ public class RedisHeartbeatStore {
                     proxy.getAddress(),
                     proxy.getPort(),
                     proxy.getStatus().name(),
-                    proxy.getLastHeartbeat()
+                    proxy.getLastHeartbeat(),
+                    proxy.getFulcrumVersion()
             );
         }
 
         RegisteredProxyData toDomain() {
             RegisteredProxyData data = new RegisteredProxyData(ProxySnapshotHelper.parse(proxyId), address, port);
             data.setLastHeartbeat(lastHeartbeat);
+            data.setFulcrumVersion(fulcrumVersion);
             if (status != null) {
                 try {
                     data.setStatus(RegisteredProxyData.Status.valueOf(status));

@@ -102,6 +102,11 @@ public class ProxyRegistry {
      * @return The ProxyIdentifier
      */
     public synchronized ProxyIdentifier registerProxy(ProxyIdentifier proxyId, String address, int port) {
+        return registerProxy(proxyId, address, port, null);
+    }
+
+    public synchronized ProxyIdentifier registerProxy(ProxyIdentifier proxyId, String address, int port,
+                                                      String fulcrumVersion) {
         Objects.requireNonNull(proxyId, "ProxyIdentifier cannot be null");
         Objects.requireNonNull(address, "Address cannot be null");
 
@@ -113,6 +118,7 @@ public class ProxyRegistry {
                 LOGGER.info("Proxy already registered: {} (skipping duplicate registration)",
                         proxyId.getFormattedId());
             }
+            updateProxyVersion(proxies.get(proxyId), fulcrumVersion);
             return proxyId;
         }
 
@@ -123,6 +129,7 @@ public class ProxyRegistry {
             if (registrationTime != null && (System.currentTimeMillis() - registrationTime) < 30000) {
                 LOGGER.info("Proxy at {}:{} was recently registered as {} (within 30s), reusing existing ID",
                         address, port, existingByAddress.getFormattedId());
+                updateProxyVersion(proxies.get(existingByAddress), fulcrumVersion);
                 return existingByAddress;
             }
         }
@@ -137,6 +144,7 @@ public class ProxyRegistry {
             unavailableProxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
             unavailableProxy.setLastHeartbeat(System.currentTimeMillis());
             proxies.put(proxyId, unavailableProxy);
+            updateProxyVersion(unavailableProxy, fulcrumVersion);
             persistActiveProxy(unavailableProxy);
 
             LOGGER.info("Reactivated previously unavailable proxy: {}",
@@ -146,6 +154,7 @@ public class ProxyRegistry {
 
         // Create proxy info with state machine
         RegisteredProxyData proxyInfo = new RegisteredProxyData(proxyId, address, port, stateMachineExecutor);
+        proxyInfo.setFulcrumVersion(normalizeVersion(fulcrumVersion));
 
         // Set initial state to REGISTERING
         boolean transitioned = proxyInfo.transitionTo(RegistrationState.REGISTERING,
@@ -190,6 +199,10 @@ public class ProxyRegistry {
      */
     @Deprecated
     public synchronized String registerProxy(String tempId, String address, int port) {
+        return registerProxy(tempId, address, port, null);
+    }
+
+    public synchronized String registerProxy(String tempId, String address, int port, String fulcrumVersion) {
         String addressPortKey = address + ":" + port;
 
         // First check if a proxy with this address:port already exists
@@ -202,6 +215,7 @@ public class ProxyRegistry {
                         address, port, existingByAddress.getFormattedId());
                 // Update the temp ID mapping to point to the existing proxy
                 mapTempToProxy(tempId, existingByAddress);
+                updateProxyVersion(proxies.get(existingByAddress), fulcrumVersion);
                 return existingByAddress.getFormattedId();
             }
         }
@@ -215,6 +229,7 @@ public class ProxyRegistry {
                     LOGGER.info("Proxy already registered and active: {} -> {} (skipping duplicate registration)",
                             tempId, existingId.getFormattedId());
                 }
+                updateProxyVersion(proxies.get(existingId), fulcrumVersion);
                 return existingId.getFormattedId();
             }
 
@@ -230,6 +245,7 @@ public class ProxyRegistry {
                 // Note: address and port are final, can't update them
                 // If proxy reconnects with different address/port, it would need a new registration
                 proxies.put(existingId, unavailableProxy);
+                updateProxyVersion(unavailableProxy, fulcrumVersion);
                 persistActiveProxy(unavailableProxy);
 
                 LOGGER.info("[proxy] reactivated temp={} id={} prevAddr={}:{}",
@@ -270,7 +286,7 @@ public class ProxyRegistry {
         mapTempToProxy(tempId, proxyId);
 
         // Register with new identifier
-        registerProxy(proxyId, address, port);
+        registerProxy(proxyId, address, port, fulcrumVersion);
 
         // This is essential log - always show
         LOGGER.info("[proxy] registered temp={} id={} addr={}:{}",
@@ -869,6 +885,26 @@ public class ProxyRegistry {
         }
     }
 
+    private String normalizeVersion(String version) {
+        if (version == null) {
+            return null;
+        }
+        String trimmed = version.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void updateProxyVersion(RegisteredProxyData proxy, String version) {
+        if (proxy == null) {
+            return;
+        }
+        String normalized = normalizeVersion(version);
+        if (normalized == null || normalized.equals(proxy.getFulcrumVersion())) {
+            return;
+        }
+        proxy.setFulcrumVersion(normalized);
+        persistActiveProxy(proxy);
+    }
+
     private void persistActiveProxy(RegisteredProxyData proxy) {
         if (store != null && proxy != null) {
             store.saveActive(proxy);
@@ -923,7 +959,7 @@ public class ProxyRegistry {
         }
 
         // Otherwise, register as new
-        return registerProxy(tempId, address, port);
+        return registerProxy(tempId, address, port, null);
     }
 
     /**

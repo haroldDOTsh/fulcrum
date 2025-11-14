@@ -497,6 +497,7 @@ public class RegistrationHandler {
             String tempId = request.getTempId();
             String address = request.getAddress();
             int port = request.getPort();
+            String fulcrumVersion = request.getFulcrumVersion();
 
             // Check if a registration is already in progress for this tempId
             CompletableFuture<String> existingFuture = ongoingProxyRegistrations.get(tempId);
@@ -558,7 +559,7 @@ public class RegistrationHandler {
 
             // Create a new CompletableFuture for this registration
             CompletableFuture<String> registrationFuture = CompletableFuture.supplyAsync(() -> {
-                return performProxyRegistration(tempId, address, port);
+                return performProxyRegistration(tempId, address, port, fulcrumVersion);
             });
 
             // Store the future in the ongoing registrations map before setting up completion handler
@@ -598,10 +599,10 @@ public class RegistrationHandler {
     /**
      * Perform the actual proxy registration
      */
-    private String performProxyRegistration(String tempId, String address, int port) {
+    private String performProxyRegistration(String tempId, String address, int port, String fulcrumVersion) {
         try {
             // Register the proxy - ProxyRegistry will handle deduplication internally
-            String permanentId = proxyRegistry.registerProxy(tempId, address, port);
+            String permanentId = proxyRegistry.registerProxy(tempId, address, port, fulcrumVersion);
 
             if (debugMode) {
                 LOGGER.debug("Proxy registered: {} -> {}", tempId, permanentId);
