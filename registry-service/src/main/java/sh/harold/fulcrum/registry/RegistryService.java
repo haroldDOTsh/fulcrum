@@ -8,6 +8,7 @@ import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.friends.FriendMutationRequest;
 import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
@@ -955,10 +956,11 @@ public class RegistryService {
 
         try {
             friendPostgresAdapter = new PostgresConnectionAdapter(jdbcUrl, username, password, database);
-            FriendGraphRepository repository = new FriendGraphRepository(friendPostgresAdapter, LOGGER);
+            java.util.logging.Logger jLogger = java.util.logging.Logger.getLogger(FriendGraphService.class.getName());
+            FriendGraphRepository repository = new FriendGraphRepository(friendPostgresAdapter, jLogger);
             repository.ensureSchema(getClass().getClassLoader());
             LOGGER.info("Friend graph repository initialised (database='{}')", database);
-            return new FriendGraphService(repository, redisManager, LOGGER);
+            return new FriendGraphService(repository, redisManager, jLogger);
         } catch (Exception ex) {
             LOGGER.error("Failed to initialise friend graph repository", ex);
             if (friendPostgresAdapter != null) {

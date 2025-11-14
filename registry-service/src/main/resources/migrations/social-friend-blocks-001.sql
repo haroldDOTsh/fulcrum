@@ -43,7 +43,3 @@ CREATE INDEX IF NOT EXISTS social_friend_blocks_by_owner
 
 CREATE INDEX IF NOT EXISTS social_friend_blocks_by_peer
     ON social_friend_blocks (peer_uuid);
-
-CREATE INDEX IF NOT EXISTS social_friend_blocks_active_idx
-    ON social_friend_blocks (owner_uuid, peer_uuid, scope)
-    WHERE expires_at IS NULL OR expires_at > NOW();
