@@ -151,7 +151,8 @@ public class RedisProxyRegistryStore {
             int port,
             String status,
             long lastHeartbeat,
-            String registrationState
+            String registrationState,
+            String fulcrumVersion
     ) {
         static ProxyDocument from(RegisteredProxyData data) {
             return new ProxyDocument(
@@ -160,7 +161,8 @@ public class RedisProxyRegistryStore {
                     data.getPort(),
                     data.getStatus().name(),
                     data.getLastHeartbeat(),
-                    data.getRegistrationState().name()
+                    data.getRegistrationState().name(),
+                    data.getFulcrumVersion()
             );
         }
 
@@ -170,6 +172,7 @@ public class RedisProxyRegistryStore {
             data.setStatus(RegisteredProxyData.Status.valueOf(status));
             data.setLastHeartbeat(lastHeartbeat);
             data.getStateMachine().forceSetState(RegistrationState.valueOf(registrationState), "Restored from Redis");
+            data.setFulcrumVersion(fulcrumVersion);
             return data;
         }
     }

@@ -19,6 +19,7 @@ public class RegisteredProxyData {
     private final RegistrationStateMachine stateMachine;
     private long lastHeartbeat;
     private volatile Status status;
+    private volatile String fulcrumVersion;
     public RegisteredProxyData(ProxyIdentifier proxyId, String address, int port,
                                ScheduledExecutorService timeoutExecutor) {
         this.proxyId = Objects.requireNonNull(proxyId, "ProxyIdentifier cannot be null");
@@ -76,6 +77,14 @@ public class RegisteredProxyData {
 
     public void setStatus(Status status) {
         this.status = status;
+    }
+
+    public String getFulcrumVersion() {
+        return fulcrumVersion;
+    }
+
+    public void setFulcrumVersion(String fulcrumVersion) {
+        this.fulcrumVersion = fulcrumVersion;
     }
 
     /**

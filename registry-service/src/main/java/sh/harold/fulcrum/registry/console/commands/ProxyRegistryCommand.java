@@ -67,7 +67,7 @@ public record ProxyRegistryCommand(RedisRegistryInspector inspector) implements 
 
         // Create table
         TableFormatter table = new TableFormatter();
-        table.addHeaders("Proxy ID", "Address", "Port", "Last Heartbeat", "Status");
+        table.addHeaders("Proxy ID", "Address", "Port", "Last Heartbeat", "Fulcrum", "Status");
 
         long currentTime = System.currentTimeMillis();
         for (int i = startIndex; i < endIndex; i++) {
@@ -109,11 +109,17 @@ public record ProxyRegistryCommand(RedisRegistryInspector inspector) implements 
 
             String heartbeatTime = DATE_FORMAT.format(new Date(proxy.lastHeartbeat()));
 
+            String version = proxy.fulcrumVersion();
+            String versionDisplay = (version == null || version.isBlank())
+                    ? TableFormatter.color("unknown", TableFormatter.YELLOW)
+                    : version;
+
             table.addRow(
                     proxy.proxyId(),
                     proxy.address(),
                     String.valueOf(proxy.port()),
                     heartbeatTime,
+                    versionDisplay,
                     statusColored
             );
         }

@@ -150,20 +150,36 @@ public record LogicalServersCommand(RedisRegistryInspector inspector) implements
     }
 
     private String buildServerDisplay(RegisteredServerData server) {
-        String base = server.getServerId();
         String type = server.getServerType();
         String role = server.getRole();
+        StringBuilder display = new StringBuilder(server.getServerId());
 
         if (type != null && !type.isBlank()) {
             if (role != null && !role.isBlank() && !"default".equalsIgnoreCase(role)) {
-                return base + " (" + type + "/" + role + ")";
+                display.append(" (").append(type).append("/").append(role).append(")");
+            } else {
+                display.append(" (").append(type).append(")");
             }
-            return base + " (" + type + ")";
+        } else if (role != null && !role.isBlank() && !"default".equalsIgnoreCase(role)) {
+            display.append(" (").append(role).append(")");
         }
-        if (role != null && !role.isBlank() && !"default".equalsIgnoreCase(role)) {
-            return base + " (" + role + ")";
+
+        String version = normalizeVersion(server.getFulcrumVersion());
+        if (version != null) {
+            display.append(" [").append(version).append("]");
         }
-        return base;
+        return display.toString();
+    }
+
+    private String normalizeVersion(String version) {
+        if (version == null) {
+            return null;
+        }
+        String trimmed = version.trim();
+        if (trimmed.isEmpty() || "unknown".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+        return trimmed;
     }
 
     private String formatStatus(SlotLifecycleStatus status) {
