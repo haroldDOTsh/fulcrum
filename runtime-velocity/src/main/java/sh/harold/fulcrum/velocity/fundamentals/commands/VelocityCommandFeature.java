@@ -4,10 +4,14 @@ import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
+import sh.harold.fulcrum.api.friends.FriendService;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
+import sh.harold.fulcrum.velocity.friends.FriendCommand;
 import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
+import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
@@ -31,6 +35,9 @@ public class VelocityCommandFeature implements VelocityFeature {
     private SlotFamilyCache familyCache;
     private VelocityPlayerSessionService sessionService;
     private RankService rankService;
+    private FriendService friendService;
+    private PlayerCache playerCache;
+    private VelocityIdentityFeature identityFeature;
     private sh.harold.fulcrum.velocity.party.PartyService partyService;
     private sh.harold.fulcrum.velocity.party.PartyReservationService partyReservationService;
 
@@ -58,6 +65,9 @@ public class VelocityCommandFeature implements VelocityFeature {
         this.familyCache = serviceLocator.getRequiredService(SlotFamilyCache.class);
         this.sessionService = serviceLocator.getRequiredService(VelocityPlayerSessionService.class);
         this.rankService = serviceLocator.getRequiredService(RankService.class);
+        this.friendService = serviceLocator.getRequiredService(FriendService.class);
+        this.playerCache = serviceLocator.getService(PlayerCache.class).orElse(null);
+        this.identityFeature = serviceLocator.getService(VelocityIdentityFeature.class).orElse(null);
         this.partyService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyService.class).orElse(null);
         this.partyReservationService = serviceLocator.getService(sh.harold.fulcrum.velocity.party.PartyReservationService.class).orElse(null);
 
@@ -69,6 +79,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         registerPunishCommand();
         registerAppealCommand();
         registerPardonCommand();
+        registerFriendCommand();
 
         logger.info("VelocityCommandFeature initialized");
     }
@@ -172,6 +183,25 @@ public class VelocityCommandFeature implements VelocityFeature {
                 rankService,
                 logger,
                 plugin
+        );
+
+        commandManager.register(meta, command);
+    }
+
+    private void registerFriendCommand() {
+        CommandMeta meta = commandManager.metaBuilder("friend")
+                .aliases("friends")
+                .plugin(plugin)
+                .build();
+
+        FriendCommand command = new FriendCommand(
+                friendService,
+                proxy,
+                plugin,
+                playerCache,
+                identityFeature,
+                rankService,
+                logger
         );
 
         commandManager.register(meta, command);
