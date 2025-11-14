@@ -30,6 +30,7 @@ public class ServiceLifecycleManager {
     private final MessageBus messageBus;
     private final ServiceIdentity identity;
     private final ServiceMetadata metadata;
+    private String fulcrumVersion;
 
     private final AtomicBoolean registered = new AtomicBoolean(false);
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -141,6 +142,7 @@ public class ServiceLifecycleManager {
         request.setRole(identity.getRole());
         request.setAddress(identity.getAddress());
         request.setPort(identity.getPort());
+        request.setFulcrumVersion(fulcrumVersion);
 
         LOGGER.info(String.format("Sending registration request: %s [%s:%d]",
                 identity.getTempId(), identity.getAddress(), identity.getPort()));
@@ -178,6 +180,7 @@ public class ServiceLifecycleManager {
                             response.setSuccess(Boolean.TRUE.equals(map.get("success")));
                             response.setAssignedServerId((String) map.get("assignedServerId"));
                             response.setMessage((String) map.get("message"));
+                            response.setFulcrumVersion((String) map.get("fulcrumVersion"));
                             handleRegistrationResponse(response);
                         }
                     }
@@ -192,6 +195,7 @@ public class ServiceLifecycleManager {
                         response.setSuccess(Boolean.TRUE.equals(map.get("success")));
                         response.setAssignedServerId((String) map.get("assignedServerId"));
                         response.setMessage((String) map.get("message"));
+                        response.setFulcrumVersion((String) map.get("fulcrumVersion"));
                         handleRegistrationResponse(response);
                     }
                 }
@@ -511,5 +515,14 @@ public class ServiceLifecycleManager {
 
     public ServiceMetadata getMetadata() {
         return metadata;
+    }
+
+    /**
+     * Set the Fulcrum runtime version that should accompany registration.
+     *
+     * @param fulcrumVersion version string (e.g., plugin build)
+     */
+    public void setFulcrumVersion(String fulcrumVersion) {
+        this.fulcrumVersion = fulcrumVersion;
     }
 }

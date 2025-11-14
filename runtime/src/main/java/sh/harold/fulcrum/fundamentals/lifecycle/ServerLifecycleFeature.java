@@ -77,6 +77,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     private SlotFamilyService slotFamilyService;
     private SlotFamilyFilter slotFamilyFilter = SlotFamilyFilter.allowAll();
     private volatile List<SlotFamilyDescriptor> activeSlotFamilies = Collections.emptyList();
+    private String fulcrumVersion = "unknown";
 
     @Override
     public int getPriority() {
@@ -89,6 +90,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         this.plugin = plugin;
         this.container = container;
         this.startTime = System.currentTimeMillis();
+        this.fulcrumVersion = resolveFulcrumVersion(plugin);
         if (container != null) {
             container.register(ServerLifecycleFeature.class, this);
         }
@@ -365,7 +367,9 @@ public class ServerLifecycleFeature implements PluginFeature {
         LOGGER.info("  Role: " + request.getRole());
         LOGGER.info("  Address: " + request.getAddress() + ":" + request.getPort());
         LOGGER.info("  Capacity: " + maxCapacity);
+        LOGGER.info("  Fulcrum Version: " + fulcrumVersion);
 
+        request.setFulcrumVersion(fulcrumVersion);
         // Send registration request to Registry Service
         // CRITICAL FIX: Use server:heartbeat channel which we KNOW works
         // Use the standardized registration channel
@@ -677,6 +681,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                     maxCapacity
             );
             deregister.setRole(serverIdentifier.getRole());
+            deregister.setFulcrumVersion(fulcrumVersion);
 
             messageBus.send(ChannelConstants.getProxyDirectChannel(proxyId), "server.deregistration", deregister);
         }
@@ -699,6 +704,18 @@ public class ServerLifecycleFeature implements PluginFeature {
         return null;
     }
 
+    private String resolveFulcrumVersion(JavaPlugin plugin) {
+        try {
+            String version = plugin.getDescription().getVersion();
+            if (version == null || version.isBlank()) {
+                return "unknown";
+            }
+            return version;
+        } catch (Exception ex) {
+            LOGGER.warning("Unable to determine Fulcrum version from plugin description: " + ex.getMessage());
+            return "unknown";
+        }
+    }
 
     private void handleProxyAnnouncement(ProxyAnnouncementMessage announcement) {
         String proxyId = announcement.getProxyId();
@@ -842,6 +859,9 @@ public class ServerLifecycleFeature implements PluginFeature {
                     response.setAssignedServerId(payload.has("assignedServerId") ? payload.get("assignedServerId").asText() : null);
                     response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
                     response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
+                    if (payload.has("fulcrumVersion")) {
+                        response.setFulcrumVersion(payload.get("fulcrumVersion").asText());
+                    }
 
                     handleRegistrationResponse(response);
                 } else if (tempId != null) {
@@ -868,6 +888,9 @@ public class ServerLifecycleFeature implements PluginFeature {
                 response.setAssignedServerId(payload.has("assignedServerId") ? payload.get("assignedServerId").asText() : null);
                 response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
                 response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
+                if (payload.has("fulcrumVersion")) {
+                    response.setFulcrumVersion(payload.get("fulcrumVersion").asText());
+                }
 
                 handleRegistrationResponse(response);
             } catch (Exception e) {

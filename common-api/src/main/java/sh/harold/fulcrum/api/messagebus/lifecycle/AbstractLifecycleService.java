@@ -188,6 +188,15 @@ public abstract class AbstractLifecycleService {
     }
 
     /**
+     * Provide the Fulcrum runtime version that should be emitted with lifecycle messages.
+     *
+     * @param version runtime version string
+     */
+    protected void setFulcrumVersion(String version) {
+        lifecycleManager.setFulcrumVersion(version);
+    }
+
+    /**
      * Get a custom property.
      *
      * @param key  Property key

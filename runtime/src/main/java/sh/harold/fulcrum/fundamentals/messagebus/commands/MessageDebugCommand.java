@@ -126,6 +126,7 @@ public class MessageDebugCommand {
             request.setAddress(serverIdentifier.getAddress());
             request.setPort(serverIdentifier.getPort());
             request.setRole(serverIdentifier.getRole());
+            request.setFulcrumVersion(params.getOrDefault("version", "debug-tool"));
             return request;
         });
 

@@ -28,6 +28,7 @@ public class RegisteredServerData {
     private double tps = 20.0;
     private double memoryUsage = 0.0;
     private double cpuUsage = 0.0;
+    private String fulcrumVersion;
     public RegisteredServerData(String serverId, String tempId, String serverType,
                                 String address, int port, int maxCapacity) {
         this.serverId = serverId;
@@ -118,6 +119,14 @@ public class RegisteredServerData {
 
     public void setCpuUsage(double cpuUsage) {
         this.cpuUsage = cpuUsage;
+    }
+
+    public String getFulcrumVersion() {
+        return fulcrumVersion;
+    }
+
+    public void setFulcrumVersion(String fulcrumVersion) {
+        this.fulcrumVersion = fulcrumVersion;
     }
 
     public Collection<LogicalSlotRecord> getSlots() {

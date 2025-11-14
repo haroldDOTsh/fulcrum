@@ -17,6 +17,7 @@ public class ServerRegistrationRequest implements BaseMessage {
     private String address;       // Server IP address
     private int port;            // Server port
     private String role;          // From environment file (e.g., "game", "lobby", "auth")
+    private String fulcrumVersion; // Runtime build/version string
 
     public ServerRegistrationRequest() {
         // Default constructor for serialization
@@ -77,9 +78,17 @@ public class ServerRegistrationRequest implements BaseMessage {
         this.role = role;
     }
 
+    public String getFulcrumVersion() {
+        return fulcrumVersion;
+    }
+
+    public void setFulcrumVersion(String fulcrumVersion) {
+        this.fulcrumVersion = fulcrumVersion;
+    }
+
     @Override
     public String toString() {
-        return String.format("ServerRegistrationRequest[tempId=%s, type=%s, capacity=%d, role=%s]",
-                tempId, serverType, maxCapacity, role);
+        return String.format("ServerRegistrationRequest[tempId=%s, type=%s, capacity=%d, role=%s, version=%s]",
+                tempId, serverType, maxCapacity, role, fulcrumVersion);
     }
 }

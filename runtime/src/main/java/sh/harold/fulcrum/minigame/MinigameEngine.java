@@ -472,6 +472,11 @@ public final class MinigameEngine {
             plugin.getLogger().warning("Ignoring provisioned slot " + slot.slotId() + " because orchestrator is unavailable.");
             return;
         }
+        if (!registrations.containsKey(slot.familyId())) {
+            plugin.getLogger().fine(() -> "Ignoring provisioned slot " + slot.slotId()
+                    + " for unmanaged family " + slot.familyId());
+            return;
+        }
         if (!provisioningSlots.add(slot.slotId())) {
             plugin.getLogger().fine("Provision event already in progress for slot " + slot.slotId());
             return;
