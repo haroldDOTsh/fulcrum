@@ -4,6 +4,7 @@ import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -30,6 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class DirectMessageServiceImpl implements DirectMessageService {
     private static final PlainTextComponentSerializer PLAIN = PlainTextComponentSerializer.plainText();
     private static final GsonComponentSerializer GSON = GsonComponentSerializer.gson();
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacyAmpersand();
     private static final Duration CHANNEL_TTL = Duration.ofMinutes(5);
     private static final long STATE_TTL_SECONDS = Math.max(5L, CHANNEL_TTL.toSeconds());
     private static final long RATE_LIMIT_MILLIS = 1500L;
@@ -75,7 +77,7 @@ final class DirectMessageServiceImpl implements DirectMessageService {
         this.chatChannelService = Objects.requireNonNull(chatChannelService, "chatChannelService");
         this.chatFormatService = chatFormatService;
         this.chatEmojiService = chatEmojiService;
-        this.rankService = rankService;
+        this.rankService = resolveRankService(rankService);
         this.executor = Objects.requireNonNull(executor, "executor");
         this.clock = Objects.requireNonNullElseGet(clock, Clock::systemUTC);
     }
@@ -414,29 +416,29 @@ final class DirectMessageServiceImpl implements DirectMessageService {
     private Component formatOutgoing(TargetHandle target, Component body) {
         Component header = Component.text("To ", NamedTextColor.LIGHT_PURPLE)
                 .append(formatPlayerDisplay(target))
-                .append(Component.text(": ", NamedTextColor.LIGHT_PURPLE));
-        return header.append(body.color(NamedTextColor.GRAY));
+                .append(Component.text(": ", NamedTextColor.GRAY));
+        return header.append(body.colorIfAbsent(NamedTextColor.GRAY));
     }
 
     private Component formatIncoming(TargetHandle sender, Component body) {
         Component header = Component.text("From ", NamedTextColor.LIGHT_PURPLE)
                 .append(formatPlayerDisplay(sender))
-                .append(Component.text(": ", NamedTextColor.LIGHT_PURPLE));
-        return header.append(body.color(NamedTextColor.GRAY));
+                .append(Component.text(": ", NamedTextColor.GRAY));
+        return header.append(body.colorIfAbsent(NamedTextColor.GRAY));
     }
 
     private Component formatPlayerDisplay(TargetHandle handle) {
         Rank rank = resolveRank(handle.id());
         NamedTextColor nameColor = rank != null ? rank.getNameColor() : NamedTextColor.AQUA;
-        Component nameComponent = Component.text(safeName(handle), nameColor);
+        Component name = Component.text(safeName(handle), nameColor);
         if (rank == null || rank == Rank.DEFAULT) {
-            return nameComponent;
+            return name;
         }
-        String prefix = firstNonBlank(rank.getShortPrefix(), rank.getFullPrefix());
-        if (prefix == null || prefix.isBlank()) {
-            return nameComponent;
+        Component prefix = deserializeLegacy(firstNonBlank(rank.getFullPrefix(), rank.getShortPrefix()));
+        if (prefix == null || prefix.equals(Component.empty())) {
+            return name;
         }
-        return Component.text(prefix + " ", nameColor).append(nameComponent);
+        return prefix.append(Component.space()).append(name);
     }
 
     private Component decodeComponent(DirectMessageEnvelope envelope) {
@@ -457,6 +459,13 @@ final class DirectMessageServiceImpl implements DirectMessageService {
         redis.set(stateKey(playerId, LAST_TARGET_SUFFIX), handle.id().toString(), STATE_TTL_SECONDS);
         redis.set(stateKey(playerId, LAST_TARGET_NAME_SUFFIX), safeName(handle), STATE_TTL_SECONDS);
         redis.set(stateKey(playerId, LAST_MUTATION_SUFFIX), String.valueOf(now.toEpochMilli()), STATE_TTL_SECONDS);
+    }
+
+    private Component deserializeLegacy(String legacy) {
+        if (legacy == null || legacy.isBlank()) {
+            return Component.empty();
+        }
+        return LEGACY.deserialize(legacy);
     }
 
     private void persistOpenChannel(UUID playerId, UUID targetId, String channelId, Instant now) {
@@ -644,6 +653,20 @@ final class DirectMessageServiceImpl implements DirectMessageService {
     private record TargetHandle(UUID id, String name) {
         TargetHandle {
             Objects.requireNonNull(id, "id");
+        }
+    }
+
+    private RankService resolveRankService(RankService provided) {
+        if (provided != null) {
+            return provided;
+        }
+        try {
+            org.bukkit.plugin.ServicesManager manager = plugin.getServer() != null
+                    ? plugin.getServer().getServicesManager()
+                    : null;
+            return manager != null ? manager.load(RankService.class) : null;
+        } catch (Exception ignored) {
+            return null;
         }
     }
 }
