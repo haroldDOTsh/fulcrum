@@ -16,6 +16,7 @@ import sh.harold.fulcrum.api.chat.ChatFormatService;
 import sh.harold.fulcrum.api.chat.channel.ChatChannelRef;
 import sh.harold.fulcrum.api.chat.channel.ChatChannelService;
 import sh.harold.fulcrum.api.chat.channel.ChatChannelType;
+import sh.harold.fulcrum.api.chat.channel.DirectMessageBridge;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.chat.ChatChannelMessage;
@@ -59,6 +60,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     private final Map<UUID, Long> lastPartyMessage = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> lastDeliveredMessage = new ConcurrentHashMap<>();
     private final RuntimePunishmentFeature.RuntimePunishmentManager punishmentManager;
+    private volatile DirectMessageBridge directMessageBridge;
 
     ChatChannelServiceImpl(JavaPlugin plugin,
                            MessageBus messageBus,
@@ -147,6 +149,9 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         Player player = event.getPlayer();
         if (enforceMute(player)) {
             suppressChatEvent(event);
+            return;
+        }
+        if (directMessageBridge != null && directMessageBridge.interceptChat(event)) {
             return;
         }
         ChatChannelRef current = getActiveChannel(player.getUniqueId());
@@ -272,6 +277,14 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         lastAllMessage.remove(playerId);
         lastPartyMessage.remove(playerId);
         lastDeliveredMessage.remove(playerId);
+        if (directMessageBridge != null) {
+            directMessageBridge.handlePlayerQuit(playerId);
+        }
+    }
+
+    @Override
+    public void registerDirectMessageBridge(DirectMessageBridge bridge) {
+        this.directMessageBridge = bridge;
     }
 
     private void handleStaffSwitch(Player player) {
@@ -291,6 +304,9 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     }
 
     private void setChannel(Player player, ChatChannelRef ref) {
+        if (directMessageBridge != null) {
+            directMessageBridge.handleChannelSwitch(player.getUniqueId());
+        }
         activeChannels.put(player.getUniqueId(), ref);
         Component message = Component.text("You are now in the ", NamedTextColor.GREEN)
                 .append(Component.text(ref.type().getDisplayName(), NamedTextColor.GOLD))
