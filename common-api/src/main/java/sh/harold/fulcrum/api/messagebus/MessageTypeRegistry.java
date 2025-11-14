@@ -122,6 +122,16 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusMessage.class);
             register(ChannelConstants.REGISTRY_PUNISHMENT_STATUS_COMMAND,
                     sh.harold.fulcrum.api.messagebus.messages.punishment.PunishmentStatusCommandMessage.class);
+            register(ChannelConstants.SOCIAL_FRIEND_MUTATION_REQUEST,
+                    sh.harold.fulcrum.api.messagebus.messages.social.FriendMutationCommandMessage.class);
+            register(ChannelConstants.SOCIAL_FRIEND_MUTATION_RESPONSE,
+                    sh.harold.fulcrum.api.messagebus.messages.social.FriendMutationResponseMessage.class);
+            register(ChannelConstants.SOCIAL_FRIEND_REQUESTS,
+                    sh.harold.fulcrum.api.messagebus.messages.social.FriendRequestEventMessage.class);
+            register(ChannelConstants.SOCIAL_FRIEND_UPDATES,
+                    sh.harold.fulcrum.api.messagebus.messages.social.FriendRelationEventMessage.class);
+            register(ChannelConstants.SOCIAL_FRIEND_BLOCKS,
+                    sh.harold.fulcrum.api.messagebus.messages.social.FriendBlockEventMessage.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {
