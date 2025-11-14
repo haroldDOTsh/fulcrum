@@ -30,4 +30,8 @@ public interface ChatChannelService {
     void handlePlayerJoin(Player player);
 
     void handlePlayerQuit(UUID playerId);
+
+    default void registerDirectMessageBridge(DirectMessageBridge bridge) {
+        // optional implementation
+    }
 }

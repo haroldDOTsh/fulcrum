@@ -173,6 +173,7 @@ public final class ChannelConstants {
     public static final String SOCIAL_FRIEND_REQUESTS = "fulcrum.social.friend.requests";
     public static final String SOCIAL_FRIEND_UPDATES = "fulcrum.social.friend.updates";
     public static final String SOCIAL_FRIEND_BLOCKS = "fulcrum.social.friend.blocks";
+    public static final String SOCIAL_DIRECT_MESSAGE = "fulcrum.social.dm.send";
     /**
      * Proxy registration response
      */

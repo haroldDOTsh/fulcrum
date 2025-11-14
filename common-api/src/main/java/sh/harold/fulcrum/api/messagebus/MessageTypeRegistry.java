@@ -132,6 +132,8 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.social.FriendRelationEventMessage.class);
             register(ChannelConstants.SOCIAL_FRIEND_BLOCKS,
                     sh.harold.fulcrum.api.messagebus.messages.social.FriendBlockEventMessage.class);
+            register(ChannelConstants.SOCIAL_DIRECT_MESSAGE,
+                    sh.harold.fulcrum.api.messagebus.messages.social.DirectMessageEnvelope.class);
 
             LOGGER.info("Registered " + typeToClass.size() + " built-in message types");
         } catch (Exception e) {
