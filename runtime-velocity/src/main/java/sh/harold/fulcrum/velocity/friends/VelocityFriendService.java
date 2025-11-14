@@ -138,8 +138,11 @@ public final class VelocityFriendService implements FriendService {
 
     private void handleRelationEvent(MessageEnvelope envelope, boolean requestChannel) {
         try {
+            Class<? extends FriendRelationEventMessage> messageType = requestChannel
+                    ? FriendRequestEventMessage.class
+                    : FriendRelationEventMessage.class;
             FriendRelationEventMessage event = MessageTypeRegistry.getInstance()
-                    .deserializeToClass(envelope.payload(), requestChannel ? FriendRequestEventMessage.class : FriendRelationEventMessage.class);
+                    .deserializeToClass(envelope.payload(), messageType);
             if (event == null) {
                 return;
             }

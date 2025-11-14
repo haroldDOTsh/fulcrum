@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.friends;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.*;
 
 /**
@@ -51,6 +53,7 @@ public record FriendSnapshot(
         return blockedIn.getOrDefault(scope, Set.of());
     }
 
+    @JsonIgnore
     public boolean isEmpty() {
         return friends.isEmpty()
                 && outgoingRequests.isEmpty()

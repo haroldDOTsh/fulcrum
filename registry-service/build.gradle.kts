@@ -66,6 +66,8 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.7.0")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("it.ozimov:embedded-redis:0.7.3")
+    testImplementation("org.testcontainers:junit-jupiter:1.20.1")
+    testImplementation("org.testcontainers:postgresql:1.20.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
