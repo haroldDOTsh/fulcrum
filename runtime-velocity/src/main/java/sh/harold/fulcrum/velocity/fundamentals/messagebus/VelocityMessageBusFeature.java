@@ -103,6 +103,16 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             adapter.updateProxyId(newProxyId);
             this.proxyId = newProxyId;
             logger.info("Proxy ID updated to permanent ID: {}", newProxyId);
+            if (messageBus != null) {
+                try {
+                    messageBus.refreshServerIdentity();
+                    logger.info("Message bus identity refreshed for proxy {}", newProxyId);
+                } catch (Exception ex) {
+                    logger.warn("Failed to refresh message bus identity for proxy {}", newProxyId, ex);
+                }
+            } else {
+                logger.warn("Message bus not available when updating proxy ID {}", newProxyId);
+            }
         }
     }
 

@@ -232,6 +232,7 @@ public final class FriendCommand implements SimpleCommand {
         }).whenComplete((entry, throwable) ->
                 schedule(() -> {
                     if (throwable != null) {
+                        logFailure("send friend request", player, throwable);
                         sendFramed(player, error(messageFromThrowable(throwable)));
                         return;
                     }
@@ -252,6 +253,7 @@ public final class FriendCommand implements SimpleCommand {
         ).whenComplete((entry, throwable) ->
                 schedule(() -> {
                     if (throwable != null) {
+                        logFailure("accept friend request", player, throwable);
                         sendFramed(player, error(messageFromThrowable(throwable)));
                         return;
                     }
@@ -273,6 +275,7 @@ public final class FriendCommand implements SimpleCommand {
         ).whenComplete((entry, throwable) ->
                 schedule(() -> {
                     if (throwable != null) {
+                        logFailure("deny friend request", player, throwable);
                         sendFramed(player, error(messageFromThrowable(throwable)));
                         return;
                     }
@@ -292,6 +295,7 @@ public final class FriendCommand implements SimpleCommand {
         ).whenComplete((entry, throwable) ->
                 schedule(() -> {
                     if (throwable != null) {
+                        logFailure("remove friend", player, throwable);
                         sendFramed(player, error(messageFromThrowable(throwable)));
                         return;
                     }
@@ -319,6 +323,7 @@ public final class FriendCommand implements SimpleCommand {
                     .whenComplete((ignored, throwable) ->
                             schedule(() -> {
                                 if (throwable != null) {
+                                    logFailure("remove all friends", player, throwable);
                                     sendFramed(player, error("Failed to remove all friends."));
                                     return;
                                 }
@@ -343,6 +348,7 @@ public final class FriendCommand implements SimpleCommand {
                 .whenComplete((enabled, throwable) ->
                         schedule(() -> {
                             if (throwable != null) {
+                                logFailure("toggle friend notifications", player, throwable);
                                 sendFramed(player, error("Unable to toggle notifications right now."));
                                 return;
                             }
@@ -356,6 +362,9 @@ public final class FriendCommand implements SimpleCommand {
                 .whenComplete((snapshot, throwable) ->
                         schedule(() -> {
                             if (throwable != null || snapshot == null) {
+                                if (throwable != null) {
+                                    logFailure("load friend snapshot", player, throwable);
+                                }
                                 sendFramed(player, error("Unable to load your friend data."));
                                 return;
                             }
@@ -422,6 +431,10 @@ public final class FriendCommand implements SimpleCommand {
         player.sendMessage(FRAME_LINE);
         lines.forEach(player::sendMessage);
         player.sendMessage(FRAME_LINE);
+    }
+
+    private void logFailure(String action, Player player, Throwable throwable) {
+        logger.warn("Failed to {} for {} ({})", action, player.getUsername(), player.getUniqueId(), throwable);
     }
 
     private void schedule(Runnable runnable) {
