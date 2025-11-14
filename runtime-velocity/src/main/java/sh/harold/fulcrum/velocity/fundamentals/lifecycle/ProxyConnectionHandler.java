@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.velocity.fundamentals.lifecycle;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.velocitypowered.api.event.EventTask;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
@@ -8,6 +9,8 @@ import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.player.ServerPreConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
+import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -31,6 +34,7 @@ import java.util.stream.Collectors;
 public class ProxyConnectionHandler {
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Duration LOBBY_ROUTE_TIMEOUT = Duration.ofSeconds(5);
+    private static final ChannelIdentifier ROUTE_CHANNEL = MinecraftChannelIdentifier.from("fulcrum:route");
 
     private final ProxyServer proxy;
     private final Logger logger;
@@ -38,6 +42,8 @@ public class ProxyConnectionHandler {
     private final ServiceLocator serviceLocator;
     // Cache server metrics for optimal selection
     private final Map<String, ServerMetrics> serverMetricsCache = new ConcurrentHashMap<>();
+    private final Map<UUID, PlayerRouteCommand> pendingDevFallbackRoutes = new ConcurrentHashMap<>();
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private ProxyIdentifier proxyId;  // Changed to use ProxyIdentifier
     private volatile PlayerRoutingFeature cachedRoutingFeature;
     private volatile RankService cachedRankService;
@@ -293,6 +299,7 @@ public class ProxyConnectionHandler {
     public void onPlayerDisconnect(DisconnectEvent event) {
         Player player = event.getPlayer();
         logger.debug("Player {} disconnected from proxy", player.getUsername());
+        pendingDevFallbackRoutes.remove(player.getUniqueId());
     }
 
     /**
@@ -316,6 +323,7 @@ public class ProxyConnectionHandler {
         logger.debug("Player {} connected to server {}",
                 player.getUsername(),
                 server.getServerInfo().getName());
+        deliverPendingFallbackRoute(player, server);
     }
 
     private InitialRouteResult routeViaRegistry(PlayerChooseInitialServerEvent event) {
@@ -463,6 +471,7 @@ public class ProxyConnectionHandler {
         }
 
         event.setInitialServer(devServer);
+        queueDevFallbackRoute(player, devServer);
         Component fallbackNotice = Component.text()
                 .append(Component.text("No lobby servers are online. Routing you to ", NamedTextColor.YELLOW))
                 .append(Component.text(devServer.getServerInfo().getName(), NamedTextColor.GREEN))
@@ -472,6 +481,65 @@ public class ProxyConnectionHandler {
         logger.info("Staff {} routed to dev server {} because no lobby servers are online",
                 player.getUsername(), devServer.getServerInfo().getName());
         return true;
+    }
+
+    private void queueDevFallbackRoute(Player player, RegisteredServer devServer) {
+        if (player == null || devServer == null) {
+            return;
+        }
+        PlayerRouteCommand command = new PlayerRouteCommand();
+        command.setAction(PlayerRouteCommand.Action.ROUTE);
+        command.setRequestId(UUID.randomUUID());
+        command.setPlayerId(player.getUniqueId());
+        command.setPlayerName(player.getUsername());
+        command.setProxyId(proxyId.getFormattedId());
+        String serverId = devServer.getServerInfo().getName();
+        command.setServerId(serverId);
+        command.setSlotId("dev:" + serverId);
+        command.setSlotSuffix("dev");
+        command.setTargetWorld("");
+        command.setSpawnX(0.5D);
+        command.setSpawnY(64D);
+        command.setSpawnZ(0.5D);
+        command.setSpawnYaw(0F);
+        command.setSpawnPitch(0F);
+
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("family", "dev");
+        metadata.put("variant", "staff-dev");
+        metadata.put("routeType", "staff-dev-fallback");
+        metadata.put("reason", "staff-dev-fallback");
+        metadata.put("skipTeleport", "true");
+        metadata.put("targetServer", serverId);
+        command.setMetadata(metadata);
+
+        pendingDevFallbackRoutes.put(player.getUniqueId(), command);
+    }
+
+    private void deliverPendingFallbackRoute(Player player, RegisteredServer server) {
+        if (player == null || server == null) {
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        PlayerRouteCommand command = pendingDevFallbackRoutes.get(playerId);
+        if (command == null) {
+            return;
+        }
+        String connectedServer = server.getServerInfo().getName();
+        if (!connectedServer.equalsIgnoreCase(command.getServerId())) {
+            logger.debug("Deferring dev fallback route for {} - connected to {} instead of {}",
+                    player.getUsername(), connectedServer, command.getServerId());
+            return;
+        }
+
+        pendingDevFallbackRoutes.remove(playerId);
+        try {
+            byte[] payload = objectMapper.writeValueAsBytes(command);
+            server.sendPluginMessage(ROUTE_CHANNEL, payload);
+            logger.info("Registered dev fallback route for {} via {}", player.getUsername(), connectedServer);
+        } catch (Exception exception) {
+            logger.warn("Failed to deliver dev fallback route for {}: {}", player.getUsername(), exception.getMessage());
+        }
     }
 
     private boolean hasActiveServersForRole(String role) {

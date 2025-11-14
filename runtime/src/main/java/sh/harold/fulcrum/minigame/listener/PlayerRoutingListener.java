@@ -120,7 +120,19 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         }
 
         UUID playerId = command.getPlayerId();
-        Location target = resolveLocation(command);
+        Player player = Bukkit.getPlayer(playerId);
+        boolean skipTeleport = shouldSkipTeleport(command);
+
+        Location target = null;
+        if (skipTeleport && player != null) {
+            Location current = player.getLocation();
+            if (current != null) {
+                target = current.clone();
+            }
+        }
+        if (target == null) {
+            target = resolveLocation(command);
+        }
         if (target == null) {
             plugin.getLogger().warning("Route command missing valid target location for player " + command.getPlayerName());
             return;
@@ -131,7 +143,6 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         boolean hasReservationToken = reservationToken != null && !reservationToken.isBlank();
         String partyReservationId = commandMetadata.get("partyReservationId");
         String partyTokenId = commandMetadata.get("partyTokenId");
-        Player player = Bukkit.getPlayer(playerId);
         boolean localRoute = isLocalRoute(command, player);
 
         if (partyReservationId != null && !partyReservationId.isBlank()
@@ -198,8 +209,14 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         );
         routeRegistry.register(assignment);
 
-        pendingTeleports.put(playerId, new PendingTeleport(target, command));
-        attemptTeleport(playerId);
+        if (skipTeleport) {
+            plugin.getLogger().fine(() -> "Skipping teleport for " + command.getPlayerName()
+                    + " (routeType=" + metadata.getOrDefault("routeType", "unknown") + ")");
+            sendSuccessAck(command);
+        } else {
+            pendingTeleports.put(playerId, new PendingTeleport(target, command));
+            attemptTeleport(playerId);
+        }
 
         if (gameManager != null) {
             Player routed = Bukkit.getPlayer(playerId);
@@ -207,6 +224,21 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                 gameManager.handleRoutedPlayer(routed, assignment);
             }
         }
+    }
+
+    private boolean shouldSkipTeleport(PlayerRouteCommand command) {
+        if (command == null) {
+            return false;
+        }
+        Map<String, String> metadata = command.getMetadata();
+        if (metadata == null) {
+            return false;
+        }
+        String flag = metadata.get("skipTeleport");
+        if (flag == null) {
+            return false;
+        }
+        return flag.equalsIgnoreCase("true") || flag.equals("1");
     }
 
     private void sendReservationFailure(PlayerRouteCommand command, String reason) {
