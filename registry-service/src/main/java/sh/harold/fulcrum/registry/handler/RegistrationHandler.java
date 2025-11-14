@@ -324,6 +324,7 @@ public class RegistrationHandler {
             request.setAddress(apiRequest.getAddress());
             request.setPort(apiRequest.getPort());
             request.setMaxCapacity(apiRequest.getMaxCapacity());
+            request.setFulcrumVersion(apiRequest.getFulcrumVersion());
 
             processRegistrationRequest(request);
 
@@ -668,6 +669,7 @@ public class RegistrationHandler {
             response.put("serverType", request.getServerType());
             response.put("address", request.getAddress());
             response.put("port", request.getPort());
+            response.put("fulcrumVersion", request.getFulcrumVersion());
 
             // CRITICAL: Use broadcast instead of send because the backend is listening on a shared channel
             // The backend server subscribes to server registration response channel to receive responses
@@ -714,6 +716,7 @@ public class RegistrationHandler {
                 announcement.put("address", request.getAddress());
                 announcement.put("port", request.getPort());
                 announcement.put("maxCapacity", request.getMaxCapacity());
+                announcement.put("fulcrumVersion", serverInfo.getFulcrumVersion());
 
                 // Broadcast server addition via MessageBus (standardized only)
                 messageBus.broadcast(ChannelConstants.REGISTRY_SERVER_ADDED, announcement);

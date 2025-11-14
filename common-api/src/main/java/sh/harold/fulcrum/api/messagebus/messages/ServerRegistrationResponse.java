@@ -20,6 +20,7 @@ public class ServerRegistrationResponse implements BaseMessage {
     private String address;           // Forwarded for proxy registration
     private int port;                // Forwarded for proxy registration
     private String proxyId;           // ID of the proxy that approved the registration
+    private String fulcrumVersion;    // Runtime version reported by the registering service
 
     public ServerRegistrationResponse() {
         // Default constructor for serialization
@@ -102,11 +103,19 @@ public class ServerRegistrationResponse implements BaseMessage {
         this.proxyId = proxyId;
     }
 
+    public String getFulcrumVersion() {
+        return fulcrumVersion;
+    }
+
+    public void setFulcrumVersion(String fulcrumVersion) {
+        this.fulcrumVersion = fulcrumVersion;
+    }
+
     @Override
     public String toString() {
         if (success) {
-            return String.format("ServerRegistrationResponse[SUCCESS: %s -> %s, proxy=%s]",
-                    tempId, assignedServerId, proxyId);
+            return String.format("ServerRegistrationResponse[SUCCESS: %s -> %s, proxy=%s, version=%s]",
+                    tempId, assignedServerId, proxyId, fulcrumVersion);
         } else {
             return String.format("ServerRegistrationResponse[FAILED: %s - %s]",
                     tempId, message);

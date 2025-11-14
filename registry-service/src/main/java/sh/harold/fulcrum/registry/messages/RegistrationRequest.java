@@ -17,6 +17,7 @@ public class RegistrationRequest {
     private int port;
     private int maxCapacity;
     private Map<String, Object> metadata;
+    private String fulcrumVersion;
 
     // Getters and setters
     public String getTempId() {
@@ -73,5 +74,13 @@ public class RegistrationRequest {
 
     public void setMetadata(Map<String, Object> metadata) {
         this.metadata = metadata;
+    }
+
+    public String getFulcrumVersion() {
+        return fulcrumVersion;
+    }
+
+    public void setFulcrumVersion(String fulcrumVersion) {
+        this.fulcrumVersion = fulcrumVersion;
     }
 }

@@ -59,6 +59,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
     private boolean registeredWithRegistry = false;
     private ServiceLocator serviceLocator;  // Store for later use in message handlers
     private ProxyConnectionHandler connectionHandler;
+    private String fulcrumVersion = "unknown";
 
     public VelocityServerLifecycleFeature(ProxyServer proxy, Logger logger,
                                           ServerLifecycleConfig config,
@@ -96,6 +97,8 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
 
         this.serviceLocator = services;  // Store for use in message handlers
         this.messageBus = services.getRequiredService(MessageBus.class);
+        services.getService(FulcrumVelocityPlugin.class)
+                .ifPresent(plugin -> this.fulcrumVersion = plugin.getVersion());
 
         // Get temporary proxy ID from VelocityMessageBusFeature
         services.getService(VelocityMessageBusFeature.class).ifPresentOrElse(
@@ -170,6 +173,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             request.setRole("proxy");
             request.setAddress(proxy.getBoundAddress().getHostString());
             request.setPort(proxy.getBoundAddress().getPort());
+            request.setFulcrumVersion(fulcrumVersion);
 
             // Use the standardized channel for registration
             messageBus.broadcast(ChannelConstants.REGISTRY_REGISTRATION_REQUEST, request);

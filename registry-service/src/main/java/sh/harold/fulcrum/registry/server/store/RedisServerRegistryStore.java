@@ -113,7 +113,8 @@ public class RedisServerRegistryStore {
             double cpuUsage,
             Map<String, SlotDocument> slots,
             Map<String, Integer> slotFamilyCapacities,
-            Map<String, List<String>> slotFamilyVariants
+            Map<String, List<String>> slotFamilyVariants,
+            String fulcrumVersion
     ) {
         public static ServerDocument from(RegisteredServerData data) {
             Map<String, SlotDocument> slotDocs = new LinkedHashMap<>();
@@ -142,7 +143,8 @@ public class RedisServerRegistryStore {
                     data.getCpuUsage(),
                     slotDocs,
                     capacities,
-                    variants
+                    variants,
+                    data.getFulcrumVersion()
             );
         }
 
@@ -168,6 +170,7 @@ public class RedisServerRegistryStore {
             server.setTps(tps);
             server.setMemoryUsage(memoryUsage);
             server.setCpuUsage(cpuUsage);
+            server.setFulcrumVersion(fulcrumVersion);
 
             if (slots != null) {
                 slots.values().forEach(slotDoc -> slotDoc.applyTo(server));

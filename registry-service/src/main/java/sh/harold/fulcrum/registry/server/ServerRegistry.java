@@ -59,6 +59,10 @@ public class ServerRegistry {
         }
     }
 
+    private static String firstNonNull(String preferred, String fallback) {
+        return (preferred != null && !preferred.isBlank()) ? preferred : fallback;
+    }
+
     /**
      * Register a new server
      */
@@ -84,6 +88,9 @@ public class ServerRegistry {
                 updatedServer.setRole(request.getRole() != null ? request.getRole() : "default");
                 updatedServer.setLastHeartbeat(System.currentTimeMillis());
                 updatedServer.setStatus(RegisteredServerData.Status.STARTING);
+                updatedServer.setFulcrumVersion(firstNonNull(
+                        request.getFulcrumVersion(),
+                        existingServer.getFulcrumVersion()));
 
                 // Replace the server data
                 servers.put(requestId, updatedServer);
@@ -145,6 +152,7 @@ public class ServerRegistry {
         serverData.setRole(request.getRole() != null ? request.getRole() : "default");
         serverData.setLastHeartbeat(System.currentTimeMillis());
         serverData.setStatus(RegisteredServerData.Status.STARTING);
+        serverData.setFulcrumVersion(request.getFulcrumVersion());
 
         // Store server atomically
         servers.put(permanentId, serverData);

@@ -30,12 +30,14 @@ public class FulcrumVelocityPlugin {
     private VelocityFeatureManager featureManager;
     private ServiceLocator serviceLocator;
     private ConfigLoader configLoader;
+    private final String version;
 
     @Inject
     public FulcrumVelocityPlugin(ProxyServer server, Logger logger, @DataDirectory Path dataDirectory) {
         this.server = server;
         this.logger = logger;
         this.dataDirectory = dataDirectory;
+        this.version = resolveVersion();
     }
 
     @Subscribe
@@ -110,5 +112,17 @@ public class FulcrumVelocityPlugin {
 
     public ConfigLoader getConfigLoader() {
         return configLoader;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    private String resolveVersion() {
+        Plugin annotation = FulcrumVelocityPlugin.class.getAnnotation(Plugin.class);
+        if (annotation != null && annotation.version() != null && !annotation.version().isBlank()) {
+            return annotation.version();
+        }
+        return "unknown";
     }
 }

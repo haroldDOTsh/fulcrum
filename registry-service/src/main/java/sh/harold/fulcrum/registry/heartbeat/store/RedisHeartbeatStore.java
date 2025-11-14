@@ -178,7 +178,8 @@ public class RedisHeartbeatStore {
             double tps,
             double memoryUsage,
             double cpuUsage,
-            Map<String, SlotSnapshot> slots
+            Map<String, SlotSnapshot> slots,
+            String fulcrumVersion
     ) {
         static ServerSnapshot from(RegisteredServerData data) {
             Map<String, SlotSnapshot> slotSnapshots = new LinkedHashMap<>();
@@ -199,7 +200,8 @@ public class RedisHeartbeatStore {
                     data.getTps(),
                     data.getMemoryUsage(),
                     data.getCpuUsage(),
-                    slotSnapshots
+                    slotSnapshots,
+                    data.getFulcrumVersion()
             );
         }
 
@@ -226,6 +228,7 @@ public class RedisHeartbeatStore {
             server.setTps(tps);
             server.setMemoryUsage(memoryUsage);
             server.setCpuUsage(cpuUsage);
+            server.setFulcrumVersion(fulcrumVersion);
 
             if (slots != null) {
                 slots.values().forEach(slotSnapshot -> slotSnapshot.applyTo(server));
