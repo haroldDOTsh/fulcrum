@@ -19,6 +19,8 @@ public final class FriendMutationResponseMessage implements BaseMessage, Seriali
     private boolean success;
     private String error;
     private FriendMutationType mutationType;
+    private UUID actorId;
+    private UUID targetId;
     private FriendSnapshot actorSnapshot;
     private FriendSnapshot targetSnapshot;
 
@@ -28,12 +30,16 @@ public final class FriendMutationResponseMessage implements BaseMessage, Seriali
     public FriendMutationResponseMessage(UUID requestId,
                                          boolean success,
                                          FriendMutationType mutationType,
+                                         UUID actorId,
+                                         UUID targetId,
                                          FriendSnapshot actorSnapshot,
                                          FriendSnapshot targetSnapshot,
                                          String error) {
         this.requestId = requestId;
         this.success = success;
         this.mutationType = mutationType;
+        this.actorId = actorId;
+        this.targetId = targetId;
         this.actorSnapshot = actorSnapshot;
         this.targetSnapshot = targetSnapshot;
         this.error = error;
@@ -90,5 +96,21 @@ public final class FriendMutationResponseMessage implements BaseMessage, Seriali
 
     public void setTargetSnapshot(FriendSnapshot targetSnapshot) {
         this.targetSnapshot = targetSnapshot;
+    }
+
+    public UUID getActorId() {
+        return actorId;
+    }
+
+    public void setActorId(UUID actorId) {
+        this.actorId = actorId;
+    }
+
+    public UUID getTargetId() {
+        return targetId;
+    }
+
+    public void setTargetId(UUID targetId) {
+        this.targetId = targetId;
     }
 }

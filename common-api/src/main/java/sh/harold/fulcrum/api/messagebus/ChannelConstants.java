@@ -164,6 +164,15 @@ public final class ChannelConstants {
     public static final String REGISTRY_PUNISHMENT_APPLIED = "fulcrum.registry.punishment.applied";
     public static final String REGISTRY_PUNISHMENT_STATUS = "fulcrum.registry.punishment.status";
     public static final String REGISTRY_PUNISHMENT_STATUS_COMMAND = "fulcrum.registry.punishment.status.command";
+
+    // ============================================
+    // Social / Friends Channels
+    // ============================================
+    public static final String SOCIAL_FRIEND_MUTATION_REQUEST = "fulcrum.social.friend.mutation.request";
+    public static final String SOCIAL_FRIEND_MUTATION_RESPONSE = "fulcrum.social.friend.mutation.response";
+    public static final String SOCIAL_FRIEND_REQUESTS = "fulcrum.social.friend.requests";
+    public static final String SOCIAL_FRIEND_UPDATES = "fulcrum.social.friend.updates";
+    public static final String SOCIAL_FRIEND_BLOCKS = "fulcrum.social.friend.blocks";
     /**
      * Proxy registration response
      */
