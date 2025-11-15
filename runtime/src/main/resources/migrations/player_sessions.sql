@@ -12,19 +12,6 @@ CREATE TABLE IF NOT EXISTS player_sessions
     UUID
     NOT
     NULL,
-    environment
-    VARCHAR
-(
-    128
-),
-    family VARCHAR
-(
-    128
-), 
-    variant VARCHAR
-(
-    128
-),
     started_at BIGINT NOT NULL,
     ended_at BIGINT NOT NULL,
     client_protocol_version INTEGER,
@@ -34,15 +21,6 @@ CREATE TABLE IF NOT EXISTS player_sessions
 ),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
-
-ALTER TABLE player_sessions
-    ADD COLUMN IF NOT EXISTS environment VARCHAR (128);
-
-ALTER TABLE player_sessions
-    ADD COLUMN IF NOT EXISTS family VARCHAR (128);
-
-ALTER TABLE player_sessions
-    ADD COLUMN IF NOT EXISTS variant VARCHAR (128);
 
 ALTER TABLE player_sessions
     ADD COLUMN IF NOT EXISTS client_protocol_version INTEGER;

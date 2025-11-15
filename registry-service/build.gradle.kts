@@ -26,6 +26,7 @@ dependencies {
     // Internal dependencies - using the shared core contracts
     implementation(project(":common-api"))
     implementation(project(":common-api:message"))
+    implementation("org.postgresql:postgresql:42.7.4")
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
     
     // Redis client (same as used in runtime)

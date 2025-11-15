@@ -30,12 +30,9 @@ public class PlayerSessionLogRepository {
     }
 
     public void recordSession(PlayerSessionRecord record, long endedAt) {
-        String insert = "INSERT INTO " + TABLE_NAME + " (session_id, player_uuid, environment, family, variant, started_at, ended_at, client_protocol_version, client_brand) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        String insert = "INSERT INTO " + TABLE_NAME + " (session_id, player_uuid, started_at, ended_at, client_protocol_version, client_brand) " +
+                "VALUES (?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT (session_id) DO UPDATE SET " +
-                "environment = EXCLUDED.environment, " +
-                "family = EXCLUDED.family, " +
-                "variant = EXCLUDED.variant, " +
                 "ended_at = EXCLUDED.ended_at, " +
                 "client_protocol_version = EXCLUDED.client_protocol_version, " +
                 "client_brand = EXCLUDED.client_brand";
@@ -46,18 +43,15 @@ public class PlayerSessionLogRepository {
              PreparedStatement ps = connection.prepareStatement(insert)) {
             ps.setObject(1, UUID.fromString(record.getSessionId()));
             ps.setObject(2, record.getPlayerId());
-            ps.setString(3, sessionContext.environment());
-            ps.setString(4, sessionContext.family());
-            ps.setString(5, sessionContext.variant());
-            ps.setLong(6, record.getCreatedAt());
-            ps.setLong(7, endedAt);
+            ps.setLong(3, record.getCreatedAt());
+            ps.setLong(4, endedAt);
             Integer protocolVersion = record.getClientProtocolVersion();
             if (protocolVersion != null) {
-                ps.setInt(8, protocolVersion);
+                ps.setInt(5, protocolVersion);
             } else {
-                ps.setNull(8, Types.INTEGER);
+                ps.setNull(5, Types.INTEGER);
             }
-            ps.setString(9, record.getClientBrand());
+            ps.setString(6, record.getClientBrand());
             ps.executeUpdate();
 
             persistSegments(connection, record, sessionContext);
