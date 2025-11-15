@@ -27,8 +27,12 @@ final class NetworkProfileValidator {
     static void validate(NetworkProfileDocument profile) {
         List<String> errors = new ArrayList<>();
 
-        if (profile.serverIp().isBlank()) {
-            errors.add("serverIp must not be blank");
+        NetworkProfileDocument.GeneralInfo info = profile.info();
+        if (info.serverName().isBlank()) {
+            errors.add("info.serverName must not be blank");
+        }
+        if (info.serverIp().isBlank()) {
+            errors.add("info.serverIp must not be blank");
         }
 
         List<String> motd = profile.motd();

@@ -77,7 +77,7 @@ public final class ProxyShutdownFeature implements VelocityFeature {
         this.proxyId = lifecycleFeature.getCurrentProxyId().orElse(null);
 
         locator.getService(NetworkConfigService.class)
-                .flatMap(service -> service.getString("serverIp"))
+                .flatMap(service -> service.getString("info.serverIp"))
                 .ifPresentOrElse(
                         ip -> this.serverIp = ip,
                         () -> this.serverIp = NETWORK_FALLBACK_IP

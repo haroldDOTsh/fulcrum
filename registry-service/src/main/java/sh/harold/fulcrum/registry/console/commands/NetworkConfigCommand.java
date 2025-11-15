@@ -96,12 +96,19 @@ public record NetworkConfigCommand(NetworkConfigManager manager) implements Comm
         return manager.getActiveProfileView()
                 .map(profile -> {
                     String tag = profile.getString("tag").orElse(profile.profileId());
-                    String serverIp = profile.getString("serverIp").orElse("unknown");
+                    String serverName = profile.getString("info.serverName").orElse("unknown");
+                    String serverIp = profile.getString("info.serverIp").orElse("unknown");
+                    String discordLink = profile.getString("info.discordLink").orElse("unlisted");
+                    String websiteLink = profile.getString("info.websiteLink").orElse("unlisted");
                     List<String> motd = profile.getStringList("motd");
                     System.out.println("Active profile: " + profile.profileId());
                     System.out.println(" Tag      : " + tag);
                     System.out.println(" Updated  : " + FORMATTER.format(profile.updatedAt()));
-                    System.out.println(" Server IP: " + serverIp);
+                    System.out.println(" Info");
+                    System.out.println("   Name   : " + serverName);
+                    System.out.println("   Server : " + serverIp);
+                    System.out.println("   Discord: " + discordLink);
+                    System.out.println("   Website: " + websiteLink);
                     System.out.println(" MOTD     : " + motd);
                     return true;
                 })

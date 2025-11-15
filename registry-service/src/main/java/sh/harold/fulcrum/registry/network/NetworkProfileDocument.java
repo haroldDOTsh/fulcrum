@@ -11,7 +11,7 @@ import java.util.Objects;
 record NetworkProfileDocument(
         String profileId,
         String tag,
-        String serverIp,
+        GeneralInfo info,
         List<String> motd,
         String scoreboardTitle,
         String scoreboardFooter,
@@ -23,7 +23,7 @@ record NetworkProfileDocument(
     NetworkProfileDocument {
         Objects.requireNonNull(profileId, "profileId");
         Objects.requireNonNull(tag, "tag");
-        Objects.requireNonNull(serverIp, "serverIp");
+        info = Objects.requireNonNull(info, "info");
         motd = List.copyOf(Objects.requireNonNull(motd, "motd"));
         scoreboardTitle = Objects.requireNonNullElse(scoreboardTitle, "");
         scoreboardFooter = Objects.requireNonNullElse(scoreboardFooter, "");
@@ -33,7 +33,7 @@ record NetworkProfileDocument(
     }
 
     NetworkProfileDocument withUpdatedAt(Instant newTimestamp) {
-        return new NetworkProfileDocument(profileId, tag, serverIp, motd,
+        return new NetworkProfileDocument(profileId, tag, info, motd,
                 scoreboardTitle, scoreboardFooter, ranks, newTimestamp, rawData);
     }
 
@@ -60,6 +60,20 @@ record NetworkProfileDocument(
 
         RankVisualView toView() {
             return new RankVisualView(displayName, colorCode, fullPrefix, shortPrefix, nameColor);
+        }
+    }
+
+    record GeneralInfo(
+            String serverName,
+            String serverIp,
+            String discordLink,
+            String websiteLink
+    ) {
+        GeneralInfo {
+            serverName = Objects.requireNonNullElse(serverName, "");
+            serverIp = Objects.requireNonNullElse(serverIp, "");
+            discordLink = Objects.requireNonNullElse(discordLink, "");
+            websiteLink = Objects.requireNonNullElse(websiteLink, "");
         }
     }
 }

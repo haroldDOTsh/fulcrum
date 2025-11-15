@@ -214,10 +214,18 @@ public final class NetworkConfigManager implements AutoCloseable {
                 }
             });
 
+            Map<String, Object> infoData = view.getMap("info");
+            NetworkProfileDocument.GeneralInfo info = new NetworkProfileDocument.GeneralInfo(
+                    Objects.toString(infoData.getOrDefault("serverName", "")),
+                    Objects.toString(infoData.getOrDefault("serverIp", "")),
+                    Objects.toString(infoData.getOrDefault("discordLink", "")),
+                    Objects.toString(infoData.getOrDefault("websiteLink", ""))
+            );
+
             NetworkProfileDocument document = new NetworkProfileDocument(
                     view.profileId(),
                     view.getString("tag").orElse(view.profileId()),
-                    view.getString("serverIp").orElse(""),
+                    info,
                     view.getStringList("motd"),
                     scoreboardTitle,
                     scoreboardFooter,

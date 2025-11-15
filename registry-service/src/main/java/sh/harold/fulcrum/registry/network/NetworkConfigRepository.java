@@ -90,6 +90,12 @@ public final class NetworkConfigRepository implements AutoCloseable {
         scoreboard.put("title", profile.scoreboardTitle());
         scoreboard.put("footer", profile.scoreboardFooter());
 
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("serverName", profile.info().serverName());
+        info.put("serverIp", profile.info().serverIp());
+        info.put("discordLink", profile.info().discordLink());
+        info.put("websiteLink", profile.info().websiteLink());
+
         Map<String, Object> ranks = new LinkedHashMap<>();
         profile.ranks().forEach((rankId, visual) -> {
             Map<String, Object> visualMap = new LinkedHashMap<>();
@@ -103,7 +109,7 @@ public final class NetworkConfigRepository implements AutoCloseable {
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("tag", profile.tag());
-        data.put("serverIp", profile.serverIp());
+        data.put("info", info);
         data.put("motd", profile.motd());
         data.put("scoreboard", scoreboard);
         data.put("ranks", ranks);
@@ -114,7 +120,7 @@ public final class NetworkConfigRepository implements AutoCloseable {
             profiles.create(profile.profileId(), data);
         } else {
             document.set("tag", profile.tag());
-            document.set("serverIp", profile.serverIp());
+            document.set("info", info);
             document.set("motd", profile.motd());
             document.set("scoreboard", scoreboard);
             document.set("ranks", ranks);
@@ -137,7 +143,13 @@ public final class NetworkConfigRepository implements AutoCloseable {
         }
 
         String tag = Objects.toString(normalized.getOrDefault("tag", id));
-        String serverIp = Objects.toString(normalized.getOrDefault("serverIp", ""));
+        Map<String, Object> infoMap = getChildMap(normalized, "info");
+        NetworkProfileDocument.GeneralInfo info = new NetworkProfileDocument.GeneralInfo(
+                Objects.toString(infoMap.getOrDefault("serverName", "")),
+                Objects.toString(infoMap.getOrDefault("serverIp", "")),
+                Objects.toString(infoMap.getOrDefault("discordLink", "")),
+                Objects.toString(infoMap.getOrDefault("websiteLink", ""))
+        );
 
         List<String> motd = new ArrayList<>();
         Object motdObj = normalized.get("motd");
@@ -182,7 +194,7 @@ public final class NetworkConfigRepository implements AutoCloseable {
         NetworkProfileDocument documentModel = new NetworkProfileDocument(
                 id,
                 tag,
-                serverIp,
+                info,
                 motd,
                 title,
                 footer,
