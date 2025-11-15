@@ -96,12 +96,14 @@ public final class FriendCommand implements SimpleCommand {
         }
 
         String[] args = invocation.arguments();
+        debug(player, "received /friend with args={}", Arrays.toString(args));
         if (args.length == 0) {
             sendHelp(player);
             return;
         }
 
         String sub = args[0].toLowerCase(Locale.ROOT);
+        debug(player, "dispatching subcommand={}", sub);
         switch (sub) {
             case "help" -> sendHelp(player);
             case "list" -> handleList(player, args);
@@ -159,6 +161,7 @@ public final class FriendCommand implements SimpleCommand {
     }
 
     private void handleList(Player player, String[] args) {
+        debug(player, "handling list request args={}", Arrays.toString(args));
         if (args.length > 1 && "best".equalsIgnoreCase(args[1])) {
             sendFramed(player, FriendTextFormatter.gray("Best friends will be available soon."));
             return;
@@ -177,6 +180,7 @@ public final class FriendCommand implements SimpleCommand {
             List<UUID> slice = friends.subList(start, Math.min(start + PAGE_SIZE, friends.size()));
             List<Component> lines = new ArrayList<>();
             lines.add(FriendTextFormatter.aqua("Friends (" + friends.size() + ") - Page " + page + "/" + totalPages));
+            debug(player, "rendering friend list page={} totalPages={} totalFriends={}", page, totalPages, friends.size());
             for (UUID id : slice) {
                 String display = cachedName(id);
                 boolean online = proxy.getPlayer(id).isPresent();
@@ -193,80 +197,113 @@ public final class FriendCommand implements SimpleCommand {
     }
 
     private void handleRequests(Player player, String[] args) {
+        debug(player, "handling requests args={}", Arrays.toString(args));
         final int requestedPage = args.length > 1 ? parsePage(args[1]) : 1;
-        withSnapshot(player, false, snapshot -> {
-            List<UUID> requests = new ArrayList<>(snapshot.incomingRequests());
-            if (requests.isEmpty()) {
-                sendFramed(player, FriendTextFormatter.gray("You do not have any pending requests."));
-                return;
-            }
-            requests.sort(Comparator.comparing(uuid -> cachedName(uuid).toLowerCase(Locale.ROOT)));
-            int totalPages = Math.max(1, (int) Math.ceil(requests.size() / (double) PAGE_SIZE));
-            int page = Math.min(Math.max(requestedPage, 1), totalPages);
-            int start = (page - 1) * PAGE_SIZE;
-            List<UUID> slice = requests.subList(start, Math.min(start + PAGE_SIZE, requests.size()));
-            List<Component> lines = new ArrayList<>();
-            lines.add(FriendTextFormatter.aqua("Incoming requests (" + requests.size() + ") - Page " + page + "/" + totalPages));
-            for (UUID id : slice) {
-                String display = cachedName(id);
-                Component line = Component.text()
-                        .append(Component.text("• ", NamedTextColor.DARK_GRAY))
-                        .append(FriendTextFormatter.formatName(id, display, rankService, logger))
-                        .append(Component.text(" - "))
-                        .append(Component.text("Use /friend accept " + display, NamedTextColor.YELLOW))
-                        .build();
-                lines.add(line);
-            }
-            sendFramed(player, lines);
-        });
+        friendService.getPendingInvites(player.getUniqueId())
+                .whenComplete((invites, throwable) ->
+                        schedule(() -> {
+                            if (throwable != null) {
+                                debug(player, "pending invite fetch failed error={}", throwable.toString());
+                                sendFramed(player, error("Unable to load your friend requests."));
+                                return;
+                            }
+                            if (invites == null || invites.isEmpty()) {
+                                sendFramed(player, FriendTextFormatter.gray("You do not have any pending requests."));
+                                return;
+                            }
+                            List<FriendService.PendingFriendInvite> sorted = new ArrayList<>(invites);
+                            sorted.sort(Comparator.comparingLong(FriendService.PendingFriendInvite::requestedAtEpochMillis).reversed());
+                            int totalPages = Math.max(1, (int) Math.ceil(sorted.size() / (double) PAGE_SIZE));
+                            int page = Math.min(Math.max(requestedPage, 1), totalPages);
+                            int start = (page - 1) * PAGE_SIZE;
+                            List<FriendService.PendingFriendInvite> slice = sorted.subList(start, Math.min(start + PAGE_SIZE, sorted.size()));
+                            List<Component> lines = new ArrayList<>();
+                            lines.add(FriendTextFormatter.aqua("Incoming requests (" + sorted.size() + ") - Page " + page + "/" + totalPages));
+                            debug(player, "rendering request list page={} totalPages={} totalRequests={}", page, totalPages, sorted.size());
+                            for (FriendService.PendingFriendInvite invite : slice) {
+                                UUID actorId = invite.actorId();
+                                String display = cachedName(actorId);
+                                Component line = Component.text()
+                                        .append(Component.text("• ", NamedTextColor.DARK_GRAY))
+                                        .append(FriendTextFormatter.formatName(actorId, display, rankService, logger))
+                                        .append(Component.text(" - "))
+                                        .append(Component.text("Use /friend accept " + display, NamedTextColor.YELLOW))
+                                        .build();
+                                lines.add(line);
+                            }
+                            sendFramed(player, lines);
+                        }));
     }
 
     private void handleAdd(Player player, String targetArg) {
-        resolveTarget(targetArg).thenCompose(targetId -> {
+        debug(player, "handling add targetArg={}", targetArg);
+        resolveTarget(targetArg).whenComplete((targetId, throwable) -> {
+            if (throwable != null) {
+                debug(player, "add target resolution failed targetArg={} error={}", targetArg, throwable.getMessage());
+                schedule(() -> sendFramed(player, error(messageFromThrowable(throwable))));
+                return;
+            }
             if (player.getUniqueId().equals(targetId)) {
-                throw new IllegalArgumentException("You cannot add yourself.");
+                schedule(() -> sendFramed(player, error("You cannot add yourself.")));
+                return;
             }
             Map<String, Object> metadata = Map.of("actorName", player.getUsername());
-            return friendService.sendInvite(player.getUniqueId(), targetId, metadata)
-                    .thenApply(result -> Map.entry(targetId, result));
-        }).whenComplete((entry, throwable) ->
-                schedule(() -> {
-                    if (throwable != null) {
-                        logFailure("send friend request", player, throwable);
-                        sendFramed(player, error(messageFromThrowable(throwable)));
-                        return;
-                    }
-                    FriendOperationResult result = entry.getValue();
-                    if (!result.success()) {
-                        sendFramed(player, error(result.errorMessage().orElse("Unable to send request.")));
-                        return;
-                    }
-                    String name = cachedName(entry.getKey());
-                    sendFramed(player, FriendTextFormatter.green("Friend request sent to " + name + "."));
-                }));
+            debug(player, "sending invite actor={} target={} metadata={}", player.getUniqueId(), targetId, metadata);
+            friendService.sendInvite(player.getUniqueId(), targetId, metadata)
+                    .thenApply(result -> Map.entry(targetId, result))
+                    .whenComplete((entry, mutationThrowable) ->
+                            schedule(() -> {
+                                if (mutationThrowable != null) {
+                                    logFailure("send friend request", player, mutationThrowable);
+                                    debug(player, "friend invite failed target={} error={}", targetId, mutationThrowable.toString());
+                                    sendFramed(player, error(messageFromThrowable(mutationThrowable)));
+                                    return;
+                                }
+                                FriendOperationResult result = entry.getValue();
+                                if (!result.success()) {
+                                    debug(player, "friend invite rejected target={} error={}", entry.getKey(), result.errorMessage().orElse("unknown"));
+                                    sendFramed(player, error(result.errorMessage().orElse("Unable to send request.")));
+                                    return;
+                                }
+                                debug(player, "friend invite completed target={} actorSnapshotVersion={} targetSnapshotVersion={}",
+                                        entry.getKey(),
+                                        result.actorSnapshot() != null ? result.actorSnapshot().version() : 0L,
+                                        result.targetSnapshot() != null ? result.targetSnapshot().version() : 0L);
+                                String name = cachedName(entry.getKey());
+                                sendFramed(player, FriendTextFormatter.green("Friend request sent to " + name + "."));
+                            }));
+        });
     }
 
     private void handleAccept(Player player, String targetArg) {
+        debug(player, "handling accept targetArg={}", targetArg);
         resolveTarget(targetArg).thenCompose(targetId ->
                 friendService.acceptInvite(player.getUniqueId(), targetId)
                         .thenApply(result -> Map.entry(targetId, result))
         ).whenComplete((entry, throwable) ->
                 schedule(() -> {
                     if (throwable != null) {
+                        debug(player, "accept flow failed targetArg={} error={}", targetArg, throwable.toString());
                         logFailure("accept friend request", player, throwable);
                         sendFramed(player, error(messageFromThrowable(throwable)));
                         return;
                     }
                     FriendOperationResult result = entry.getValue();
                     if (!result.success()) {
+                        debug(player, "accept rejected target={} error={}", entry.getKey(), result.errorMessage().orElse("unknown"));
                         sendFramed(player, error(result.errorMessage().orElse("Unable to accept request.")));
                         return;
                     }
+                    debug(player, "accept completed target={} relationVersionActor={} relationVersionTarget={}",
+                            entry.getKey(),
+                            result.actorSnapshot() != null ? result.actorSnapshot().version() : 0L,
+                            result.targetSnapshot() != null ? result.targetSnapshot().version() : 0L);
                     sendFramed(player, FriendTextFormatter.green("You are now friends with " + cachedName(entry.getKey()) + "."));
                 }));
     }
 
     private void handleDeny(Player player, String targetArg) {
+        debug(player, "handling deny targetArg={}", targetArg);
         resolveTarget(targetArg).thenCompose(targetId ->
                 friendService.execute(FriendMutationRequest.builder(FriendMutationType.INVITE_DECLINE)
                         .actor(player.getUniqueId())
@@ -275,45 +312,55 @@ public final class FriendCommand implements SimpleCommand {
         ).whenComplete((entry, throwable) ->
                 schedule(() -> {
                     if (throwable != null) {
+                        debug(player, "deny flow failed targetArg={} error={}", targetArg, throwable.toString());
                         logFailure("deny friend request", player, throwable);
                         sendFramed(player, error(messageFromThrowable(throwable)));
                         return;
                     }
                     FriendOperationResult result = entry.getValue();
                     if (!result.success()) {
+                        debug(player, "deny rejected target={} error={}", entry.getKey(), result.errorMessage().orElse("unknown"));
                         sendFramed(player, error(result.errorMessage().orElse("Unable to deny request.")));
                         return;
                     }
+                    debug(player, "deny completed target={}", entry.getKey());
                     sendFramed(player, FriendTextFormatter.gray("Declined request from " + cachedName(entry.getKey()) + "."));
                 }));
     }
 
     private void handleRemove(Player player, String targetArg) {
+        debug(player, "handling remove targetArg={}", targetArg);
         resolveTarget(targetArg).thenCompose(targetId ->
                 friendService.unfriend(player.getUniqueId(), targetId)
                         .thenApply(result -> Map.entry(targetId, result))
         ).whenComplete((entry, throwable) ->
                 schedule(() -> {
                     if (throwable != null) {
+                        debug(player, "remove flow failed targetArg={} error={}", targetArg, throwable.toString());
                         logFailure("remove friend", player, throwable);
                         sendFramed(player, error(messageFromThrowable(throwable)));
                         return;
                     }
                     FriendOperationResult result = entry.getValue();
                     if (!result.success()) {
+                        debug(player, "remove rejected target={} error={}", entry.getKey(), result.errorMessage().orElse("unknown"));
                         sendFramed(player, error(result.errorMessage().orElse("Unable to remove friend.")));
                         return;
                     }
+                    debug(player, "remove completed target={}", entry.getKey());
                     sendFramed(player, FriendTextFormatter.gray("Removed " + cachedName(entry.getKey()) + " from your friends."));
                 }));
     }
 
     private void handleRemoveAll(Player player) {
+        debug(player, "handling remove all");
         withSnapshot(player, true, snapshot -> {
             if (snapshot.friends().isEmpty()) {
+                debug(player, "remove all skipped - no friends");
                 sendFramed(player, FriendTextFormatter.gray("You do not have any friends to remove."));
                 return;
             }
+            debug(player, "removing {} friends", snapshot.friends().size());
             List<CompletionStage<FriendOperationResult>> futures = snapshot.friends().stream()
                     .map(friend -> friendService.unfriend(player.getUniqueId(), friend))
                     .toList();
@@ -323,16 +370,19 @@ public final class FriendCommand implements SimpleCommand {
                     .whenComplete((ignored, throwable) ->
                             schedule(() -> {
                                 if (throwable != null) {
+                                    debug(player, "remove all failed error={}", throwable.toString());
                                     logFailure("remove all friends", player, throwable);
                                     sendFramed(player, error("Failed to remove all friends."));
                                     return;
                                 }
+                                debug(player, "remove all succeeded removedCount={}", snapshot.friends().size());
                                 sendFramed(player, FriendTextFormatter.gray("Removed " + snapshot.friends().size() + " friends."));
                             }));
         });
     }
 
     private void handleNotifications(Player player) {
+        debug(player, "handling notifications toggle");
         if (playerCache == null) {
             sendFramed(player, error("Notifications are unavailable right now."));
             return;
@@ -348,32 +398,40 @@ public final class FriendCommand implements SimpleCommand {
                 .whenComplete((enabled, throwable) ->
                         schedule(() -> {
                             if (throwable != null) {
+                                debug(player, "notification toggle failed error={}", throwable.toString());
                                 logFailure("toggle friend notifications", player, throwable);
                                 sendFramed(player, error("Unable to toggle notifications right now."));
                                 return;
                             }
                             String state = enabled ? "enabled" : "disabled";
+                            debug(player, "notification toggle complete state={}", state);
                             sendFramed(player, FriendTextFormatter.gray("Friend notifications " + state + "."));
                         }));
     }
 
     private void withSnapshot(Player player, boolean forceReload, Consumer<FriendSnapshot> consumer) {
+        debug(player, "loading snapshot forceReload={}", forceReload);
         friendService.getSnapshot(player.getUniqueId(), forceReload)
                 .whenComplete((snapshot, throwable) ->
                         schedule(() -> {
                             if (throwable != null || snapshot == null) {
                                 if (throwable != null) {
                                     logFailure("load friend snapshot", player, throwable);
+                                    debug(player, "snapshot load failed forceReload={} error={}", forceReload, throwable.toString());
                                 }
                                 sendFramed(player, error("Unable to load your friend data."));
                                 return;
                             }
+                            debug(player, "snapshot ready version={} friends={}",
+                                    snapshot.version(),
+                                    snapshot.friends().size());
                             consumer.accept(snapshot);
                         }));
     }
 
     private void requireArgument(Player player, String[] args, int size, Runnable action) {
         if (args.length < size) {
+            debug(player, "missing arguments subcommand={} providedArgs={}", args[0], Arrays.toString(args));
             sendFramed(player, error("Usage: /friend " + args[0] + " <player>"));
             return;
         }
@@ -381,8 +439,10 @@ public final class FriendCommand implements SimpleCommand {
     }
 
     private CompletionStage<UUID> resolveTarget(String targetArg) {
+        log("Resolving target argument {}", targetArg);
         UUID parsed = tryParseUuid(targetArg);
         if (parsed != null) {
+            log("Target argument {} parsed as UUID {}", targetArg, parsed);
             return CompletableFuture.completedFuture(parsed);
         }
 
@@ -390,16 +450,19 @@ public final class FriendCommand implements SimpleCommand {
         if (online.isPresent()) {
             UUID id = online.get().getUniqueId();
             cacheName(id, online.get().getUsername());
+            log("Resolved {} to online player {}", targetArg, id);
             return CompletableFuture.completedFuture(id);
         }
 
         UUID cached = reverseNameCache.get(targetArg.toLowerCase(Locale.ROOT));
         if (cached != null) {
+            log("Resolved {} via reverse name cache to {}", targetArg, cached);
             return CompletableFuture.completedFuture(cached);
         }
 
         CompletableFuture<UUID> future = new CompletableFuture<>();
         future.completeExceptionally(new IllegalArgumentException("Player '" + targetArg + "' must be online or specified by UUID."));
+        log("Unable to resolve target argument {}", targetArg);
         return future;
     }
 
@@ -433,7 +496,22 @@ public final class FriendCommand implements SimpleCommand {
         player.sendMessage(FRAME_LINE);
     }
 
+    private void debug(Player player, String message, Object... args) {
+        Object[] parameters = new Object[args.length + 2];
+        parameters[0] = player.getUsername();
+        parameters[1] = player.getUniqueId();
+        System.arraycopy(args, 0, parameters, 2, args.length);
+        logger.info("[friend-command] {} ({}) - " + message, parameters);
+    }
+
+    private void log(String message, Object... args) {
+        logger.info("[friend-command] " + message, args);
+    }
+
     private void logFailure(String action, Player player, Throwable throwable) {
+        if (throwable instanceof IllegalArgumentException) {
+            return;
+        }
         logger.warn("Failed to {} for {} ({})", action, player.getUsername(), player.getUniqueId(), throwable);
     }
 

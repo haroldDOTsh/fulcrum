@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.velocity.friends;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.velocitypowered.api.proxy.ProxyServer;
 import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,21 +14,23 @@ import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.social.FriendMutationCommandMessage;
 import sh.harold.fulcrum.api.messagebus.messages.social.FriendMutationResponseMessage;
 import sh.harold.fulcrum.api.messagebus.messages.social.FriendRelationEventMessage;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.config.RedisConfig;
+import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.session.LettuceSessionRedisClient;
 
 import java.net.ServerSocket;
 import java.time.Duration;
-import java.util.EnumMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class VelocityFriendServiceTest {
 
@@ -37,6 +40,8 @@ class VelocityFriendServiceTest {
     private VelocityFriendService service;
     private LettuceSessionRedisClient redisClient;
     private FakeMessageBus messageBus;
+    private ProxyServer proxyServer;
+    private RankService rankService;
 
     @BeforeAll
     static void startRedis() throws Exception {
@@ -72,7 +77,10 @@ class VelocityFriendServiceTest {
         RedisConfig redisConfig = RedisConfig.builder().host("127.0.0.1").port(redisPort).build();
         redisClient = new LettuceSessionRedisClient(redisConfig, LOGGER);
         assertThat(redisClient.isAvailable()).isTrue();
-        service = new VelocityFriendService(messageBus, redisClient, LOGGER);
+        proxyServer = mock(ProxyServer.class);
+        when(proxyServer.getPlayer(any(UUID.class))).thenReturn(Optional.empty());
+        rankService = mock(RankService.class);
+        service = new VelocityFriendService(messageBus, redisClient, proxyServer, rankService, null, LOGGER);
     }
 
     @AfterEach
@@ -95,7 +103,7 @@ class VelocityFriendServiceTest {
         FriendMutationCommandMessage command = messageBus.lastCommand();
         assertThat(command).isNotNull();
 
-        FriendSnapshot actorSnapshot = new FriendSnapshot(5L, Set.of(target), Set.of(), Set.of(), emptyBlocks(), emptyBlocks());
+        FriendSnapshot actorSnapshot = new FriendSnapshot(5L, Set.of(target), emptyBlocks(), emptyBlocks());
         FriendMutationResponseMessage response = new FriendMutationResponseMessage(
                 command.getRequestId(), true, command.getMutationType(), actor, target, actorSnapshot, FriendSnapshot.empty(), null);
 
@@ -111,7 +119,7 @@ class VelocityFriendServiceTest {
         UUID actor = UUID.randomUUID();
         ObjectMapper mapper = new ObjectMapper();
 
-        FriendSnapshot initial = new FriendSnapshot(9L, Set.of(), Set.of(), Set.of(), emptyBlocks(), emptyBlocks());
+        FriendSnapshot initial = new FriendSnapshot(9L, Set.of(), emptyBlocks(), emptyBlocks());
         redisClient.set(FriendRedisKeys.snapshotKey(actor), mapper.writeValueAsString(initial), 0);
         assertThat(redisClient.get(FriendRedisKeys.snapshotKey(actor))).isNotBlank();
         FriendSnapshot parsed = mapper.readValue(redisClient.get(FriendRedisKeys.snapshotKey(actor)), FriendSnapshot.class);
@@ -120,7 +128,7 @@ class VelocityFriendServiceTest {
         FriendSnapshot first = service.getSnapshot(actor, true).toCompletableFuture().get(1, TimeUnit.SECONDS);
         assertThat(first.version()).isEqualTo(9L);
 
-        FriendSnapshot updated = new FriendSnapshot(15L, Set.of(), Set.of(), Set.of(), emptyBlocks(), emptyBlocks());
+        FriendSnapshot updated = new FriendSnapshot(15L, Set.of(), emptyBlocks(), emptyBlocks());
         redisClient.set(FriendRedisKeys.snapshotKey(actor), mapper.writeValueAsString(updated), 0);
         assertThat(redisClient.get(FriendRedisKeys.snapshotKey(actor))).contains("\"version\":15");
 

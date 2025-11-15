@@ -40,7 +40,7 @@ public abstract class RedisIntegrationTestSupport {
     }
 
     protected RedisConfiguration redisConfiguration() {
-        return new RedisConfiguration("127.0.0.1", redisPort, "");
+        return new RedisConfiguration("127.0.0.1", redisPort, "", 0);
     }
 
     protected RedisManager newRedisManager() {
