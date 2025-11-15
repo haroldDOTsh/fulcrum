@@ -14,7 +14,6 @@ import sh.harold.fulcrum.api.network.NetworkProfileView;
 import sh.harold.fulcrum.api.network.RankVisualView;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
-import java.io.InputStream;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,14 +25,15 @@ import java.util.logging.Logger;
 final class RedisNetworkConfigService implements NetworkConfigService {
     private static final String ACTIVE_KEY = "network:config:active";
     private static final String REGISTRY_SERVER_ID = "registry-service";
+    private static final int INITIAL_MAX_ATTEMPTS = 6;
+    private static final Duration INITIAL_RETRY_BASE_DELAY = Duration.ofSeconds(1);
+    private static final Duration INITIAL_RETRY_MAX_DELAY = Duration.ofSeconds(10);
 
     private final JavaPlugin plugin;
     private final MessageBus messageBus;
     private final LettuceRedisOperations redisOperations;
     private final Logger logger;
     private final ObjectMapper mapper;
-    private final NetworkProfileView fallbackProfile;
-
     private volatile NetworkProfileView activeProfile;
 
     RedisNetworkConfigService(JavaPlugin plugin,
@@ -49,16 +49,16 @@ final class RedisNetworkConfigService implements NetworkConfigService {
         this.mapper.registerModule(new JavaTimeModule());
         this.mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        this.fallbackProfile = loadFallbackProfile();
-        this.activeProfile = fallbackProfile;
+        this.activeProfile = null;
+        ensureInitialProfileLoaded();
     }
 
     @Override
     public synchronized NetworkProfileView getActiveProfile() {
         if (activeProfile == null) {
-            refreshActiveProfile();
+            throw new IllegalStateException("Network configuration unavailable");
         }
-        return activeProfile != null ? activeProfile : fallbackProfile;
+        return activeProfile;
     }
 
     @Override
@@ -68,20 +68,11 @@ final class RedisNetworkConfigService implements NetworkConfigService {
 
     @Override
     public synchronized void refreshActiveProfile() {
-        Optional<NetworkProfileView> redisProfile = loadFromRedis();
-        if (redisProfile.isPresent()) {
-            updateActiveProfile(redisProfile.get(), "redis");
+        if (tryRefreshFromRemote()) {
             return;
         }
 
-        Optional<NetworkProfileView> registryProfile = requestFromRegistry(true);
-        if (registryProfile.isPresent()) {
-            updateActiveProfile(registryProfile.get(), "registry");
-            return;
-        }
-
-        logger.warning("Unable to load network configuration from Redis or registry; falling back to bundled defaults");
-        updateActiveProfile(fallbackProfile, "defaults");
+        logger.warning("Unable to refresh network configuration from Redis or registry; retaining last known profile");
     }
 
     private Optional<NetworkProfileView> loadFromRedis() {
@@ -149,19 +140,61 @@ final class RedisNetworkConfigService implements NetworkConfigService {
         return Optional.empty();
     }
 
+    private boolean tryRefreshFromRemote() {
+        Optional<NetworkProfileView> redisProfile = loadFromRedis();
+        if (redisProfile.isPresent()) {
+            updateActiveProfile(redisProfile.get(), "redis");
+            return true;
+        }
+
+        Optional<NetworkProfileView> registryProfile = requestFromRegistry(true);
+        if (registryProfile.isPresent()) {
+            updateActiveProfile(registryProfile.get(), "registry");
+            return true;
+        }
+
+        return false;
+    }
+
     private void updateActiveProfile(NetworkProfileView profile, String source) {
         this.activeProfile = profile;
         logger.fine(() -> "Network configuration refreshed from " + source + " (profile=" + profile.profileId() + ")");
     }
 
-    private NetworkProfileView loadFallbackProfile() {
-        try (InputStream inputStream = plugin.getResource("network-config-defaults.json")) {
-            if (inputStream == null) {
-                throw new IllegalStateException("Missing resource: network-config-defaults.json");
+    private void ensureInitialProfileLoaded() {
+        Duration delay = INITIAL_RETRY_BASE_DELAY;
+        for (int attempt = 1; attempt <= INITIAL_MAX_ATTEMPTS; attempt++) {
+            if (tryRefreshFromRemote()) {
+                logger.info("Network configuration loaded after " + attempt + " attempt(s)");
+                return;
             }
-            return mapper.readValue(inputStream, NetworkProfileView.class);
-        } catch (Exception ex) {
-            throw new IllegalStateException("Failed to load bundled network configuration defaults", ex);
+
+            if (attempt == INITIAL_MAX_ATTEMPTS) {
+                break;
+            }
+
+            logger.warning("Unable to reach Redis or registry for network configuration (attempt "
+                    + attempt + "/" + INITIAL_MAX_ATTEMPTS + "); retrying in "
+                    + delay.toSeconds() + " seconds");
+            sleep(delay);
+            delay = delay.multipliedBy(2);
+            if (delay.compareTo(INITIAL_RETRY_MAX_DELAY) > 0) {
+                delay = INITIAL_RETRY_MAX_DELAY;
+            }
+        }
+
+        throw new IllegalStateException("Unable to load network configuration from Redis or registry after "
+                + INITIAL_MAX_ATTEMPTS + " attempts");
+    }
+
+    private void sleep(Duration duration) {
+        long millis = duration.toMillis();
+        int nanos = (int) (duration.toNanos() % 1_000_000);
+        try {
+            Thread.sleep(millis, nanos);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for network configuration availability", ex);
         }
     }
 }

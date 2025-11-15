@@ -25,6 +25,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -38,6 +39,9 @@ public class FulcrumBootstrapper implements PluginBootstrap {
     private static final String ENVIRONMENT_FILE = "ENVIRONMENT";
     private static final String DEFAULT_ENVIRONMENT = "dev";
     private static final String DIRECTORY_KEY = "network:environments:directory";
+    private static final int DIRECTORY_MAX_ATTEMPTS = 6;
+    private static final Duration DIRECTORY_RETRY_BASE_DELAY = Duration.ofSeconds(1);
+    private static final Duration DIRECTORY_RETRY_MAX_DELAY = Duration.ofSeconds(10);
 
     @Override
     public void bootstrap(@NotNull BootstrapContext context) {
@@ -108,6 +112,34 @@ public class FulcrumBootstrapper implements PluginBootstrap {
 
     private Map<String, Set<String>> loadEnvironmentDirectory(ComponentLogger logger) {
         BootstrapRedisConfig redisConfig = loadRedisConfig(logger);
+
+        Duration delay = DIRECTORY_RETRY_BASE_DELAY;
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= DIRECTORY_MAX_ATTEMPTS; attempt++) {
+            try {
+                return readEnvironmentDirectory(redisConfig);
+            } catch (Exception ex) {
+                lastFailure = ex instanceof IllegalStateException ? ex : new IllegalStateException(ex);
+                if (attempt == DIRECTORY_MAX_ATTEMPTS) {
+                    break;
+                }
+                logger.warn("Unable to load environment directory from Redis (attempt "
+                        + attempt + "/" + DIRECTORY_MAX_ATTEMPTS + "); retrying in "
+                        + delay.toSeconds() + " seconds");
+                sleep(delay);
+                delay = delay.multipliedBy(2);
+                if (delay.compareTo(DIRECTORY_RETRY_MAX_DELAY) > 0) {
+                    delay = DIRECTORY_RETRY_MAX_DELAY;
+                }
+            }
+        }
+
+        logger.error("Failed to load environment directory from Redis after "
+                + DIRECTORY_MAX_ATTEMPTS + " attempts");
+        throw new IllegalStateException("Unable to load environment directory", lastFailure);
+    }
+
+    private Map<String, Set<String>> readEnvironmentDirectory(BootstrapRedisConfig redisConfig) throws IOException {
         RedisURI.Builder builder = RedisURI.builder()
                 .withHost(redisConfig.host())
                 .withPort(redisConfig.port());
@@ -132,9 +164,6 @@ public class FulcrumBootstrapper implements PluginBootstrap {
             view.environments().forEach((id, descriptor) ->
                     mappings.put(id, new LinkedHashSet<>(descriptor.modules())));
             return mappings;
-        } catch (Exception ex) {
-            logger.error("Failed to load environment directory from Redis: " + ex.getMessage());
-            throw new IllegalStateException("Unable to load environment directory", ex);
         }
     }
 
@@ -191,6 +220,17 @@ public class FulcrumBootstrapper implements PluginBootstrap {
 
         if (globalModules.isEmpty() && configModules.isEmpty()) {
             logger.warn("No modules configured for '" + selectedConfig + "'. All modules will be enabled by default.");
+        }
+    }
+
+    private void sleep(Duration duration) {
+        long millis = duration.toMillis();
+        int nanos = (int) (duration.toNanos() % 1_000_000);
+        try {
+            Thread.sleep(millis, nanos);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for environment directory availability", e);
         }
     }
 
