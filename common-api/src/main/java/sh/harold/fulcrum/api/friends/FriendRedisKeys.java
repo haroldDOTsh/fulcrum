@@ -22,19 +22,23 @@ public final class FriendRedisKeys {
         return "fulcrum:social:friends:set:" + lowercaseUuid(playerId);
     }
 
-    public static String outgoingKey(UUID playerId) {
-        return "fulcrum:social:friends:outgoing:" + lowercaseUuid(playerId);
+    public static String ignoresOutKey(UUID playerId, FriendBlockScope scope) {
+        return "fulcrum:social:friends:ignores-out:" + scope.name().toLowerCase(Locale.ROOT) + ':' + lowercaseUuid(playerId);
     }
 
-    public static String incomingKey(UUID playerId) {
-        return "fulcrum:social:friends:incoming:" + lowercaseUuid(playerId);
+    public static String ignoresInKey(UUID playerId, FriendBlockScope scope) {
+        return "fulcrum:social:friends:ignores-in:" + scope.name().toLowerCase(Locale.ROOT) + ':' + lowercaseUuid(playerId);
     }
 
-    public static String blockedOutKey(UUID playerId, FriendBlockScope scope) {
-        return "fulcrum:social:friends:blocked-out:" + scope.name().toLowerCase(Locale.ROOT) + ':' + lowercaseUuid(playerId);
+    public static String pendingInvitesKey(UUID targetId) {
+        return "fulcrum:social:friends:pending:" + lowercaseUuid(targetId);
     }
 
-    public static String blockedInKey(UUID playerId, FriendBlockScope scope) {
-        return "fulcrum:social:friends:blocked-in:" + scope.name().toLowerCase(Locale.ROOT) + ':' + lowercaseUuid(playerId);
+    public static String inviteKey(UUID actorId, UUID targetId) {
+        return "fulcrum:social:friends:invite:" + lowercaseUuid(actorId) + ':' + lowercaseUuid(targetId);
+    }
+
+    public static String blockExpiryKey() {
+        return "fulcrum:social:friends:block-expiries";
     }
 }

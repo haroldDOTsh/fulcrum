@@ -38,7 +38,8 @@ public final class RedisManager implements AutoCloseable {
     private static RedisURI buildUri(RedisConfiguration configuration) {
         RedisURI.Builder builder = RedisURI.builder()
                 .withHost(configuration.host())
-                .withPort(configuration.port());
+                .withPort(configuration.port())
+                .withDatabase(configuration.database());
 
         if (configuration.hasPassword()) {
             builder.withPassword(configuration.password().toCharArray());

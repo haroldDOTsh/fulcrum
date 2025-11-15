@@ -10,23 +10,19 @@ import java.util.*;
 public record FriendSnapshot(
         long version,
         Set<UUID> friends,
-        Set<UUID> outgoingRequests,
-        Set<UUID> incomingRequests,
-        Map<FriendBlockScope, Set<UUID>> blockedOut,
-        Map<FriendBlockScope, Set<UUID>> blockedIn
+        Map<FriendBlockScope, Set<UUID>> ignoresOut,
+        Map<FriendBlockScope, Set<UUID>> ignoresIn
 ) {
 
     public FriendSnapshot {
         version = Math.max(0L, version);
         friends = friends == null ? Set.of() : Set.copyOf(friends);
-        outgoingRequests = outgoingRequests == null ? Set.of() : Set.copyOf(outgoingRequests);
-        incomingRequests = incomingRequests == null ? Set.of() : Set.copyOf(incomingRequests);
-        blockedOut = sanitizeBlockMap(blockedOut);
-        blockedIn = sanitizeBlockMap(blockedIn);
+        ignoresOut = sanitizeBlockMap(ignoresOut);
+        ignoresIn = sanitizeBlockMap(ignoresIn);
     }
 
     public static FriendSnapshot empty() {
-        return new FriendSnapshot(0L, Set.of(), Set.of(), Set.of(), new EnumMap<>(FriendBlockScope.class), new EnumMap<>(FriendBlockScope.class));
+        return new FriendSnapshot(0L, Set.of(), new EnumMap<>(FriendBlockScope.class), new EnumMap<>(FriendBlockScope.class));
     }
 
     private static Map<FriendBlockScope, Set<UUID>> sanitizeBlockMap(Map<FriendBlockScope, Set<UUID>> source) {
@@ -46,19 +42,17 @@ public record FriendSnapshot(
     }
 
     public Set<UUID> blockedOut(FriendBlockScope scope) {
-        return blockedOut.getOrDefault(scope, Set.of());
+        return ignoresOut.getOrDefault(scope, Set.of());
     }
 
     public Set<UUID> blockedIn(FriendBlockScope scope) {
-        return blockedIn.getOrDefault(scope, Set.of());
+        return ignoresIn.getOrDefault(scope, Set.of());
     }
 
     @JsonIgnore
     public boolean isEmpty() {
         return friends.isEmpty()
-                && outgoingRequests.isEmpty()
-                && incomingRequests.isEmpty()
-                && blockedOut.values().stream().allMatch(Set::isEmpty)
-                && blockedIn.values().stream().allMatch(Set::isEmpty);
+                && ignoresOut.values().stream().allMatch(Set::isEmpty)
+                && ignoresIn.values().stream().allMatch(Set::isEmpty);
     }
 }

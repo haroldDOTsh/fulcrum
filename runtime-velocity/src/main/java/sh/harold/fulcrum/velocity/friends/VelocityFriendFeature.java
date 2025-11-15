@@ -1,10 +1,13 @@
 package sh.harold.fulcrum.velocity.friends;
 
+import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.friends.FriendService;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.RedisConfig;
+import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 import sh.harold.fulcrum.velocity.session.LettuceSessionRedisClient;
@@ -31,13 +34,17 @@ public final class VelocityFriendFeature implements VelocityFeature {
     public void initialize(ServiceLocator serviceLocator, Logger logger) {
         this.serviceLocator = serviceLocator;
         MessageBus messageBus = serviceLocator.getRequiredService(MessageBus.class);
+        ProxyServer proxyServer = serviceLocator.getRequiredService(ProxyServer.class);
+        RankService rankService = serviceLocator.getRequiredService(RankService.class);
+        VelocityIdentityFeature identityFeature =
+                serviceLocator.getService(VelocityIdentityFeature.class).orElse(null);
         ConfigLoader configLoader = serviceLocator.getRequiredService(ConfigLoader.class);
         RedisConfig redisConfig = configLoader.getConfig(RedisConfig.class);
         if (redisConfig == null) {
             throw new IllegalStateException("Redis configuration missing; cannot initialise friend service");
         }
         this.redisClient = new LettuceSessionRedisClient(redisConfig, logger);
-        this.friendService = new VelocityFriendService(messageBus, redisClient, logger);
+        this.friendService = new VelocityFriendService(messageBus, redisClient, proxyServer, rankService, identityFeature, logger);
         serviceLocator.register(FriendService.class, friendService);
         logger.info("VelocityFriendFeature initialised");
     }

@@ -98,6 +98,18 @@ public class LettuceSessionRedisClient implements AutoCloseable {
         }
     }
 
+    public java.util.Set<String> smembers(String key) {
+        if (!isAvailable()) {
+            return java.util.Set.of();
+        }
+        try {
+            return connection.sync().smembers(key);
+        } catch (Exception e) {
+            logger.error("Failed to read set {} from Redis", key, e);
+            return java.util.Set.of();
+        }
+    }
+
     @Override
     public void close() {
         if (connection != null) {

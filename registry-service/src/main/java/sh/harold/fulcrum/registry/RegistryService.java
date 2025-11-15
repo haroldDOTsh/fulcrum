@@ -48,8 +48,9 @@ import sh.harold.fulcrum.registry.session.DeadServerSessionSweeper;
 import sh.harold.fulcrum.registry.shutdown.ShutdownIntentManager;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.slot.store.RedisSlotStore;
-import sh.harold.fulcrum.registry.social.FriendGraphRepository;
 import sh.harold.fulcrum.registry.social.FriendGraphService;
+import sh.harold.fulcrum.registry.social.FriendInviteStore;
+import sh.harold.fulcrum.registry.social.FriendSnapshotStore;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -92,9 +93,9 @@ public class RegistryService {
     private RedisRegistryInspector redisRegistryInspector;
     private ShutdownIntentManager shutdownIntentManager;
     private FriendGraphService friendGraphService;
+    private DataAPI friendDataApi;
     private MessageHandler friendMutationHandler;
     private ScheduledFuture<?> friendExpiryTask;
-    private PostgresConnectionAdapter friendPostgresAdapter;
     private final Map<String, MongoConnectionAdapter> mongoAdapters = new ConcurrentHashMap<>();
 
     public RegistryService() {
@@ -249,6 +250,7 @@ public class RegistryService {
         String host = "localhost";
         int port = 6379;
         String password = "";
+        int database = 0;
 
         if (redisSection != null) {
             host = String.valueOf(redisSection.getOrDefault("host", host));
@@ -259,9 +261,15 @@ public class RegistryService {
                 port = Integer.parseInt(String.valueOf(portValue));
             }
             password = String.valueOf(redisSection.getOrDefault("password", password));
+            Object dbValue = redisSection.get("database");
+            if (dbValue instanceof Number number) {
+                database = number.intValue();
+            } else if (dbValue != null) {
+                database = Integer.parseInt(String.valueOf(dbValue));
+            }
         }
 
-        return new RedisConfiguration(host, port, password);
+        return new RedisConfiguration(host, port, password, database);
     }
 
     /**
@@ -729,6 +737,7 @@ public class RegistryService {
     }
 
     private void installFriendGraphHandlers() {
+        LOGGER.info("Installing friend graph handlers and expiry sweep");
         friendMutationHandler = this::handleFriendMutation;
         messageBus.subscribe(ChannelConstants.SOCIAL_FRIEND_MUTATION_REQUEST, friendMutationHandler);
         friendExpiryTask = scheduler.scheduleAtFixedRate(this::runFriendExpirySweep, 60, 60, TimeUnit.SECONDS);
@@ -737,8 +746,11 @@ public class RegistryService {
 
     private void handleFriendMutation(MessageEnvelope envelope) {
         if (friendGraphService == null) {
+            LOGGER.info("Friend graph service unavailable; dropping mutation envelope correlation={}", envelope.correlationId());
             return;
         }
+        LOGGER.info("Friend mutation envelope received type={} sender={} correlation={} target={}",
+                envelope.type(), envelope.senderId(), envelope.correlationId(), envelope.targetId());
         FriendMutationCommandMessage command;
         try {
             command = MessageTypeRegistry.getInstance()
@@ -748,6 +760,10 @@ public class RegistryService {
             return;
         }
         if (command == null || command.getRequestId() == null || command.getActorId() == null || command.getTargetId() == null) {
+            LOGGER.info("Mutation command missing required fields requestId={} actor={} target={}",
+                    command != null ? command.getRequestId() : null,
+                    command != null ? command.getActorId() : null,
+                    command != null ? command.getTargetId() : null);
             return;
         }
 
@@ -759,7 +775,12 @@ public class RegistryService {
                 .reason(command.getReason())
                 .metadata(command.getMetadata());
 
-        FriendGraphService.FriendOperationContext context = friendGraphService.apply(builder.build());
+        FriendMutationRequest mutationRequest = builder.build();
+        LOGGER.info("Applying friend mutation requestId={} type={} actor={} target={} scope={} expiresAt={}",
+                command.getRequestId(), mutationRequest.type(), mutationRequest.actorId(), mutationRequest.targetId(),
+                mutationRequest.scope(), mutationRequest.expiresAt());
+
+        FriendGraphService.FriendOperationContext context = friendGraphService.apply(mutationRequest);
         FriendMutationResponseMessage response = new FriendMutationResponseMessage();
         response.setRequestId(command.getRequestId());
         response.setMutationType(command.getMutationType());
@@ -769,29 +790,43 @@ public class RegistryService {
         response.setTargetId(command.getTargetId());
         response.setActorSnapshot(context.result().actorSnapshot());
         response.setTargetSnapshot(context.result().targetSnapshot());
+        LOGGER.info("Friend mutation processed requestId={} success={} error={} relationEvent={} blockEvent={}",
+                command.getRequestId(),
+                context.result().success(),
+                context.result().errorMessage().orElse(null),
+                context.relationEvent() != null,
+                context.blockEvent() != null);
 
         String replyTarget = envelope.senderId();
         if (replyTarget != null && !replyTarget.isBlank()) {
+            LOGGER.info("Sending friend mutation response requestId={} to {}", command.getRequestId(), replyTarget);
             messageBus.send(replyTarget, ChannelConstants.SOCIAL_FRIEND_MUTATION_RESPONSE, response);
         }
 
         if (context.relationEvent() != null) {
+            LOGGER.info("Broadcasting relation event for mutation requestId={}", command.getRequestId());
             messageBus.broadcast(context.relationEvent().getMessageType(), context.relationEvent());
         }
         if (context.blockEvent() != null) {
+            LOGGER.info("Broadcasting block event for mutation requestId={}", command.getRequestId());
             messageBus.broadcast(ChannelConstants.SOCIAL_FRIEND_BLOCKS, context.blockEvent());
         }
     }
 
     private void runFriendExpirySweep() {
         if (friendGraphService == null || messageBus == null) {
+            LOGGER.info("Skipping friend expiry sweep because dependencies are missing");
             return;
         }
+        LOGGER.info("Running friend block expiry sweep");
         try {
             List<sh.harold.fulcrum.api.messagebus.messages.social.FriendBlockEventMessage> events = friendGraphService.purgeExpiredBlocks();
             for (sh.harold.fulcrum.api.messagebus.messages.social.FriendBlockEventMessage event : events) {
+                LOGGER.info("Broadcasting expired block event owner={} target={} active={}",
+                        event.getOwnerId(), event.getTargetId(), event.isActive());
                 messageBus.broadcast(ChannelConstants.SOCIAL_FRIEND_BLOCKS, event);
             }
+            LOGGER.info("Friend expiry sweep finished eventsSent={}", events.size());
         } catch (Exception ex) {
             LOGGER.warn("Failed to sweep expired friend blocks", ex);
         }
@@ -943,32 +978,33 @@ public class RegistryService {
             LOGGER.warn("Storage configuration missing; friend service disabled");
             return null;
         }
-        Map<String, Object> postgresSection = (Map<String, Object>) storage.get("postgres");
-        if (postgresSection == null || !Boolean.parseBoolean(String.valueOf(postgresSection.getOrDefault("enabled", true)))) {
-            LOGGER.warn("PostgreSQL configuration missing or disabled; friend service requires relational storage");
+        Map<String, Object> mongoSection = (Map<String, Object>) storage.get("mongodb");
+        if (mongoSection == null) {
+            LOGGER.warn("MongoDB configuration missing; friend service disabled");
             return null;
         }
 
-        String jdbcUrl = String.valueOf(postgresSection.getOrDefault("jdbc-url", "jdbc:postgresql://localhost:5432/fulcrum"));
-        String username = String.valueOf(postgresSection.getOrDefault("username", "fulcrum"));
-        String password = String.valueOf(postgresSection.getOrDefault("password", ""));
-        String database = String.valueOf(postgresSection.getOrDefault("database", "fulcrum"));
+        String connectionString = String.valueOf(mongoSection.getOrDefault("connection-string", "mongodb://localhost:27017"));
+        String database = String.valueOf(mongoSection.getOrDefault("database", "fulcrum"));
 
+        boolean adapterPreExisting = mongoAdapters.containsKey(mongoKey(connectionString, database));
+        MongoConnectionAdapter adapter = null;
         try {
-            friendPostgresAdapter = new PostgresConnectionAdapter(jdbcUrl, username, password, database);
+            adapter = getMongoAdapter("friend-service", connectionString, database);
+            friendDataApi = DataAPI.create(adapter);
             java.util.logging.Logger jLogger = java.util.logging.Logger.getLogger(FriendGraphService.class.getName());
-            FriendGraphRepository repository = new FriendGraphRepository(friendPostgresAdapter, jLogger);
-            repository.ensureSchema(getClass().getClassLoader());
-            LOGGER.info("Friend graph repository initialised (database='{}')", database);
-            return new FriendGraphService(repository, redisManager, jLogger);
+            FriendSnapshotStore snapshotStore = new FriendSnapshotStore(friendDataApi);
+            FriendInviteStore inviteStore = new FriendInviteStore(redisManager);
+            LOGGER.info("Friend graph service initialised (mongodb='{}')", database);
+            return new FriendGraphService(snapshotStore, inviteStore, redisManager, jLogger);
         } catch (Exception ex) {
-            LOGGER.error("Failed to initialise friend graph repository", ex);
-            if (friendPostgresAdapter != null) {
-                try {
-                    friendPostgresAdapter.close();
-                } catch (Exception ignored) {
-                }
-                friendPostgresAdapter = null;
+            LOGGER.error("Failed to initialise friend graph service", ex);
+            if (!adapterPreExisting) {
+                discardMongoAdapter(connectionString, database, adapter);
+            }
+            if (friendDataApi != null) {
+                friendDataApi.shutdown();
+                friendDataApi = null;
             }
             return null;
         }
@@ -1068,13 +1104,13 @@ public class RegistryService {
             if (friendExpiryTask != null) {
                 friendExpiryTask.cancel(true);
             }
-            if (friendPostgresAdapter != null) {
-                try {
-                    friendPostgresAdapter.close();
-                } catch (Exception closeEx) {
-                    LOGGER.warn("Failed to close friend Postgres adapter", closeEx);
-                }
-                friendPostgresAdapter = null;
+            if (friendGraphService != null) {
+                friendGraphService.shutdown();
+                friendGraphService = null;
+            }
+            if (friendDataApi != null) {
+                friendDataApi.shutdown();
+                friendDataApi = null;
             }
 
             if (redisManager != null) {

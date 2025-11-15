@@ -1,8 +1,10 @@
 package sh.harold.fulcrum.api.friends;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -13,6 +15,10 @@ public interface FriendService {
     CompletionStage<FriendSnapshot> getSnapshot(UUID playerId, boolean forceReload);
 
     CompletionStage<FriendOperationResult> execute(FriendMutationRequest request);
+
+    default CompletionStage<List<PendingFriendInvite>> getPendingInvites(UUID playerId) {
+        return CompletableFuture.completedFuture(List.of());
+    }
 
     default CompletionStage<FriendOperationResult> sendInvite(UUID actor, UUID target, Map<String, Object> metadata) {
         return execute(FriendMutationRequest.builder(FriendMutationType.INVITE_SEND)
@@ -72,5 +78,11 @@ public interface FriendService {
                 .target(target)
                 .scope(scope)
                 .build());
+    }
+
+    record PendingFriendInvite(UUID actorId,
+                               long requestedAtEpochMillis,
+                               long expiresAtEpochMillis,
+                               Map<String, Object> metadata) {
     }
 }
