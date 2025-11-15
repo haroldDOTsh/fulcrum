@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.registry.session;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.postgresql.util.PGobject;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
@@ -14,9 +16,11 @@ import java.util.UUID;
 class SessionLogRepository implements AutoCloseable {
 
     private static final String TABLE_NAME = "player_sessions";
+    private static final String SEGMENT_TABLE_NAME = "player_session_segments";
 
     private final PostgresConnectionAdapter adapter;
     private final Logger logger;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     SessionLogRepository(PostgresConnectionAdapter adapter, Logger logger) {
         this.adapter = adapter;
@@ -24,12 +28,9 @@ class SessionLogRepository implements AutoCloseable {
     }
 
     void recordSession(PlayerSessionRecord record, long endedAt) {
-        String insert = "INSERT INTO " + TABLE_NAME + " (session_id, player_uuid, environment, family, variant, started_at, ended_at, client_protocol_version, client_brand) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        String insert = "INSERT INTO " + TABLE_NAME + " (session_id, player_uuid, started_at, ended_at, client_protocol_version, client_brand) " +
+                "VALUES (?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT (session_id) DO UPDATE SET " +
-                "environment = EXCLUDED.environment, " +
-                "family = EXCLUDED.family, " +
-                "variant = EXCLUDED.variant, " +
                 "ended_at = EXCLUDED.ended_at, " +
                 "client_protocol_version = EXCLUDED.client_protocol_version, " +
                 "client_brand = EXCLUDED.client_brand";
@@ -40,21 +41,64 @@ class SessionLogRepository implements AutoCloseable {
              PreparedStatement ps = connection.prepareStatement(insert)) {
             ps.setObject(1, UUID.fromString(record.getSessionId()));
             ps.setObject(2, record.getPlayerId());
-            ps.setString(3, context.environment());
-            ps.setString(4, context.family());
-            ps.setString(5, context.variant());
-            ps.setLong(6, record.getCreatedAt());
-            ps.setLong(7, endedAt);
+            ps.setLong(3, record.getCreatedAt());
+            ps.setLong(4, endedAt);
             Integer protocolVersion = record.getClientProtocolVersion();
             if (protocolVersion != null) {
-                ps.setInt(8, protocolVersion);
+                ps.setInt(5, protocolVersion);
             } else {
-                ps.setNull(8, Types.INTEGER);
+                ps.setNull(5, Types.INTEGER);
             }
-            ps.setString(9, record.getClientBrand());
+            ps.setString(6, record.getClientBrand());
             ps.executeUpdate();
+
+            persistSegments(connection, record, context);
         } catch (SQLException e) {
             logger.warn("Failed to persist session summary for {}", record.getPlayerId(), e);
+        }
+    }
+
+    private void persistSegments(Connection connection,
+                                 PlayerSessionRecord record,
+                                 SessionContext sessionContext) {
+        String delete = "DELETE FROM " + SEGMENT_TABLE_NAME + " WHERE session_id = ?";
+        String insert = "INSERT INTO " + SEGMENT_TABLE_NAME + " (session_id, segment_index, type, context, environment, family, variant, started_at, ended_at, metadata) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        try (PreparedStatement deletePs = connection.prepareStatement(delete)) {
+            deletePs.setObject(1, UUID.fromString(record.getSessionId()));
+            deletePs.executeUpdate();
+        } catch (SQLException e) {
+            logger.warn("Failed to clear segments for session {}", record.getSessionId(), e);
+        }
+
+        try (PreparedStatement insertPs = connection.prepareStatement(insert)) {
+            int index = 0;
+            for (PlayerSessionRecord.Segment segment : record.getSegments()) {
+                SessionContext segmentContext = deriveSegmentContext(segment, sessionContext);
+                insertPs.setObject(1, UUID.fromString(record.getSessionId()));
+                insertPs.setInt(2, index++);
+                insertPs.setString(3, segment.getType());
+                insertPs.setString(4, segment.getContext());
+                insertPs.setString(5, segmentContext.environment());
+                insertPs.setString(6, segmentContext.family());
+                insertPs.setString(7, segmentContext.variant());
+                insertPs.setLong(8, segment.getStartedAt());
+                if (segment.getEndedAt() != null) {
+                    insertPs.setLong(9, segment.getEndedAt());
+                } else {
+                    insertPs.setNull(9, Types.BIGINT);
+                }
+
+                PGobject metadataJson = new PGobject();
+                metadataJson.setType("jsonb");
+                metadataJson.setValue(objectMapper.writeValueAsString(segment.getMetadata()));
+                insertPs.setObject(10, metadataJson);
+                insertPs.addBatch();
+            }
+            insertPs.executeBatch();
+        } catch (Exception e) {
+            logger.warn("Failed to persist session segments for {}", record.getSessionId(), e);
         }
     }
 
@@ -91,6 +135,25 @@ class SessionLogRepository implements AutoCloseable {
                     break;
                 }
             }
+        }
+
+        return new SessionContext(environment, family, variant);
+    }
+
+    private SessionContext deriveSegmentContext(PlayerSessionRecord.Segment segment, SessionContext fallback) {
+        Map<String, Object> metadata = segment.getMetadata();
+        String environment = stringValue(metadata.get("environment"));
+        String family = stringValue(metadata.get("family"));
+        String variant = stringValue(metadata.get("variant"));
+
+        if (environment == null) {
+            environment = fallback.environment();
+        }
+        if (family == null) {
+            family = fallback.family();
+        }
+        if (variant == null) {
+            variant = fallback.variant();
         }
 
         return new SessionContext(environment, family, variant);
