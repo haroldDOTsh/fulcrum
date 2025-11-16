@@ -757,7 +757,7 @@ public class RegistryService {
             LOGGER.info("Friend graph service unavailable; dropping mutation envelope correlation={}", envelope.correlationId());
             return;
         }
-        LOGGER.info("Friend mutation envelope received type={} sender={} correlation={} target={}",
+        LOGGER.debug("Friend mutation envelope received type={} sender={} correlation={} target={}",
                 envelope.type(), envelope.senderId(), envelope.correlationId(), envelope.targetId());
         FriendMutationCommandMessage command;
         try {
@@ -783,7 +783,7 @@ public class RegistryService {
                 .metadata(command.getMetadata());
 
         FriendMutationRequest mutationRequest = builder.build();
-        LOGGER.info("Applying friend mutation requestId={} type={} actor={} target={} expiresAt={}",
+        LOGGER.debug("Applying friend mutation requestId={} type={} actor={} target={} expiresAt={}",
                 command.getRequestId(), mutationRequest.type(), mutationRequest.actorId(), mutationRequest.targetId(),
                 mutationRequest.expiresAt());
 
@@ -797,7 +797,7 @@ public class RegistryService {
         response.setTargetId(command.getTargetId());
         response.setActorSnapshot(context.result().actorSnapshot());
         response.setTargetSnapshot(context.result().targetSnapshot());
-        LOGGER.info("Friend mutation processed requestId={} success={} error={} relationEvent={} blockEvent={}",
+        LOGGER.debug("Friend mutation processed requestId={} success={} error={} relationEvent={} blockEvent={}",
                 command.getRequestId(),
                 context.result().success(),
                 context.result().errorMessage().orElse(null),
@@ -806,7 +806,7 @@ public class RegistryService {
 
         String replyTarget = envelope.senderId();
         if (replyTarget != null && !replyTarget.isBlank()) {
-            LOGGER.info("Sending friend mutation response requestId={} to {}", command.getRequestId(), replyTarget);
+            LOGGER.debug("Sending friend mutation response requestId={} to {}", command.getRequestId(), replyTarget);
             messageBus.send(replyTarget, ChannelConstants.SOCIAL_FRIEND_MUTATION_RESPONSE, response);
         }
 

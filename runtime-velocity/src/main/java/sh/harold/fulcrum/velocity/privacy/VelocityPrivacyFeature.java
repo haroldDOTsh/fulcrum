@@ -146,6 +146,7 @@ public final class VelocityPrivacyFeature implements VelocityFeature {
         public void execute(Invocation invocation) {
             if (!(invocation.source() instanceof Player player)) {
                 Message.error("Only players can use this command.")
+                        .tag("debug")
                         .skipTranslation()
                         .send(invocation.source());
                 return;
@@ -153,6 +154,7 @@ public final class VelocityPrivacyFeature implements VelocityFeature {
             UUID playerId = player.getUniqueId();
             if (!isStaff(playerId)) {
                 Message.error("You must be staff to run this command.")
+                        .tag("debug")
                         .skipTranslation()
                         .send(player);
                 return;
@@ -160,6 +162,7 @@ public final class VelocityPrivacyFeature implements VelocityFeature {
             String[] args = invocation.arguments();
             if (args.length < 2) {
                 Message.error("Usage: /privacydebug <featureId> <level>")
+                        .tag("debug")
                         .skipTranslation()
                         .send(player);
                 return;
@@ -173,6 +176,7 @@ public final class VelocityPrivacyFeature implements VelocityFeature {
                         .reduce((left, right) -> left + ", " + right)
                         .orElse("NONE");
                 Message.error("Unknown privacy feature '" + args[0] + "'. Use: " + valid + ".")
+                        .tag("debug")
                         .skipTranslation()
                         .send(player);
                 return;
@@ -182,6 +186,7 @@ public final class VelocityPrivacyFeature implements VelocityFeature {
                 level = SettingLevel.valueOf(args[1].toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException ex) {
                 Message.error("Unknown level '" + args[1] + "'.")
+                        .tag("debug")
                         .skipTranslation()
                         .send(player);
                 return;
@@ -189,6 +194,7 @@ public final class VelocityPrivacyFeature implements VelocityFeature {
             PrivacyDomainConfig config = privacyApi.domains().get(domain).orElse(null);
             if (config == null || !config.supportedLevels().contains(level)) {
                 Message.error("That level is not available for " + domain.name() + ".")
+                        .tag("debug")
                         .skipTranslation()
                         .send(player);
                 return;
@@ -198,11 +204,13 @@ public final class VelocityPrivacyFeature implements VelocityFeature {
                     .whenComplete((ignored, throwable) -> {
                         if (throwable != null) {
                             Message.error("Unable to update privacy right now.")
+                                    .tag("debug")
                                     .skipTranslation()
                                     .send(player);
                             return;
                         }
                         Message.success("Set " + domain.name() + " to " + level.name())
+                                .tag("debug")
                                 .skipTranslation()
                                 .send(player);
                     });
