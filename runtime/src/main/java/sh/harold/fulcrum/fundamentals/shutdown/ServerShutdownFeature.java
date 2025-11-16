@@ -225,7 +225,19 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
             sendEvacuateRequest(player, false);
         }
 
-        currentContext.shutdownTask = Bukkit.getScheduler().runTaskLater(plugin, this::finalizeShutdown, EVICT_BUFFER.getSeconds() * 20L);
+        currentContext.shutdownTask = Bukkit.getScheduler().runTaskLater(plugin, this::awaitEmptyAndShutdown, EVICT_BUFFER.getSeconds() * 20L);
+    }
+
+    private void awaitEmptyAndShutdown() {
+        if (currentContext == null) {
+            return;
+        }
+        if (!Bukkit.getOnlinePlayers().isEmpty()) {
+            plugin.getLogger().info("Shutdown paused; waiting for " + Bukkit.getOnlinePlayers().size() + " player(s) to evacuate");
+            currentContext.shutdownTask = Bukkit.getScheduler().runTaskLater(plugin, this::awaitEmptyAndShutdown, 20L);
+            return;
+        }
+        finalizeShutdown();
     }
 
     private void finalizeShutdown() {
@@ -233,7 +245,6 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
             return;
         }
         publishPhase(ShutdownIntentUpdateMessage.Phase.SHUTDOWN);
-        kickRemainingPlayers();
         if (renderingPipeline != null) {
             renderingPipeline.clearHeaderOverride();
         }
@@ -325,33 +336,6 @@ public final class ServerShutdownFeature implements PluginFeature, Listener {
                     .orElse(null);
         }
         return routeRegistry;
-    }
-
-    private void kickRemainingPlayers() {
-        if (Bukkit.getOnlinePlayers().isEmpty()) {
-            return;
-        }
-        Component message = buildKickMessage();
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            player.kick(message);
-        }
-    }
-
-    private Component buildKickMessage() {
-        String fallback = currentContext != null && currentContext.fallbackFamily != null && !currentContext.fallbackFamily.isBlank()
-                ? currentContext.fallbackFamily
-                : "the lobby";
-        Component header = Component.text("Server rebooting now.", NamedTextColor.RED);
-        Component instructions = Component.text("Please rejoin via ", NamedTextColor.GRAY)
-                .append(Component.text(fallback, NamedTextColor.YELLOW))
-                .append(Component.text(".", NamedTextColor.GRAY));
-        Component reason = Component.text("Reason: ", NamedTextColor.GRAY)
-                .append(Component.text(currentContext != null ? currentContext.reason : "Scheduled maintenance", NamedTextColor.AQUA));
-        return header
-                .append(Component.newline())
-                .append(instructions)
-                .append(Component.newline())
-                .append(reason);
     }
 
     private void sendCountdownBroadcast(int secondsRemaining) {
