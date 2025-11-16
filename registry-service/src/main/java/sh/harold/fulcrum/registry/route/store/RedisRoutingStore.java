@@ -914,5 +914,13 @@ public class RedisRoutingStore {
         public void setRecordedAt(long recordedAt) {
             this.recordedAt = recordedAt;
         }
+
+        public String getSlotId() {
+            return slotId;
+        }
+
+        public long getRecordedAt() {
+            return recordedAt;
+        }
     }
 }
