@@ -136,7 +136,9 @@ public final class FriendGraphService {
     }
 
     private FriendOperationContext handleInviteDecline(FriendMutationRequest request) {
-        inviteStore.consumeInvite(request.targetId(), request.actorId());
+        if (inviteStore.consumeInvite(request.targetId(), request.actorId()).isEmpty()) {
+            return failure(request, "No pending invite to decline");
+        }
         FriendRelationEventMessage event = buildRelationEvent(
                 request.actorId(),
                 request.targetId(),
@@ -149,7 +151,9 @@ public final class FriendGraphService {
     }
 
     private FriendOperationContext handleInviteCancel(FriendMutationRequest request) {
-        inviteStore.consumeInvite(request.actorId(), request.targetId());
+        if (inviteStore.consumeInvite(request.actorId(), request.targetId()).isEmpty()) {
+            return failure(request, "No pending invite to cancel");
+        }
         return new FriendOperationContext(FriendOperationResult.success(request.type(), null, null), null, null);
     }
 

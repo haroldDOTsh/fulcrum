@@ -10,6 +10,7 @@ import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.friends.FriendMutationRequest;
 import sh.harold.fulcrum.api.friends.FriendMutationType;
+import sh.harold.fulcrum.api.friends.FriendOperationResult;
 import sh.harold.fulcrum.api.friends.FriendSnapshot;
 import sh.harold.fulcrum.registry.redis.RedisIntegrationTestSupport;
 import sh.harold.fulcrum.registry.redis.RedisManager;
@@ -84,6 +85,34 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         assertThat(actorSnapshot.friends()).containsExactly(target);
         assertThat(targetSnapshot.friends()).containsExactly(actor);
         assertThat(inviteStore.listPendingInvites(target)).isEmpty();
+    }
+
+    @Test
+    void declineFailsWhenInviteMissing() {
+        UUID actor = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+
+        FriendMutationRequest decline = FriendMutationRequest.builder(FriendMutationType.INVITE_DECLINE)
+                .actor(target)
+                .target(actor)
+                .build();
+        FriendOperationResult result = service.apply(decline).result();
+        assertThat(result.success()).isFalse();
+        assertThat(result.errorMessage()).contains("No pending invite to decline");
+    }
+
+    @Test
+    void cancelFailsWhenInviteMissing() {
+        UUID actor = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+
+        FriendMutationRequest cancel = FriendMutationRequest.builder(FriendMutationType.INVITE_CANCEL)
+                .actor(actor)
+                .target(target)
+                .build();
+        FriendOperationResult result = service.apply(cancel).result();
+        assertThat(result.success()).isFalse();
+        assertThat(result.errorMessage()).contains("No pending invite to cancel");
     }
 
     @Test
