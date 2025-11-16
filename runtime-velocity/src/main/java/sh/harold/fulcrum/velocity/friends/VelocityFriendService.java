@@ -74,24 +74,42 @@ public final class VelocityFriendService implements FriendService {
                 return CompletableFuture.completedFuture(cached);
             }
         }
-        FriendSnapshot snapshot = refreshFromRedis(playerId).orElse(FriendSnapshot.empty());
-        debug("Snapshot request resolved player={} version={}", playerId, snapshot.version());
-        return CompletableFuture.completedFuture(snapshot);
+        Optional<FriendSnapshot> refreshed = refreshFromRedis(playerId);
+        if (refreshed.isPresent()) {
+            FriendSnapshot snapshot = refreshed.get();
+            debug("Snapshot request resolved player={} version={} (redis)", playerId, snapshot.version());
+            return CompletableFuture.completedFuture(snapshot);
+        }
+        debug("Redis snapshot unavailable for {}; requesting sync", playerId);
+        return syncSnapshot(playerId).handle((result, throwable) -> {
+            if (throwable != null) {
+                logger.warn("Snapshot sync failed for {}", playerId, throwable);
+                return FriendSnapshot.empty();
+            }
+            if (result == null || !result.success() || result.actorSnapshot() == null) {
+                debug("Snapshot sync unsuccessful player={} reason={}",
+                        playerId,
+                        result != null ? result.errorMessage().orElse("unknown") : "unknown");
+                return FriendSnapshot.empty();
+            }
+            localSnapshots.put(playerId, result.actorSnapshot());
+            debug("Snapshot sync completed player={} version={}", playerId, result.actorSnapshot().version());
+            return result.actorSnapshot();
+        });
     }
 
     @Override
     public CompletionStage<FriendOperationResult> execute(FriendMutationRequest request) {
         Objects.requireNonNull(request, "request");
         UUID requestId = UUID.randomUUID();
-        debug("Dispatching mutation requestId={} type={} actor={} target={} scope={} expiresAt={} metadataKeys={}",
-                requestId, request.type(), request.actorId(), request.targetId(), request.scope(), request.expiresAt(), request.metadata().keySet());
+        debug("Dispatching mutation requestId={} type={} actor={} target={} expiresAt={} metadataKeys={}",
+                requestId, request.type(), request.actorId(), request.targetId(), request.expiresAt(), request.metadata().keySet());
 
         FriendMutationCommandMessage command = new FriendMutationCommandMessage();
         command.setRequestId(requestId);
         command.setMutationType(request.type());
         command.setActorId(request.actorId());
         command.setTargetId(request.targetId());
-        command.setScope(request.scope());
         command.setReason(request.reason());
         command.setMetadata(request.metadata());
         if (request.expiresAt() != null) {
@@ -223,8 +241,8 @@ public final class VelocityFriendService implements FriendService {
                 debug("Block event payload empty");
                 return;
             }
-            debug("Decoded block event owner={} target={} active={} scope={} ownerVersion={} targetVersion={}",
-                    event.getOwnerId(), event.getTargetId(), event.isActive(), event.getScope(), event.getOwnerVersion(), event.getTargetVersion());
+            debug("Decoded block event owner={} target={} active={} ownerVersion={} targetVersion={}",
+                    event.getOwnerId(), event.getTargetId(), event.isActive(), event.getOwnerVersion(), event.getTargetVersion());
             if (event.getOwnerId() != null) {
                 refreshIfStale(event.getOwnerId(), event.getOwnerVersion());
             }
@@ -315,38 +333,21 @@ public final class VelocityFriendService implements FriendService {
             return;
         }
         Component senderName = formatDisplayName(senderId);
-        String senderPlain = resolvePlainName(senderId);
-        Component body = Component.text()
-                .append(senderName)
-                .append(FriendTextFormatter.gray(" sent you a friend request. "))
-                .append(FriendTextFormatter.gray("Use "))
-                .append(FriendTextFormatter.aqua("/friend accept " + senderPlain))
-                .append(FriendTextFormatter.gray(" or "))
-                .append(FriendTextFormatter.aqua("/friend deny " + senderPlain))
-                .append(FriendTextFormatter.gray("."))
-                .build();
-        sendMessage(recipientId, prefixed(body));
+        String targetArg = senderId != null ? senderId.toString() : resolvePlainName(senderId);
+        sendFramed(recipientId, FriendMessageRenderer.friendRequestPrompt(senderName, targetArg));
     }
 
     private void notifyFriendAcceptance(UUID acceptorId, UUID partnerId) {
         if (acceptorId == null || partnerId == null) {
             return;
         }
-        Component partnerName = formatDisplayName(partnerId);
         Component acceptorName = formatDisplayName(acceptorId);
-
-        Component acceptorBody = Component.text()
-                .append(FriendTextFormatter.gray("You are now friends with "))
-                .append(partnerName)
-                .append(FriendTextFormatter.gray("."))
-                .build();
-        sendMessage(acceptorId, prefixed(acceptorBody));
-
         Component partnerBody = Component.text()
+                .append(FriendTextFormatter.green("You are now friends with "))
                 .append(acceptorName)
-                .append(FriendTextFormatter.gray(" accepted your friend request. You're now friends."))
+                .append(FriendTextFormatter.green("."))
                 .build();
-        sendMessage(partnerId, prefixed(partnerBody));
+        sendFramed(partnerId, partnerBody);
     }
 
     private void notifyFriendDecline(UUID declinerId, UUID requesterId) {
@@ -357,17 +358,17 @@ public final class VelocityFriendService implements FriendService {
         Component declinerName = formatDisplayName(declinerId);
 
         Component declinerBody = Component.text()
-                .append(FriendTextFormatter.gray("You declined the friend request from "))
+                .append(FriendTextFormatter.yellow("You declined the friend request from "))
                 .append(requesterName)
-                .append(FriendTextFormatter.gray("."))
+                .append(FriendTextFormatter.yellow("."))
                 .build();
-        sendMessage(declinerId, prefixed(declinerBody));
+        sendFramed(declinerId, declinerBody);
 
         Component requesterBody = Component.text()
                 .append(declinerName)
-                .append(FriendTextFormatter.gray(" declined your friend request."))
+                .append(FriendTextFormatter.yellow(" declined your friend request."))
                 .build();
-        sendMessage(requesterId, prefixed(requesterBody));
+        sendFramed(requesterId, requesterBody);
     }
 
     private void notifyFriendCancel(UUID senderId, UUID recipientId) {
@@ -378,17 +379,17 @@ public final class VelocityFriendService implements FriendService {
         Component senderName = formatDisplayName(senderId);
 
         Component senderBody = Component.text()
-                .append(FriendTextFormatter.gray("You cancelled your friend request to "))
+                .append(FriendTextFormatter.yellow("You cancelled your friend request to "))
                 .append(recipientName)
-                .append(FriendTextFormatter.gray("."))
+                .append(FriendTextFormatter.yellow("."))
                 .build();
-        sendMessage(senderId, prefixed(senderBody));
+        sendFramed(senderId, senderBody);
 
         Component recipientBody = Component.text()
                 .append(senderName)
-                .append(FriendTextFormatter.gray(" cancelled their friend request."))
+                .append(FriendTextFormatter.yellow(" cancelled their friend request."))
                 .build();
-        sendMessage(recipientId, prefixed(recipientBody));
+        sendFramed(recipientId, recipientBody);
     }
 
     private void notifyFriendRemoval(UUID removerId, UUID removedId) {
@@ -399,17 +400,17 @@ public final class VelocityFriendService implements FriendService {
         Component removerName = formatDisplayName(removerId);
 
         Component removerBody = Component.text()
-                .append(FriendTextFormatter.gray("You removed "))
+                .append(FriendTextFormatter.yellow("You removed "))
                 .append(removedName)
-                .append(FriendTextFormatter.gray(" from your friends."))
+                .append(FriendTextFormatter.yellow(" from your friends."))
                 .build();
-        sendMessage(removerId, prefixed(removerBody));
+        sendFramed(removerId, removerBody);
 
         Component removedBody = Component.text()
                 .append(removerName)
-                .append(FriendTextFormatter.gray(" removed you from their friends list."))
+                .append(FriendTextFormatter.yellow(" removed you from their friends list!"))
                 .build();
-        sendMessage(removedId, prefixed(removedBody));
+        sendFramed(removedId, removedBody);
     }
 
     private void notifyBlockEvent(FriendBlockEventMessage event) {
@@ -419,40 +420,29 @@ public final class VelocityFriendService implements FriendService {
         UUID ownerId = event.getOwnerId();
         UUID targetId = event.getTargetId();
         Component targetName = formatDisplayName(targetId);
-        String scopeLabel = event.getScope() != null
-                ? event.getScope().name().toLowerCase(Locale.ROOT)
-                : "global";
         Component body;
         if (event.isActive()) {
             body = Component.text()
-                    .append(FriendTextFormatter.gray("You blocked "))
+                    .append(FriendTextFormatter.yellow("You blocked "))
                     .append(targetName)
-                    .append(FriendTextFormatter.gray(" for "))
-                    .append(FriendTextFormatter.gray(scopeLabel + " interactions."))
+                    .append(FriendTextFormatter.yellow("."))
                     .build();
         } else {
             body = Component.text()
-                    .append(FriendTextFormatter.gray("You unblocked "))
+                    .append(FriendTextFormatter.yellow("You unblocked "))
                     .append(targetName)
-                    .append(FriendTextFormatter.gray(" for "))
-                    .append(FriendTextFormatter.gray(scopeLabel + " interactions."))
+                    .append(FriendTextFormatter.yellow("."))
                     .build();
         }
-        sendMessage(ownerId, prefixed(body));
+        sendFramed(ownerId, body);
     }
 
-    private void sendMessage(UUID playerId, Component message) {
-        if (playerId == null || message == null) {
-            return;
-        }
-        proxy.getPlayer(playerId).ifPresent(player -> player.sendMessage(message));
+    private void sendFramed(UUID playerId, Component line) {
+        FriendMessageRenderer.sendFramed(proxy, playerId, line);
     }
 
-    private Component prefixed(Component body) {
-        return Component.text()
-                .append(FriendTextFormatter.aqua("[Friends] "))
-                .append(body)
-                .build();
+    private void sendFramed(UUID playerId, Collection<Component> lines) {
+        FriendMessageRenderer.sendFramed(proxy, playerId, lines);
     }
 
     private Component formatDisplayName(UUID playerId) {

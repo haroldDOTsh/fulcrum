@@ -56,6 +56,10 @@ final class FriendTextFormatter {
         return Component.text(text, NamedTextColor.GRAY);
     }
 
+    static Component yellow(String text) {
+        return Component.text(text, NamedTextColor.YELLOW);
+    }
+
     static Component red(String text) {
         return Component.text(text, NamedTextColor.RED);
     }

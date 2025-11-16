@@ -47,6 +47,7 @@ public final class FriendGraphService {
                 case UNFRIEND -> handleUnfriend(request);
                 case BLOCK -> handleBlock(request);
                 case UNBLOCK -> handleUnblock(request);
+                case SNAPSHOT_SYNC -> handleSnapshotSync(request);
                 default -> failure(request, "Unsupported mutation");
             };
         } catch (Exception ex) {
@@ -78,13 +79,12 @@ public final class FriendGraphService {
         List<FriendBlockEventMessage> events = new ArrayList<>();
         for (String entry : expired) {
             String[] parts = entry.split(":");
-            if (parts.length != 3) {
+            if (parts.length != 2) {
                 continue;
             }
             UUID owner = UUID.fromString(parts[0]);
             UUID target = UUID.fromString(parts[1]);
-            FriendBlockScope scope = FriendBlockScope.values()[Integer.parseInt(parts[2])];
-            events.addAll(handleExpiry(owner, target, scope));
+            events.addAll(handleExpiry(owner, target));
         }
         return events;
     }
@@ -173,59 +173,64 @@ public final class FriendGraphService {
     private FriendOperationContext handleBlock(FriendMutationRequest request) {
         UUID actor = request.actorId();
         UUID target = request.targetId();
-        FriendBlockScope scope = request.scope() != null ? request.scope() : FriendBlockScope.GLOBAL;
         FriendSnapshot actorSnapshot = snapshotStore.load(actor);
         FriendSnapshot targetSnapshot = snapshotStore.load(target);
-        if (actorSnapshot.blockedOut(scope).contains(target)) {
+        if (actorSnapshot.isBlocking(target)) {
             return failure(request, "Already ignored");
         }
         inviteStore.cancelInvite(actor, target);
         inviteStore.cancelInvite(target, actor);
         FriendSnapshot cleanedActor = updateFriends(actorSnapshot, set -> set.remove(target));
         FriendSnapshot cleanedTarget = updateFriends(targetSnapshot, set -> set.remove(actor));
-        FriendSnapshot updatedActor = updateIgnoresOut(cleanedActor, scope, set -> set.add(target));
-        FriendSnapshot updatedTarget = updateIgnoresIn(cleanedTarget, scope, set -> set.add(actor));
+        FriendSnapshot updatedActor = updateIgnoresOut(cleanedActor, set -> set.add(target));
+        FriendSnapshot updatedTarget = updateIgnoresIn(cleanedTarget, set -> set.add(actor));
         persist(actor, updatedActor);
         persist(target, updatedTarget);
         if (request.expiresAt() != null) {
-            registerBlockExpiry(actor, target, scope, request.expiresAt());
+            registerBlockExpiry(actor, target, request.expiresAt());
         } else {
-            removeBlockExpiry(actor, target, scope);
+            removeBlockExpiry(actor, target);
         }
-        FriendBlockEventMessage event = buildBlockEvent(actor, target, updatedActor, updatedTarget, scope, true, request.expiresAt());
+        FriendBlockEventMessage event = buildBlockEvent(actor, target, updatedActor, updatedTarget, true, request.expiresAt());
         return success(request, updatedActor, updatedTarget, null, event);
     }
 
     private FriendOperationContext handleUnblock(FriendMutationRequest request) {
         UUID actor = request.actorId();
         UUID target = request.targetId();
-        FriendBlockScope scope = request.scope() != null ? request.scope() : FriendBlockScope.GLOBAL;
         FriendSnapshot actorSnapshot = snapshotStore.load(actor);
-        if (!actorSnapshot.blockedOut(scope).contains(target)) {
+        if (!actorSnapshot.isBlocking(target)) {
             return failure(request, "No ignore entry to remove");
         }
         FriendSnapshot targetSnapshot = snapshotStore.load(target);
-        FriendSnapshot updatedActor = updateIgnoresOut(actorSnapshot, scope, set -> set.remove(target));
-        FriendSnapshot updatedTarget = updateIgnoresIn(targetSnapshot, scope, set -> set.remove(actor));
+        FriendSnapshot updatedActor = updateIgnoresOut(actorSnapshot, set -> set.remove(target));
+        FriendSnapshot updatedTarget = updateIgnoresIn(targetSnapshot, set -> set.remove(actor));
         persist(actor, updatedActor);
         persist(target, updatedTarget);
-        removeBlockExpiry(actor, target, scope);
-        FriendBlockEventMessage event = buildBlockEvent(actor, target, updatedActor, updatedTarget, scope, false, null);
+        removeBlockExpiry(actor, target);
+        FriendBlockEventMessage event = buildBlockEvent(actor, target, updatedActor, updatedTarget, false, null);
         return success(request, updatedActor, updatedTarget, null, event);
     }
 
-    private List<FriendBlockEventMessage> handleExpiry(UUID owner, UUID target, FriendBlockScope scope) {
+    private List<FriendBlockEventMessage> handleExpiry(UUID owner, UUID target) {
         FriendSnapshot ownerSnapshot = snapshotStore.load(owner);
-        if (!ownerSnapshot.blockedOut(scope).contains(target)) {
+        if (!ownerSnapshot.isBlocking(target)) {
             return List.of();
         }
         FriendSnapshot targetSnapshot = snapshotStore.load(target);
-        FriendSnapshot updatedOwner = updateIgnoresOut(ownerSnapshot, scope, set -> set.remove(target));
-        FriendSnapshot updatedTarget = updateIgnoresIn(targetSnapshot, scope, set -> set.remove(owner));
+        FriendSnapshot updatedOwner = updateIgnoresOut(ownerSnapshot, set -> set.remove(target));
+        FriendSnapshot updatedTarget = updateIgnoresIn(targetSnapshot, set -> set.remove(owner));
         persist(owner, updatedOwner);
         persist(target, updatedTarget);
-        FriendBlockEventMessage event = buildBlockEvent(owner, target, updatedOwner, updatedTarget, scope, false, null);
+        FriendBlockEventMessage event = buildBlockEvent(owner, target, updatedOwner, updatedTarget, false, null);
         return List.of(event);
+    }
+
+    private FriendOperationContext handleSnapshotSync(FriendMutationRequest request) {
+        UUID actor = request.actorId();
+        FriendSnapshot snapshot = snapshotStore.load(actor);
+        cacheSnapshot(actor, snapshot);
+        return success(request, snapshot, null, null, null);
     }
 
     private FriendOperationContext commitFriendship(FriendMutationRequest request,
@@ -244,12 +249,7 @@ public final class FriendGraphService {
     }
 
     private boolean isIgnored(FriendSnapshot snapshot, UUID peer) {
-        for (FriendBlockScope scope : FriendBlockScope.values()) {
-            if (snapshot.blockedOut(scope).contains(peer)) {
-                return true;
-            }
-        }
-        return false;
+        return snapshot.isBlocking(peer);
     }
 
     private FriendOperationContext success(FriendMutationRequest request,
@@ -272,35 +272,17 @@ public final class FriendGraphService {
     }
 
     private FriendSnapshot updateIgnoresOut(FriendSnapshot snapshot,
-                                            FriendBlockScope scope,
                                             Consumer<Set<UUID>> mutator) {
-        EnumMap<FriendBlockScope, Set<UUID>> map = copyScopeMap(snapshot.ignoresOut());
-        mutator.accept(map.get(scope));
-        return new FriendSnapshot(snapshot.version() + 1, snapshot.friends(), immutableScopeMap(map), snapshot.ignoresIn());
+        Set<UUID> ignores = new HashSet<>(snapshot.ignoresOut());
+        mutator.accept(ignores);
+        return new FriendSnapshot(snapshot.version() + 1, snapshot.friends(), Collections.unmodifiableSet(ignores), snapshot.ignoresIn());
     }
 
     private FriendSnapshot updateIgnoresIn(FriendSnapshot snapshot,
-                                           FriendBlockScope scope,
                                            Consumer<Set<UUID>> mutator) {
-        EnumMap<FriendBlockScope, Set<UUID>> map = copyScopeMap(snapshot.ignoresIn());
-        mutator.accept(map.get(scope));
-        return new FriendSnapshot(snapshot.version() + 1, snapshot.friends(), snapshot.ignoresOut(), immutableScopeMap(map));
-    }
-
-    private EnumMap<FriendBlockScope, Set<UUID>> copyScopeMap(Map<FriendBlockScope, Set<UUID>> map) {
-        EnumMap<FriendBlockScope, Set<UUID>> copy = new EnumMap<>(FriendBlockScope.class);
-        for (FriendBlockScope scope : FriendBlockScope.values()) {
-            copy.put(scope, new HashSet<>(map.getOrDefault(scope, Set.of())));
-        }
-        return copy;
-    }
-
-    private Map<FriendBlockScope, Set<UUID>> immutableScopeMap(EnumMap<FriendBlockScope, Set<UUID>> map) {
-        EnumMap<FriendBlockScope, Set<UUID>> immutable = new EnumMap<>(FriendBlockScope.class);
-        for (Map.Entry<FriendBlockScope, Set<UUID>> entry : map.entrySet()) {
-            immutable.put(entry.getKey(), Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
-        }
-        return Collections.unmodifiableMap(immutable);
+        Set<UUID> ignores = new HashSet<>(snapshot.ignoresIn());
+        mutator.accept(ignores);
+        return new FriendSnapshot(snapshot.version() + 1, snapshot.friends(), snapshot.ignoresOut(), Collections.unmodifiableSet(ignores));
     }
 
     private void persist(UUID playerId, FriendSnapshot snapshot) {
@@ -314,10 +296,8 @@ public final class FriendGraphService {
             RedisCommands<String, String> commands = redisManager.sync();
             commands.set(FriendRedisKeys.snapshotKey(playerId), payload);
             updateSet(commands, FriendRedisKeys.friendSetKey(playerId), snapshot.friends());
-            for (FriendBlockScope scope : FriendBlockScope.values()) {
-                updateSet(commands, FriendRedisKeys.ignoresOutKey(playerId, scope), snapshot.ignoresOut().get(scope));
-                updateSet(commands, FriendRedisKeys.ignoresInKey(playerId, scope), snapshot.ignoresIn().get(scope));
-            }
+            updateSet(commands, FriendRedisKeys.ignoresOutKey(playerId), snapshot.ignoresOut());
+            updateSet(commands, FriendRedisKeys.ignoresInKey(playerId), snapshot.ignoresIn());
         } catch (Exception ex) {
             logger.log(Level.WARNING, "Failed to cache friend snapshot", ex);
         }
@@ -374,13 +354,11 @@ public final class FriendGraphService {
                                                     UUID target,
                                                     FriendSnapshot ownerSnapshot,
                                                     FriendSnapshot targetSnapshot,
-                                                    FriendBlockScope scope,
                                                     boolean active,
                                                     Instant expiresAt) {
         FriendBlockEventMessage event = new FriendBlockEventMessage();
         event.setOwnerId(owner);
         event.setTargetId(target);
-        event.setScope(scope);
         event.setActive(active);
         event.setExpiresAtEpochMillis(expiresAt != null ? expiresAt.toEpochMilli() : null);
         event.setOwnerVersion(ownerSnapshot != null ? ownerSnapshot.version() : 0L);
@@ -389,19 +367,19 @@ public final class FriendGraphService {
         return event;
     }
 
-    private void registerBlockExpiry(UUID owner, UUID target, FriendBlockScope scope, Instant expiresAt) {
+    private void registerBlockExpiry(UUID owner, UUID target, Instant expiresAt) {
         if (expiresAt == null) {
             return;
         }
-        redisManager.sync().zadd(FriendRedisKeys.blockExpiryKey(), expiresAt.toEpochMilli(), encodeBlockEntry(owner, target, scope));
+        redisManager.sync().zadd(FriendRedisKeys.blockExpiryKey(), expiresAt.toEpochMilli(), encodeBlockEntry(owner, target));
     }
 
-    private void removeBlockExpiry(UUID owner, UUID target, FriendBlockScope scope) {
-        redisManager.sync().zrem(FriendRedisKeys.blockExpiryKey(), encodeBlockEntry(owner, target, scope));
+    private void removeBlockExpiry(UUID owner, UUID target) {
+        redisManager.sync().zrem(FriendRedisKeys.blockExpiryKey(), encodeBlockEntry(owner, target));
     }
 
-    private String encodeBlockEntry(UUID owner, UUID target, FriendBlockScope scope) {
-        return owner + ":" + target + ':' + scope.ordinal();
+    private String encodeBlockEntry(UUID owner, UUID target) {
+        return owner + ":" + target;
     }
 
     public record FriendOperationContext(FriendOperationResult result,

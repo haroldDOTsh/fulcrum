@@ -190,7 +190,7 @@ public class VelocityCommandFeature implements VelocityFeature {
 
     private void registerFriendCommand() {
         CommandMeta meta = commandManager.metaBuilder("friend")
-                .aliases("friends")
+                .aliases("friends", "f")
                 .plugin(plugin)
                 .build();
 
@@ -201,6 +201,7 @@ public class VelocityCommandFeature implements VelocityFeature {
                 playerCache,
                 identityFeature,
                 rankService,
+                playerRoutingFeature,
                 logger
         );
 

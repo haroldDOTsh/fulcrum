@@ -4,6 +4,7 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -13,7 +14,9 @@ import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
+import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -21,11 +24,22 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+private boolean tryHandleShorthandAdd(Player player, String possibleName) {
+    if (possibleName == null || possibleName.isBlank()) {
+        return false;
+    }
+    if (subcommands().contains(possibleName)) {
+        return false;
+    }
+    handleAdd(player, possibleName);
+    return true;
+}
+
 public final class FriendCommand implements SimpleCommand {
 
-    private static final Component FRAME_LINE = Component.text("-----------------------------------------------------", NamedTextColor.BLUE)
-            .decorate(TextDecoration.STRIKETHROUGH);
     private static final int PAGE_SIZE = 8;
+    private static final int FRAME_WIDTH = 53;
+    private static final Duration INVITE_TIMEOUT = Duration.ofMinutes(5);
 
     private final FriendService friendService;
     private final ProxyServer proxy;
@@ -33,9 +47,11 @@ public final class FriendCommand implements SimpleCommand {
     private final PlayerCache playerCache;
     private final VelocityIdentityFeature identityFeature;
     private final RankService rankService;
+    private final PlayerRoutingFeature routingFeature;
     private final Logger logger;
     private final Map<UUID, String> nameCache = new ConcurrentHashMap<>();
     private final Map<String, UUID> reverseNameCache = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<UUID, ScheduledTask>> inviteExpiryTasks = new ConcurrentHashMap<>();
 
     public FriendCommand(FriendService friendService,
                          ProxyServer proxy,
@@ -43,13 +59,15 @@ public final class FriendCommand implements SimpleCommand {
                          PlayerCache playerCache,
                          VelocityIdentityFeature identityFeature,
                          RankService rankService,
+                         PlayerRoutingFeature routingFeature,
                          Logger logger) {
         this.friendService = Objects.requireNonNull(friendService, "friendService");
         this.proxy = Objects.requireNonNull(proxy, "proxy");
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.playerCache = playerCache;
         this.identityFeature = identityFeature;
-        this.rankService = rankService;
+        this.rankService = Objects.requireNonNull(rankService, "rankService");
+        this.routingFeature = Objects.requireNonNull(routingFeature, "routingFeature");
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
@@ -103,6 +121,9 @@ public final class FriendCommand implements SimpleCommand {
         }
 
         String sub = args[0].toLowerCase(Locale.ROOT);
+        if (args.length == 1 && tryHandleShorthandAdd(player, sub)) {
+            return;
+        }
         debug(player, "dispatching subcommand={}", sub);
         switch (sub) {
             case "help" -> sendHelp(player);
@@ -111,6 +132,7 @@ public final class FriendCommand implements SimpleCommand {
             case "add" -> requireArgument(player, args, 2, () -> handleAdd(player, args[1]));
             case "accept" -> requireArgument(player, args, 2, () -> handleAccept(player, args[1]));
             case "deny" -> requireArgument(player, args, 2, () -> handleDeny(player, args[1]));
+            case "ignore" -> requireArgument(player, args, 2, () -> handleIgnore(player, args[1]));
             case "remove" -> requireArgument(player, args, 2, () -> handleRemove(player, args[1]));
             case "removeall" -> handleRemoveAll(player);
             case "notifications" -> handleNotifications(player);
@@ -147,15 +169,15 @@ public final class FriendCommand implements SimpleCommand {
 
     private void sendHelp(Player player) {
         List<Component> lines = List.of(
-                FriendTextFormatter.aqua("/friend accept <player> ").append(FriendTextFormatter.gray("Accept a friend request")),
-                FriendTextFormatter.aqua("/friend add <player> ").append(FriendTextFormatter.gray("Add a player as a friend")),
-                FriendTextFormatter.aqua("/friend deny <player> ").append(FriendTextFormatter.gray("Decline a friend request")),
-                FriendTextFormatter.aqua("/friend help ").append(FriendTextFormatter.gray("Show all available friend commands")),
-                FriendTextFormatter.aqua("/friend list <page|best> ").append(FriendTextFormatter.gray("List your friends")),
-                FriendTextFormatter.aqua("/friend notifications ").append(FriendTextFormatter.gray("Toggle friend join/leave notifications")),
-                FriendTextFormatter.aqua("/friend remove <player> ").append(FriendTextFormatter.gray("Remove a player from your friends")),
-                FriendTextFormatter.aqua("/friend removeall ").append(FriendTextFormatter.gray("Remove all friends")),
-                FriendTextFormatter.aqua("/friend requests <page> ").append(FriendTextFormatter.gray("View friend requests"))
+                FriendTextFormatter.aqua("/friend accept <player> ").append(FriendTextFormatter.yellow("Accept a friend request")),
+                FriendTextFormatter.aqua("/friend add <player> ").append(FriendTextFormatter.yellow("Add a player as a friend")),
+                FriendTextFormatter.aqua("/friend deny <player> ").append(FriendTextFormatter.yellow("Decline a friend request")),
+                FriendTextFormatter.aqua("/friend help ").append(FriendTextFormatter.yellow("Show all available friend commands")),
+                FriendTextFormatter.aqua("/friend list <page|best> ").append(FriendTextFormatter.yellow("List your friends")),
+                FriendTextFormatter.aqua("/friend notifications ").append(FriendTextFormatter.yellow("Toggle friend join/leave notifications")),
+                FriendTextFormatter.aqua("/friend remove <player> ").append(FriendTextFormatter.yellow("Remove a player from your friends")),
+                FriendTextFormatter.aqua("/friend removeall ").append(FriendTextFormatter.yellow("Remove all friends")),
+                FriendTextFormatter.aqua("/friend requests <page> ").append(FriendTextFormatter.yellow("View friend requests"))
         );
         sendFramed(player, lines);
     }
@@ -163,14 +185,14 @@ public final class FriendCommand implements SimpleCommand {
     private void handleList(Player player, String[] args) {
         debug(player, "handling list request args={}", Arrays.toString(args));
         if (args.length > 1 && "best".equalsIgnoreCase(args[1])) {
-            sendFramed(player, FriendTextFormatter.gray("Best friends will be available soon."));
+            sendFramed(player, FriendTextFormatter.yellow("Best friends will be available soon."));
             return;
         }
         final int requestedPage = args.length > 1 ? parsePage(args[1]) : 1;
         withSnapshot(player, false, snapshot -> {
             List<UUID> friends = new ArrayList<>(snapshot.friends());
             if (friends.isEmpty()) {
-                sendFramed(player, FriendTextFormatter.gray("You have no friends yet. Use /friend add <player> to get started."));
+                sendFramed(player, FriendTextFormatter.yellow("You have no friends yet. Use /friend add <player> to get started."));
                 return;
             }
             friends.sort(Comparator.comparing(uuid -> cachedName(uuid).toLowerCase(Locale.ROOT)));
@@ -179,18 +201,10 @@ public final class FriendCommand implements SimpleCommand {
             int start = (page - 1) * PAGE_SIZE;
             List<UUID> slice = friends.subList(start, Math.min(start + PAGE_SIZE, friends.size()));
             List<Component> lines = new ArrayList<>();
-            lines.add(FriendTextFormatter.aqua("Friends (" + friends.size() + ") - Page " + page + "/" + totalPages));
+            lines.add(renderListHeader(page, totalPages));
             debug(player, "rendering friend list page={} totalPages={} totalFriends={}", page, totalPages, friends.size());
             for (UUID id : slice) {
-                String display = cachedName(id);
-                boolean online = proxy.getPlayer(id).isPresent();
-                Component line = Component.text()
-                        .append(Component.text("• ", NamedTextColor.DARK_GRAY))
-                        .append(FriendTextFormatter.formatName(id, display, rankService, logger))
-                        .append(Component.text(" - ", NamedTextColor.DARK_GRAY))
-                        .append(online ? FriendTextFormatter.green("Online") : FriendTextFormatter.gray("Offline"))
-                        .build();
-                lines.add(line);
+                lines.add(renderFriendPresence(id));
             }
             sendFramed(player, lines);
         });
@@ -208,7 +222,7 @@ public final class FriendCommand implements SimpleCommand {
                                 return;
                             }
                             if (invites == null || invites.isEmpty()) {
-                                sendFramed(player, FriendTextFormatter.gray("You do not have any pending requests."));
+                                sendFramed(player, FriendTextFormatter.yellow("You do not have any pending requests."));
                                 return;
                             }
                             List<FriendService.PendingFriendInvite> sorted = new ArrayList<>(invites);
@@ -222,12 +236,12 @@ public final class FriendCommand implements SimpleCommand {
                             debug(player, "rendering request list page={} totalPages={} totalRequests={}", page, totalPages, sorted.size());
                             for (FriendService.PendingFriendInvite invite : slice) {
                                 UUID actorId = invite.actorId();
-                                String display = cachedName(actorId);
                                 Component line = Component.text()
                                         .append(Component.text("• ", NamedTextColor.DARK_GRAY))
-                                        .append(FriendTextFormatter.formatName(actorId, display, rankService, logger))
+                                        .append(formattedName(actorId))
                                         .append(Component.text(" - "))
-                                        .append(Component.text("Use /friend accept " + display, NamedTextColor.YELLOW))
+                                        .append(Component.text("Use /friend accept ", NamedTextColor.YELLOW))
+                                        .append(formattedName(actorId))
                                         .build();
                                 lines.add(line);
                             }
@@ -244,7 +258,7 @@ public final class FriendCommand implements SimpleCommand {
                 return;
             }
             if (player.getUniqueId().equals(targetId)) {
-                schedule(() -> sendFramed(player, error("You cannot add yourself.")));
+                schedule(() -> sendFramed(player, error("You can't add yourself as a friend!")));
                 return;
             }
             Map<String, Object> metadata = Map.of("actorName", player.getUsername());
@@ -262,15 +276,21 @@ public final class FriendCommand implements SimpleCommand {
                                 FriendOperationResult result = entry.getValue();
                                 if (!result.success()) {
                                     debug(player, "friend invite rejected target={} error={}", entry.getKey(), result.errorMessage().orElse("unknown"));
-                                    sendFramed(player, error(result.errorMessage().orElse("Unable to send request.")));
+                                    String fallback = "You've already sent a friend request to this person!";
+                                    sendFramed(player, error(result.errorMessage().orElse(fallback)));
                                     return;
                                 }
                                 debug(player, "friend invite completed target={} actorSnapshotVersion={} targetSnapshotVersion={}",
                                         entry.getKey(),
                                         result.actorSnapshot() != null ? result.actorSnapshot().version() : 0L,
                                         result.targetSnapshot() != null ? result.targetSnapshot().version() : 0L);
-                                String name = cachedName(entry.getKey());
-                                sendFramed(player, FriendTextFormatter.green("Friend request sent to " + name + "."));
+                                Component info = Component.text()
+                                        .append(FriendTextFormatter.yellow("You sent a friend request to "))
+                                        .append(formattedName(entry.getKey()))
+                                        .append(FriendTextFormatter.yellow("! They have 5 minutes to accept it!"))
+                                        .build();
+                                sendFramed(player, info);
+                                scheduleInviteExpiryReminder(player.getUniqueId(), entry.getKey());
                             }));
         });
     }
@@ -291,14 +311,23 @@ public final class FriendCommand implements SimpleCommand {
                     FriendOperationResult result = entry.getValue();
                     if (!result.success()) {
                         debug(player, "accept rejected target={} error={}", entry.getKey(), result.errorMessage().orElse("unknown"));
-                        sendFramed(player, error(result.errorMessage().orElse("Unable to accept request.")));
+                        Component guidance = Component.text()
+                                .append(Component.text("This person hasn't invited you to be friends! Try ", NamedTextColor.RED))
+                                .append(Component.text("/friend add " + targetArg, NamedTextColor.YELLOW))
+                                .build();
+                        sendFramed(player, guidance);
                         return;
                     }
                     debug(player, "accept completed target={} relationVersionActor={} relationVersionTarget={}",
                             entry.getKey(),
                             result.actorSnapshot() != null ? result.actorSnapshot().version() : 0L,
                             result.targetSnapshot() != null ? result.targetSnapshot().version() : 0L);
-                    sendFramed(player, FriendTextFormatter.green("You are now friends with " + cachedName(entry.getKey()) + "."));
+                    Component success = Component.text()
+                            .append(FriendTextFormatter.green("You are now friends with "))
+                            .append(formattedName(entry.getKey()))
+                            .append(FriendTextFormatter.green("."))
+                            .build();
+                    sendFramed(player, success);
                 }));
     }
 
@@ -324,8 +353,18 @@ public final class FriendCommand implements SimpleCommand {
                         return;
                     }
                     debug(player, "deny completed target={}", entry.getKey());
-                    sendFramed(player, FriendTextFormatter.gray("Declined request from " + cachedName(entry.getKey()) + "."));
+                    Component success = Component.text()
+                            .append(FriendTextFormatter.yellow("Declined request from "))
+                            .append(formattedName(entry.getKey()))
+                            .append(FriendTextFormatter.yellow("."))
+                            .build();
+                    sendFramed(player, success);
                 }));
+    }
+
+    private void handleIgnore(Player player, String targetArg) {
+        debug(player, "handling ignore targetArg={}", targetArg);
+        sendFramed(player, FriendTextFormatter.yellow("Ignored request from " + targetArg + "."));
     }
 
     private void handleRemove(Player player, String targetArg) {
@@ -348,7 +387,12 @@ public final class FriendCommand implements SimpleCommand {
                         return;
                     }
                     debug(player, "remove completed target={}", entry.getKey());
-                    sendFramed(player, FriendTextFormatter.gray("Removed " + cachedName(entry.getKey()) + " from your friends."));
+                    Component info = Component.text()
+                            .append(FriendTextFormatter.yellow("Removed "))
+                            .append(formattedName(entry.getKey()))
+                            .append(FriendTextFormatter.yellow(" from your friends list!"))
+                            .build();
+                    sendFramed(player, info);
                 }));
     }
 
@@ -357,7 +401,7 @@ public final class FriendCommand implements SimpleCommand {
         withSnapshot(player, true, snapshot -> {
             if (snapshot.friends().isEmpty()) {
                 debug(player, "remove all skipped - no friends");
-                sendFramed(player, FriendTextFormatter.gray("You do not have any friends to remove."));
+                sendFramed(player, FriendTextFormatter.yellow("You do not have any friends to remove."));
                 return;
             }
             debug(player, "removing {} friends", snapshot.friends().size());
@@ -376,7 +420,7 @@ public final class FriendCommand implements SimpleCommand {
                                     return;
                                 }
                                 debug(player, "remove all succeeded removedCount={}", snapshot.friends().size());
-                                sendFramed(player, FriendTextFormatter.gray("Removed " + snapshot.friends().size() + " friends."));
+                                sendFramed(player, FriendTextFormatter.yellow("Removed " + snapshot.friends().size() + " friends."));
                             }));
         });
     }
@@ -405,7 +449,7 @@ public final class FriendCommand implements SimpleCommand {
                             }
                             String state = enabled ? "enabled" : "disabled";
                             debug(player, "notification toggle complete state={}", state);
-                            sendFramed(player, FriendTextFormatter.gray("Friend notifications " + state + "."));
+                            sendFramed(player, FriendTextFormatter.yellow("Friend notifications " + state + "."));
                         }));
     }
 
@@ -482,18 +526,89 @@ public final class FriendCommand implements SimpleCommand {
         return nameCache.getOrDefault(uuid, shortUuid(uuid));
     }
 
+    private Component formattedName(UUID uuid) {
+        return FriendTextFormatter.formatName(uuid, cachedName(uuid), rankService, logger);
+    }
+
+    private Component renderListHeader(int page, int totalPages) {
+        boolean hasPrev = page > 1;
+        boolean hasNext = page < totalPages;
+        Component leftArrow = Component.text("«", hasPrev ? NamedTextColor.YELLOW : NamedTextColor.DARK_GRAY)
+                .decorate(TextDecoration.BOLD);
+        Component rightArrow = Component.text("»", hasNext ? NamedTextColor.YELLOW : NamedTextColor.DARK_GRAY)
+                .decorate(TextDecoration.BOLD);
+        Component spacer = Component.text(" ", NamedTextColor.YELLOW);
+        String label = "Friends (Page " + page + " of " + totalPages + ")";
+        Component middle = Component.text(label, NamedTextColor.GOLD);
+        Component row = Component.text()
+                .append(leftArrow)
+                .append(spacer)
+                .append(middle)
+                .append(spacer)
+                .append(rightArrow)
+                .build();
+        int contentLength = label.length() + 4;
+        int padding = Math.max(0, (FRAME_WIDTH - contentLength) / 2);
+        Component pad = Component.text(" ".repeat(padding));
+        return Component.text()
+                .append(pad)
+                .append(row)
+                .append(pad)
+                .build();
+    }
+
+    private Component renderFriendPresence(UUID friendId) {
+        Component name = formattedName(friendId);
+        Optional<Player> online = proxy.getPlayer(friendId);
+        if (online.isEmpty()) {
+            return Component.text()
+                    .append(name)
+                    .append(FriendTextFormatter.yellow(" is currently offline"))
+                    .build();
+        }
+        Player player = online.get();
+        String familyLabel = resolveFamilyLabel(friendId, player);
+        if (familyLabel == null || familyLabel.isBlank()) {
+            familyLabel = "unknown";
+        }
+        return Component.text()
+                .append(name)
+                .append(FriendTextFormatter.yellow(" is in "))
+                .append(Component.text(familyLabel, NamedTextColor.GOLD))
+                .build();
+    }
+
+    private String resolveFamilyLabel(UUID friendId, Player player) {
+        Optional<PlayerRoutingFeature.PlayerLocationSnapshot> snapshot = routingFeature.getPlayerLocation(friendId);
+        if (snapshot.isPresent()) {
+            PlayerRoutingFeature.PlayerLocationSnapshot data = snapshot.get();
+            String familyId = data.getFamilyId();
+            if (familyId != null && !familyId.isBlank()) {
+                return familyId;
+            }
+            String serverId = data.getServerId();
+            String slotSuffix = data.getSlotSuffix();
+            if (serverId != null && !serverId.isBlank()) {
+                return slotSuffix != null && !slotSuffix.isBlank()
+                        ? serverId + slotSuffix
+                        : serverId;
+            }
+        }
+        return player.getCurrentServer()
+                .map(current -> current.getServerInfo().getName())
+                .orElse("unknown");
+    }
+
     private Component error(String message) {
         return Component.text(message, NamedTextColor.RED);
     }
 
     private void sendFramed(Player player, Component line) {
-        sendFramed(player, List.of(line));
+        FriendMessageRenderer.sendFramed(player, line);
     }
 
     private void sendFramed(Player player, Collection<Component> lines) {
-        player.sendMessage(FRAME_LINE);
-        lines.forEach(player::sendMessage);
-        player.sendMessage(FRAME_LINE);
+        FriendMessageRenderer.sendFramed(player, lines);
     }
 
     private void debug(Player player, String message, Object... args) {
@@ -517,5 +632,57 @@ public final class FriendCommand implements SimpleCommand {
 
     private void schedule(Runnable runnable) {
         proxy.getScheduler().buildTask(plugin, runnable).schedule();
+    }
+
+    private void scheduleInviteExpiryReminder(UUID actorId, UUID targetId) {
+        if (actorId == null || targetId == null) {
+            return;
+        }
+        cancelInviteExpiryReminder(actorId, targetId);
+        ScheduledTask task = proxy.getScheduler()
+                .buildTask(plugin, () ->
+                        friendService.getSnapshot(actorId, true)
+                                .whenComplete((snapshot, throwable) -> {
+                                    removeInviteExpiryTask(actorId, targetId);
+                                    if (throwable != null || snapshot == null) {
+                                        return;
+                                    }
+                                    if (snapshot.friends().contains(targetId)) {
+                                        return;
+                                    }
+                                    proxy.getPlayer(actorId).ifPresent(player ->
+                                            schedule(() -> {
+                                                Component message = Component.text()
+                                                        .append(FriendTextFormatter.yellow("Your friend request to "))
+                                                        .append(formattedName(targetId))
+                                                        .append(FriendTextFormatter.yellow(" has expired."))
+                                                        .build();
+                                                sendFramed(player, message);
+                                            }));
+                                }))
+                .delay(INVITE_TIMEOUT)
+                .schedule();
+        inviteExpiryTasks.compute(actorId, (key, map) -> {
+            Map<UUID, ScheduledTask> tasks = map != null ? map : new ConcurrentHashMap<>();
+            tasks.put(targetId, task);
+            return tasks;
+        });
+    }
+
+    private void cancelInviteExpiryReminder(UUID actorId, UUID targetId) {
+        inviteExpiryTasks.computeIfPresent(actorId, (key, map) -> {
+            ScheduledTask task = map.remove(targetId);
+            if (task != null) {
+                task.cancel();
+            }
+            return map.isEmpty() ? null : map;
+        });
+    }
+
+    private void removeInviteExpiryTask(UUID actorId, UUID targetId) {
+        inviteExpiryTasks.computeIfPresent(actorId, (key, map) -> {
+            map.remove(targetId);
+            return map.isEmpty() ? null : map;
+        });
     }
 }
