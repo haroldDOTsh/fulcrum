@@ -11,6 +11,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.data.DocumentPatch;
+import sh.harold.fulcrum.api.friends.FriendService;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
@@ -21,6 +22,7 @@ import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.util.*;
@@ -46,6 +48,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private PlayerSettingsService playerSettingsService;
     private PlayerCache playerCache;
     private ExecutorService playerCacheExecutor;
+    private FriendService friendService;
     private PrivacyApi privacyApi;
 
     private static Map<String, Object> buildDefaultSettings() {
@@ -95,6 +98,24 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             locator.registerService(PlayerSettingsService.class, playerSettingsService);
         }
 
+        LettuceRedisOperations redisOperations = container.getOptional(LettuceRedisOperations.class)
+                .orElseGet(() -> {
+                    ServiceLocatorImpl existingLocator = ServiceLocatorImpl.getInstance();
+                    return existingLocator != null
+                            ? existingLocator.findService(LettuceRedisOperations.class).orElse(null)
+                            : null;
+                });
+        if (redisOperations != null) {
+            friendService = new RuntimeFriendSnapshotService(redisOperations, playerCacheExecutor, logger);
+            container.register(FriendService.class, friendService);
+            if (locator != null) {
+                locator.registerService(FriendService.class, friendService);
+            }
+        } else {
+            friendService = null;
+            logger.warning("Redis unavailable; runtime privacy checks cannot read ignore state.");
+        }
+
         PrivacyDomainRegistry registry = new PrivacyDomainRegistry();
         registry.register(
                 PrivacyDomain.DIRECT_MESSAGES,
@@ -102,7 +123,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         RankService rankService = container.getOptional(RankService.class).orElse(null);
         PrivacyGate privacyGate = new DefaultPrivacyGate(
                 playerSettingsService,
-                null,
+                friendService,
                 rankService,
                 new RuntimePrivacySignals(),
                 registry);
@@ -223,15 +244,18 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         if (locator != null) {
             locator.unregisterService(PlayerCache.class);
             locator.unregisterService(PlayerSettingsService.class);
+            locator.unregisterService(FriendService.class);
             locator.unregisterService(PrivacyApi.class);
         }
         if (container != null) {
             container.unregister(PlayerCache.class);
             container.unregister(PlayerSettingsService.class);
+            container.unregister(FriendService.class);
             container.unregister(PrivacyApi.class);
         }
         playerSettingsService = null;
         playerCache = null;
+        friendService = null;
         privacyApi = null;
         if (playerCacheExecutor != null) {
             playerCacheExecutor.shutdown();

@@ -825,7 +825,7 @@ public class RegistryService {
             LOGGER.info("Skipping friend expiry sweep because dependencies are missing");
             return;
         }
-        LOGGER.info("Running friend block expiry sweep");
+        LOGGER.debug("Running friend block expiry sweep");
         try {
             List<sh.harold.fulcrum.api.messagebus.messages.social.FriendBlockEventMessage> events = friendGraphService.purgeExpiredBlocks();
             for (sh.harold.fulcrum.api.messagebus.messages.social.FriendBlockEventMessage event : events) {
@@ -833,7 +833,11 @@ public class RegistryService {
                         event.getOwnerId(), event.getTargetId(), event.isActive());
                 messageBus.broadcast(ChannelConstants.SOCIAL_FRIEND_BLOCKS, event);
             }
-            LOGGER.info("Friend expiry sweep finished eventsSent={}", events.size());
+            if (events.isEmpty()) {
+                LOGGER.debug("Friend expiry sweep finished eventsSent=0");
+            } else {
+                LOGGER.info("Friend expiry sweep finished eventsSent={}", events.size());
+            }
         } catch (Exception ex) {
             LOGGER.warn("Failed to sweep expired friend blocks", ex);
         }

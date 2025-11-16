@@ -148,6 +148,34 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         assertThat(unblockedTarget.ignoresIn()).isEmpty();
     }
 
+    @Test
+    void ignoreBypassAllowsStaffInvites() {
+        UUID staffActor = UUID.randomUUID();
+        UUID player = UUID.randomUUID();
+
+        FriendMutationRequest block = FriendMutationRequest.builder(FriendMutationType.BLOCK)
+                .actor(player)
+                .target(staffActor)
+                .reason("test-block")
+                .build();
+        assertThat(service.apply(block).result().success()).isTrue();
+
+        FriendMutationRequest deniedInvite = FriendMutationRequest.builder(FriendMutationType.INVITE_SEND)
+                .actor(staffActor)
+                .target(player)
+                .build();
+        FriendOperationResult deniedResult = service.apply(deniedInvite).result();
+        assertThat(deniedResult.success()).isFalse();
+
+        FriendMutationRequest bypassInvite = FriendMutationRequest.builder(FriendMutationType.INVITE_SEND)
+                .actor(staffActor)
+                .target(player)
+                .putMetadata(FriendMutationRequest.METADATA_IGNORE_BYPASS, true)
+                .build();
+        FriendOperationResult bypassResult = service.apply(bypassInvite).result();
+        assertThat(bypassResult.success()).isTrue();
+    }
+
     private void establishFriendship(UUID first, UUID second) {
         FriendMutationRequest send = FriendMutationRequest.builder(FriendMutationType.INVITE_SEND)
                 .actor(first)

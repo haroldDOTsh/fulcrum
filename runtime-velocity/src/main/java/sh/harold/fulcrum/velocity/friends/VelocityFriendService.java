@@ -477,29 +477,45 @@ public final class VelocityFriendService implements FriendService {
 
     @Override
     public CompletionStage<FriendOperationResult> sendInvite(UUID actor, UUID target, Map<String, Object> metadata) {
-        PrivacyGate gate = this.privacyGate;
-        if (gate == null) {
-            return FriendService.super.sendInvite(actor, target, metadata);
-        }
-        return gate.canSendFriendRequest(actor, target)
-                .thenCompose(result -> {
-                    if (!result.allowed()) {
-                        return getPendingInvites(actor).thenCompose(invites -> {
-                            boolean pendingFromTarget = invites.stream()
-                                    .anyMatch(invite -> target.equals(invite.actorId()));
-                            if (pendingFromTarget) {
-                                logger.debug("Privacy blocked invite {} -> {} but pending request exists; auto-accepting.", actor, target);
-                                return FriendService.super.acceptInvite(actor, target);
-                            }
-                            result.denialReason()
-                                    .ifPresent(reason -> logger.debug("Friend invite blocked due to privacy: {} -> {} ({})", actor, target, reason));
-                            return CompletableFuture.completedFuture(FriendOperationResult.failure(
-                                    FriendMutationType.INVITE_SEND,
-                                    "That player is not accepting friend requests right now."));
-                        });
-                    }
-                    return FriendService.super.sendInvite(actor, target, metadata);
-                });
+        return enrichMetadata(actor, metadata).thenCompose(enriched -> {
+            PrivacyGate gate = this.privacyGate;
+            if (gate == null) {
+                return FriendService.super.sendInvite(actor, target, enriched);
+            }
+            return gate.canSendFriendRequest(actor, target)
+                    .thenCompose(result -> {
+                        if (!result.allowed()) {
+                            return getPendingInvites(actor).thenCompose(invites -> {
+                                boolean pendingFromTarget = invites.stream()
+                                        .anyMatch(invite -> target.equals(invite.actorId()));
+                                if (pendingFromTarget) {
+                                    logger.debug("Privacy blocked invite {} -> {} but pending request exists; auto-accepting.", actor, target);
+                                    return FriendService.super.acceptInvite(actor, target);
+                                }
+                                result.denialReason()
+                                        .ifPresent(reason -> logger.debug("Friend invite blocked due to privacy: {} -> {} ({})", actor, target, reason));
+                                return CompletableFuture.completedFuture(FriendOperationResult.failure(
+                                        FriendMutationType.INVITE_SEND,
+                                        "That player is not accepting friend requests right now."));
+                            });
+                        }
+                        return FriendService.super.sendInvite(actor, target, enriched);
+                    });
+        });
     }
 
+    private CompletionStage<Map<String, Object>> enrichMetadata(UUID actor, Map<String, Object> metadata) {
+        CompletableFuture<Boolean> staffFuture = rankService.isStaff(actor);
+        return staffFuture.handle((isStaff, throwable) -> {
+            Map<String, Object> enriched = metadata == null ? new HashMap<>() : new HashMap<>(metadata);
+            if (throwable != null) {
+                logger.debug("Failed to resolve staff flag for {} when preparing metadata", actor, throwable);
+                return enriched;
+            }
+            if (Boolean.TRUE.equals(isStaff)) {
+                enriched.put(FriendMutationRequest.METADATA_IGNORE_BYPASS, true);
+            }
+            return enriched;
+        });
+    }
 }

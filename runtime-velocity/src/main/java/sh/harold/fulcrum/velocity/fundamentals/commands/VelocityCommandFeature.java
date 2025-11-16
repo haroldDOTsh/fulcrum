@@ -10,6 +10,7 @@ import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.friends.FriendCommand;
+import sh.harold.fulcrum.velocity.friends.IgnoreCommand;
 import sh.harold.fulcrum.velocity.fundamentals.family.SlotFamilyCache;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
@@ -80,6 +81,7 @@ public class VelocityCommandFeature implements VelocityFeature {
         registerAppealCommand();
         registerPardonCommand();
         registerFriendCommand();
+        registerIgnoreCommand();
 
         logger.info("VelocityCommandFeature initialized");
     }
@@ -202,6 +204,24 @@ public class VelocityCommandFeature implements VelocityFeature {
                 identityFeature,
                 rankService,
                 playerRoutingFeature,
+                logger
+        );
+
+        commandManager.register(meta, command);
+    }
+
+    private void registerIgnoreCommand() {
+        CommandMeta meta = commandManager.metaBuilder("ignore")
+                .aliases("ignores")
+                .plugin(plugin)
+                .build();
+
+        IgnoreCommand command = new IgnoreCommand(
+                friendService,
+                rankService,
+                proxy,
+                plugin,
+                identityFeature,
                 logger
         );
 

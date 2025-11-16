@@ -17,12 +17,24 @@ public record FriendMutationRequest(
         String reason,
         Map<String, Object> metadata
 ) {
+    public static final String METADATA_IGNORE_BYPASS = "fulcrum.ignore.bypass";
 
     public FriendMutationRequest {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(actorId, "actorId");
         Objects.requireNonNull(targetId, "targetId");
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+    }
+
+    public boolean bypassesIgnoreChecks() {
+        Object flag = metadata.get(METADATA_IGNORE_BYPASS);
+        if (flag instanceof Boolean booleanFlag) {
+            return booleanFlag;
+        }
+        if (flag instanceof String text) {
+            return Boolean.parseBoolean(text);
+        }
+        return false;
     }
 
     public static Builder builder(FriendMutationType type) {

@@ -104,7 +104,8 @@ public final class FriendGraphService {
         if (actorSnapshot.friends().contains(target)) {
             return failure(request, "Already friends");
         }
-        if (isIgnored(actorSnapshot, target) || isIgnored(targetSnapshot, actor)) {
+        boolean ignoreBypass = request.bypassesIgnoreChecks();
+        if (!ignoreBypass && (isIgnored(actorSnapshot, target) || isIgnored(targetSnapshot, actor))) {
             return failure(request, "Cannot send request while ignored");
         }
         if (inviteStore.hasInvite(actor, target)) {
