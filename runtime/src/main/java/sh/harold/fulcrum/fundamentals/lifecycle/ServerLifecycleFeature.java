@@ -8,6 +8,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
@@ -49,6 +50,8 @@ public class ServerLifecycleFeature implements PluginFeature {
     private static final long INITIAL_REGISTRATION_RETRY_DELAY_MS = 5_000L;
     private static final long MAX_REGISTRATION_RETRY_DELAY_MS = 60_000L;
     private static final int TEMP_HEARTBEAT_THRESHOLD = 5;
+    private static final long EVACUATION_TIMEOUT_TICKS = 20L * 5; // 5 seconds
+    private static final String EVACUATION_TIMEOUT_MESSAGE = "§c§lServer is shutting down!\n§7Failed to transfer you to another server.\n§7Please reconnect in a moment.";
     private static final Duration PROXY_TIMEOUT = Duration.ofSeconds(10);
     private final AtomicInteger registrationAttempts = new AtomicInteger(0);
     private final Map<String, ServerInfo> availableServers = new ConcurrentHashMap<>();
@@ -78,6 +81,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     private SlotFamilyFilter slotFamilyFilter = SlotFamilyFilter.allowAll();
     private volatile List<SlotFamilyDescriptor> activeSlotFamilies = Collections.emptyList();
     private String fulcrumVersion = "unknown";
+    private final Map<UUID, BukkitTask> evacuationFallbacks = new ConcurrentHashMap<>();
 
     @Override
     public int getPriority() {
@@ -633,6 +637,9 @@ public class ServerLifecycleFeature implements PluginFeature {
             heartbeatTask.cancel();
         }
 
+        evacuationFallbacks.values().forEach(BukkitTask::cancel);
+        evacuationFallbacks.clear();
+
         if (registrationTimeoutTask != null && !registrationTimeoutTask.isDone()) {
             registrationTimeoutTask.cancel(false);
         }
@@ -987,12 +994,14 @@ public class ServerLifecycleFeature implements PluginFeature {
 
                     // Transfer player using BungeeCord messaging
                     transferPlayer(player, targetServer);
+                    scheduleEvacuationFallback(player.getUniqueId(), player.getName());
 
                     evacuatedCount++;
                     LOGGER.info("Evacuated player " + player.getName() + " to " + targetServer);
                 } else {
                     // No available servers, disconnect player with message
                     player.kickPlayer("§c§lServer is shutting down!\n§7No available servers to transfer you to.\n§7Please reconnect in a moment.");
+                    cancelEvacuationFallback(player.getUniqueId());
                     failedCount++;
                     LOGGER.warning("Failed to evacuate player " + player.getName() + " - no available servers");
                 }
@@ -1000,6 +1009,7 @@ public class ServerLifecycleFeature implements PluginFeature {
                 failedCount++;
                 LOGGER.severe("Error evacuating player " + player.getName() + ": " + e.getMessage());
                 player.kickPlayer("§c§lServer is shutting down!\n§7Failed to transfer you to another server.\n§7Please reconnect in a moment.");
+                cancelEvacuationFallback(player.getUniqueId());
             }
         }
 
@@ -1057,6 +1067,31 @@ public class ServerLifecycleFeature implements PluginFeature {
             }
         }
         return null;
+    }
+
+    private void scheduleEvacuationFallback(UUID playerId, String playerName) {
+        BukkitTask existing = evacuationFallbacks.remove(playerId);
+        if (existing != null) {
+            existing.cancel();
+        }
+
+        BukkitTask timeoutTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            evacuationFallbacks.remove(playerId);
+            Player stillOnline = Bukkit.getPlayer(playerId);
+            if (stillOnline == null || !stillOnline.isOnline()) {
+                return;
+            }
+            LOGGER.warning("Evacuation timed out for " + playerName + "; kicking player locally");
+            stillOnline.kickPlayer(EVACUATION_TIMEOUT_MESSAGE);
+        }, EVACUATION_TIMEOUT_TICKS);
+        evacuationFallbacks.put(playerId, timeoutTask);
+    }
+
+    private void cancelEvacuationFallback(UUID playerId) {
+        BukkitTask task = evacuationFallbacks.remove(playerId);
+        if (task != null) {
+            task.cancel();
+        }
     }
 
     private void transferPlayer(Player player, String targetServer) {
