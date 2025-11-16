@@ -320,7 +320,7 @@ public class RegistryService {
 
             sessionSweeper = createSessionSweeper();
             if (sessionSweeper != null) {
-                registrationHandler.addServerTimeoutListener(serverId -> {
+                registrationHandler.addServerRemovalListener(serverId -> {
                     try {
                         sessionSweeper.sweepAsync(serverId);
                     } catch (Exception e) {

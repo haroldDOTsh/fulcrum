@@ -36,7 +36,7 @@ public class RegistrationHandler {
     private final Map<String, PendingRequest> pendingRequests;
     // State management for ongoing proxy registrations
     private final Map<String, CompletableFuture<String>> ongoingProxyRegistrations = new ConcurrentHashMap<>();
-    private final CopyOnWriteArrayList<Consumer<String>> serverTimeoutListeners = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Consumer<String>> serverRemovalListeners = new CopyOnWriteArrayList<>();
     private boolean debugMode;
     private MessageBus messageBus;
 
@@ -830,6 +830,8 @@ public class RegistrationHandler {
 
         } catch (Exception e) {
             LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
+        } finally {
+            notifyServerRemovalListeners(serverId);
         }
     }
 
@@ -857,6 +859,8 @@ public class RegistrationHandler {
 
         } catch (Exception e) {
             LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
+        } finally {
+            notifyServerRemovalListeners(serverId);
         }
     }
 
@@ -947,22 +951,15 @@ public class RegistrationHandler {
 
             // Essential log - always show server timeouts
             LOGGER.warn("Server {} timed out and was removed from registry (blacklisted for 60 seconds)", serverId);
-
-            for (Consumer<String> listener : serverTimeoutListeners) {
-                try {
-                    listener.accept(serverId);
-                } catch (Exception listenerError) {
-                    LOGGER.error("Server timeout listener threw exception", listenerError);
-                }
-            }
-
         } catch (Exception e) {
             LOGGER.error("Failed to broadcast server removal for {}", serverId, e);
+        } finally {
+            notifyServerRemovalListeners(serverId);
         }
     }
 
-    public void addServerTimeoutListener(Consumer<String> listener) {
-        serverTimeoutListeners.add(listener);
+    public void addServerRemovalListener(Consumer<String> listener) {
+        serverRemovalListeners.add(listener);
     }
 
     /**
@@ -1044,6 +1041,19 @@ public class RegistrationHandler {
             }
         } catch (Exception e) {
             LOGGER.error("Error handling proxy removal", e);
+        }
+    }
+
+    private void notifyServerRemovalListeners(String serverId) {
+        if (serverId == null) {
+            return;
+        }
+        for (Consumer<String> listener : serverRemovalListeners) {
+            try {
+                listener.accept(serverId);
+            } catch (Exception listenerError) {
+                LOGGER.error("Server removal listener threw exception", listenerError);
+            }
         }
     }
 
