@@ -16,6 +16,8 @@ import sh.harold.fulcrum.api.chat.channel.ChatChannelService;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.social.DirectMessageEnvelope;
+import sh.harold.fulcrum.common.privacy.PrivacyGate;
+import sh.harold.fulcrum.common.privacy.PrivacyResult;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
 import java.time.Clock;
@@ -24,6 +26,7 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.AbstractExecutorService;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -46,6 +49,7 @@ final class DirectMessageServiceImplTest {
     private DirectMessageServiceImpl service;
     private Clock clock;
     private Map<String, String> redisStore;
+    private PrivacyGate privacyGate;
 
     @BeforeEach
     void setUp() {
@@ -102,11 +106,13 @@ final class DirectMessageServiceImplTest {
 
         redisStore.put("fulcrum:player:" + targetId + ":state", "{}");
 
+        privacyGate = new AllowAllPrivacyGate();
+
         when(chatEmojiService.apply(any(Player.class), any(Component.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1));
 
         service = new DirectMessageServiceImpl(plugin, messageBus, redis, chatChannelService,
-                chatFormatService, chatEmojiService, null, executor, clock);
+                chatFormatService, chatEmojiService, null, privacyGate, executor, clock);
         service.handlePlayerJoin(target);
     }
 
@@ -146,6 +152,39 @@ final class DirectMessageServiceImplTest {
         org.junit.jupiter.api.Assertions.assertEquals(DirectMessageResult.CHANNEL_CLOSED, result);
     }
 
+    @Test
+    void privacyBlockPreventsMessage() {
+        PrivacyGate blockingGate = new PrivacyGate() {
+            @Override
+            public java.util.concurrent.CompletionStage<PrivacyResult> canSendPartyInvite(UUID actorId, UUID targetId) {
+                return CompletableFuture.completedFuture(PrivacyResult.allow());
+            }
+
+            @Override
+            public java.util.concurrent.CompletionStage<PrivacyResult> canSendFriendRequest(UUID actorId, UUID targetId) {
+                return CompletableFuture.completedFuture(PrivacyResult.allow());
+            }
+
+            @Override
+            public java.util.concurrent.CompletionStage<PrivacyResult> canSendDirectMessage(UUID actorId, UUID targetId) {
+                return CompletableFuture.completedFuture(PrivacyResult.deny("blocked"));
+            }
+
+            @Override
+            public java.util.concurrent.CompletionStage<PrivacyResult> evaluate(UUID actorId, UUID targetId, sh.harold.fulcrum.common.privacy.PrivacyDomain domain) {
+                return CompletableFuture.completedFuture(PrivacyResult.allow());
+            }
+        };
+        service = new DirectMessageServiceImpl(plugin, messageBus, redis, chatChannelService,
+                chatFormatService, chatEmojiService, null, blockingGate, executor, clock);
+        service.handlePlayerJoin(target);
+
+        DirectMessageResult result = service.sendMessage(sender, "Target", "hello").toCompletableFuture().join();
+
+        org.junit.jupiter.api.Assertions.assertEquals(DirectMessageResult.PRIVACY_BLOCKED, result);
+        verify(messageBus, never()).broadcast(eq(ChannelConstants.SOCIAL_DIRECT_MESSAGE), any());
+    }
+
     private static final class SameThreadExecutor extends AbstractExecutorService {
         private volatile boolean shutdown;
 
@@ -178,6 +217,28 @@ final class DirectMessageServiceImplTest {
         @Override
         public void execute(Runnable command) {
             command.run();
+        }
+    }
+
+    private static final class AllowAllPrivacyGate implements PrivacyGate {
+        @Override
+        public java.util.concurrent.CompletionStage<PrivacyResult> canSendPartyInvite(UUID actorId, UUID targetId) {
+            return CompletableFuture.completedFuture(PrivacyResult.allow());
+        }
+
+        @Override
+        public java.util.concurrent.CompletionStage<PrivacyResult> canSendFriendRequest(UUID actorId, UUID targetId) {
+            return CompletableFuture.completedFuture(PrivacyResult.allow());
+        }
+
+        @Override
+        public java.util.concurrent.CompletionStage<PrivacyResult> canSendDirectMessage(UUID actorId, UUID targetId) {
+            return CompletableFuture.completedFuture(PrivacyResult.allow());
+        }
+
+        @Override
+        public java.util.concurrent.CompletionStage<PrivacyResult> evaluate(UUID actorId, UUID targetId, sh.harold.fulcrum.common.privacy.PrivacyDomain domain) {
+            return CompletableFuture.completedFuture(PrivacyResult.allow());
         }
     }
 }

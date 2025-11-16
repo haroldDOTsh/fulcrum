@@ -16,6 +16,8 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.social.DirectMessageEnvelope;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.common.privacy.PrivacyGate;
+import sh.harold.fulcrum.common.privacy.PrivacyResult;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
 import java.time.Clock;
@@ -54,6 +56,7 @@ final class DirectMessageServiceImpl implements DirectMessageService {
     private final ChatFormatService chatFormatService;
     private final ChatEmojiService chatEmojiService;
     private final RankService rankService;
+    private final PrivacyGate privacyGate;
     private final ExecutorService executor;
     private final Clock clock;
     private final Map<UUID, DirectMessageState> states = new ConcurrentHashMap<>();
@@ -69,6 +72,7 @@ final class DirectMessageServiceImpl implements DirectMessageService {
                              ChatFormatService chatFormatService,
                              ChatEmojiService chatEmojiService,
                              RankService rankService,
+                             PrivacyGate privacyGate,
                              ExecutorService executor,
                              Clock clock) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -78,6 +82,7 @@ final class DirectMessageServiceImpl implements DirectMessageService {
         this.chatFormatService = chatFormatService;
         this.chatEmojiService = chatEmojiService;
         this.rankService = resolveRankService(rankService);
+        this.privacyGate = privacyGate;
         this.executor = Objects.requireNonNull(executor, "executor");
         this.clock = Objects.requireNonNullElseGet(clock, Clock::systemUTC);
     }
@@ -89,7 +94,7 @@ final class DirectMessageServiceImpl implements DirectMessageService {
                              ChatFormatService chatFormatService,
                              ChatEmojiService chatEmojiService,
                              ExecutorService executor) {
-        this(plugin, messageBus, redis, chatChannelService, chatFormatService, chatEmojiService, null, executor, Clock.systemUTC());
+        this(plugin, messageBus, redis, chatChannelService, chatFormatService, chatEmojiService, null, null, executor, Clock.systemUTC());
     }
 
     DirectMessageServiceImpl(JavaPlugin plugin,
@@ -100,7 +105,19 @@ final class DirectMessageServiceImpl implements DirectMessageService {
                              ChatEmojiService chatEmojiService,
                              RankService rankService,
                              ExecutorService executor) {
-        this(plugin, messageBus, redis, chatChannelService, chatFormatService, chatEmojiService, rankService, executor, Clock.systemUTC());
+        this(plugin, messageBus, redis, chatChannelService, chatFormatService, chatEmojiService, rankService, null, executor, Clock.systemUTC());
+    }
+
+    DirectMessageServiceImpl(JavaPlugin plugin,
+                             MessageBus messageBus,
+                             LettuceRedisOperations redis,
+                             ChatChannelService chatChannelService,
+                             ChatFormatService chatFormatService,
+                             ChatEmojiService chatEmojiService,
+                             RankService rankService,
+                             PrivacyGate privacyGate,
+                             ExecutorService executor) {
+        this(plugin, messageBus, redis, chatChannelService, chatFormatService, chatEmojiService, rankService, privacyGate, executor, Clock.systemUTC());
     }
 
     private static String firstNonBlank(String... values) {
@@ -310,7 +327,23 @@ final class DirectMessageServiceImpl implements DirectMessageService {
             sendSync(sender, Component.text("Messaging service unavailable right now.", NamedTextColor.RED));
             return CompletableFuture.completedFuture(DirectMessageResult.INTERNAL_ERROR);
         }
-        return ensureOnline(handle.id())
+        CompletionStage<PrivacyResult> privacyStage = privacyGate != null
+                ? privacyGate.canSendDirectMessage(senderId, handle.id())
+                : CompletableFuture.completedFuture(PrivacyResult.allow());
+        return privacyStage.thenCompose(result -> {
+            if (!result.allowed()) {
+                result.denialReason()
+                        .ifPresent(reason -> {
+                            java.util.logging.Logger logger = plugin.getLogger();
+                            if (logger != null) {
+                                logger.fine(() -> "DM blocked due to privacy: " + senderId + " -> " + handle.id() + " (" + reason + ')');
+                            }
+                        });
+                sendSync(sender, Component.text("That player is not accepting private messages right now.", NamedTextColor.RED));
+                closeOpenChannel(senderId, sender, null, false);
+                return CompletableFuture.completedFuture(DirectMessageResult.PRIVACY_BLOCKED);
+            }
+            return ensureOnline(handle.id())
                 .thenCompose(online -> {
                     if (!online) {
                         sendSync(sender, Component.text(handle.name() + " is offline right now.", NamedTextColor.RED));
@@ -331,6 +364,7 @@ final class DirectMessageServiceImpl implements DirectMessageService {
                     sendSync(sender, formatOutgoing(handle, message));
                     return CompletableFuture.completedFuture(DirectMessageResult.DELIVERED);
                 });
+        });
     }
 
     private CompletionStage<Optional<TargetHandle>> resolveTargetHandle(String input) {

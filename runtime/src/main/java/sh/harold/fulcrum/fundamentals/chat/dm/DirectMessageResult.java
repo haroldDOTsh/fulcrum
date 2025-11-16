@@ -13,5 +13,6 @@ public enum DirectMessageResult {
     MESSAGE_REQUIRED,
     RATE_LIMITED,
     REPLY_TARGET_MISSING,
+    PRIVACY_BLOCKED,
     INTERNAL_ERROR
 }

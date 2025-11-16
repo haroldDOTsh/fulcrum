@@ -15,6 +15,8 @@ import sh.harold.fulcrum.api.chat.channel.ChatChannelService;
 import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.messages.social.DirectMessageEnvelope;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.common.privacy.PrivacyApi;
+import sh.harold.fulcrum.common.privacy.PrivacyGate;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -51,9 +53,12 @@ public final class DirectMessageFeature implements PluginFeature, Listener {
         ChatFormatService chatFormatService = container.getOptional(ChatFormatService.class).orElse(null);
         ChatEmojiService chatEmojiService = container.getOptional(ChatEmojiService.class).orElse(null);
         RankService rankService = container.getOptional(RankService.class).orElse(null);
+        PrivacyApi privacyApi = container.getOptional(PrivacyApi.class).orElse(null);
+        PrivacyGate privacyGate = privacyApi != null ? privacyApi.gate() : null;
 
         executor = Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() / 2), new NamedThreadFactory());
-        service = new DirectMessageServiceImpl(plugin, messageBus, redis, chatChannelService, chatFormatService, chatEmojiService, rankService, executor);
+        service = new DirectMessageServiceImpl(plugin, messageBus, redis, chatChannelService,
+                chatFormatService, chatEmojiService, rankService, privacyGate, executor);
 
         container.register(DirectMessageService.class, service);
         Optional.ofNullable(ServiceLocatorImpl.getInstance()).ifPresent(locator -> locator.registerService(DirectMessageService.class, service));
