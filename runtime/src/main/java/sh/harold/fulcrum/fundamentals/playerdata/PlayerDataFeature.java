@@ -12,8 +12,11 @@ import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
+import sh.harold.fulcrum.common.privacy.*;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
+import sh.harold.fulcrum.common.settings.SettingLevel;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -43,6 +46,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private PlayerSettingsService playerSettingsService;
     private PlayerCache playerCache;
     private ExecutorService playerCacheExecutor;
+    private PrivacyApi privacyApi;
 
     private static Map<String, Object> buildDefaultSettings() {
         Map<String, Object> debug = new LinkedHashMap<>();
@@ -89,6 +93,23 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         if (locator != null) {
             locator.registerService(PlayerCache.class, playerCache);
             locator.registerService(PlayerSettingsService.class, playerSettingsService);
+        }
+
+        PrivacyDomainRegistry registry = new PrivacyDomainRegistry();
+        registry.register(
+                PrivacyDomain.DIRECT_MESSAGES,
+                PrivacyDomainPresets.directMessages(java.util.EnumSet.of(SettingLevel.NONE, SettingLevel.MAX)));
+        RankService rankService = container.getOptional(RankService.class).orElse(null);
+        PrivacyGate privacyGate = new DefaultPrivacyGate(
+                playerSettingsService,
+                null,
+                rankService,
+                new RuntimePrivacySignals(),
+                registry);
+        this.privacyApi = new DefaultPrivacyApi(privacyGate, registry);
+        container.register(PrivacyApi.class, privacyApi);
+        if (locator != null) {
+            locator.registerService(PrivacyApi.class, privacyApi);
         }
 
         logger.info("PlayerDataFeature initialized - tracking backend player data");
@@ -202,13 +223,16 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         if (locator != null) {
             locator.unregisterService(PlayerCache.class);
             locator.unregisterService(PlayerSettingsService.class);
+            locator.unregisterService(PrivacyApi.class);
         }
         if (container != null) {
             container.unregister(PlayerCache.class);
             container.unregister(PlayerSettingsService.class);
+            container.unregister(PrivacyApi.class);
         }
         playerSettingsService = null;
         playerCache = null;
+        privacyApi = null;
         if (playerCacheExecutor != null) {
             playerCacheExecutor.shutdown();
             playerCacheExecutor = null;

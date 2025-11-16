@@ -25,6 +25,8 @@ import sh.harold.fulcrum.api.messagebus.messages.party.PartyReservationCreatedMe
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyUpdateMessage;
 import sh.harold.fulcrum.api.party.*;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.common.privacy.PrivacyApi;
+import sh.harold.fulcrum.common.privacy.PrivacyGate;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.RedisConfig;
@@ -55,6 +57,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
     private DataAPI dataAPI;
     private VelocityPlayerSessionService sessionService;
     private RankService rankService;
+    private PrivacyApi privacyApi;
 
     private VelocityRedisOperations redis;
     private PartyServiceImpl partyService;
@@ -94,6 +97,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
         this.dataAPI = serviceLocator.getService(DataAPI.class).orElse(null);
         this.sessionService = serviceLocator.getService(VelocityPlayerSessionService.class).orElse(null);
         this.rankService = serviceLocator.getRequiredService(RankService.class);
+        this.privacyApi = serviceLocator.getRequiredService(PrivacyApi.class);
 
         RedisConfig redisConfig = configLoader.getConfig(RedisConfig.class);
         if (redisConfig == null) {
@@ -104,7 +108,8 @@ public final class VelocityPartyFeature implements VelocityFeature {
         this.redis = new VelocityRedisOperations(redisConfig, logger);
         PartyRepository repository = new RedisPartyRepository(redis, logger);
         PartyLockManager lockManager = new PartyLockManager(redis, Duration.ofSeconds(5));
-        this.partyService = new PartyServiceImpl(repository, lockManager, messageBus, logger);
+        PrivacyGate privacyGate = privacyApi.gate();
+        this.partyService = new PartyServiceImpl(repository, lockManager, messageBus, logger, privacyGate);
 
         serviceLocator.register(PartyService.class, partyService);
 

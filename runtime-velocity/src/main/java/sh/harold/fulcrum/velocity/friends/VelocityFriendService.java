@@ -9,6 +9,7 @@ import sh.harold.fulcrum.api.friends.*;
 import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.messages.social.*;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.common.privacy.PrivacyGate;
 import sh.harold.fulcrum.velocity.fundamentals.identity.PlayerIdentity;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.session.LettuceSessionRedisClient;
@@ -33,6 +34,7 @@ public final class VelocityFriendService implements FriendService {
     private final Logger logger;
     private final RankService rankService;
     private final VelocityIdentityFeature identityFeature;
+    private volatile PrivacyGate privacyGate;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ConcurrentHashMap<UUID, FriendSnapshot> localSnapshots = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, CompletableFuture<FriendOperationResult>> pendingMutations = new ConcurrentHashMap<>();
@@ -141,7 +143,6 @@ public final class VelocityFriendService implements FriendService {
                     }
                 });
     }
-
     @Override
     public CompletionStage<List<FriendService.PendingFriendInvite>> getPendingInvites(UUID playerId) {
         if (playerId == null) {
@@ -396,15 +397,7 @@ public final class VelocityFriendService implements FriendService {
         if (removerId == null || removedId == null) {
             return;
         }
-        Component removedName = formatDisplayName(removedId);
         Component removerName = formatDisplayName(removerId);
-
-        Component removerBody = Component.text()
-                .append(FriendTextFormatter.yellow("You removed "))
-                .append(removedName)
-                .append(FriendTextFormatter.yellow(" from your friends."))
-                .build();
-        sendFramed(removerId, removerBody);
 
         Component removedBody = Component.text()
                 .append(removerName)
@@ -475,6 +468,38 @@ public final class VelocityFriendService implements FriendService {
     }
 
     private void debug(String message, Object... args) {
-        logger.info("[velocity-friends] " + message, args);
+        // intentionally silent
     }
+
+    public void setPrivacyGate(PrivacyGate privacyGate) {
+        this.privacyGate = privacyGate;
+    }
+
+    @Override
+    public CompletionStage<FriendOperationResult> sendInvite(UUID actor, UUID target, Map<String, Object> metadata) {
+        PrivacyGate gate = this.privacyGate;
+        if (gate == null) {
+            return FriendService.super.sendInvite(actor, target, metadata);
+        }
+        return gate.canSendFriendRequest(actor, target)
+                .thenCompose(result -> {
+                    if (!result.allowed()) {
+                        return getPendingInvites(actor).thenCompose(invites -> {
+                            boolean pendingFromTarget = invites.stream()
+                                    .anyMatch(invite -> target.equals(invite.actorId()));
+                            if (pendingFromTarget) {
+                                logger.debug("Privacy blocked invite {} -> {} but pending request exists; auto-accepting.", actor, target);
+                                return FriendService.super.acceptInvite(actor, target);
+                            }
+                            result.denialReason()
+                                    .ifPresent(reason -> logger.debug("Friend invite blocked due to privacy: {} -> {} ({})", actor, target, reason));
+                            return CompletableFuture.completedFuture(FriendOperationResult.failure(
+                                    FriendMutationType.INVITE_SEND,
+                                    "That player is not accepting friend requests right now."));
+                        });
+                    }
+                    return FriendService.super.sendInvite(actor, target, metadata);
+                });
+    }
+
 }

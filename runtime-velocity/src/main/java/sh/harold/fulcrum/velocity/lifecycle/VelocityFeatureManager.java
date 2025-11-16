@@ -82,6 +82,7 @@ public class VelocityFeatureManager {
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.shutdown.ProxyShutdownFeature());
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature());
         registerFeature(new VelocityPlayerDataFeature());
+        registerFeature(new sh.harold.fulcrum.velocity.privacy.VelocityPrivacyFeature());
         registerFeature(new VelocityPartyFeature());
         registerFeature(new sh.harold.fulcrum.velocity.punishment.VelocityPunishmentFeature());
         registerFeature(new VelocityCommandFeature());
