@@ -4,6 +4,7 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
@@ -65,6 +66,27 @@ final class DirectMessageCommands {
                         }))
                 .executes(ctx -> {
                     ctx.getSource().getSender().sendMessage(Component.text("Usage: /" + alias + " <message>", NamedTextColor.RED));
+                    return 0;
+                })
+                .build();
+    }
+
+    LiteralCommandNode<CommandSourceStack> buildMacroCommand(String alias, Component template) {
+        Component usage = Component.text("Usage: /" + alias + " <player>", NamedTextColor.RED, TextDecoration.BOLD);
+        return literal(alias)
+                .requires(stack -> stack.getSender() instanceof Player)
+                .then(argument("target", word())
+                        .executes(ctx -> {
+                            Player player = requirePlayer(ctx.getSource());
+                            if (player == null) {
+                                return 0;
+                            }
+                            String target = ctx.getArgument("target", String.class);
+                            service.sendMessage(player, target, template);
+                            return 1;
+                        }))
+                .executes(ctx -> {
+                    ctx.getSource().getSender().sendMessage(usage);
                     return 0;
                 })
                 .build();

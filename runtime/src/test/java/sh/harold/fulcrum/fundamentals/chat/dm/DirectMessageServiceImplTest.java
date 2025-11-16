@@ -1,6 +1,8 @@
 package sh.harold.fulcrum.fundamentals.chat.dm;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Server;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -122,6 +124,19 @@ final class DirectMessageServiceImplTest {
 
         verify(messageBus).broadcast(eq(ChannelConstants.SOCIAL_DIRECT_MESSAGE), any(DirectMessageEnvelope.class));
         verify(sender, atLeastOnce()).sendMessage(any(Component.class));
+    }
+
+    @Test
+    void sendComponentMessageKeepsFormatting() {
+        Component boop = Component.text("Boop!", NamedTextColor.LIGHT_PURPLE).decorate(TextDecoration.BOLD);
+
+        service.sendMessage(sender, "Target", boop).toCompletableFuture().join();
+
+        org.mockito.ArgumentCaptor<DirectMessageEnvelope> captor = org.mockito.ArgumentCaptor.forClass(DirectMessageEnvelope.class);
+        verify(messageBus).broadcast(eq(ChannelConstants.SOCIAL_DIRECT_MESSAGE), captor.capture());
+        DirectMessageEnvelope envelope = captor.getValue();
+        org.junit.jupiter.api.Assertions.assertTrue(envelope.getComponentJson().contains("light_purple"));
+        org.junit.jupiter.api.Assertions.assertEquals("Boop!", envelope.getPlainText());
     }
 
     @Test

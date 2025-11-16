@@ -1,5 +1,8 @@
 package sh.harold.fulcrum.fundamentals.chat.dm;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -64,6 +67,10 @@ public final class DirectMessageFeature implements PluginFeature, Listener {
         CommandRegistrar.register(commands.buildMessageCommand("message"));
         CommandRegistrar.register(commands.buildReplyCommand("r"));
         CommandRegistrar.register(commands.buildReplyCommand("reply"));
+        Component boopTemplate = Component.text("Boop!", NamedTextColor.LIGHT_PURPLE).decorate(TextDecoration.BOLD);
+        Component pokeTemplate = Component.text("*poke* *poke*", NamedTextColor.DARK_GRAY).decorate(TextDecoration.ITALIC);
+        CommandRegistrar.register(commands.buildMacroCommand("boop", boopTemplate));
+        CommandRegistrar.register(commands.buildMacroCommand("poke", pokeTemplate));
 
         plugin.getServer().getOnlinePlayers().forEach(service::handlePlayerJoin);
     }

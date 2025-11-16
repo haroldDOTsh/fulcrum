@@ -122,11 +122,26 @@ final class DirectMessageServiceImpl implements DirectMessageService {
             sendSync(sender, Component.text("You must include a message.", NamedTextColor.RED));
             return CompletableFuture.completedFuture(DirectMessageResult.MESSAGE_REQUIRED);
         }
+        return sendMessage(sender, target, Component.text(message));
+    }
+
+    @Override
+    public CompletionStage<DirectMessageResult> sendMessage(Player sender, String target, Component message) {
+        Objects.requireNonNull(sender, "sender");
+        if (message == null) {
+            sendSync(sender, Component.text("You must include a message.", NamedTextColor.RED));
+            return CompletableFuture.completedFuture(DirectMessageResult.MESSAGE_REQUIRED);
+        }
+
+        Component rendered = applyEmojis(sender, message);
+        String plain = PLAIN.serialize(rendered);
+        if (plain == null || plain.isBlank()) {
+            sendSync(sender, Component.text("You must include a message.", NamedTextColor.RED));
+            return CompletableFuture.completedFuture(DirectMessageResult.MESSAGE_REQUIRED);
+        }
 
         UUID senderId = sender.getUniqueId();
         String senderName = sender.getName();
-        Component rendered = applyEmojis(sender, Component.text(message));
-        String plain = PLAIN.serialize(rendered);
 
         return resolveTargetHandle(target)
                 .thenCompose(handleOpt -> handleOpt

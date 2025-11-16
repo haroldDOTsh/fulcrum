@@ -24,17 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-private boolean tryHandleShorthandAdd(Player player, String possibleName) {
-    if (possibleName == null || possibleName.isBlank()) {
-        return false;
-    }
-    if (subcommands().contains(possibleName)) {
-        return false;
-    }
-    handleAdd(player, possibleName);
-    return true;
-}
-
 public final class FriendCommand implements SimpleCommand {
 
     private static final int PAGE_SIZE = 8;
@@ -165,6 +154,17 @@ public final class FriendCommand implements SimpleCommand {
 
     private List<String> subcommands() {
         return List.of("help", "list", "requests", "add", "accept", "deny", "remove", "removeall", "notifications");
+    }
+
+    private boolean tryHandleShorthandAdd(Player player, String possibleName) {
+        if (possibleName == null || possibleName.isBlank()) {
+            return false;
+        }
+        if (subcommands().contains(possibleName)) {
+            return false;
+        }
+        handleAdd(player, possibleName);
+        return true;
     }
 
     private void sendHelp(Player player) {
