@@ -148,6 +148,10 @@ public final class ChannelConstants {
     public static final String REGISTRY_NETWORK_CONFIG_REQUEST = "fulcrum.registry.network.config.request";
     public static final String REGISTRY_NETWORK_CONFIG_RESPONSE = "fulcrum.registry.network.config.response";
     /**
+     * Maintenance toggle broadcasts.
+     */
+    public static final String REGISTRY_MAINTENANCE_UPDATE = "fulcrum.registry.maintenance.toggle";
+    /**
      * Environment directory distribution channels
      */
     public static final String REGISTRY_ENVIRONMENT_DIRECTORY_UPDATED = "fulcrum.registry.environment.directory.updated";

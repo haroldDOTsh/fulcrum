@@ -107,10 +107,15 @@ public final class NetworkConfigRepository implements AutoCloseable {
             ranks.put(rankId, visualMap);
         });
 
+        Object motdPayload = profile.rawData().get("motd");
+        if (motdPayload == null) {
+            motdPayload = profile.motd();
+        }
+
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("tag", profile.tag());
         data.put("info", info);
-        data.put("motd", profile.motd());
+        data.put("motd", motdPayload);
         data.put("scoreboard", scoreboard);
         data.put("ranks", ranks);
         data.put("updatedAt", profile.updatedAt().toString());
@@ -121,7 +126,7 @@ public final class NetworkConfigRepository implements AutoCloseable {
         } else {
             document.set("tag", profile.tag());
             document.set("info", info);
-            document.set("motd", profile.motd());
+            document.set("motd", motdPayload);
             document.set("scoreboard", scoreboard);
             document.set("ranks", ranks);
             document.set("updatedAt", profile.updatedAt().toString());
@@ -151,15 +156,7 @@ public final class NetworkConfigRepository implements AutoCloseable {
                 Objects.toString(infoMap.getOrDefault("websiteLink", ""))
         );
 
-        List<String> motd = new ArrayList<>();
-        Object motdObj = normalized.get("motd");
-        if (motdObj instanceof List<?> list) {
-            for (Object value : list) {
-                if (value != null) {
-                    motd.add(value.toString());
-                }
-            }
-        }
+        List<String> motd = extractMotdLines(normalized.get("motd"));
 
         Map<String, Object> scoreboard = getChildMap(normalized, "scoreboard");
         String title = Objects.toString(scoreboard.getOrDefault("title", ""));
@@ -219,6 +216,30 @@ public final class NetworkConfigRepository implements AutoCloseable {
             return result;
         }
         return new LinkedHashMap<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> extractMotdLines(Object motdObj) {
+        if (motdObj instanceof List<?> list) {
+            return stringifyList(list);
+        }
+        if (motdObj instanceof Map<?, ?> map) {
+            Object live = map.get("live");
+            if (live instanceof List<?> list) {
+                return stringifyList(list);
+            }
+        }
+        return new ArrayList<>();
+    }
+
+    private List<String> stringifyList(List<?> source) {
+        List<String> result = new ArrayList<>(source.size());
+        for (Object value : source) {
+            if (value != null) {
+                result.add(value.toString());
+            }
+        }
+        return result;
     }
 
     private Instant parseInstant(Object value) {

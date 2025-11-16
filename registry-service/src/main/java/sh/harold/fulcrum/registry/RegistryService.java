@@ -28,6 +28,7 @@ import sh.harold.fulcrum.registry.environment.EnvironmentDirectoryRepository;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.heartbeat.store.RedisHeartbeatStore;
+import sh.harold.fulcrum.registry.maintenance.MaintenanceCoordinator;
 import sh.harold.fulcrum.registry.message.MessageTagSeeder;
 import sh.harold.fulcrum.registry.network.NetworkConfigCache;
 import sh.harold.fulcrum.registry.network.NetworkConfigManager;
@@ -92,6 +93,7 @@ public class RegistryService {
     private RedisHeartbeatStore redisHeartbeatStore;
     private RedisRegistryInspector redisRegistryInspector;
     private ShutdownIntentManager shutdownIntentManager;
+    private MaintenanceCoordinator maintenanceCoordinator;
     private FriendGraphService friendGraphService;
     private DataAPI friendDataApi;
     private MessageHandler friendMutationHandler;
@@ -342,6 +344,9 @@ public class RegistryService {
                 installFriendGraphHandlers();
             }
 
+            maintenanceCoordinator = new MaintenanceCoordinator(redisManager, messageBus, scheduler, LOGGER);
+            maintenanceCoordinator.initialize();
+
             seedMessageTags();
 
             // Log which implementation was created
@@ -443,6 +448,9 @@ public class RegistryService {
         }
         if (rankMutationService != null) {
             commandRegistry.register("rank", new RankCommand(rankMutationService));
+        }
+        if (maintenanceCoordinator != null) {
+            commandRegistry.register("maintenance", new MaintenanceCommand(maintenanceCoordinator));
         }
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
@@ -1096,6 +1104,10 @@ public class RegistryService {
                 } catch (Exception ex) {
                     LOGGER.warn("Failed to close environment directory manager", ex);
                 }
+            }
+
+            if (maintenanceCoordinator != null) {
+                maintenanceCoordinator.shutdown();
             }
 
             if (friendMutationHandler != null && messageBus != null) {

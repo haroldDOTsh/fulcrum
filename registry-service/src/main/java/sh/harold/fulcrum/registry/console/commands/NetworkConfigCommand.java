@@ -100,7 +100,11 @@ public record NetworkConfigCommand(NetworkConfigManager manager) implements Comm
                     String serverIp = profile.getString("info.serverIp").orElse("unknown");
                     String discordLink = profile.getString("info.discordLink").orElse("unlisted");
                     String websiteLink = profile.getString("info.websiteLink").orElse("unlisted");
-                    List<String> motd = profile.getStringList("motd");
+                    List<String> liveMotd = profile.getStringList("motd.live");
+                    if (liveMotd.isEmpty()) {
+                        liveMotd = profile.getStringList("motd");
+                    }
+                    List<String> maintenanceMotd = profile.getStringList("motd.maintenance");
                     System.out.println("Active profile: " + profile.profileId());
                     System.out.println(" Tag      : " + tag);
                     System.out.println(" Updated  : " + FORMATTER.format(profile.updatedAt()));
@@ -109,7 +113,10 @@ public record NetworkConfigCommand(NetworkConfigManager manager) implements Comm
                     System.out.println("   Server : " + serverIp);
                     System.out.println("   Discord: " + discordLink);
                     System.out.println("   Website: " + websiteLink);
-                    System.out.println(" MOTD     : " + motd);
+                    System.out.println(" MOTD.live       : " + liveMotd);
+                    if (!maintenanceMotd.isEmpty()) {
+                        System.out.println(" MOTD.maintenance: " + maintenanceMotd);
+                    }
                     return true;
                 })
                 .orElseGet(() -> {

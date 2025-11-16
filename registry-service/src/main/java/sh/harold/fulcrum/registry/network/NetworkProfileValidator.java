@@ -2,10 +2,7 @@ package sh.harold.fulcrum.registry.network;
 
 import sh.harold.fulcrum.api.rank.Rank;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 
 final class NetworkProfileValidator {
     private static final int MAX_MOTD_LINES = 2;
@@ -35,17 +32,10 @@ final class NetworkProfileValidator {
             errors.add("info.serverIp must not be blank");
         }
 
-        List<String> motd = profile.motd();
-        if (motd.size() > MAX_MOTD_LINES) {
-            errors.add("motd may contain at most " + MAX_MOTD_LINES + " lines");
-        }
-        for (int i = 0; i < motd.size(); i++) {
-            String line = motd.get(i);
-            if (line == null || line.isBlank()) {
-                errors.add("motd line " + (i + 1) + " must not be blank");
-            } else if (line.length() > MAX_MOTD_LENGTH) {
-                errors.add("motd line " + (i + 1) + " exceeds " + MAX_MOTD_LENGTH + " characters");
-            }
+        validateMotdLines(profile.motd(), "motd.live", errors);
+        List<String> maintenanceLines = extractMaintenanceLines(profile);
+        if (!maintenanceLines.isEmpty()) {
+            validateMotdLines(maintenanceLines, "motd.maintenance", errors);
         }
 
         if (profile.scoreboardTitle().isBlank()) {
@@ -79,5 +69,36 @@ final class NetworkProfileValidator {
         if (!errors.isEmpty()) {
             throw new NetworkProfileValidationException(profile.profileId(), errors);
         }
+    }
+
+    private static void validateMotdLines(List<String> lines, String label, List<String> errors) {
+        if (lines.size() > MAX_MOTD_LINES) {
+            errors.add(label + " may contain at most " + MAX_MOTD_LINES + " lines");
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            if (line == null || line.isBlank()) {
+                errors.add(label + " line " + (i + 1) + " must not be blank");
+            } else if (line.length() > MAX_MOTD_LENGTH) {
+                errors.add(label + " line " + (i + 1) + " exceeds " + MAX_MOTD_LENGTH + " characters");
+            }
+        }
+    }
+
+    private static List<String> extractMaintenanceLines(NetworkProfileDocument profile) {
+        Object motd = profile.rawData().get("motd");
+        if (motd instanceof Map<?, ?> map) {
+            Object maintenance = map.get("maintenance");
+            if (maintenance instanceof List<?> list) {
+                List<String> values = new ArrayList<>(list.size());
+                for (Object entry : list) {
+                    if (entry != null) {
+                        values.add(entry.toString());
+                    }
+                }
+                return values;
+            }
+        }
+        return List.of();
     }
 }

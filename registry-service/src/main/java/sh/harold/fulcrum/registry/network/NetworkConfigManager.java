@@ -176,6 +176,14 @@ public final class NetworkConfigManager implements AutoCloseable {
                 .findFirst();
     }
 
+    private List<String> resolveMotdLines(NetworkProfileView view) {
+        List<String> live = view.getStringList("motd.live");
+        if (!live.isEmpty()) {
+            return live;
+        }
+        return view.getStringList("motd");
+    }
+
     private NetworkProfileDocument seedDefaultProfileIfMissing() {
         if (!cachedProfiles.isEmpty()) {
             return null;
@@ -226,7 +234,7 @@ public final class NetworkConfigManager implements AutoCloseable {
                     view.profileId(),
                     view.getString("tag").orElse(view.profileId()),
                     info,
-                    view.getStringList("motd"),
+                    resolveMotdLines(view),
                     scoreboardTitle,
                     scoreboardFooter,
                     ranks,

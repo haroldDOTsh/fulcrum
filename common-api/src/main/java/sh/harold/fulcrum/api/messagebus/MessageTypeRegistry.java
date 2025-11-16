@@ -104,6 +104,8 @@ public class MessageTypeRegistry {
                     sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigRequestMessage.class);
             register(ChannelConstants.REGISTRY_NETWORK_CONFIG_RESPONSE,
                     sh.harold.fulcrum.api.messagebus.messages.network.NetworkConfigResponseMessage.class);
+            register(ChannelConstants.REGISTRY_MAINTENANCE_UPDATE,
+                    sh.harold.fulcrum.api.messagebus.messages.network.MaintenanceToggleMessage.class);
             register(ChannelConstants.REGISTRY_SHUTDOWN_INTENT,
                     sh.harold.fulcrum.api.messagebus.messages.ShutdownIntentMessage.class);
             register(ChannelConstants.REGISTRY_SHUTDOWN_UPDATE,

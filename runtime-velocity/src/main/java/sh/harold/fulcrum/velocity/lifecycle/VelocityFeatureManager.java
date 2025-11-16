@@ -15,6 +15,7 @@ import sh.harold.fulcrum.velocity.fundamentals.lifecycle.VelocityServerLifecycle
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 import sh.harold.fulcrum.velocity.fundamentals.motd.VelocityMotdFeature;
 import sh.harold.fulcrum.velocity.fundamentals.network.VelocityNetworkConfigFeature;
+import sh.harold.fulcrum.velocity.maintenance.VelocityMaintenanceFeature;
 import sh.harold.fulcrum.velocity.party.VelocityPartyFeature;
 
 import java.util.*;
@@ -68,6 +69,7 @@ public class VelocityFeatureManager {
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.cooldown.VelocityCooldownFeature());
         registerFeature(new VelocityEnvironmentDirectoryFeature());
         registerFeature(new VelocityNetworkConfigFeature());
+        registerFeature(new VelocityMaintenanceFeature());
         registerFeature(new VelocityMotdFeature());
         registerFeature(new VelocityDataAPIFeature());
         registerFeature(new sh.harold.fulcrum.velocity.message.VelocityMessageFeature());

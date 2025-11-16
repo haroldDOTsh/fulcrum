@@ -7,9 +7,11 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.network.NetworkConfigService;
+import sh.harold.fulcrum.api.network.NetworkProfileView;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
+import sh.harold.fulcrum.velocity.maintenance.MaintenanceStateService;
 
 import java.util.List;
 
@@ -19,6 +21,7 @@ public final class VelocityMotdFeature implements VelocityFeature {
     private ProxyServer proxyServer;
     private Logger logger;
     private NetworkConfigService networkConfigService;
+    private MaintenanceStateService maintenanceStateService;
 
     @Override
     public String getName() {
@@ -34,6 +37,7 @@ public final class VelocityMotdFeature implements VelocityFeature {
     public void initialize(ServiceLocator serviceLocator, Logger logger) {
         this.proxyServer = serviceLocator.getRequiredService(ProxyServer.class);
         this.networkConfigService = serviceLocator.getService(NetworkConfigService.class).orElse(null);
+        this.maintenanceStateService = serviceLocator.getService(MaintenanceStateService.class).orElse(null);
         this.logger = logger;
         FulcrumVelocityPlugin plugin = serviceLocator.getRequiredService(FulcrumVelocityPlugin.class);
         this.proxyServer.getEventManager().register(plugin, this);
@@ -50,7 +54,12 @@ public final class VelocityMotdFeature implements VelocityFeature {
             return;
         }
 
-        List<String> lines = networkConfigService.getActiveProfile().getStringList("motd");
+        var profile = networkConfigService.getActiveProfile();
+        List<String> liveLines = resolveLines(profile, "motd.live");
+        List<String> maintenanceLines = profile.getStringList("motd.maintenance");
+        boolean maintenanceActive = maintenanceStateService != null && maintenanceStateService.isNetworkMaintenanceActive();
+
+        List<String> lines = maintenanceActive && !maintenanceLines.isEmpty() ? maintenanceLines : liveLines;
         if (lines.isEmpty()) {
             return;
         }
@@ -59,8 +68,20 @@ public final class VelocityMotdFeature implements VelocityFeature {
         String secondLine = lines.size() > 1 ? formatter.center(lines.get(1)) : "";
 
         Component motd = LegacyComponentSerializer.legacyAmpersand().deserialize(firstLine + "\n" + secondLine);
-        event.setPing(event.getPing().asBuilder()
-                .description(motd)
-                .build());
+        var builder = event.getPing().asBuilder()
+                .description(motd);
+        if (maintenanceActive) {
+            builder.onlinePlayers(0);
+            builder.maximumPlayers(0);
+        }
+        event.setPing(builder.build());
+    }
+
+    private List<String> resolveLines(NetworkProfileView profile, String path) {
+        List<String> lines = profile.getStringList(path);
+        if (!lines.isEmpty()) {
+            return lines;
+        }
+        return profile.getStringList("motd");
     }
 }
