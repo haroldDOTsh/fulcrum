@@ -5,7 +5,7 @@ import sh.harold.fulcrum.common.text.font.MinecraftFonts;
 
 final class CenteredTextFormatter {
 
-    private static final float CENTER_PX = 154.0f;
+    private static final float LINE_WIDTH_PX = 235.0f;
     private static final MinecraftFont FONT = MinecraftFonts.defaultFont();
 
     String center(String input) {
@@ -18,21 +18,27 @@ final class CenteredTextFormatter {
             return input;
         }
 
-        float paddingPixels = CENTER_PX - (width / 2.0f);
-        if (paddingPixels <= 0.0f) {
+        float remainingPixels = LINE_WIDTH_PX - width;
+        if (remainingPixels <= 0.0f) {
             return input;
         }
 
+        int frontSpaces = calculateFrontPadding(remainingPixels);
+        if (frontSpaces <= 0) {
+            return input;
+        }
+
+        return " ".repeat(frontSpaces) + input;
+    }
+
+    private int calculateFrontPadding(float availablePixels) {
         float spaceWidth = FONT.spaceAdvance();
-        if (spaceWidth <= 0.0f) {
-            return input;
+        if (spaceWidth <= 0.0f || availablePixels <= 0.0f) {
+            return 0;
         }
 
-        int spaces = Math.max(0, Math.round(paddingPixels / spaceWidth));
-        if (spaces == 0) {
-            return input;
-        }
-
-        return " ".repeat(spaces) + input;
+        float halfPaddingPixels = availablePixels / 2.0f;
+        float spaceUnits = halfPaddingPixels / spaceWidth;
+        return Math.max(0, Math.round(spaceUnits));
     }
 }
