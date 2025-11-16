@@ -58,25 +58,28 @@ public interface FriendService {
 
     default CompletionStage<FriendOperationResult> block(UUID actor,
                                                          UUID target,
-                                                         FriendBlockScope scope,
                                                          Instant expiresAt,
                                                          String reason) {
         return execute(FriendMutationRequest.builder(FriendMutationType.BLOCK)
                 .actor(actor)
                 .target(target)
-                .scope(scope)
                 .expiresAt(expiresAt)
                 .reason(reason)
                 .build());
     }
 
     default CompletionStage<FriendOperationResult> unblock(UUID actor,
-                                                           UUID target,
-                                                           FriendBlockScope scope) {
+                                                           UUID target) {
         return execute(FriendMutationRequest.builder(FriendMutationType.UNBLOCK)
                 .actor(actor)
                 .target(target)
-                .scope(scope)
+                .build());
+    }
+
+    default CompletionStage<FriendOperationResult> syncSnapshot(UUID playerId) {
+        return execute(FriendMutationRequest.builder(FriendMutationType.SNAPSHOT_SYNC)
+                .actor(playerId)
+                .target(playerId)
                 .build());
     }
 

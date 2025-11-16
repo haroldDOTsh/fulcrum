@@ -1,8 +1,11 @@
 package sh.harold.fulcrum.api.friends;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Immutable aggregate of a player's friend state used by proxies and runtimes for hot-path checks.
@@ -10,49 +13,74 @@ import java.util.*;
 public record FriendSnapshot(
         long version,
         Set<UUID> friends,
-        Map<FriendBlockScope, Set<UUID>> ignoresOut,
-        Map<FriendBlockScope, Set<UUID>> ignoresIn
+        Set<UUID> ignoresOut,
+        Set<UUID> ignoresIn
 ) {
 
     public FriendSnapshot {
         version = Math.max(0L, version);
-        friends = friends == null ? Set.of() : Set.copyOf(friends);
-        ignoresOut = sanitizeBlockMap(ignoresOut);
-        ignoresIn = sanitizeBlockMap(ignoresIn);
+        friends = sanitizeSet(friends);
+        ignoresOut = sanitizeSet(ignoresOut);
+        ignoresIn = sanitizeSet(ignoresIn);
+    }
+
+    private static Set<UUID> sanitizeSet(Set<UUID> source) {
+        return source == null || source.isEmpty() ? Set.of() : Set.copyOf(source);
     }
 
     public static FriendSnapshot empty() {
-        return new FriendSnapshot(0L, Set.of(), new EnumMap<>(FriendBlockScope.class), new EnumMap<>(FriendBlockScope.class));
+        return new FriendSnapshot(0L, Set.of(), Set.of(), Set.of());
     }
 
-    private static Map<FriendBlockScope, Set<UUID>> sanitizeBlockMap(Map<FriendBlockScope, Set<UUID>> source) {
-        EnumMap<FriendBlockScope, Set<UUID>> sanitized = new EnumMap<>(FriendBlockScope.class);
-        if (source == null || source.isEmpty()) {
-            FriendBlockScope[] values = FriendBlockScope.values();
-            for (FriendBlockScope scope : values) {
-                sanitized.put(scope, Set.of());
-            }
-            return Collections.unmodifiableMap(sanitized);
+    @JsonCreator
+    public static FriendSnapshot create(@JsonProperty("version") long version,
+                                        @JsonProperty("friends") Set<UUID> friends,
+                                        @JsonProperty("ignoresOut") Object ignoresOut,
+                                        @JsonProperty("ignoresIn") Object ignoresIn) {
+        return new FriendSnapshot(
+                version,
+                friends,
+                normalizeIgnores(ignoresOut),
+                normalizeIgnores(ignoresIn));
+    }
+
+    private static Set<UUID> normalizeIgnores(Object raw) {
+        if (raw == null) {
+            return Set.of();
         }
-        for (FriendBlockScope scope : FriendBlockScope.values()) {
-            Set<UUID> entries = source.get(scope);
-            sanitized.put(scope, entries == null ? Set.of() : Set.copyOf(entries));
+        if (raw instanceof Collection<?> collection) {
+            LinkedHashSet<UUID> values = collection.stream()
+                    .map(Objects::toString)
+                    .map(UUID::fromString)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            return values.isEmpty() ? Set.of() : Set.copyOf(values);
         }
-        return Collections.unmodifiableMap(sanitized);
+        if (raw instanceof Map<?, ?> map) {
+            LinkedHashSet<UUID> flattened = new LinkedHashSet<>();
+            map.values().forEach(value -> flattened.addAll(normalizeIgnores(value)));
+            return flattened.isEmpty() ? Set.of() : Set.copyOf(flattened);
+        }
+        if (raw instanceof String text && !text.isBlank()) {
+            return Set.of(UUID.fromString(text));
+        }
+        if (raw instanceof UUID uuid) {
+            return Set.of(uuid);
+        }
+        return Set.of();
     }
 
-    public Set<UUID> blockedOut(FriendBlockScope scope) {
-        return ignoresOut.getOrDefault(scope, Set.of());
+    public boolean isBlocking(UUID target) {
+        return target != null && ignoresOut.contains(target);
     }
 
-    public Set<UUID> blockedIn(FriendBlockScope scope) {
-        return ignoresIn.getOrDefault(scope, Set.of());
+    public boolean isBlockedBy(UUID origin) {
+        return origin != null && ignoresIn.contains(origin);
     }
 
     @JsonIgnore
     public boolean isEmpty() {
         return friends.isEmpty()
-                && ignoresOut.values().stream().allMatch(Set::isEmpty)
-                && ignoresIn.values().stream().allMatch(Set::isEmpty);
+                && ignoresOut.isEmpty()
+                && ignoresIn.isEmpty();
     }
 }

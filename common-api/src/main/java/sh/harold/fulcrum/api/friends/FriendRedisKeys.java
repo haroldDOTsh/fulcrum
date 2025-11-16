@@ -22,12 +22,12 @@ public final class FriendRedisKeys {
         return "fulcrum:social:friends:set:" + lowercaseUuid(playerId);
     }
 
-    public static String ignoresOutKey(UUID playerId, FriendBlockScope scope) {
-        return "fulcrum:social:friends:ignores-out:" + scope.name().toLowerCase(Locale.ROOT) + ':' + lowercaseUuid(playerId);
+    public static String ignoresOutKey(UUID playerId) {
+        return "fulcrum:social:friends:ignores-out:" + lowercaseUuid(playerId);
     }
 
-    public static String ignoresInKey(UUID playerId, FriendBlockScope scope) {
-        return "fulcrum:social:friends:ignores-in:" + scope.name().toLowerCase(Locale.ROOT) + ':' + lowercaseUuid(playerId);
+    public static String ignoresInKey(UUID playerId) {
+        return "fulcrum:social:friends:ignores-in:" + lowercaseUuid(playerId);
     }
 
     public static String pendingInvitesKey(UUID targetId) {

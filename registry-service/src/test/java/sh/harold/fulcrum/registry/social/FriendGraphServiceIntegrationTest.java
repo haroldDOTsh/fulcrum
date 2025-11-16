@@ -8,7 +8,6 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
-import sh.harold.fulcrum.api.friends.FriendBlockScope;
 import sh.harold.fulcrum.api.friends.FriendMutationRequest;
 import sh.harold.fulcrum.api.friends.FriendMutationType;
 import sh.harold.fulcrum.api.friends.FriendSnapshot;
@@ -97,7 +96,6 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         FriendMutationRequest block = FriendMutationRequest.builder(FriendMutationType.BLOCK)
                 .actor(actor)
                 .target(target)
-                .scope(FriendBlockScope.GLOBAL)
                 .reason("test")
                 .build();
         assertThat(service.apply(block).result().success()).isTrue();
@@ -106,20 +104,19 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         FriendSnapshot targetSnapshot = service.getSnapshot(target, true);
 
         assertThat(actorSnapshot.friends()).isEmpty();
-        assertThat(actorSnapshot.blockedOut(FriendBlockScope.GLOBAL)).contains(target);
-        assertThat(targetSnapshot.blockedIn(FriendBlockScope.GLOBAL)).contains(actor);
+        assertThat(actorSnapshot.ignoresOut()).contains(target);
+        assertThat(targetSnapshot.ignoresIn()).contains(actor);
 
         FriendMutationRequest unblock = FriendMutationRequest.builder(FriendMutationType.UNBLOCK)
                 .actor(actor)
                 .target(target)
-                .scope(FriendBlockScope.GLOBAL)
                 .build();
         assertThat(service.apply(unblock).result().success()).isTrue();
 
         FriendSnapshot unblockedActor = service.getSnapshot(actor, true);
         FriendSnapshot unblockedTarget = service.getSnapshot(target, true);
-        assertThat(unblockedActor.blockedOut(FriendBlockScope.GLOBAL)).isEmpty();
-        assertThat(unblockedTarget.blockedIn(FriendBlockScope.GLOBAL)).isEmpty();
+        assertThat(unblockedActor.ignoresOut()).isEmpty();
+        assertThat(unblockedTarget.ignoresIn()).isEmpty();
     }
 
     private void establishFriendship(UUID first, UUID second) {

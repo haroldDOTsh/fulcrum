@@ -2,7 +2,6 @@ package sh.harold.fulcrum.registry.social;
 
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
-import sh.harold.fulcrum.api.friends.FriendBlockScope;
 import sh.harold.fulcrum.api.friends.FriendSnapshot;
 
 import java.util.*;
@@ -30,8 +29,8 @@ public final class FriendSnapshotStore {
         }
         long version = extractLong(socialMap.get("version"));
         Set<UUID> friends = extractUuidSet(socialMap.get("friends"));
-        Map<FriendBlockScope, Set<UUID>> ignoresOut = extractScopeMap(socialMap.get("ignoresOut"));
-        Map<FriendBlockScope, Set<UUID>> ignoresIn = extractScopeMap(socialMap.get("ignoresIn"));
+        Set<UUID> ignoresOut = extractIgnores(socialMap.get("ignoresOut"));
+        Set<UUID> ignoresIn = extractIgnores(socialMap.get("ignoresIn"));
         return new FriendSnapshot(version, friends, ignoresOut, ignoresIn);
     }
 
@@ -40,8 +39,8 @@ public final class FriendSnapshotStore {
         Map<String, Object> social = new LinkedHashMap<>();
         social.put("version", snapshot.version());
         social.put("friends", snapshot.friends().stream().map(UUID::toString).toList());
-        social.put("ignoresOut", serializeScopeMap(snapshot.ignoresOut()));
-        social.put("ignoresIn", serializeScopeMap(snapshot.ignoresIn()));
+        social.put("ignoresOut", serializeIgnoreSet(snapshot.ignoresOut()));
+        social.put("ignoresIn", serializeIgnoreSet(snapshot.ignoresIn()));
         document.set("social", social);
     }
 
@@ -70,32 +69,19 @@ public final class FriendSnapshotStore {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    private Map<FriendBlockScope, Set<UUID>> extractScopeMap(Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
-            return emptyScopeMap();
+    private Set<UUID> extractIgnores(Object value) {
+        if (value instanceof Collection<?> collection) {
+            return extractUuidSet(collection);
         }
-        EnumMap<FriendBlockScope, Set<UUID>> result = new EnumMap<>(FriendBlockScope.class);
-        for (FriendBlockScope scope : FriendBlockScope.values()) {
-            Object entry = map.get(scope.name());
-            result.put(scope, extractUuidSet(entry));
+        if (value instanceof Map<?, ?> legacyMap) {
+            Set<UUID> flattened = new HashSet<>();
+            legacyMap.values().forEach(entry -> flattened.addAll(extractUuidSet(entry)));
+            return Collections.unmodifiableSet(flattened);
         }
-        return Collections.unmodifiableMap(result);
+        return Set.of();
     }
 
-    private Map<String, Object> serializeScopeMap(Map<FriendBlockScope, Set<UUID>> map) {
-        Map<String, Object> serialized = new LinkedHashMap<>();
-        for (FriendBlockScope scope : FriendBlockScope.values()) {
-            Set<UUID> entries = map.getOrDefault(scope, Set.of());
-            serialized.put(scope.name(), entries.stream().map(UUID::toString).toList());
-        }
-        return serialized;
-    }
-
-    private Map<FriendBlockScope, Set<UUID>> emptyScopeMap() {
-        EnumMap<FriendBlockScope, Set<UUID>> empty = new EnumMap<>(FriendBlockScope.class);
-        for (FriendBlockScope scope : FriendBlockScope.values()) {
-            empty.put(scope, Set.of());
-        }
-        return empty;
+    private List<String> serializeIgnoreSet(Set<UUID> set) {
+        return set.stream().map(UUID::toString).toList();
     }
 }

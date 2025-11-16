@@ -13,7 +13,6 @@ public record FriendMutationRequest(
         FriendMutationType type,
         UUID actorId,
         UUID targetId,
-        FriendBlockScope scope,
         Instant expiresAt,
         String reason,
         Map<String, Object> metadata
@@ -35,7 +34,6 @@ public record FriendMutationRequest(
         private final Map<String, Object> metadata = new LinkedHashMap<>();
         private UUID actorId;
         private UUID targetId;
-        private FriendBlockScope scope;
         private Instant expiresAt;
         private String reason;
 
@@ -50,11 +48,6 @@ public record FriendMutationRequest(
 
         public Builder target(UUID targetId) {
             this.targetId = targetId;
-            return this;
-        }
-
-        public Builder scope(FriendBlockScope scope) {
-            this.scope = scope;
             return this;
         }
 
@@ -83,7 +76,7 @@ public record FriendMutationRequest(
         }
 
         public FriendMutationRequest build() {
-            return new FriendMutationRequest(type, actorId, targetId, scope, expiresAt, reason, metadata);
+            return new FriendMutationRequest(type, actorId, targetId, expiresAt, reason, metadata);
         }
     }
 }

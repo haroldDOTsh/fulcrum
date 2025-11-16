@@ -1,6 +1,5 @@
 package sh.harold.fulcrum.api.messagebus.messages.social;
 
-import sh.harold.fulcrum.api.friends.FriendBlockScope;
 import sh.harold.fulcrum.api.friends.FriendMutationType;
 import sh.harold.fulcrum.api.messagebus.BaseMessage;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
@@ -23,7 +22,6 @@ public final class FriendMutationCommandMessage implements BaseMessage, Serializ
     private FriendMutationType mutationType;
     private UUID actorId;
     private UUID targetId;
-    private FriendBlockScope scope;
     private Long expiresAtEpochMillis;
     private String reason;
     private Map<String, Object> metadata = new LinkedHashMap<>();
@@ -78,14 +76,6 @@ public final class FriendMutationCommandMessage implements BaseMessage, Serializ
 
     public void setTargetId(UUID targetId) {
         this.targetId = targetId;
-    }
-
-    public FriendBlockScope getScope() {
-        return scope;
-    }
-
-    public void setScope(FriendBlockScope scope) {
-        this.scope = scope;
     }
 
     public Long getExpiresAtEpochMillis() {

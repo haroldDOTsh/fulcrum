@@ -1,6 +1,5 @@
 package sh.harold.fulcrum.api.messagebus.messages.social;
 
-import sh.harold.fulcrum.api.friends.FriendBlockScope;
 import sh.harold.fulcrum.api.messagebus.BaseMessage;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 
@@ -17,7 +16,6 @@ public final class FriendBlockEventMessage implements BaseMessage, Serializable 
 
     private UUID ownerId;
     private UUID targetId;
-    private FriendBlockScope scope;
     private boolean active;
     private long ownerVersion;
     private long targetVersion;
@@ -43,14 +41,6 @@ public final class FriendBlockEventMessage implements BaseMessage, Serializable 
 
     public void setTargetId(UUID targetId) {
         this.targetId = targetId;
-    }
-
-    public FriendBlockScope getScope() {
-        return scope;
-    }
-
-    public void setScope(FriendBlockScope scope) {
-        this.scope = scope;
     }
 
     public boolean isActive() {

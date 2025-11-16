@@ -778,15 +778,14 @@ public class RegistryService {
         FriendMutationRequest.Builder builder = FriendMutationRequest.builder(command.getMutationType())
                 .actor(command.getActorId())
                 .target(command.getTargetId())
-                .scope(command.getScope())
                 .expiresAt(command.resolveExpiresAt())
                 .reason(command.getReason())
                 .metadata(command.getMetadata());
 
         FriendMutationRequest mutationRequest = builder.build();
-        LOGGER.info("Applying friend mutation requestId={} type={} actor={} target={} scope={} expiresAt={}",
+        LOGGER.info("Applying friend mutation requestId={} type={} actor={} target={} expiresAt={}",
                 command.getRequestId(), mutationRequest.type(), mutationRequest.actorId(), mutationRequest.targetId(),
-                mutationRequest.scope(), mutationRequest.expiresAt());
+                mutationRequest.expiresAt());
 
         FriendGraphService.FriendOperationContext context = friendGraphService.apply(mutationRequest);
         FriendMutationResponseMessage response = new FriendMutationResponseMessage();
