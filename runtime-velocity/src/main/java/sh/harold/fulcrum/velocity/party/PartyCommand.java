@@ -718,6 +718,8 @@ final class PartyCommand implements SimpleCommand {
             case PARTY_FULL -> error("Your party is full.");
             case LEADER_ONLY_ACTION -> error("Only the party leader can do that.");
             case CANNOT_TARGET_SELF -> error("You cannot target yourself.");
+            case PRIVACY_RESTRICTED ->
+                    error(result.message() != null ? result.message() : "That player is not accepting party invites right now.");
             case REDIS_UNAVAILABLE -> error("Party service is busy, try again soon.");
             default -> error(result.message() != null ? result.message() : "Unable to complete that action.");
         };

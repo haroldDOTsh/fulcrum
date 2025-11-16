@@ -6,6 +6,8 @@ import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyMessageAction;
 import sh.harold.fulcrum.api.messagebus.messages.party.PartyUpdateMessage;
 import sh.harold.fulcrum.api.party.*;
+import sh.harold.fulcrum.common.privacy.PrivacyGate;
+import sh.harold.fulcrum.common.privacy.PrivacyResult;
 
 import java.time.Instant;
 import java.util.*;
@@ -19,11 +21,13 @@ final class PartyServiceImpl implements PartyService {
     private final long inviteTtlSeconds;
     private final long soloDisbandGraceMillis;
     private final long disconnectGraceMillis;
+    private final PrivacyGate privacyGate;
 
     PartyServiceImpl(PartyRepository repository,
                      PartyLockManager lockManager,
                      MessageBus messageBus,
-                     Logger logger) {
+                     Logger logger,
+                     PrivacyGate privacyGate) {
         this.repository = repository;
         this.lockManager = lockManager;
         this.messageBus = messageBus;
@@ -31,6 +35,7 @@ final class PartyServiceImpl implements PartyService {
         this.inviteTtlSeconds = PartyConstants.INVITE_TTL_SECONDS;
         this.soloDisbandGraceMillis = PartyConstants.IDLE_DISBAND_GRACE_SECONDS * 1000L;
         this.disconnectGraceMillis = PartyConstants.DISCONNECT_GRACE_SECONDS * 1000L;
+        this.privacyGate = privacyGate;
     }
 
     public Optional<PartySnapshot> getParty(UUID partyId) {
@@ -48,6 +53,13 @@ final class PartyServiceImpl implements PartyService {
         }
         if (actorId.equals(targetId)) {
             return PartyOperationResult.failure(PartyErrorCode.CANNOT_TARGET_SELF, "self-target");
+        }
+        PrivacyResult privacyResult = evaluatePartyPrivacy(actorId, targetId);
+        if (!privacyResult.allowed()) {
+            privacyResult.denialReason()
+                    .ifPresent(reason -> logger.debug("Party invite blocked due to privacy: {} -> {} ({})", actorId, targetId, reason));
+            return PartyOperationResult.failure(PartyErrorCode.PRIVACY_RESTRICTED,
+                    "That player is not accepting party invitations right now.");
         }
         PartySnapshot snapshot = getPartyByPlayer(actorId)
                 .orElseGet(() -> createEphemeralParty(actorId, actorName));
@@ -146,6 +158,18 @@ final class PartyServiceImpl implements PartyService {
                     invite.getInviterPlayerId(), playerId, "invite accepted"));
         }
         return result;
+    }
+
+    private PrivacyResult evaluatePartyPrivacy(UUID actorId, UUID targetId) {
+        if (privacyGate == null) {
+            return PrivacyResult.allow();
+        }
+        try {
+            return privacyGate.canSendPartyInvite(actorId, targetId).toCompletableFuture().join();
+        } catch (Exception ex) {
+            logger.warn("Failed to evaluate party privacy for {} -> {}", actorId, targetId, ex);
+            return PrivacyResult.deny("Unable to check privacy settings right now. Please try again.");
+        }
     }
 
     @Override
