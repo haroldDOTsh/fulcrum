@@ -247,7 +247,7 @@ public class MinigameEngineFeature implements PluginFeature {
             return null;
         }
         Logger logger = plugin.getLogger();
-        return new MinigameEnvironmentService(logger, worldService, worldManager);
+        return new MinigameEnvironmentService(plugin, logger, worldService, worldManager);
     }
 
     private boolean ensureMatchSchema(JavaPlugin plugin, PostgresConnectionAdapter adapter) {

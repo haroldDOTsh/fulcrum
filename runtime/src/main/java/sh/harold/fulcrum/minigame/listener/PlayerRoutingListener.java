@@ -38,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class PlayerRoutingListener implements Listener, PluginMessageListener {
     private static final String CHANNEL = "fulcrum:route";
     private static final Duration PROCESSED_REQUEST_TTL = Duration.ofSeconds(30);
+    private static final Duration HANDOFF_TTL_FALLBACK = Duration.ofSeconds(15);
 
     private final Plugin plugin;
     private final PlayerRouteRegistry routeRegistry;
@@ -187,7 +188,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                     command.getSlotId(),
                     reservationToken,
                     metadata,
-                    Duration.ofSeconds(15)
+                    reservationService != null ? reservationService.getReservationTtl() : HANDOFF_TTL_FALLBACK
             );
             sessionService.updateMinigameContext(playerId, metadata, command.getSlotId());
         }
@@ -214,7 +215,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                     + " (routeType=" + metadata.getOrDefault("routeType", "unknown") + ")");
             sendSuccessAck(command);
         } else {
-            pendingTeleports.put(playerId, new PendingTeleport(target, command));
+            pendingTeleports.put(playerId, new PendingTeleport(target, command, System.currentTimeMillis()));
             attemptTeleport(playerId);
         }
 
@@ -345,27 +346,34 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                 return;
             }
 
-            plugin.getLogger().info(() -> "Routing " + player.getName() + " to world="
-                    + location.getWorld().getName() + " x=" + location.getX()
-                    + " y=" + location.getY() + " z=" + location.getZ()
-                    + " yaw=" + location.getYaw() + " pitch=" + location.getPitch());
+            long ageMillis = System.currentTimeMillis() - pending.enqueuedAt();
+            plugin.getLogger().fine(() -> "Teleporting " + player.getName()
+                    + " to " + describeLocation(location) + " (async); queuedForMs=" + ageMillis);
 
+            long startTime = System.currentTimeMillis();
             player.teleportAsync(location).whenComplete((result, error) -> {
+                long durationMs = System.currentTimeMillis() - startTime;
                 if (error != null || Boolean.FALSE.equals(result)) {
-                    plugin.getLogger().warning("Async teleport failed for " + player.getName()
-                            + "; falling back to synchronous teleport." + (error != null ? " Cause: " + error.getMessage() : ""));
+                    plugin.getLogger().warning(() -> "Async teleport for " + player.getName()
+                            + " failed after " + durationMs + "ms result=" + result
+                            + (error != null ? " cause=" + describeError(error) : "")
+                            + "; falling back to synchronous teleport");
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        plugin.getLogger().fine(() -> "Attempting synchronous teleport for " + player.getName());
                         boolean success = player.teleport(location);
                         if (success) {
-                            plugin.getLogger().info("Synchronous teleport succeeded for " + player.getName());
+                            plugin.getLogger().info(() -> "Synchronous teleport for "
+                                    + player.getName() + " succeeded");
                             sendSuccessAck(pending.command());
                         } else {
-                            plugin.getLogger().warning("Synchronous teleport failed for " + player.getName());
+                            plugin.getLogger().warning(() -> "Synchronous teleport for "
+                                    + player.getName() + " failed");
                             sendFailureAck(pending.command(), "teleport-failed");
                         }
                     });
                 } else {
-                    plugin.getLogger().info("Async teleport succeeded for " + player.getName());
+                    plugin.getLogger().fine(() -> "Async teleport for "
+                            + player.getName() + " succeeded in " + durationMs + "ms");
                     sendSuccessAck(pending.command());
                 }
             });
@@ -392,6 +400,22 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             return;
         }
         processedRequests.entrySet().removeIf(entry -> now - entry.getValue() > PROCESSED_REQUEST_TTL.toMillis());
+    }
+
+    private String describeError(Throwable error) {
+        if (error == null) {
+            return "";
+        }
+        return error.getClass().getSimpleName() + ": " + error.getMessage();
+    }
+
+    private String describeLocation(Location location) {
+        if (location == null) {
+            return "unknown";
+        }
+        World world = location.getWorld();
+        String worldName = world != null ? world.getName() : "unknown";
+        return worldName + " @ " + location.getBlockX() + "," + location.getBlockY() + "," + location.getBlockZ();
     }
 
     private Location resolveLocation(PlayerRouteCommand command) {
@@ -426,6 +450,6 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         routeRegistry.remove(playerId);
     }
 
-    private record PendingTeleport(Location location, PlayerRouteCommand command) {
+    private record PendingTeleport(Location location, PlayerRouteCommand command, long enqueuedAt) {
     }
 }

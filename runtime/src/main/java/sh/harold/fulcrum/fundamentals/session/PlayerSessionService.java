@@ -13,6 +13,8 @@ import sh.harold.fulcrum.session.PlayerSessionRecord;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -40,6 +42,7 @@ public class PlayerSessionService {
     private volatile String serverFamily;
     private volatile String serverVariant;
     private volatile String registeredSlotId;
+    private final ExecutorService redisExecutor;
 
     private final ConcurrentHashMap<UUID, String> activeSessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, PlayerSessionRecord> localRecords = new ConcurrentHashMap<>();
@@ -60,6 +63,13 @@ public class PlayerSessionService {
         this.redisAvailable = redisOperations != null && redisOperations.isAvailable();
         this.serverFamily = null;
         this.serverVariant = null;
+        this.redisExecutor = this.redisAvailable
+                ? Executors.newFixedThreadPool(2, runnable -> {
+            Thread thread = new Thread(runnable, "fulcrum-session-redis");
+            thread.setDaemon(true);
+            return thread;
+        })
+                : null;
     }
 
     private static String normaliseIdentifier(String value) {
@@ -430,7 +440,8 @@ public class PlayerSessionService {
 
         try {
             String json = objectMapper.writeValueAsString(record);
-            redisOperations.set(stateKey(record.getPlayerId()), json, 0);
+            String key = stateKey(record.getPlayerId());
+            submitRedisWrite(() -> redisOperations.set(key, json, 0));
         } catch (JsonProcessingException e) {
             LOGGER.log(Level.WARNING, "Failed to serialise session for " + record.getPlayerId(), e);
         }
@@ -439,7 +450,8 @@ public class PlayerSessionService {
     private void removeRecord(PlayerSessionRecord record) {
         localRecords.remove(record.getPlayerId());
         if (redisAvailable) {
-            redisOperations.delete(stateKey(record.getPlayerId()));
+            String key = stateKey(record.getPlayerId());
+            submitRedisWrite(() -> redisOperations.delete(key));
         }
     }
 
@@ -474,7 +486,8 @@ public class PlayerSessionService {
         try {
             long ttlSeconds = Math.max(1, effectiveTtl.toSeconds());
             String payload = objectMapper.writeValueAsString(record);
-            redisOperations.set(handoffKey(playerId), payload, ttlSeconds);
+            String key = handoffKey(playerId);
+            submitRedisWrite(() -> redisOperations.set(key, payload, ttlSeconds));
         } catch (JsonProcessingException exception) {
             LOGGER.log(Level.WARNING, "Failed to serialise handoff marker for " + playerId, exception);
         }
@@ -520,8 +533,22 @@ public class PlayerSessionService {
         }
         localHandoffs.remove(playerId);
         if (redisAvailable) {
-            redisOperations.delete(handoffKey(playerId));
+            String key = handoffKey(playerId);
+            submitRedisWrite(() -> redisOperations.delete(key));
         }
+    }
+
+    public void shutdown() {
+        if (redisExecutor != null && !redisExecutor.isShutdown()) {
+            redisExecutor.shutdown();
+        }
+    }
+
+    private void submitRedisWrite(Runnable task) {
+        if (!redisAvailable || redisExecutor == null || redisExecutor.isShutdown()) {
+            return;
+        }
+        redisExecutor.execute(task);
     }
 
     public void updateMinigameContext(UUID playerId, Map<String, String> metadata, String slotId) {

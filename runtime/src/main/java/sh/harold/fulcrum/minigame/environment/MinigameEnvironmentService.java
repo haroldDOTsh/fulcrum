@@ -2,9 +2,9 @@ package sh.harold.fulcrum.minigame.environment;
 
 import org.bukkit.*;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.world.generator.VoidChunkGenerator;
 import sh.harold.fulcrum.fundamentals.world.WorldManager;
-import sh.harold.fulcrum.fundamentals.world.WorldManager.WorldPasteResult;
 import sh.harold.fulcrum.fundamentals.world.WorldService;
 import sh.harold.fulcrum.fundamentals.world.model.LoadedWorld;
 
@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
@@ -25,85 +27,52 @@ import java.util.stream.Stream;
 public class MinigameEnvironmentService {
     private static final String DEFAULT_MAP_ID = "test";
 
+    private final JavaPlugin plugin;
     private final Logger logger;
     private final WorldService worldService;
     private final WorldManager worldManager;
     private final ConcurrentMap<String, MatchEnvironment> environments = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> worldToSlot = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CompletableFuture<MatchEnvironment>> pendingPreparations = new ConcurrentHashMap<>();
 
-    public MinigameEnvironmentService(Logger logger,
+    public MinigameEnvironmentService(JavaPlugin plugin,
+                                      Logger logger,
                                       WorldService worldService,
                                       WorldManager worldManager) {
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.logger = logger;
         this.worldService = worldService;
         this.worldManager = worldManager;
     }
 
     public MatchEnvironment prepareEnvironment(String slotId, Map<String, String> metadata) {
-        if (worldService == null || worldManager == null) {
-            logger.warning("World services unavailable; cannot prepare environment for slot " + slotId);
+        try {
+            return prepareEnvironmentAsync(slotId, metadata).join();
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause() != null ? exception.getCause() : exception;
+            logger.log(Level.WARNING, "Failed to prepare environment for slot " + slotId, cause);
             return null;
         }
+    }
 
+    public CompletableFuture<MatchEnvironment> prepareEnvironmentAsync(String slotId, Map<String, String> metadata) {
+        if (slotId == null || slotId.isBlank()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("slotId is required"));
+        }
         MatchEnvironment existing = environments.get(slotId);
         if (existing != null) {
-            return existing;
+            return CompletableFuture.completedFuture(existing);
         }
 
-        String requestedMapId = metadata != null ? metadata.get("mapId") : null;
-        String requestedGameId = metadata != null ? metadata.get("gameId") : null;
-
-        Optional<LoadedWorld> mapOptional = resolveMap(metadata);
-        if (mapOptional.isEmpty()) {
-            logger.warning("No cached world found for mapId='" + requestedMapId + "' gameId='" + requestedGameId
-                    + "'; falling back to '" + DEFAULT_MAP_ID + "'");
-            mapOptional = resolveMapById(DEFAULT_MAP_ID);
-            if (mapOptional.isEmpty()) {
-                logger.warning("Default world '" + DEFAULT_MAP_ID + "' unavailable; cannot prepare environment for slot " + slotId);
-                return null;
-            }
+        CompletableFuture<MatchEnvironment> preparation = new CompletableFuture<>();
+        CompletableFuture<MatchEnvironment> existingFuture = pendingPreparations.putIfAbsent(slotId, preparation);
+        if (existingFuture != null) {
+            return existingFuture;
         }
 
-        LoadedWorld map = mapOptional.get();
-        String resolvedMapId = map.getMapId();
-        String worldName = generateWorldName(slotId, resolvedMapId);
-        unloadIfPresent(worldName);
-
-        World world = createVoidWorld(worldName);
-        if (world == null) {
-            return null;
-        }
-
-        configureRules(world);
-
-        Location pasteLocation = new Location(world, 0, 64, 0);
-        WorldPasteResult pasteResult;
-        try {
-            pasteResult = worldManager.pasteWorld(map.getId(), world, pasteLocation).join();
-        } catch (Exception exception) {
-            logger.log(Level.WARNING, "Failed to paste map '" + resolvedMapId + "' for slot " + slotId, exception);
-            cleanupWorld(worldName);
-            return null;
-        }
-
-        if (pasteResult == null || !pasteResult.success()) {
-            logger.warning("Unable to prepare map '" + resolvedMapId + "' for slot " + slotId + ": "
-                    + (pasteResult != null ? pasteResult.message() : "unknown"));
-            cleanupWorld(worldName);
-            return null;
-        }
-
-        Location matchSpawn = resolveMatchSpawn(map, pasteLocation);
-        Location lobbySpawn = matchSpawn.clone();
-        world.setSpawnLocation(lobbySpawn);
-
-        MatchEnvironment environment = new MatchEnvironment(slotId, worldName, resolvedMapId,
-                lobbySpawn, matchSpawn);
-        environments.put(slotId, environment);
-        worldToSlot.put(normalize(worldName), slotId);
-        logger.info(() -> "Prepared match environment '" + worldName + "' for slot " + slotId
-                + " (mapId=" + resolvedMapId + ")");
-        return environment;
+        runOnPrimaryThread(() -> startPreparation(slotId, metadata, preparation));
+        preparation.whenComplete((env, error) -> pendingPreparations.remove(slotId, preparation));
+        return preparation;
     }
 
     public Optional<MatchEnvironment> getEnvironment(String slotId) {
@@ -174,10 +143,6 @@ public class MinigameEnvironmentService {
     }
 
     private void unloadIfPresent(String worldName) {
-        World existing = Bukkit.getWorld(worldName);
-        if (existing != null) {
-            Bukkit.unloadWorld(existing, false);
-        }
         cleanupWorld(worldName);
     }
 
@@ -214,7 +179,7 @@ public class MinigameEnvironmentService {
         World world = Bukkit.getWorld(worldName);
         if (world != null) {
             Location fallback = !Bukkit.getWorlds().isEmpty()
-                    ? Bukkit.getWorlds().get(0).getSpawnLocation() : null;
+                    ? Bukkit.getWorlds().getFirst().getSpawnLocation() : null;
             for (Player player : List.copyOf(world.getPlayers())) {
                 if (fallback != null) {
                     player.teleport(fallback);
@@ -246,6 +211,87 @@ public class MinigameEnvironmentService {
 
     private String normalize(String worldName) {
         return worldName == null ? null : worldName.toLowerCase(Locale.ROOT);
+    }
+
+    private void startPreparation(String slotId,
+                                  Map<String, String> metadata,
+                                  CompletableFuture<MatchEnvironment> future) {
+        if (worldService == null || worldManager == null) {
+            String message = "World services unavailable; cannot prepare environment for slot " + slotId;
+            logger.warning(message);
+            future.completeExceptionally(new IllegalStateException(message));
+            return;
+        }
+
+        String requestedMapId = metadata != null ? metadata.get("mapId") : null;
+        String requestedGameId = metadata != null ? metadata.get("gameId") : null;
+
+        Optional<LoadedWorld> mapOptional = resolveMap(metadata);
+        if (mapOptional.isEmpty()) {
+            logger.warning("No cached world found for mapId='" + requestedMapId + "' gameId='"
+                    + requestedGameId + "'; falling back to '" + DEFAULT_MAP_ID + "'");
+            mapOptional = resolveMapById(DEFAULT_MAP_ID);
+            if (mapOptional.isEmpty()) {
+                String message = "Default world '" + DEFAULT_MAP_ID + "' unavailable; cannot prepare environment for slot " + slotId;
+                logger.warning(message);
+                future.completeExceptionally(new IllegalStateException(message));
+                return;
+            }
+        }
+
+        LoadedWorld map = mapOptional.get();
+        String resolvedMapId = map.getMapId();
+        String worldName = generateWorldName(slotId, resolvedMapId);
+        unloadIfPresent(worldName);
+
+        World world = createVoidWorld(worldName);
+        if (world == null) {
+            future.completeExceptionally(new IllegalStateException("Failed to create backing world " + worldName));
+            return;
+        }
+
+        configureRules(world);
+        Location pasteLocation = new Location(world, 0, 64, 0);
+        worldManager.pasteWorld(map.getId(), world, pasteLocation).whenComplete((pasteResult, throwable) -> {
+            if (throwable != null) {
+                logger.log(Level.WARNING, "Failed to paste map '" + resolvedMapId + "' for slot " + slotId, throwable);
+                runOnPrimaryThread(() -> {
+                    cleanupWorld(worldName);
+                    future.completeExceptionally(throwable instanceof CompletionException
+                            ? throwable.getCause() != null ? throwable.getCause() : throwable
+                            : throwable);
+                });
+                return;
+            }
+            runOnPrimaryThread(() -> {
+                if (pasteResult == null || !pasteResult.success()) {
+                    logger.warning("Unable to prepare map '" + resolvedMapId + "' for slot " + slotId + ": "
+                            + (pasteResult != null ? pasteResult.message() : "unknown"));
+                    cleanupWorld(worldName);
+                    future.completeExceptionally(new IllegalStateException("Paste failed for slot " + slotId));
+                    return;
+                }
+                Location matchSpawn = resolveMatchSpawn(map, pasteLocation);
+                Location lobbySpawn = matchSpawn.clone();
+                world.setSpawnLocation(lobbySpawn);
+
+                MatchEnvironment environment = new MatchEnvironment(slotId, worldName, resolvedMapId,
+                        lobbySpawn, matchSpawn);
+                environments.put(slotId, environment);
+                worldToSlot.put(normalize(worldName), slotId);
+                logger.info(() -> "Prepared match environment '" + worldName + "' for slot " + slotId
+                        + " (mapId=" + resolvedMapId + ")");
+                future.complete(environment);
+            });
+        });
+    }
+
+    private void runOnPrimaryThread(Runnable runnable) {
+        if (Bukkit.isPrimaryThread()) {
+            runnable.run();
+        } else {
+            plugin.getServer().getScheduler().runTask(plugin, runnable);
+        }
     }
 
     public record MatchEnvironment(String slotId,

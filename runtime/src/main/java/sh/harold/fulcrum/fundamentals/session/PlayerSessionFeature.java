@@ -95,6 +95,7 @@ public class PlayerSessionFeature implements PluginFeature {
             if (ServiceLocatorImpl.getInstance() != null) {
                 ServiceLocatorImpl.getInstance().registerService(PlayerReservationService.class, reservationService);
             }
+            logger.info("Player reservation tokens configured with TTL=" + reservationService.getReservationTtl().toSeconds() + "s");
         } else {
             logger.warning("MessageBus unavailable; reservation requests will be skipped.");
         }
@@ -137,6 +138,7 @@ public class PlayerSessionFeature implements PluginFeature {
             messageBus.unsubscribe(ChannelConstants.PLAYER_RESERVATION_REQUEST, reservationHandler);
         }
         if (sessionService != null) {
+            sessionService.shutdown();
             sessionService.clearLocalCache();
         }
         playtimeTracker = null;
@@ -282,4 +284,5 @@ public class PlayerSessionFeature implements PluginFeature {
 
         return builder.build();
     }
+
 }

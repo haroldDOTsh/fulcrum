@@ -20,18 +20,25 @@ import java.util.logging.Logger;
  * obtain a token before instructing the proxy to route a player to this server.
  */
 public class PlayerReservationService {
-
-    private static final Duration RESERVATION_TTL = Duration.ofSeconds(15);
-
+    private static final Duration DEFAULT_RESERVATION_TTL = Duration.ofSeconds(15);
     private final Logger logger;
     private final MessageBus messageBus;
     private final ObjectMapper objectMapper;
     private final Map<String, ReservationRecord> reservations = new ConcurrentHashMap<>();
+    private final Duration reservationTtl;
 
     public PlayerReservationService(Logger logger, MessageBus messageBus) {
+        this(logger, messageBus, DEFAULT_RESERVATION_TTL);
+    }
+
+    public PlayerReservationService(Logger logger, MessageBus messageBus, Duration reservationTtl) {
         this.logger = logger;
         this.messageBus = messageBus;
         this.objectMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        Duration fallback = reservationTtl != null && !reservationTtl.isNegative() && !reservationTtl.isZero()
+                ? reservationTtl
+                : DEFAULT_RESERVATION_TTL;
+        this.reservationTtl = fallback;
     }
 
     public void handleReservationRequest(MessageEnvelope envelope) {
@@ -42,7 +49,7 @@ public class PlayerReservationService {
             cleanupExpired();
 
             String token = UUID.randomUUID().toString();
-            long expiresAt = System.currentTimeMillis() + RESERVATION_TTL.toMillis();
+            long expiresAt = System.currentTimeMillis() + reservationTtl.toMillis();
             reservations.put(token, new ReservationRecord(request.getPlayerId(), request.getSlotId(), expiresAt));
 
             PlayerReservationResponse response = new PlayerReservationResponse(
@@ -98,6 +105,10 @@ public class PlayerReservationService {
         }
 
         return true;
+    }
+
+    public Duration getReservationTtl() {
+        return reservationTtl;
     }
 
     private void cleanupExpired() {

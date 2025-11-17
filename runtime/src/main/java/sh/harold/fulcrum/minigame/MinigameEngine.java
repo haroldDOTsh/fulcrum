@@ -508,46 +508,26 @@ public final class MinigameEngine {
                 return;
             }
 
-            MatchEnvironment environment = environmentService.prepareEnvironment(slot.slotId(), metadata);
-            if (environment == null) {
-                plugin.getLogger().warning("Failed to prepare environment for slot " + slot.slotId()
-                        + " (family=" + slot.familyId() + ", map=" + metadata.getOrDefault("mapId", "unknown") + ")");
-                if (slotOrchestrator != null) {
-                    slotOrchestrator.disableFamily(slot.familyId(), "environment-unavailable");
-                }
-                cleanupEnvironment(slotId);
-                markSlotFault(slot.slotId(), "environment-unavailable");
-                return;
-            }
-            if (slotOrchestrator != null) {
-                slotOrchestrator.enableFamily(slot.familyId());
-            }
-
-            Location lobbySpawn = environment.lobbySpawn();
-            String worldName = environment.worldName();
-            if (lobbySpawn == null || worldName == null || worldName.isBlank()) {
-                plugin.getLogger().warning("Environment for slot " + slot.slotId() + " did not provide a valid spawn location");
-                cleanupEnvironment(slotId);
-                markSlotFault(slot.slotId(), "spawn-unavailable");
-                return;
-            }
-
-            metadata.putIfAbsent("mapId", environment.mapId());
-            metadata.put("targetWorld", worldName);
-            metadata.put("spawnX", Double.toString(lobbySpawn.getX()));
-            metadata.put("spawnY", Double.toString(lobbySpawn.getY()));
-            metadata.put("spawnZ", Double.toString(lobbySpawn.getZ()));
-            metadata.put("spawnYaw", Float.toString(lobbySpawn.getYaw()));
-            metadata.put("spawnPitch", Float.toString(lobbySpawn.getPitch()));
-
-            slotOrchestrator.updateSlotStatus(slot.slotId(), SlotLifecycleStatus.AVAILABLE, 0, metadata);
-            plugin.getLogger().info("Provisioned slot " + slot.slotId() + " for family " + slot.familyId()
-                    + " (world=" + worldName + ")");
+            environmentService.prepareEnvironmentAsync(slot.slotId(), metadata)
+                    .whenComplete((environment, throwable) -> runOnMainThread(() -> {
+                        try {
+                            if (throwable != null || environment == null) {
+                                handleProvisioningFailure(slot, metadata, throwable);
+                            } else {
+                                finalizeProvisionedSlot(slot, metadata, environment);
+                            }
+                        } catch (Exception exception) {
+                            plugin.getLogger().log(Level.WARNING, "Failed to finalize provisioning for slot " + slot.slotId(), exception);
+                            cleanupEnvironment(slotId);
+                            markSlotFault(slot.slotId(), "provisioning-error");
+                        } finally {
+                            provisioningSlots.remove(slot.slotId());
+                        }
+                    }));
         } catch (Exception exception) {
             plugin.getLogger().log(Level.WARNING, "Failed to finalize provisioning for slot " + slot.slotId(), exception);
             cleanupEnvironment(slotId);
             markSlotFault(slot.slotId(), "provisioning-error");
-        } finally {
             provisioningSlots.remove(slot.slotId());
         }
     }
@@ -561,6 +541,60 @@ public final class MinigameEngine {
             }
         }
         cleanupEnvironment(slotId);
+    }
+
+    private void finalizeProvisionedSlot(SimpleSlotOrchestrator.ProvisionedSlot slot,
+                                         Map<String, String> metadata,
+                                         MinigameEnvironmentService.MatchEnvironment environment) {
+        if (slotOrchestrator != null) {
+            slotOrchestrator.enableFamily(slot.familyId());
+        }
+
+        Location lobbySpawn = environment.lobbySpawn();
+        String worldName = environment.worldName();
+        if (lobbySpawn == null || worldName == null || worldName.isBlank()) {
+            plugin.getLogger().warning("Environment for slot " + slot.slotId() + " did not provide a valid spawn location");
+            cleanupEnvironment(slot.slotId());
+            markSlotFault(slot.slotId(), "spawn-unavailable");
+            return;
+        }
+
+        metadata.putIfAbsent("mapId", environment.mapId());
+        metadata.put("targetWorld", worldName);
+        metadata.put("spawnX", Double.toString(lobbySpawn.getX()));
+        metadata.put("spawnY", Double.toString(lobbySpawn.getY()));
+        metadata.put("spawnZ", Double.toString(lobbySpawn.getZ()));
+        metadata.put("spawnYaw", Float.toString(lobbySpawn.getYaw()));
+        metadata.put("spawnPitch", Float.toString(lobbySpawn.getPitch()));
+
+        slotOrchestrator.updateSlotStatus(slot.slotId(), SlotLifecycleStatus.AVAILABLE, 0, metadata);
+        plugin.getLogger().info("Provisioned slot " + slot.slotId() + " for family " + slot.familyId()
+                + " (world=" + worldName + ")");
+    }
+
+    private void handleProvisioningFailure(SimpleSlotOrchestrator.ProvisionedSlot slot,
+                                           Map<String, String> metadata,
+                                           Throwable throwable) {
+        if (throwable != null) {
+            plugin.getLogger().log(Level.WARNING, "Failed to prepare environment for slot " + slot.slotId()
+                    + " (family=" + slot.familyId() + ", map=" + metadata.getOrDefault("mapId", "unknown") + ")", throwable);
+        } else {
+            plugin.getLogger().warning("Failed to prepare environment for slot " + slot.slotId()
+                    + " (family=" + slot.familyId() + ", map=" + metadata.getOrDefault("mapId", "unknown") + ")");
+        }
+        if (slotOrchestrator != null) {
+            slotOrchestrator.disableFamily(slot.familyId(), "environment-unavailable");
+        }
+        cleanupEnvironment(slot.slotId());
+        markSlotFault(slot.slotId(), "environment-unavailable");
+    }
+
+    private void runOnMainThread(Runnable task) {
+        if (plugin.getServer().isPrimaryThread()) {
+            task.run();
+        } else {
+            plugin.getServer().getScheduler().runTask(plugin, task);
+        }
     }
 
     private void ensureTicking() {
