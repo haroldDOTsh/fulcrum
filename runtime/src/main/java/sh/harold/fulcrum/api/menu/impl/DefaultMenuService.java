@@ -42,6 +42,11 @@ public class DefaultMenuService implements MenuService {
     }
 
     @Override
+    public TabbedMenuBuilder createTabbedMenu() {
+        return new DefaultTabbedMenuBuilder(this);
+    }
+
+    @Override
     public CompletableFuture<Void> openMenu(Menu menu, Player player) {
         Objects.requireNonNull(menu, "Menu cannot be null");
         Objects.requireNonNull(player, "Player cannot be null");

@@ -4,8 +4,10 @@ import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.menu.MenuRegistry;
 import sh.harold.fulcrum.api.menu.MenuService;
+import sh.harold.fulcrum.api.menu.command.MenuDebugCommand;
 import sh.harold.fulcrum.api.menu.component.MenuButton;
 import sh.harold.fulcrum.common.cooldown.CooldownRegistry;
+import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 
@@ -39,6 +41,8 @@ public class MenuFeature implements PluginFeature {
         // Create and register inventory listener
         inventoryListener = new MenuInventoryListener(menuService, plugin);
         plugin.getServer().getPluginManager().registerEvents(inventoryListener, plugin);
+
+        CommandRegistrar.register(new MenuDebugCommand(() -> menuService).build());
 
         plugin.getLogger().info("[MENU] Initialized successfully");
     }

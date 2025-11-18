@@ -32,6 +32,13 @@ public interface MenuService {
     CustomMenuBuilder createMenuBuilder();
 
     /**
+     * Creates a new tabbed menu builder for building menus with multiple categorized panes.
+     *
+     * @return a new TabbedMenuBuilder instance
+     */
+    TabbedMenuBuilder createTabbedMenu();
+
+    /**
      * Opens a menu for the specified player.
      * This method handles all necessary setup including registering event handlers.
      *
