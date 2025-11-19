@@ -19,7 +19,7 @@ public enum Rank {
 
     // Staff ranks
     HELPER(100, RankCategory.STAFF, NamedTextColor.BLUE),
-    STAFF(200, RankCategory.STAFF, NamedTextColor.DARK_RED);
+    STAFF(200, RankCategory.STAFF, NamedTextColor.DARK_RED)
 }
 ```
 
@@ -89,7 +89,7 @@ if (RankUtils.isStaff(player)) {
 - In-memory caching for performance
 - Async operations with CompletableFuture
 - Automatic expiration checking
-- Base rank state is embedded in the shared `players` document under `rank` and
+- Base rank state is embedded in the shared `players` document under
   `rankInfo.*`; this keeps the proxy and backend in sync without an extra
   collection.
 - Every rank mutation emits an audit entry (when backed by PostgreSQL) into the
