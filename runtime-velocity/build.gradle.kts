@@ -33,6 +33,9 @@ dependencies {
 
     // PostgreSQL JDBC driver (required at runtime for optional relational features)
     implementation("org.postgresql:postgresql:42.7.4")
+
+    // Caching
+    implementation("com.github.ben-manes.caffeine:caffeine:3.2.3")
     
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.9")

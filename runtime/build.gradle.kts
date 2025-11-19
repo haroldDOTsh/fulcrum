@@ -40,6 +40,7 @@ dependencies {
     // Redis dependencies (using Lettuce to match proxy implementation)
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
     implementation("org.apache.commons:commons-pool2:2.12.0") // Still needed for connection pooling
+    implementation("com.github.ben-manes.caffeine:caffeine:3.2.3")
     
     // World Editing
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Core:2.11.2")
