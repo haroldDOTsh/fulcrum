@@ -3,9 +3,10 @@ package sh.harold.fulcrum.registry.social;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.friends.FriendSnapshot;
+import sh.harold.fulcrum.api.friends.FriendSnapshot.BlockDetails;
+import sh.harold.fulcrum.api.friends.FriendSnapshot.FriendDetails;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Persists player social state inside the Mongo-backed players collection.
@@ -28,19 +29,19 @@ public final class FriendSnapshotStore {
             return FriendSnapshot.empty();
         }
         long version = extractLong(socialMap.get("version"));
-        Set<UUID> friends = extractUuidSet(socialMap.get("friends"));
-        Set<UUID> ignoresOut = extractIgnores(socialMap.get("ignoresOut"));
-        Set<UUID> ignoresIn = extractIgnores(socialMap.get("ignoresIn"));
-        return new FriendSnapshot(version, friends, ignoresOut, ignoresIn);
+        Object friends = socialMap.get("friends");
+        Object ignoresOut = socialMap.get("ignoresOut");
+        Object ignoresIn = socialMap.get("ignoresIn");
+        return FriendSnapshot.create(version, friends, ignoresOut, ignoresIn);
     }
 
     void save(UUID playerId, FriendSnapshot snapshot) {
         Document document = document(playerId);
         Map<String, Object> social = new LinkedHashMap<>();
         social.put("version", snapshot.version());
-        social.put("friends", snapshot.friends().stream().map(UUID::toString).toList());
-        social.put("ignoresOut", serializeIgnoreSet(snapshot.ignoresOut()));
-        social.put("ignoresIn", serializeIgnoreSet(snapshot.ignoresIn()));
+        social.put("friends", serializeFriends(snapshot.friends().values()));
+        social.put("ignoresOut", serializeBlocks(snapshot.ignoresOut().values()));
+        social.put("ignoresIn", serializeBlocks(snapshot.ignoresIn().values()));
         document.set("social", social);
     }
 
@@ -59,29 +60,44 @@ public final class FriendSnapshotStore {
         return 0L;
     }
 
-    private Set<UUID> extractUuidSet(Object value) {
-        if (!(value instanceof Collection<?> collection)) {
-            return Set.of();
+    private List<Map<String, Object>> serializeFriends(Collection<FriendDetails> friends) {
+        if (friends == null || friends.isEmpty()) {
+            return List.of();
         }
-        return collection.stream()
-                .map(Objects::toString)
-                .map(UUID::fromString)
-                .collect(Collectors.toUnmodifiableSet());
+        List<Map<String, Object>> entries = new ArrayList<>(friends.size());
+        for (FriendDetails details : friends) {
+            if (details == null || details.playerId() == null) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("playerId", details.playerId().toString());
+            if (details.since() != null) {
+                entry.put("since", details.since().toEpochMilli());
+            }
+            if (details.nickname() != null && !details.nickname().isBlank()) {
+                entry.put("nickname", details.nickname());
+            }
+            entries.add(entry);
+        }
+        return entries;
     }
 
-    private Set<UUID> extractIgnores(Object value) {
-        if (value instanceof Collection<?> collection) {
-            return extractUuidSet(collection);
+    private List<Map<String, Object>> serializeBlocks(Collection<BlockDetails> blocks) {
+        if (blocks == null || blocks.isEmpty()) {
+            return List.of();
         }
-        if (value instanceof Map<?, ?> legacyMap) {
-            Set<UUID> flattened = new HashSet<>();
-            legacyMap.values().forEach(entry -> flattened.addAll(extractUuidSet(entry)));
-            return Collections.unmodifiableSet(flattened);
+        List<Map<String, Object>> entries = new ArrayList<>(blocks.size());
+        for (BlockDetails block : blocks) {
+            if (block == null || block.playerId() == null) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("playerId", block.playerId().toString());
+            if (block.blockedAt() != null) {
+                entry.put("blockedAt", block.blockedAt().toEpochMilli());
+            }
+            entries.add(entry);
         }
-        return Set.of();
-    }
-
-    private List<String> serializeIgnoreSet(Set<UUID> set) {
-        return set.stream().map(UUID::toString).toList();
+        return entries;
     }
 }

@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.fundamentals.playerdata;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import sh.harold.fulcrum.api.friends.*;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
@@ -22,7 +23,7 @@ final class RuntimeFriendSnapshotService implements FriendService {
     private final LettuceRedisOperations redis;
     private final Executor executor;
     private final Logger logger;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
     private final ConcurrentHashMap<UUID, CachedSnapshot> cache = new ConcurrentHashMap<>();
 
     RuntimeFriendSnapshotService(LettuceRedisOperations redis,

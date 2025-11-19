@@ -18,6 +18,7 @@ public record FriendMutationRequest(
         Map<String, Object> metadata
 ) {
     public static final String METADATA_IGNORE_BYPASS = "fulcrum.ignore.bypass";
+    public static final String METADATA_ACTOR_NAME = "actorName";
 
     public FriendMutationRequest {
         Objects.requireNonNull(type, "type");

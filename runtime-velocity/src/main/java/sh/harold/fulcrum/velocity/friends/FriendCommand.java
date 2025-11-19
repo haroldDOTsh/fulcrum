@@ -190,7 +190,7 @@ public final class FriendCommand implements SimpleCommand {
         }
         final int requestedPage = args.length > 1 ? parsePage(args[1]) : 1;
         withSnapshot(player, false, snapshot -> {
-            List<UUID> friends = new ArrayList<>(snapshot.friends());
+            List<UUID> friends = new ArrayList<>(snapshot.friendIds());
             if (friends.isEmpty()) {
                 sendFramed(player, FriendTextFormatter.yellow("You have no friends yet. Use /friend add <player> to get started."));
                 return;
@@ -280,7 +280,7 @@ public final class FriendCommand implements SimpleCommand {
                 schedule(() -> sendFramed(player, error("You can't add yourself as a friend!")));
                 return;
             }
-            Map<String, Object> metadata = Map.of("actorName", player.getUsername());
+            Map<String, Object> metadata = Map.of(FriendMutationRequest.METADATA_ACTOR_NAME, player.getUsername());
             debug(player, "sending invite actor={} target={} metadata={}", player.getUniqueId(), targetId, metadata);
             friendService.sendInvite(player.getUniqueId(), targetId, metadata)
                     .thenApply(result -> Map.entry(targetId, result))
@@ -304,7 +304,7 @@ public final class FriendCommand implements SimpleCommand {
                                         result.actorSnapshot() != null ? result.actorSnapshot().version() : 0L,
                                         result.targetSnapshot() != null ? result.targetSnapshot().version() : 0L);
                                 boolean friendshipEstablished = result.actorSnapshot() != null
-                                        && result.actorSnapshot().friends().contains(entry.getKey());
+                                        && result.actorSnapshot().friendIds().contains(entry.getKey());
                                 withProfile(entry.getKey(), profile -> {
                                     Component body;
                                     if (friendshipEstablished) {
@@ -331,10 +331,11 @@ public final class FriendCommand implements SimpleCommand {
 
     private void handleAccept(Player player, String targetArg) {
         debug(player, "handling accept targetArg={}", targetArg);
-        resolveTarget(targetArg).thenCompose(targetId ->
-                friendService.acceptInvite(player.getUniqueId(), targetId)
-                        .thenApply(result -> Map.entry(targetId, result))
-        ).whenComplete((entry, throwable) ->
+        resolveTarget(targetArg).thenCompose(targetId -> {
+            Map<String, Object> metadata = Map.of(FriendMutationRequest.METADATA_ACTOR_NAME, player.getUsername());
+            return friendService.acceptInvite(player.getUniqueId(), targetId, metadata)
+                    .thenApply(result -> Map.entry(targetId, result));
+        }).whenComplete((entry, throwable) ->
                 schedule(() -> {
                     if (throwable != null) {
                         debug(player, "accept flow failed targetArg={} error={}", targetArg, throwable.toString());
@@ -465,13 +466,14 @@ public final class FriendCommand implements SimpleCommand {
     private void handleRemoveAll(Player player) {
         debug(player, "handling remove all");
         withSnapshot(player, true, snapshot -> {
-            if (snapshot.friends().isEmpty()) {
+            if (snapshot.friendIds().isEmpty()) {
                 debug(player, "remove all skipped - no friends");
                 sendFramed(player, FriendTextFormatter.yellow("You do not have any friends to remove."));
                 return;
             }
-            debug(player, "removing {} friends", snapshot.friends().size());
-            List<CompletionStage<FriendOperationResult>> futures = snapshot.friends().stream()
+            int totalFriends = snapshot.friendIds().size();
+            debug(player, "removing {} friends", totalFriends);
+            List<CompletionStage<FriendOperationResult>> futures = snapshot.friendIds().stream()
                     .map(friend -> friendService.unfriend(player.getUniqueId(), friend))
                     .toList();
             CompletableFuture.allOf(futures.stream()
@@ -485,8 +487,8 @@ public final class FriendCommand implements SimpleCommand {
                                     sendFramed(player, error("Failed to remove all friends."));
                                     return;
                                 }
-                                debug(player, "remove all succeeded removedCount={}", snapshot.friends().size());
-                                sendFramed(player, FriendTextFormatter.yellow("Removed " + snapshot.friends().size() + " friends."));
+                                debug(player, "remove all succeeded removedCount={}", totalFriends);
+                                sendFramed(player, FriendTextFormatter.yellow("Removed " + totalFriends + " friends."));
                             }));
         });
     }
@@ -534,7 +536,7 @@ public final class FriendCommand implements SimpleCommand {
                             }
                             debug(player, "snapshot ready version={} friends={}",
                                     snapshot.version(),
-                                    snapshot.friends().size());
+                                    snapshot.friendIds().size());
                             consumer.accept(snapshot);
                         }));
     }
@@ -731,7 +733,7 @@ public final class FriendCommand implements SimpleCommand {
                                     if (throwable != null || snapshot == null) {
                                         return;
                                     }
-                                    if (snapshot.friends().contains(targetId)) {
+                                    if (snapshot.friendIds().contains(targetId)) {
                                         return;
                                     }
                                     proxy.getPlayer(actorId).ifPresent(player ->

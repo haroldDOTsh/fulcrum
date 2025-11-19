@@ -29,9 +29,14 @@ public interface FriendService {
     }
 
     default CompletionStage<FriendOperationResult> acceptInvite(UUID actor, UUID target) {
+        return acceptInvite(actor, target, Map.of());
+    }
+
+    default CompletionStage<FriendOperationResult> acceptInvite(UUID actor, UUID target, Map<String, Object> metadata) {
         return execute(FriendMutationRequest.builder(FriendMutationType.INVITE_ACCEPT)
                 .actor(actor)
                 .target(target)
+                .metadata(metadata)
                 .build());
     }
 

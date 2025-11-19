@@ -495,7 +495,9 @@ public final class VelocityFriendService implements FriendService {
                                         .anyMatch(invite -> target.equals(invite.actorId()));
                                 if (pendingFromTarget) {
                                     logger.debug("Privacy blocked invite {} -> {} but pending request exists; auto-accepting.", actor, target);
-                                    return FriendService.super.acceptInvite(actor, target);
+                                    Map<String, Object> acceptanceMetadata = Map.of(
+                                            FriendMutationRequest.METADATA_ACTOR_NAME, resolvePlainName(actor));
+                                    return FriendService.super.acceptInvite(actor, target, acceptanceMetadata);
                                 }
                                 result.denialReason()
                                         .ifPresent(reason -> logger.debug("Friend invite blocked due to privacy: {} -> {} ({})", actor, target, reason));

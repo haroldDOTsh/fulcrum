@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.registry.social;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.lettuce.core.api.sync.RedisCommands;
 import sh.harold.fulcrum.api.friends.*;
 import sh.harold.fulcrum.api.messagebus.messages.social.FriendBlockEventMessage;
@@ -25,7 +26,7 @@ public final class FriendGraphService {
     private final FriendInviteStore inviteStore;
     private final RedisManager redisManager;
     private final Logger logger;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     public FriendGraphService(FriendSnapshotStore snapshotStore,
                               FriendInviteStore inviteStore,
@@ -101,7 +102,7 @@ public final class FriendGraphService {
         }
         FriendSnapshot actorSnapshot = snapshotStore.load(actor);
         FriendSnapshot targetSnapshot = snapshotStore.load(target);
-        if (actorSnapshot.friends().contains(target)) {
+        if (actorSnapshot.friendIds().contains(target)) {
             return failure(request, "Already friends");
         }
         boolean ignoreBypass = request.bypassesIgnoreChecks();
@@ -112,8 +113,8 @@ public final class FriendGraphService {
             return failure(request, "Request already pending");
         }
         if (inviteStore.hasInvite(target, actor)) {
-            inviteStore.consumeInvite(target, actor);
-            return commitFriendship(request, actorSnapshot, targetSnapshot);
+            Optional<FriendInviteStore.PendingInvite> pending = inviteStore.consumeInvite(target, actor);
+            return commitFriendship(request, actorSnapshot, targetSnapshot, pending.map(FriendInviteStore.PendingInvite::metadata).orElse(null));
         }
         inviteStore.createInvite(actor, target, request.metadata());
         FriendRelationEventMessage event = buildRelationEvent(actor, target,
@@ -128,12 +129,13 @@ public final class FriendGraphService {
     private FriendOperationContext handleInviteAccept(FriendMutationRequest request) {
         UUID actor = request.actorId();
         UUID target = request.targetId();
-        if (inviteStore.consumeInvite(target, actor).isEmpty()) {
+        Optional<FriendInviteStore.PendingInvite> invite = inviteStore.consumeInvite(target, actor);
+        if (invite.isEmpty()) {
             return failure(request, "No pending invite to accept");
         }
         FriendSnapshot actorSnapshot = snapshotStore.load(actor);
         FriendSnapshot targetSnapshot = snapshotStore.load(target);
-        return commitFriendship(request, actorSnapshot, targetSnapshot);
+        return commitFriendship(request, actorSnapshot, targetSnapshot, invite.get().metadata());
     }
 
     private FriendOperationContext handleInviteDecline(FriendMutationRequest request) {
@@ -163,11 +165,11 @@ public final class FriendGraphService {
         UUID target = request.targetId();
         FriendSnapshot actorSnapshot = snapshotStore.load(actor);
         FriendSnapshot targetSnapshot = snapshotStore.load(target);
-        if (!actorSnapshot.friends().contains(target)) {
+        if (!actorSnapshot.friendIds().contains(target)) {
             return failure(request, "Players are not friends");
         }
-        FriendSnapshot updatedActor = updateFriends(actorSnapshot, set -> set.remove(target));
-        FriendSnapshot updatedTarget = updateFriends(targetSnapshot, set -> set.remove(actor));
+        FriendSnapshot updatedActor = updateFriends(actorSnapshot, map -> map.remove(target));
+        FriendSnapshot updatedTarget = updateFriends(targetSnapshot, map -> map.remove(actor));
         persist(actor, updatedActor);
         persist(target, updatedTarget);
         FriendRelationEventMessage event = buildRelationEvent(actor, target,
@@ -185,10 +187,11 @@ public final class FriendGraphService {
         }
         inviteStore.cancelInvite(actor, target);
         inviteStore.cancelInvite(target, actor);
-        FriendSnapshot cleanedActor = updateFriends(actorSnapshot, set -> set.remove(target));
-        FriendSnapshot cleanedTarget = updateFriends(targetSnapshot, set -> set.remove(actor));
-        FriendSnapshot updatedActor = updateIgnoresOut(cleanedActor, set -> set.add(target));
-        FriendSnapshot updatedTarget = updateIgnoresIn(cleanedTarget, set -> set.add(actor));
+        FriendSnapshot cleanedActor = updateFriends(actorSnapshot, map -> map.remove(target));
+        FriendSnapshot cleanedTarget = updateFriends(targetSnapshot, map -> map.remove(actor));
+        Instant now = Instant.now();
+        FriendSnapshot updatedActor = updateIgnoresOut(cleanedActor, map -> map.put(target, new FriendSnapshot.BlockDetails(target, now)));
+        FriendSnapshot updatedTarget = updateIgnoresIn(cleanedTarget, map -> map.put(actor, new FriendSnapshot.BlockDetails(actor, now)));
         persist(actor, updatedActor);
         persist(target, updatedTarget);
         if (request.expiresAt() != null) {
@@ -208,8 +211,8 @@ public final class FriendGraphService {
             return failure(request, "No ignore entry to remove");
         }
         FriendSnapshot targetSnapshot = snapshotStore.load(target);
-        FriendSnapshot updatedActor = updateIgnoresOut(actorSnapshot, set -> set.remove(target));
-        FriendSnapshot updatedTarget = updateIgnoresIn(targetSnapshot, set -> set.remove(actor));
+        FriendSnapshot updatedActor = updateIgnoresOut(actorSnapshot, map -> map.remove(target));
+        FriendSnapshot updatedTarget = updateIgnoresIn(targetSnapshot, map -> map.remove(actor));
         persist(actor, updatedActor);
         persist(target, updatedTarget);
         removeBlockExpiry(actor, target);
@@ -240,9 +243,15 @@ public final class FriendGraphService {
 
     private FriendOperationContext commitFriendship(FriendMutationRequest request,
                                                     FriendSnapshot actorSnapshot,
-                                                    FriendSnapshot targetSnapshot) {
-        FriendSnapshot updatedActor = updateFriends(actorSnapshot, set -> set.add(request.targetId()));
-        FriendSnapshot updatedTarget = updateFriends(targetSnapshot, set -> set.add(request.actorId()));
+                                                    FriendSnapshot targetSnapshot,
+                                                    Map<String, Object> inviteMetadata) {
+        Instant now = Instant.now();
+        String targetNickname = nicknameFrom(inviteMetadata);
+        String actorNickname = nicknameFrom(request.metadata());
+        FriendSnapshot updatedActor = updateFriends(actorSnapshot,
+                map -> map.put(request.targetId(), new FriendSnapshot.FriendDetails(request.targetId(), now, targetNickname)));
+        FriendSnapshot updatedTarget = updateFriends(targetSnapshot,
+                map -> map.put(request.actorId(), new FriendSnapshot.FriendDetails(request.actorId(), now, actorNickname)));
         persist(request.actorId(), updatedActor);
         persist(request.targetId(), updatedTarget);
         FriendRelationEventMessage event = buildRelationEvent(request.actorId(), request.targetId(),
@@ -270,24 +279,25 @@ public final class FriendGraphService {
         return new FriendOperationContext(FriendOperationResult.failure(request.type(), reason), null, null);
     }
 
-    private FriendSnapshot updateFriends(FriendSnapshot snapshot, Consumer<Set<UUID>> mutator) {
-        Set<UUID> friends = new HashSet<>(snapshot.friends());
+    private FriendSnapshot updateFriends(FriendSnapshot snapshot,
+                                         Consumer<Map<UUID, FriendSnapshot.FriendDetails>> mutator) {
+        Map<UUID, FriendSnapshot.FriendDetails> friends = new LinkedHashMap<>(snapshot.friends());
         mutator.accept(friends);
         return new FriendSnapshot(snapshot.version() + 1, friends, snapshot.ignoresOut(), snapshot.ignoresIn());
     }
 
     private FriendSnapshot updateIgnoresOut(FriendSnapshot snapshot,
-                                            Consumer<Set<UUID>> mutator) {
-        Set<UUID> ignores = new HashSet<>(snapshot.ignoresOut());
+                                            Consumer<Map<UUID, FriendSnapshot.BlockDetails>> mutator) {
+        Map<UUID, FriendSnapshot.BlockDetails> ignores = new LinkedHashMap<>(snapshot.ignoresOut());
         mutator.accept(ignores);
-        return new FriendSnapshot(snapshot.version() + 1, snapshot.friends(), Collections.unmodifiableSet(ignores), snapshot.ignoresIn());
+        return new FriendSnapshot(snapshot.version() + 1, snapshot.friends(), ignores, snapshot.ignoresIn());
     }
 
     private FriendSnapshot updateIgnoresIn(FriendSnapshot snapshot,
-                                           Consumer<Set<UUID>> mutator) {
-        Set<UUID> ignores = new HashSet<>(snapshot.ignoresIn());
+                                           Consumer<Map<UUID, FriendSnapshot.BlockDetails>> mutator) {
+        Map<UUID, FriendSnapshot.BlockDetails> ignores = new LinkedHashMap<>(snapshot.ignoresIn());
         mutator.accept(ignores);
-        return new FriendSnapshot(snapshot.version() + 1, snapshot.friends(), snapshot.ignoresOut(), Collections.unmodifiableSet(ignores));
+        return new FriendSnapshot(snapshot.version() + 1, snapshot.friends(), snapshot.ignoresOut(), ignores);
     }
 
     private void persist(UUID playerId, FriendSnapshot snapshot) {
@@ -300,9 +310,9 @@ public final class FriendGraphService {
             String payload = mapper.writeValueAsString(snapshot);
             RedisCommands<String, String> commands = redisManager.sync();
             commands.set(FriendRedisKeys.snapshotKey(playerId), payload);
-            updateSet(commands, FriendRedisKeys.friendSetKey(playerId), snapshot.friends());
-            updateSet(commands, FriendRedisKeys.ignoresOutKey(playerId), snapshot.ignoresOut());
-            updateSet(commands, FriendRedisKeys.ignoresInKey(playerId), snapshot.ignoresIn());
+            updateSet(commands, FriendRedisKeys.friendSetKey(playerId), snapshot.friendIds());
+            updateSet(commands, FriendRedisKeys.ignoresOutKey(playerId), snapshot.ignoresOutIds());
+            updateSet(commands, FriendRedisKeys.ignoresInKey(playerId), snapshot.ignoresInIds());
         } catch (Exception ex) {
             logger.log(Level.WARNING, "Failed to cache friend snapshot", ex);
         }
@@ -321,7 +331,7 @@ public final class FriendGraphService {
         }
     }
 
-    private void updateSet(RedisCommands<String, String> commands, String key, Set<UUID> members) {
+    private void updateSet(RedisCommands<String, String> commands, String key, Collection<UUID> members) {
         commands.del(key);
         if (members == null || members.isEmpty()) {
             return;
@@ -385,6 +395,18 @@ public final class FriendGraphService {
 
     private String encodeBlockEntry(UUID owner, UUID target) {
         return owner + ":" + target;
+    }
+
+    private String nicknameFrom(Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        Object raw = metadata.get(FriendMutationRequest.METADATA_ACTOR_NAME);
+        if (raw instanceof String text) {
+            String trimmed = text.trim();
+            return trimmed.isEmpty() ? null : trimmed;
+        }
+        return raw != null ? raw.toString() : null;
     }
 
     public record FriendOperationContext(FriendOperationResult result,

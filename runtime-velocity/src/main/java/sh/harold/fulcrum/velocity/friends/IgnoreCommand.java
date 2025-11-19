@@ -185,7 +185,7 @@ public final class IgnoreCommand implements SimpleCommand {
                         FriendMessageRenderer.sendFramed(player, FriendMessageRenderer.error("Unable to load ignore data right now."));
                         return;
                     }
-                    Collection<UUID> ignores = snapshot.ignoresOut();
+                    Collection<UUID> ignores = snapshot.ignoresOutIds();
                     if (ignores.isEmpty()) {
                         FriendMessageRenderer.sendFramed(player,
                                 FriendMessageRenderer.info("You are not ignoring anyone. Use /ignore add <player>."));

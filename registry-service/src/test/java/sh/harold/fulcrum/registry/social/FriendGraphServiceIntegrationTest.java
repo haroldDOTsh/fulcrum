@@ -66,7 +66,7 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         FriendMutationRequest invite = FriendMutationRequest.builder(FriendMutationType.INVITE_SEND)
                 .actor(actor)
                 .target(target)
-                .metadata(Map.of("actorName", "Alpha"))
+                .metadata(Map.of(FriendMutationRequest.METADATA_ACTOR_NAME, "Alpha"))
                 .build();
         assertThat(service.apply(invite).result().success()).isTrue();
 
@@ -77,13 +77,18 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         FriendMutationRequest accept = FriendMutationRequest.builder(FriendMutationType.INVITE_ACCEPT)
                 .actor(target)
                 .target(actor)
+                .metadata(Map.of(FriendMutationRequest.METADATA_ACTOR_NAME, "Bravo"))
                 .build();
         assertThat(service.apply(accept).result().success()).isTrue();
 
         FriendSnapshot actorSnapshot = service.getSnapshot(actor, true);
         FriendSnapshot targetSnapshot = service.getSnapshot(target, true);
-        assertThat(actorSnapshot.friends()).containsExactly(target);
-        assertThat(targetSnapshot.friends()).containsExactly(actor);
+        assertThat(actorSnapshot.friendIds()).containsExactly(target);
+        assertThat(targetSnapshot.friendIds()).containsExactly(actor);
+        assertThat(actorSnapshot.friends().get(target).nickname()).isEqualTo("Alpha");
+        assertThat(targetSnapshot.friends().get(actor).nickname()).isEqualTo("Bravo");
+        assertThat(actorSnapshot.friends().get(target).since()).isNotNull();
+        assertThat(targetSnapshot.friends().get(actor).since()).isNotNull();
         assertThat(inviteStore.listPendingInvites(target)).isEmpty();
     }
 
@@ -132,9 +137,9 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         FriendSnapshot actorSnapshot = service.getSnapshot(actor, true);
         FriendSnapshot targetSnapshot = service.getSnapshot(target, true);
 
-        assertThat(actorSnapshot.friends()).isEmpty();
-        assertThat(actorSnapshot.ignoresOut()).contains(target);
-        assertThat(targetSnapshot.ignoresIn()).contains(actor);
+        assertThat(actorSnapshot.friendIds()).isEmpty();
+        assertThat(actorSnapshot.ignoresOutIds()).contains(target);
+        assertThat(targetSnapshot.ignoresInIds()).contains(actor);
 
         FriendMutationRequest unblock = FriendMutationRequest.builder(FriendMutationType.UNBLOCK)
                 .actor(actor)
@@ -144,8 +149,8 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
 
         FriendSnapshot unblockedActor = service.getSnapshot(actor, true);
         FriendSnapshot unblockedTarget = service.getSnapshot(target, true);
-        assertThat(unblockedActor.ignoresOut()).isEmpty();
-        assertThat(unblockedTarget.ignoresIn()).isEmpty();
+        assertThat(unblockedActor.ignoresOutIds()).isEmpty();
+        assertThat(unblockedTarget.ignoresInIds()).isEmpty();
     }
 
     @Test
@@ -180,11 +185,13 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         FriendMutationRequest send = FriendMutationRequest.builder(FriendMutationType.INVITE_SEND)
                 .actor(first)
                 .target(second)
+                .metadata(Map.of(FriendMutationRequest.METADATA_ACTOR_NAME, "First"))
                 .build();
         service.apply(send);
         FriendMutationRequest accept = FriendMutationRequest.builder(FriendMutationType.INVITE_ACCEPT)
                 .actor(second)
                 .target(first)
+                .metadata(Map.of(FriendMutationRequest.METADATA_ACTOR_NAME, "Second"))
                 .build();
         service.apply(accept);
     }

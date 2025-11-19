@@ -47,7 +47,9 @@ class DocumentPatchTest {
         Map<String, Object> target = new HashMap<>();
         patch.applyToMap(target, false);
 
-        assertThat(target).containsEntry("settings.hints", true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> settings = (Map<String, Object>) target.get("settings");
+        assertThat(settings).isNotNull().containsEntry("hints", true);
         assertThat(target).doesNotContainKey("username");
     }
 }

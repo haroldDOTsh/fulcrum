@@ -35,11 +35,11 @@ public record PrivacyContext(
     }
 
     public boolean targetFriendsWithActor() {
-        return targetSnapshot.friends().contains(actorId);
+        return targetSnapshot.friendIds().contains(actorId);
     }
 
     public boolean actorFriendsWithTarget() {
-        return actorSnapshot.friends().contains(targetId);
+        return actorSnapshot.friendIds().contains(targetId);
     }
 
     public boolean mutualFriends() {
