@@ -3,13 +3,17 @@ package sh.harold.fulcrum.fundamentals.fun.quickmaths;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.message.Message;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 
@@ -25,6 +29,7 @@ import java.util.function.Supplier;
  * Coordinates Quick Maths rounds and routes chat answers to the appropriate scope.
  */
 public final class QuickMathsManager {
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacyAmpersand();
     private static final PlainTextComponentSerializer PLAIN = PlainTextComponentSerializer.plainText();
     private static final NamedTextColor[] PARENTHESIS_COLORS = new NamedTextColor[]{
             NamedTextColor.GRAY,
@@ -44,12 +49,16 @@ public final class QuickMathsManager {
 
     private final JavaPlugin plugin;
     private final Supplier<MinigameEngine> engineSupplier;
+    private final Supplier<RankService> rankServiceSupplier;
     private final Map<QuickMathsScope, QuickMathsSession> activeSessions = new ConcurrentHashMap<>();
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public QuickMathsManager(JavaPlugin plugin, Supplier<MinigameEngine> engineSupplier) {
+    public QuickMathsManager(JavaPlugin plugin,
+                             Supplier<MinigameEngine> engineSupplier,
+                             Supplier<RankService> rankServiceSupplier) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier");
+        this.rankServiceSupplier = rankServiceSupplier != null ? rankServiceSupplier : () -> null;
     }
 
     public int maxWinnersPerRound() {
@@ -317,7 +326,7 @@ public final class QuickMathsManager {
 
     private void announceWinner(QuickMathsSession session, Player player, WinnerPlacement placement) {
         Component body = Component.text("#" + placement.position + " ", NamedTextColor.LIGHT_PURPLE)
-                .append(player.displayName())
+                .append(formatPlayerDisplay(player))
                 .append(Component.space())
                 .append(Component.text("answered in ", NamedTextColor.GRAY))
                 .append(Component.text(placement.elapsedMillis + "ms", NamedTextColor.YELLOW));
@@ -798,5 +807,64 @@ public final class QuickMathsManager {
     }
 
     private record WinnerPlacement(int position, long elapsedMillis) {
+    }
+
+    private Component formatPlayerDisplay(Player player) {
+        if (player == null) {
+            return Component.text("Unknown", NamedTextColor.GRAY);
+        }
+        Rank rank = resolveRank(player.getUniqueId());
+        Component prefix = rankPrefix(rank);
+        Component name = Component.text(player.getName(), resolveNameColor(rank));
+        if (prefix == Component.empty() || prefix.equals(Component.empty())) {
+            return name;
+        }
+        return Component.text().append(prefix).append(Component.space()).append(name).build();
+    }
+
+    private Rank resolveRank(UUID playerId) {
+        if (playerId == null || rankServiceSupplier == null) {
+            return null;
+        }
+        RankService service = rankServiceSupplier.get();
+        if (service == null) {
+            return null;
+        }
+        try {
+            return service.getEffectiveRankSync(playerId);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private TextColor resolveNameColor(Rank rank) {
+        if (rank == null) {
+            return NamedTextColor.AQUA;
+        }
+        TextColor color = rank.getTextColor();
+        return color != null ? color : NamedTextColor.AQUA;
+    }
+
+    private Component rankPrefix(Rank rank) {
+        if (rank == null) {
+            return Component.empty();
+        }
+        String token = firstNonBlank(rank.getFullPrefix(), rank.getShortPrefix());
+        if (token == null || token.isBlank()) {
+            return Component.empty();
+        }
+        return LEGACY.deserialize(token);
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }

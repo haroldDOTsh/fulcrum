@@ -44,12 +44,15 @@ public final class KaboomCommand {
     private int execute(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         CommandSourceStack source = context.getSource();
         CommandSender sender = source.getSender();
-        EntitySelectorArgumentResolver resolver = context.getArgument("targets", EntitySelectorArgumentResolver.class);
 
-        List<Player> targets = resolver.resolve(source).stream()
-                .filter(Player.class::isInstance)
-                .map(Player.class::cast)
-                .toList();
+        List<Player> targets = resolveAllSelector(context);
+        if (targets == null) {
+            EntitySelectorArgumentResolver resolver = context.getArgument("targets", EntitySelectorArgumentResolver.class);
+            targets = resolver.resolve(source).stream()
+                    .filter(Player.class::isInstance)
+                    .map(Player.class::cast)
+                    .toList();
+        }
 
         if (targets.isEmpty()) {
             Message.error("No matching players found.")
@@ -91,5 +94,32 @@ public final class KaboomCommand {
                 PARTICLE_HORIZONTAL_OFFSET,
                 PARTICLE_SPEED
         );
+    }
+
+    private List<Player> resolveAllSelector(CommandContext<CommandSourceStack> context) {
+        String raw = rawTargetArgument(context.getInput());
+        if (!isAllSelector(raw)) {
+            return null;
+        }
+        return List.copyOf(context.getSource().getSender().getServer().getOnlinePlayers());
+    }
+
+    private boolean isAllSelector(String input) {
+        if (input == null || input.isBlank()) {
+            return false;
+        }
+        return "@a".equalsIgnoreCase(input.trim());
+    }
+
+    private String rawTargetArgument(String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+        String normalized = input.startsWith("/") ? input.substring(1) : input;
+        int spaceIndex = normalized.indexOf(' ');
+        if (spaceIndex < 0 || spaceIndex + 1 >= normalized.length()) {
+            return "";
+        }
+        return normalized.substring(spaceIndex + 1).trim();
     }
 }
