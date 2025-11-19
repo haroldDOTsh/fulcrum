@@ -12,8 +12,8 @@ class DocumentPatchTest {
     @Test
     void applyToMapAppliesSetUnsetAndSetOnInsert() {
         DocumentPatch patch = DocumentPatch.builder()
-                .set("rank", "ADMIN")
                 .set("profile.display", "Admin")
+                .set("settings.theme", "LIGHT")
                 .unset("tags.legacy")
                 .setOnInsert("username", "Harold")
                 .upsert(true)
@@ -27,7 +27,6 @@ class DocumentPatchTest {
         patch.applyToMap(target, true);
 
         assertThat(target)
-                .containsEntry("rank", "ADMIN")
                 .containsEntry("username", "Harold");
 
         @SuppressWarnings("unchecked")
@@ -40,7 +39,7 @@ class DocumentPatchTest {
     @Test
     void setOnInsertIsSkippedWhenFlagFalse() {
         DocumentPatch patch = DocumentPatch.builder()
-                .set("rank", "DEFAULT")
+                .set("settings.hints", true)
                 .setOnInsert("username", "Harold")
                 .upsert(false)
                 .build();
@@ -48,7 +47,7 @@ class DocumentPatchTest {
         Map<String, Object> target = new HashMap<>();
         patch.applyToMap(target, false);
 
-        assertThat(target).containsEntry("rank", "DEFAULT");
+        assertThat(target).containsEntry("settings.hints", true);
         assertThat(target).doesNotContainKey("username");
     }
 }

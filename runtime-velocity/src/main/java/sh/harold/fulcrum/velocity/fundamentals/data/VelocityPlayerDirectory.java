@@ -9,7 +9,6 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.Collection;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.player.PlayerDirectory;
@@ -25,7 +24,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
-import java.util.stream.Collectors;
 
 /**
  * Velocity proxy implementation of {@link PlayerDirectory}.
@@ -80,17 +78,23 @@ public final class VelocityPlayerDirectory implements PlayerDirectory {
     }
 
     @Override
-    public CompletionStage<Map<UUID, PlayerProfile>> getProfiles(Collection<UUID> playerIds, ProfileQuery query) {
+    public CompletionStage<Map<UUID, PlayerProfile>> getProfiles(java.util.Collection<UUID> playerIds, ProfileQuery query) {
         if (playerIds == null || playerIds.isEmpty()) {
             return CompletableFuture.completedFuture(Collections.emptyMap());
         }
         ProfileQuery effectiveQuery = query != null ? query : ProfileQuery.DEFAULT;
-        Map<UUID, PlayerProfile> resolved = playerIds.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .map(id -> Map.entry(id, cache.getIfPresent(id)))
-                .filter(entry -> entry.getValue() != null && !effectiveQuery.requireFresh())
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<UUID, PlayerProfile> resolved = new LinkedHashMap<>();
+        if (!effectiveQuery.requireFresh()) {
+            for (UUID id : playerIds) {
+                if (id == null || resolved.containsKey(id)) {
+                    continue;
+                }
+                PlayerProfile cached = cache.getIfPresent(id);
+                if (cached != null) {
+                    resolved.put(id, cached);
+                }
+            }
+        }
 
         java.util.List<UUID> pending = playerIds.stream()
                 .filter(Objects::nonNull)
@@ -126,7 +130,7 @@ public final class VelocityPlayerDirectory implements PlayerDirectory {
             if (dataAPI == null) {
                 return Optional.empty();
             }
-            Collection players = dataAPI.collection(PLAYERS_COLLECTION);
+            sh.harold.fulcrum.api.data.Collection players = dataAPI.collection(PLAYERS_COLLECTION);
             Document document = players.where("username").equalTo(normalized).limit(1).first();
             if (document == null || !document.exists()) {
                 return Optional.empty();

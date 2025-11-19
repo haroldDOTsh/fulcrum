@@ -12,15 +12,16 @@ import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.friends.FriendOperationResult;
 import sh.harold.fulcrum.api.friends.FriendService;
+import sh.harold.fulcrum.api.player.PlayerDirectory;
+import sh.harold.fulcrum.api.player.PlayerDirectory.PlayerProfile;
+import sh.harold.fulcrum.api.player.PlayerDirectory.ProfileQuery;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
-import sh.harold.fulcrum.velocity.fundamentals.identity.PlayerIdentity;
-import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * Velocity command that lets players manage ignores (blocks) without opening the friend UI.
@@ -33,22 +34,20 @@ public final class IgnoreCommand implements SimpleCommand {
     private final RankService rankService;
     private final ProxyServer proxy;
     private final FulcrumVelocityPlugin plugin;
-    private final VelocityIdentityFeature identityFeature;
+    private final PlayerDirectory playerDirectory;
     private final Logger logger;
-    private final Map<UUID, String> nameCache = new ConcurrentHashMap<>();
-    private final Map<String, UUID> reverseNameCache = new ConcurrentHashMap<>();
 
     public IgnoreCommand(FriendService friendService,
                          RankService rankService,
                          ProxyServer proxy,
                          FulcrumVelocityPlugin plugin,
-                         VelocityIdentityFeature identityFeature,
+                         PlayerDirectory playerDirectory,
                          Logger logger) {
         this.friendService = Objects.requireNonNull(friendService, "friendService");
         this.rankService = Objects.requireNonNull(rankService, "rankService");
         this.proxy = Objects.requireNonNull(proxy, "proxy");
         this.plugin = Objects.requireNonNull(plugin, "plugin");
-        this.identityFeature = identityFeature;
+        this.playerDirectory = Objects.requireNonNull(playerDirectory, "playerDirectory");
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
@@ -139,12 +138,14 @@ public final class IgnoreCommand implements SimpleCommand {
                                 FriendMessageRenderer.error(result.errorMessage().orElse("Unable to ignore that player.")));
                         return;
                     }
-                    Component line = Component.text()
-                            .append(FriendTextFormatter.green("You are now ignoring "))
-                            .append(formattedName(entry.getKey()))
-                            .append(FriendTextFormatter.green("."))
-                            .build();
-                    FriendMessageRenderer.sendFramed(player, line);
+                    withProfile(entry.getKey(), profile -> {
+                        Component line = Component.text()
+                                .append(FriendTextFormatter.green("You are now ignoring "))
+                                .append(profile.formattedName())
+                                .append(FriendTextFormatter.green("."))
+                                .build();
+                        FriendMessageRenderer.sendFramed(player, line);
+                    });
                 }));
     }
 
@@ -165,12 +166,14 @@ public final class IgnoreCommand implements SimpleCommand {
                                 FriendMessageRenderer.error(result.errorMessage().orElse("You are not ignoring that player.")));
                         return;
                     }
-                    Component line = Component.text()
-                            .append(FriendTextFormatter.yellow("You are no longer ignoring "))
-                            .append(formattedName(entry.getKey()))
-                            .append(FriendTextFormatter.yellow("."))
-                            .build();
-                    FriendMessageRenderer.sendFramed(player, line);
+                    withProfile(entry.getKey(), profile -> {
+                        Component line = Component.text()
+                                .append(FriendTextFormatter.yellow("You are no longer ignoring "))
+                                .append(profile.formattedName())
+                                .append(FriendTextFormatter.yellow("."))
+                                .build();
+                        FriendMessageRenderer.sendFramed(player, line);
+                    });
                 }));
     }
 
@@ -189,20 +192,28 @@ public final class IgnoreCommand implements SimpleCommand {
                         return;
                     }
                     List<UUID> sorted = new ArrayList<>(ignores);
-                    sorted.sort((left, right) -> resolvePlainName(left).compareToIgnoreCase(resolvePlainName(right)));
-
-                    List<Component> lines = new ArrayList<>();
-                    lines.add(Component.text("Ignored players (" + sorted.size() + ")", NamedTextColor.GOLD, TextDecoration.BOLD));
-                    for (UUID id : sorted) {
-                        lines.add(renderEntry(id));
-                    }
-                    FriendMessageRenderer.sendFramed(player, lines);
+                    playerDirectory.getProfiles(sorted, ProfileQuery.DEFAULT)
+                            .whenComplete((profiles, profileThrowable) ->
+                                    schedule(() -> {
+                                        if (profileThrowable != null || profiles == null) {
+                                            FriendMessageRenderer.sendFramed(player, FriendMessageRenderer.error("Unable to load ignore data right now."));
+                                            return;
+                                        }
+                                        sorted.sort(Comparator.comparing(id -> displayName(profiles.get(id)).toLowerCase(Locale.ROOT)));
+                                        List<Component> lines = new ArrayList<>();
+                                        lines.add(Component.text("Ignored players (" + sorted.size() + ")", NamedTextColor.GOLD, TextDecoration.BOLD));
+                                        for (UUID id : sorted) {
+                                            PlayerProfile profile = profiles.getOrDefault(id, PlayerProfile.missing(id));
+                                            lines.add(renderEntry(id, profile));
+                                        }
+                                        FriendMessageRenderer.sendFramed(player, lines);
+                                    }));
                 }));
     }
 
-    private Component renderEntry(UUID targetId) {
-        Component name = formattedName(targetId);
-        String commandTarget = cachedCommandTarget(targetId);
+    private Component renderEntry(UUID targetId, PlayerProfile profile) {
+        Component name = profile.formattedName();
+        String commandTarget = profile.exists() ? profile.username() : targetId.toString();
         Component remove = Component.text("[REMOVE]", NamedTextColor.RED)
                 .decorate(TextDecoration.BOLD)
                 .clickEvent(ClickEvent.runCommand("/ignore remove " + commandTarget))
@@ -232,14 +243,13 @@ public final class IgnoreCommand implements SimpleCommand {
         Optional<Player> online = proxy.getPlayer(targetArg);
         if (online.isPresent()) {
             Player player = online.get();
-            cacheName(player.getUniqueId(), player.getUsername());
             return CompletableFuture.completedFuture(player.getUniqueId());
         }
-        UUID cached = reverseNameCache.get(targetArg.toLowerCase(Locale.ROOT));
-        if (cached != null) {
-            return CompletableFuture.completedFuture(cached);
-        }
-        return CompletableFuture.failedFuture(new IllegalArgumentException("Player '" + targetArg + "' is not online."));
+        return playerDirectory.findProfileByName(targetArg, ProfileQuery.DEFAULT)
+                .thenCompose(optional -> optional
+                        .map(profile -> CompletableFuture.completedFuture(profile.playerId()))
+                        .orElseGet(() -> CompletableFuture.failedFuture(
+                                new IllegalArgumentException("Player '" + targetArg + "' is not online."))));
     }
 
     private CompletionStage<UUID> validateNotSelf(UUID actorId, UUID targetId) {
@@ -258,45 +268,14 @@ public final class IgnoreCommand implements SimpleCommand {
         });
     }
 
-    private String cachedCommandTarget(UUID playerId) {
-        String cached = nameCache.get(playerId);
-        return cached != null && !cached.isBlank() ? cached : playerId.toString();
-    }
-
-    private Component formattedName(UUID uuid) {
-        return FriendTextFormatter.formatName(uuid, resolvePlainName(uuid), rankService, logger);
-    }
-
-    private String resolvePlainName(UUID uuid) {
-        if (uuid == null) {
-            return "unknown";
+    private String displayName(PlayerProfile profile) {
+        if (profile != null && profile.username() != null && !profile.username().isBlank()) {
+            return profile.username();
         }
-        String cached = nameCache.get(uuid);
-        if (cached != null && !cached.isBlank()) {
-            return cached;
+        if (profile != null && profile.playerId() != null) {
+            return profile.playerId().toString().split("-")[0];
         }
-        Optional<Player> online = proxy.getPlayer(uuid);
-        if (online.isPresent()) {
-            String username = online.get().getUsername();
-            cacheName(uuid, username);
-            return username;
-        }
-        if (identityFeature != null) {
-            PlayerIdentity identity = identityFeature.getIdentity(uuid);
-            if (identity != null && identity.getUsername() != null && !identity.getUsername().isBlank()) {
-                cacheName(uuid, identity.getUsername());
-                return identity.getUsername();
-            }
-        }
-        return uuid.toString().split("-")[0];
-    }
-
-    private void cacheName(UUID playerId, String name) {
-        if (playerId == null || name == null || name.isBlank()) {
-            return;
-        }
-        nameCache.put(playerId, name);
-        reverseNameCache.put(name.toLowerCase(Locale.ROOT), playerId);
+        return "unknown";
     }
 
     private void sendUsage(Player player) {
@@ -306,6 +285,21 @@ public final class IgnoreCommand implements SimpleCommand {
                 FriendTextFormatter.aqua("/ignore list ").append(FriendTextFormatter.yellow("View ignored players."))
         );
         FriendMessageRenderer.sendFramed(player, lines);
+    }
+
+    private void withProfile(UUID playerId, Consumer<PlayerProfile> consumer) {
+        if (playerId == null) {
+            schedule(() -> consumer.accept(PlayerProfile.missing(null)));
+            return;
+        }
+        playerDirectory.getProfile(playerId)
+                .whenComplete((profile, throwable) ->
+                        schedule(() -> {
+                            PlayerProfile resolved = (throwable == null && profile != null)
+                                    ? profile
+                                    : PlayerProfile.missing(playerId);
+                            consumer.accept(resolved);
+                        }));
     }
 
     private void schedule(Runnable runnable) {

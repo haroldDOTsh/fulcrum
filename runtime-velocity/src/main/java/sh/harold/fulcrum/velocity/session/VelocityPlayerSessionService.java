@@ -131,10 +131,6 @@ public class VelocityPlayerSessionService {
                 map.forEach((k, v) -> record.getRank().put(String.valueOf(k), v));
                 return;
             }
-            if ("rank".equals(key) && value != null) {
-                record.getRank().putIfAbsent("primary", value);
-                return;
-            }
             if ("minigames".equals(key) && value instanceof Map<?, ?> map) {
                 record.getMinigames().clear();
                 map.forEach((k, v) -> record.getMinigames().put(String.valueOf(k), v));

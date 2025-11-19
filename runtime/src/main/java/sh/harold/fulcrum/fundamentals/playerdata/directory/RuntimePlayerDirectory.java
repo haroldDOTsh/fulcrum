@@ -8,7 +8,6 @@ import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.fulcrum.api.data.Collection;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.player.PlayerDirectory;
@@ -76,7 +75,7 @@ public final class RuntimePlayerDirectory implements PlayerDirectory {
     }
 
     @Override
-    public CompletionStage<Map<UUID, PlayerProfile>> getProfiles(Collection<UUID> playerIds, ProfileQuery query) {
+    public CompletionStage<Map<UUID, PlayerProfile>> getProfiles(java.util.Collection<UUID> playerIds, ProfileQuery query) {
         if (playerIds == null || playerIds.isEmpty()) {
             return CompletableFuture.completedFuture(Collections.emptyMap());
         }
@@ -124,7 +123,7 @@ public final class RuntimePlayerDirectory implements PlayerDirectory {
             if (dataAPI == null) {
                 return Optional.empty();
             }
-            Collection collection = dataAPI.collection(PLAYERS_COLLECTION);
+            sh.harold.fulcrum.api.data.Collection collection = dataAPI.collection(PLAYERS_COLLECTION);
             Document document = collection.where("username").equalTo(normalized).limit(1).first();
             if (document == null || !document.exists()) {
                 return Optional.empty();

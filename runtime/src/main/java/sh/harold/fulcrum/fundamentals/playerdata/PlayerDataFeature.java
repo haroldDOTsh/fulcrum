@@ -12,12 +12,13 @@ import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.friends.FriendService;
-import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.player.PlayerDirectory;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.common.privacy.*;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.common.settings.SettingLevel;
+import sh.harold.fulcrum.fundamentals.playerdata.directory.RuntimePlayerDirectory;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -50,6 +51,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private ExecutorService playerCacheExecutor;
     private FriendService friendService;
     private PrivacyApi privacyApi;
+    private PlayerDirectory playerDirectory;
 
     private static Map<String, Object> buildDefaultSettings() {
         Map<String, Object> debug = new LinkedHashMap<>();
@@ -121,6 +123,11 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                 PrivacyDomain.DIRECT_MESSAGES,
                 PrivacyDomainPresets.directMessages(java.util.EnumSet.of(SettingLevel.NONE, SettingLevel.MAX)));
         RankService rankService = container.getOptional(RankService.class).orElse(null);
+        this.playerDirectory = new RuntimePlayerDirectory(plugin, sessionService, dataAPI, rankService);
+        container.register(PlayerDirectory.class, playerDirectory);
+        if (locator != null) {
+            locator.registerService(PlayerDirectory.class, playerDirectory);
+        }
         PrivacyGate privacyGate = new DefaultPrivacyGate(
                 playerSettingsService,
                 friendService,
@@ -142,6 +149,9 @@ public class PlayerDataFeature implements PluginFeature, Listener {
 
         int protocolVersion = player.getProtocolVersion();
         String clientBrand = sanitizeBrand(player.getClientBrandName());
+        if (playerDirectory != null) {
+            playerDirectory.invalidate(player.getUniqueId());
+        }
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> updatePlayerData(player, protocolVersion, clientBrand));
         if (clientBrand == null) {
             scheduleBrandProbe(player.getUniqueId(), 0);
@@ -220,6 +230,9 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         sessionService.endSession(playerId, handle.sessionId())
                 .ifPresent(record -> {
                     persistSession(record);
+                    if (playerDirectory != null) {
+                        playerDirectory.invalidate(playerId);
+                    }
                     if (sessionLogRepository != null) {
                         sessionLogRepository.recordSession(record, System.currentTimeMillis());
                     }
@@ -246,17 +259,20 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             locator.unregisterService(PlayerSettingsService.class);
             locator.unregisterService(FriendService.class);
             locator.unregisterService(PrivacyApi.class);
+            locator.unregisterService(PlayerDirectory.class);
         }
         if (container != null) {
             container.unregister(PlayerCache.class);
             container.unregister(PlayerSettingsService.class);
             container.unregister(FriendService.class);
             container.unregister(PrivacyApi.class);
+            container.unregister(PlayerDirectory.class);
         }
         playerSettingsService = null;
         playerCache = null;
         friendService = null;
         privacyApi = null;
+        playerDirectory = null;
         if (playerCacheExecutor != null) {
             playerCacheExecutor.shutdown();
             playerCacheExecutor = null;
@@ -313,10 +329,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             Object rankInfo = source.get("rankInfo");
             if (rankInfo instanceof Map<?, ?> info) {
                 filtered.put("rankInfo", info);
-            }
-            Object rank = source.get("rank");
-            if (rank != null) {
-                filtered.put("rank", rank);
             }
             Object environment = source.get("environment");
             if (environment != null) {
@@ -404,10 +416,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         if (record.shouldPersistRank()) {
             Map<String, Object> rankInfo = new HashMap<>(record.getRank());
             payload.put("rankInfo", rankInfo);
-            Object primary = rankInfo.get("primary");
-            if (primary instanceof String primaryName && !Rank.DEFAULT.name().equalsIgnoreCase(primaryName)) {
-                payload.put("rank", primaryName);
-            }
         }
 
         if (!record.getMinigames().isEmpty()) {

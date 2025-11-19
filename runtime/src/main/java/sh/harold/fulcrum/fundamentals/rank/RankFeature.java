@@ -408,11 +408,6 @@ public final class RankFeature implements PluginFeature, RankService, Listener {
                 rankInfo.put("primary", primary.name());
             }
 
-            if (primary == null || primary == Rank.DEFAULT) {
-                record.getCore().remove("rank");
-            } else {
-                record.getCore().put("rank", primary.name());
-            }
         });
     }
 

@@ -117,7 +117,7 @@ public class PlayerSessionRecord {
         return core;
     }
 
-    @JsonProperty("rank")
+    @JsonProperty("rankInfo")
     public Map<String, Object> getRank() {
         return rank;
     }
@@ -354,10 +354,6 @@ public class PlayerSessionRecord {
         if (shouldPersistRank()) {
             Map<String, Object> rankCopy = new HashMap<>(rank);
             persisted.put("rankInfo", rankCopy);
-            Object primary = rankCopy.get("primary");
-            if (primary != null && !DEFAULT_RANK.equalsIgnoreCase(primary.toString())) {
-                persisted.put("rank", primary);
-            }
         }
         if (!minigames.isEmpty()) {
             persisted.put("minigames", new HashMap<>(minigames));

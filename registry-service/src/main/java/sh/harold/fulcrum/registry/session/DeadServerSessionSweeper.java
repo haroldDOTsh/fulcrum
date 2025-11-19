@@ -300,10 +300,6 @@ public class DeadServerSessionSweeper implements AutoCloseable {
         if (record.shouldPersistRank()) {
             Map<String, Object> rankInfo = new HashMap<>(record.getRank());
             payload.put("rankInfo", rankInfo);
-            Object primary = rankInfo.get("primary");
-            if (primary != null && !"DEFAULT".equalsIgnoreCase(primary.toString())) {
-                payload.put("rank", primary);
-            }
         }
 
         if (!record.getMinigames().isEmpty()) {

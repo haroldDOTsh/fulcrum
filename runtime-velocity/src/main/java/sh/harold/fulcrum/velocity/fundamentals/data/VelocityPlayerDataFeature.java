@@ -8,6 +8,8 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.api.player.PlayerDirectory;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
@@ -30,6 +32,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     private PlayerSettingsService playerSettingsService;
     private PlayerCache playerCache;
     private ExecutorService playerCacheExecutor;
+    private PlayerDirectory playerDirectory;
 
     @Override
     public String getName() {
@@ -60,6 +63,10 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         serviceLocator.register(PlayerCache.class, playerCache);
         serviceLocator.register(PlayerSettingsService.class, playerSettingsService);
 
+        RankService rankService = serviceLocator.getService(RankService.class).orElse(null);
+        this.playerDirectory = new VelocityPlayerDirectory(proxy, sessionService, dataAPI, rankService, logger);
+        serviceLocator.register(PlayerDirectory.class, playerDirectory);
+
         // Register event listeners - MUST use plugin instance as container
         proxy.getEventManager().register(plugin, this);
 
@@ -70,13 +77,16 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     public void onPlayerJoin(PostLoginEvent event) {
         Player player = event.getPlayer();
 
-        // Run async to avoid blocking
-        // Proxy no longer mutates persistent player data; backend handles core fields.
+        if (playerDirectory != null) {
+            playerDirectory.invalidate(player.getUniqueId());
+        }
     }
 
     @Subscribe
     public void onPlayerDisconnect(DisconnectEvent event) {
-        // Intentionally no-op: backend will close the session.
+        if (playerDirectory != null) {
+            playerDirectory.invalidate(event.getPlayer().getUniqueId());
+        }
     }
 
     @Subscribe
@@ -93,6 +103,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         if (serviceLocator != null) {
             serviceLocator.unregister(PlayerCache.class);
             serviceLocator.unregister(PlayerSettingsService.class);
+            serviceLocator.unregister(PlayerDirectory.class);
         }
         if (playerCacheExecutor != null) {
             playerCacheExecutor.shutdown();
@@ -100,12 +111,13 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         }
         playerCache = null;
         playerSettingsService = null;
+        playerDirectory = null;
         logger.info("Shutting down PlayerDataFeature for Velocity");
     }
 
     @Override
     public int getPriority() {
-        return 50; // After DataAPI (20)
+        return 30; // After DataAPI (20) and PlayerSession (25) so dependencies are ready for social features
     }
 
     private static final class NamedThreadFactory implements ThreadFactory {

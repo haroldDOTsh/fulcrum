@@ -66,13 +66,6 @@ public final class RankStateResolver {
                 return Optional.of(primaryName);
             }
         }
-        Map<String, Object> core = record.getCore();
-        if (core != null) {
-            Object legacy = core.get("rank");
-            if (legacy instanceof String legacyRank && !legacyRank.isBlank()) {
-                return Optional.of(legacyRank);
-            }
-        }
         return Optional.empty();
     }
 
@@ -86,10 +79,6 @@ public final class RankStateResolver {
         String primary = document.get("rankInfo.primary", null);
         if (primary != null && !primary.isBlank()) {
             return Optional.of(primary);
-        }
-        String legacy = document.get("rank", null);
-        if (legacy != null && !legacy.isBlank()) {
-            return Optional.of(legacy);
         }
         return Optional.empty();
     }

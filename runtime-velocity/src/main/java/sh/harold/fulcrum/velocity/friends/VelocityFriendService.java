@@ -8,10 +8,10 @@ import org.slf4j.Logger;
 import sh.harold.fulcrum.api.friends.*;
 import sh.harold.fulcrum.api.messagebus.*;
 import sh.harold.fulcrum.api.messagebus.messages.social.*;
+import sh.harold.fulcrum.api.player.PlayerDirectory;
+import sh.harold.fulcrum.api.player.PlayerDirectory.PlayerProfile;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.privacy.PrivacyGate;
-import sh.harold.fulcrum.velocity.fundamentals.identity.PlayerIdentity;
-import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.session.LettuceSessionRedisClient;
 
 import java.time.Duration;
@@ -33,7 +33,7 @@ public final class VelocityFriendService implements FriendService {
     private final LettuceSessionRedisClient redisClient;
     private final Logger logger;
     private final RankService rankService;
-    private final VelocityIdentityFeature identityFeature;
+    private final PlayerDirectory playerDirectory;
     private volatile PrivacyGate privacyGate;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ConcurrentHashMap<UUID, FriendSnapshot> localSnapshots = new ConcurrentHashMap<>();
@@ -47,14 +47,14 @@ public final class VelocityFriendService implements FriendService {
                                  LettuceSessionRedisClient redisClient,
                                  ProxyServer proxy,
                                  RankService rankService,
-                                 VelocityIdentityFeature identityFeature,
+                                 PlayerDirectory playerDirectory,
                                  Logger logger) {
         this.messageBus = Objects.requireNonNull(messageBus, "messageBus");
         this.redisClient = Objects.requireNonNull(redisClient, "redisClient");
         this.proxy = Objects.requireNonNull(proxy, "proxy");
         this.logger = Objects.requireNonNull(logger, "logger");
         this.rankService = Objects.requireNonNull(rankService, "rankService");
-        this.identityFeature = identityFeature;
+        this.playerDirectory = playerDirectory;
 
         messageBus.subscribe(ChannelConstants.SOCIAL_FRIEND_MUTATION_RESPONSE, mutationResponseHandler);
         messageBus.subscribe(ChannelConstants.SOCIAL_FRIEND_REQUESTS, requestEventHandler);
@@ -439,6 +439,11 @@ public final class VelocityFriendService implements FriendService {
     }
 
     private Component formatDisplayName(UUID playerId) {
+        if (playerDirectory != null) {
+            return playerDirectory.peek(playerId)
+                    .map(PlayerProfile::formattedName)
+                    .orElseGet(() -> FriendTextFormatter.formatName(playerId, resolvePlainName(playerId), rankService, logger));
+        }
         return FriendTextFormatter.formatName(playerId, resolvePlainName(playerId), rankService, logger);
     }
 
@@ -446,15 +451,15 @@ public final class VelocityFriendService implements FriendService {
         if (playerId == null) {
             return "unknown";
         }
+        if (playerDirectory != null) {
+            Optional<PlayerProfile> profile = playerDirectory.peek(playerId);
+            if (profile.isPresent() && profile.get().username() != null && !profile.get().username().isBlank()) {
+                return profile.get().username();
+            }
+        }
         Optional<String> onlineName = proxy.getPlayer(playerId).map(Player::getUsername);
         if (onlineName.isPresent()) {
             return onlineName.get();
-        }
-        if (identityFeature != null) {
-            PlayerIdentity identity = identityFeature.getIdentity(playerId);
-            if (identity != null && identity.getUsername() != null && !identity.getUsername().isBlank()) {
-                return identity.getUsername();
-            }
         }
         return shortUuid(playerId);
     }

@@ -31,7 +31,6 @@ class DocumentPatchIntegrationTest {
 
         DocumentPatch patch = DocumentPatch.builder()
                 .upsert(true)
-                .set("rank", "ADMIN")
                 .set("rankInfo", rankInfo)
                 .setOnInsert("username", "Harold")
                 .build();
@@ -39,12 +38,10 @@ class DocumentPatchIntegrationTest {
         doc.patch(patch);
 
         assertThat(doc.exists()).isTrue();
-        assertThat(doc.get("rank")).isEqualTo("ADMIN");
         assertThat(doc.get("username")).isEqualTo("Harold");
 
         Document stored = backend.getDocument(COLLECTION, "player-1").join();
         assertThat(stored.exists()).isTrue();
-        assertThat(stored.get("rank")).isEqualTo("ADMIN");
         assertThat(stored.get("rankInfo"))
                 .isInstanceOf(Map.class);
     }
@@ -54,7 +51,6 @@ class DocumentPatchIntegrationTest {
         Document initial = backend.getDocument(COLLECTION, "player-2").join();
         DocumentPatch createPatch = DocumentPatch.builder()
                 .upsert(true)
-                .set("rank", "ADMIN")
                 .set("rankInfo.primary", "ADMIN")
                 .set("rankInfo.all", List.of("ADMIN", "DEFAULT"))
                 .build();
@@ -62,7 +58,6 @@ class DocumentPatchIntegrationTest {
 
         DocumentPatch updatePatch = DocumentPatch.builder()
                 .upsert(true)
-                .set("rank", "MODERATOR")
                 .set("rankInfo.primary", "MODERATOR")
                 .unset("rankInfo.updatedBy")
                 .build();
@@ -70,7 +65,6 @@ class DocumentPatchIntegrationTest {
         initial.patch(updatePatch);
 
         Document stored = backend.getDocument(COLLECTION, "player-2").join();
-        assertThat(stored.get("rank")).isEqualTo("MODERATOR");
         @SuppressWarnings("unchecked")
         Map<String, Object> rankInfo = (Map<String, Object>) stored.get("rankInfo");
         assertThat(rankInfo).containsEntry("primary", "MODERATOR");
@@ -84,7 +78,7 @@ class DocumentPatchIntegrationTest {
 
         DocumentPatch patch = DocumentPatch.builder()
                 .upsert(false)
-                .set("rank", "ADMIN")
+                .set("rankInfo.primary", "ADMIN")
                 .build();
 
         doc.patch(patch);

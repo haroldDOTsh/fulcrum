@@ -212,11 +212,6 @@ public final class RankMutationService implements AutoCloseable {
                 }
             }
 
-            Rank legacyPrimary = parseRank(data.get("rank"));
-            if (legacyPrimary != null) {
-                primary = legacyPrimary;
-                ranks.add(legacyPrimary);
-            }
         }
 
         return new RankState(playerDoc, ranks, primary);
@@ -239,11 +234,8 @@ public final class RankMutationService implements AutoCloseable {
 
         boolean hasNonDefault = orderedRanks.stream().anyMatch(name -> !Rank.DEFAULT.name().equalsIgnoreCase(name));
         if (!hasNonDefault && primary == Rank.DEFAULT) {
-            patchBuilder.unset("rank");
             patchBuilder.unset("rankInfo");
         } else {
-            patchBuilder.set("rank", primary.name());
-
             Map<String, Object> rankInfo = new LinkedHashMap<>();
             rankInfo.put("primary", primary.name());
             rankInfo.put("all", orderedRanks);

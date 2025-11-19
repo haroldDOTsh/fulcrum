@@ -10,11 +10,12 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.friends.*;
+import sh.harold.fulcrum.api.player.PlayerDirectory;
+import sh.harold.fulcrum.api.player.PlayerDirectory.PlayerProfile;
+import sh.harold.fulcrum.api.player.PlayerDirectory.ProfileQuery;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
-import sh.harold.fulcrum.velocity.fundamentals.identity.PlayerIdentity;
-import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
 
 import java.time.Duration;
@@ -34,28 +35,26 @@ public final class FriendCommand implements SimpleCommand {
     private final FriendService friendService;
     private final ProxyServer proxy;
     private final FulcrumVelocityPlugin plugin;
+    private final PlayerDirectory playerDirectory;
     private final PlayerCache playerCache;
-    private final VelocityIdentityFeature identityFeature;
     private final RankService rankService;
     private final PlayerRoutingFeature routingFeature;
     private final Logger logger;
-    private final Map<UUID, String> nameCache = new ConcurrentHashMap<>();
-    private final Map<String, UUID> reverseNameCache = new ConcurrentHashMap<>();
     private final Map<UUID, Map<UUID, ScheduledTask>> inviteExpiryTasks = new ConcurrentHashMap<>();
 
     public FriendCommand(FriendService friendService,
                          ProxyServer proxy,
                          FulcrumVelocityPlugin plugin,
+                         PlayerDirectory playerDirectory,
                          PlayerCache playerCache,
-                         VelocityIdentityFeature identityFeature,
                          RankService rankService,
                          PlayerRoutingFeature routingFeature,
                          Logger logger) {
         this.friendService = Objects.requireNonNull(friendService, "friendService");
         this.proxy = Objects.requireNonNull(proxy, "proxy");
         this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.playerDirectory = Objects.requireNonNull(playerDirectory, "playerDirectory");
         this.playerCache = playerCache;
-        this.identityFeature = identityFeature;
         this.rankService = Objects.requireNonNull(rankService, "rankService");
         this.routingFeature = Objects.requireNonNull(routingFeature, "routingFeature");
         this.logger = Objects.requireNonNull(logger, "logger");
@@ -196,18 +195,26 @@ public final class FriendCommand implements SimpleCommand {
                 sendFramed(player, FriendTextFormatter.yellow("You have no friends yet. Use /friend add <player> to get started."));
                 return;
             }
-            friends.sort(Comparator.comparing(uuid -> resolvePlainName(uuid).toLowerCase(Locale.ROOT)));
-            int totalPages = Math.max(1, (int) Math.ceil(friends.size() / (double) PAGE_SIZE));
-            int page = Math.min(Math.max(requestedPage, 1), totalPages);
-            int start = (page - 1) * PAGE_SIZE;
-            List<UUID> slice = friends.subList(start, Math.min(start + PAGE_SIZE, friends.size()));
-            List<Component> lines = new ArrayList<>();
-            lines.add(renderListHeader(page, totalPages));
-            debug(player, "rendering friend list page={} totalPages={} totalFriends={}", page, totalPages, friends.size());
-            for (UUID id : slice) {
-                lines.add(renderFriendPresence(id));
-            }
-            sendFramed(player, lines);
+            playerDirectory.getProfiles(friends, ProfileQuery.DEFAULT)
+                    .whenComplete((profiles, throwable) -> schedule(() -> {
+                        if (throwable != null || profiles == null) {
+                            sendFramed(player, error("Unable to load your friend directory."));
+                            return;
+                        }
+                        friends.sort(Comparator.comparing(uuid -> displayName(profiles.get(uuid)).toLowerCase(Locale.ROOT)));
+                        int totalPages = Math.max(1, (int) Math.ceil(friends.size() / (double) PAGE_SIZE));
+                        int page = Math.min(Math.max(requestedPage, 1), totalPages);
+                        int start = (page - 1) * PAGE_SIZE;
+                        List<UUID> slice = friends.subList(start, Math.min(start + PAGE_SIZE, friends.size()));
+                        List<Component> lines = new ArrayList<>();
+                        lines.add(renderListHeader(page, totalPages));
+                        debug(player, "rendering friend list page={} totalPages={} totalFriends={}", page, totalPages, friends.size());
+                        for (UUID id : slice) {
+                            PlayerProfile profile = profiles.getOrDefault(id, PlayerProfile.missing(id));
+                            lines.add(renderFriendPresence(id, profile));
+                        }
+                        sendFramed(player, lines);
+                    }));
         });
     }
 
@@ -215,39 +222,50 @@ public final class FriendCommand implements SimpleCommand {
         debug(player, "handling requests args={}", Arrays.toString(args));
         final int requestedPage = args.length > 1 ? parsePage(args[1]) : 1;
         friendService.getPendingInvites(player.getUniqueId())
-                .whenComplete((invites, throwable) ->
+                .whenComplete((invites, throwable) -> {
+                    if (throwable != null) {
                         schedule(() -> {
-                            if (throwable != null) {
-                                debug(player, "pending invite fetch failed error={}", throwable.toString());
-                                sendFramed(player, error("Unable to load your friend requests."));
-                                return;
-                            }
-                            if (invites == null || invites.isEmpty()) {
-                                sendFramed(player, FriendTextFormatter.yellow("You do not have any pending requests."));
-                                return;
-                            }
-                            List<FriendService.PendingFriendInvite> sorted = new ArrayList<>(invites);
-                            sorted.sort(Comparator.comparingLong(FriendService.PendingFriendInvite::requestedAtEpochMillis).reversed());
-                            int totalPages = Math.max(1, (int) Math.ceil(sorted.size() / (double) PAGE_SIZE));
-                            int page = Math.min(Math.max(requestedPage, 1), totalPages);
-                            int start = (page - 1) * PAGE_SIZE;
-                            List<FriendService.PendingFriendInvite> slice = sorted.subList(start, Math.min(start + PAGE_SIZE, sorted.size()));
-                            List<Component> lines = new ArrayList<>();
-                            lines.add(FriendTextFormatter.aqua("Incoming requests (" + sorted.size() + ") - Page " + page + "/" + totalPages));
-                            debug(player, "rendering request list page={} totalPages={} totalRequests={}", page, totalPages, sorted.size());
-                            for (FriendService.PendingFriendInvite invite : slice) {
-                                UUID actorId = invite.actorId();
-                                Component line = Component.text()
-                                        .append(Component.text("• ", NamedTextColor.DARK_GRAY))
-                                        .append(formattedName(actorId))
-                                        .append(Component.text(" - "))
-                                        .append(Component.text("Use /friend accept ", NamedTextColor.YELLOW))
-                                        .append(formattedName(actorId))
-                                        .build();
-                                lines.add(line);
-                            }
-                            sendFramed(player, lines);
-                        }));
+                            debug(player, "pending invite fetch failed error={}", throwable.toString());
+                            sendFramed(player, error("Unable to load your friend requests."));
+                        });
+                        return;
+                    }
+                    if (invites == null || invites.isEmpty()) {
+                        schedule(() -> sendFramed(player, FriendTextFormatter.yellow("You do not have any pending requests.")));
+                        return;
+                    }
+                    List<FriendService.PendingFriendInvite> sorted = new ArrayList<>(invites);
+                    sorted.sort(Comparator.comparingLong(FriendService.PendingFriendInvite::requestedAtEpochMillis).reversed());
+                    int totalPages = Math.max(1, (int) Math.ceil(sorted.size() / (double) PAGE_SIZE));
+                    int page = Math.min(Math.max(requestedPage, 1), totalPages);
+                    int start = (page - 1) * PAGE_SIZE;
+                    List<FriendService.PendingFriendInvite> slice = sorted.subList(start, Math.min(start + PAGE_SIZE, sorted.size()));
+                    List<UUID> actorIds = slice.stream().map(FriendService.PendingFriendInvite::actorId).toList();
+                    playerDirectory.getProfiles(actorIds, ProfileQuery.DEFAULT)
+                            .whenComplete((profiles, profileThrowable) ->
+                                    schedule(() -> {
+                                        if (profileThrowable != null || profiles == null) {
+                                            sendFramed(player, error("Unable to load your friend requests."));
+                                            return;
+                                        }
+                                        List<Component> lines = new ArrayList<>();
+                                        lines.add(FriendTextFormatter.aqua("Incoming requests (" + sorted.size() + ") - Page " + page + "/" + totalPages));
+                                        debug(player, "rendering request list page={} totalPages={} totalRequests={}", page, totalPages, sorted.size());
+                                        for (FriendService.PendingFriendInvite invite : slice) {
+                                            UUID actorId = invite.actorId();
+                                            PlayerProfile profile = profiles.getOrDefault(actorId, PlayerProfile.missing(actorId));
+                                            Component line = Component.text()
+                                                    .append(Component.text("• ", NamedTextColor.DARK_GRAY))
+                                                    .append(profile.formattedName())
+                                                    .append(Component.text(" - "))
+                                                    .append(Component.text("Use /friend accept ", NamedTextColor.YELLOW))
+                                                    .append(profile.formattedName())
+                                                    .build();
+                                            lines.add(line);
+                                        }
+                                        sendFramed(player, lines);
+                                    }));
+                });
     }
 
     private void handleAdd(Player player, String targetArg) {
@@ -287,21 +305,23 @@ public final class FriendCommand implements SimpleCommand {
                                         result.targetSnapshot() != null ? result.targetSnapshot().version() : 0L);
                                 boolean friendshipEstablished = result.actorSnapshot() != null
                                         && result.actorSnapshot().friends().contains(entry.getKey());
-                                Component message;
-                                if (friendshipEstablished) {
-                                    message = Component.text()
-                                            .append(FriendTextFormatter.green("You are now friends with "))
-                                            .append(formattedName(entry.getKey()))
-                                            .append(FriendTextFormatter.green("."))
-                                            .build();
-                                } else {
-                                    message = Component.text()
-                                            .append(FriendTextFormatter.yellow("You sent a friend request to "))
-                                            .append(formattedName(entry.getKey()))
-                                            .append(FriendTextFormatter.yellow("! They have 5 minutes to accept it!"))
-                                            .build();
-                                }
-                                sendFramed(player, message);
+                                withProfile(entry.getKey(), profile -> {
+                                    Component body;
+                                    if (friendshipEstablished) {
+                                        body = Component.text()
+                                                .append(FriendTextFormatter.green("You are now friends with "))
+                                                .append(profile.formattedName())
+                                                .append(FriendTextFormatter.green("."))
+                                                .build();
+                                    } else {
+                                        body = Component.text()
+                                                .append(FriendTextFormatter.yellow("You sent a friend request to "))
+                                                .append(profile.formattedName())
+                                                .append(FriendTextFormatter.yellow("! They have 5 minutes to accept it!"))
+                                                .build();
+                                    }
+                                    sendFramed(player, body);
+                                });
                                 if (!friendshipEstablished) {
                                     scheduleInviteExpiryReminder(player.getUniqueId(), entry.getKey());
                                 }
@@ -336,12 +356,14 @@ public final class FriendCommand implements SimpleCommand {
                             entry.getKey(),
                             result.actorSnapshot() != null ? result.actorSnapshot().version() : 0L,
                             result.targetSnapshot() != null ? result.targetSnapshot().version() : 0L);
-                    Component success = Component.text()
-                            .append(FriendTextFormatter.green("You are now friends with "))
-                            .append(formattedName(entry.getKey()))
-                            .append(FriendTextFormatter.green("."))
-                            .build();
-                    sendFramed(player, success);
+                    withProfile(entry.getKey(), profile -> {
+                        Component success = Component.text()
+                                .append(FriendTextFormatter.green("You are now friends with "))
+                                .append(profile.formattedName())
+                                .append(FriendTextFormatter.green("."))
+                                .build();
+                        sendFramed(player, success);
+                    });
                 }));
     }
 
@@ -398,12 +420,14 @@ public final class FriendCommand implements SimpleCommand {
                         return;
                     }
                     debug(player, "ignore completed target={}", entry.getKey());
-                    Component success = Component.text()
-                            .append(FriendTextFormatter.yellow("Ignored request from "))
-                            .append(formattedName(entry.getKey()))
-                            .append(FriendTextFormatter.yellow("."))
-                            .build();
-                    sendFramed(player, success);
+                    withProfile(entry.getKey(), profile -> {
+                        Component success = Component.text()
+                                .append(FriendTextFormatter.yellow("Ignored request from "))
+                                .append(profile.formattedName())
+                                .append(FriendTextFormatter.yellow("."))
+                                .build();
+                        sendFramed(player, success);
+                    });
                 }));
     }
 
@@ -427,12 +451,14 @@ public final class FriendCommand implements SimpleCommand {
                         return;
                     }
                     debug(player, "remove completed target={}", entry.getKey());
-                    Component info = Component.text()
-                            .append(FriendTextFormatter.yellow("Removed "))
-                            .append(formattedName(entry.getKey()))
-                            .append(FriendTextFormatter.yellow(" from your friends list!"))
-                            .build();
-                    sendFramed(player, info);
+                    withProfile(entry.getKey(), profile -> {
+                        Component info = Component.text()
+                                .append(FriendTextFormatter.yellow("Removed "))
+                                .append(profile.formattedName())
+                                .append(FriendTextFormatter.yellow(" from your friends list!"))
+                                .build();
+                        sendFramed(player, info);
+                    });
                 }));
     }
 
@@ -533,61 +559,26 @@ public final class FriendCommand implements SimpleCommand {
         Optional<Player> online = proxy.getPlayer(targetArg);
         if (online.isPresent()) {
             UUID id = online.get().getUniqueId();
-            cacheName(id, online.get().getUsername());
             log("Resolved {} to online player {}", targetArg, id);
             return CompletableFuture.completedFuture(id);
         }
 
-        UUID cached = reverseNameCache.get(targetArg.toLowerCase(Locale.ROOT));
-        if (cached != null) {
-            log("Resolved {} via reverse name cache to {}", targetArg, cached);
-            return CompletableFuture.completedFuture(cached);
-        }
-
-        CompletableFuture<UUID> future = new CompletableFuture<>();
-        future.completeExceptionally(new IllegalArgumentException("Player '" + targetArg + "' must be online or specified by UUID."));
-        log("Unable to resolve target argument {}", targetArg);
-        return future;
-    }
-
-    private void cacheName(UUID playerId, String name) {
-        if (name == null || name.isBlank()) {
-            return;
-        }
-        nameCache.put(playerId, name);
-        reverseNameCache.put(name.toLowerCase(Locale.ROOT), playerId);
+        return playerDirectory.findProfileByName(targetArg, ProfileQuery.DEFAULT)
+                .thenCompose(optional -> optional
+                        .map(profile -> {
+                            log("Resolved {} using directory to {}", targetArg, profile.playerId());
+                            return CompletableFuture.completedFuture(profile.playerId());
+                        })
+                        .orElseGet(() -> {
+                            CompletableFuture<UUID> failure = new CompletableFuture<>();
+                            failure.completeExceptionally(new IllegalArgumentException("Player '" + targetArg + "' must be online or specified by UUID."));
+                            log("Unable to resolve target argument {}", targetArg);
+                            return failure;
+                        }));
     }
 
     private List<String> snapshotNames(Player player) {
         return Collections.emptyList();
-    }
-
-    private Component formattedName(UUID uuid) {
-        return FriendTextFormatter.formatName(uuid, resolvePlainName(uuid), rankService, logger);
-    }
-
-    private String resolvePlainName(UUID uuid) {
-        if (uuid == null) {
-            return "unknown";
-        }
-        String cached = nameCache.get(uuid);
-        if (cached != null && !cached.isBlank()) {
-            return cached;
-        }
-        Optional<Player> online = proxy.getPlayer(uuid);
-        if (online.isPresent()) {
-            String username = online.get().getUsername();
-            cacheName(uuid, username);
-            return username;
-        }
-        if (identityFeature != null) {
-            PlayerIdentity identity = identityFeature.getIdentity(uuid);
-            if (identity != null && identity.getUsername() != null && !identity.getUsername().isBlank()) {
-                cacheName(uuid, identity.getUsername());
-                return identity.getUsername();
-            }
-        }
-        return shortUuid(uuid);
     }
 
     private Component renderListHeader(int page, int totalPages) {
@@ -621,7 +612,11 @@ public final class FriendCommand implements SimpleCommand {
     }
 
     private Component renderFriendPresence(UUID friendId) {
-        Component name = formattedName(friendId);
+        return renderFriendPresence(friendId, PlayerProfile.missing(friendId));
+    }
+
+    private Component renderFriendPresence(UUID friendId, PlayerProfile profile) {
+        Component name = profile != null ? profile.formattedName() : FriendTextFormatter.formatName(friendId, shortUuid(friendId), rankService, logger);
         Optional<Player> online = proxy.getPlayer(friendId);
         if (online.isEmpty()) {
             return Component.text()
@@ -663,7 +658,7 @@ public final class FriendCommand implements SimpleCommand {
     }
 
     private Component missingInviteMessage(UUID targetId) {
-        Component targetName = formattedName(targetId);
+        Component targetName = PlayerProfile.missing(targetId).formattedName();
         return Component.text()
                 .append(FriendTextFormatter.yellow("You don't have an invite from "))
                 .append(targetName)
@@ -679,6 +674,21 @@ public final class FriendCommand implements SimpleCommand {
 
     private Component error(String message) {
         return Component.text(message, NamedTextColor.RED);
+    }
+
+    private void withProfile(UUID playerId, Consumer<PlayerProfile> consumer) {
+        if (playerId == null) {
+            schedule(() -> consumer.accept(PlayerProfile.missing(null)));
+            return;
+        }
+        playerDirectory.getProfile(playerId)
+                .whenComplete((profile, throwable) ->
+                        schedule(() -> {
+                            PlayerProfile resolved = (throwable == null && profile != null)
+                                    ? profile
+                                    : PlayerProfile.missing(playerId);
+                            consumer.accept(resolved);
+                        }));
     }
 
     private void sendFramed(Player player, Component line) {
@@ -725,14 +735,18 @@ public final class FriendCommand implements SimpleCommand {
                                         return;
                                     }
                                     proxy.getPlayer(actorId).ifPresent(player ->
-                                            schedule(() -> {
-                                                Component message = Component.text()
-                                                        .append(FriendTextFormatter.yellow("Your friend request to "))
-                                                        .append(formattedName(targetId))
-                                                        .append(FriendTextFormatter.yellow(" has expired."))
-                                                        .build();
-                                                sendFramed(player, message);
-                                            }));
+                                            playerDirectory.getProfile(targetId).whenComplete((profile, error) ->
+                                                    schedule(() -> {
+                                                        PlayerProfile resolved = (error == null && profile != null)
+                                                                ? profile
+                                                                : PlayerProfile.missing(targetId);
+                                                        Component message = Component.text()
+                                                                .append(FriendTextFormatter.yellow("Your friend request to "))
+                                                                .append(resolved.formattedName())
+                                                                .append(FriendTextFormatter.yellow(" has expired."))
+                                                                .build();
+                                                        sendFramed(player, message);
+                                                    })));
                                 }))
                 .delay(INVITE_TIMEOUT)
                 .schedule();
@@ -741,6 +755,16 @@ public final class FriendCommand implements SimpleCommand {
             tasks.put(targetId, task);
             return tasks;
         });
+    }
+
+    private String displayName(PlayerProfile profile) {
+        if (profile != null && profile.username() != null && !profile.username().isBlank()) {
+            return profile.username();
+        }
+        if (profile != null && profile.playerId() != null) {
+            return profile.playerId().toString().split("-")[0];
+        }
+        return "unknown";
     }
 
     private void cancelInviteExpiryReminder(UUID actorId, UUID targetId) {
