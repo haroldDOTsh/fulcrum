@@ -7,6 +7,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.fun.command.KaboomCommand;
 import sh.harold.fulcrum.fundamentals.fun.quickmaths.QuickMathsCommand;
 import sh.harold.fulcrum.fundamentals.fun.quickmaths.QuickMathsManager;
@@ -39,7 +40,11 @@ public final class FunFeature implements PluginFeature, Listener {
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(MinigameEngine.class).orElse(null)
                         : null);
-        this.quickMathsManager = new QuickMathsManager(plugin, engineSupplier);
+        Supplier<RankService> rankServiceSupplier = () -> container.getOptional(RankService.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null)
+                        : null);
+        this.quickMathsManager = new QuickMathsManager(plugin, engineSupplier, rankServiceSupplier);
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         CommandRegistrar.register(new KaboomCommand().build());
