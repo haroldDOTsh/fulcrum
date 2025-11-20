@@ -14,6 +14,7 @@ import sh.harold.fulcrum.api.data.DocumentPatch;
 import sh.harold.fulcrum.api.friends.FriendService;
 import sh.harold.fulcrum.api.player.PlayerDirectory;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.api.status.StatusService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.common.privacy.*;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
@@ -123,7 +124,8 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                 PrivacyDomain.DIRECT_MESSAGES,
                 PrivacyDomainPresets.directMessages(java.util.EnumSet.of(SettingLevel.NONE, SettingLevel.MAX)));
         RankService rankService = container.getOptional(RankService.class).orElse(null);
-        this.playerDirectory = new RuntimePlayerDirectory(plugin, sessionService, dataAPI, rankService);
+        StatusService statusService = container.getOptional(StatusService.class).orElse(null);
+        this.playerDirectory = new RuntimePlayerDirectory(plugin, sessionService, dataAPI, rankService, statusService);
         container.register(PlayerDirectory.class, playerDirectory);
         if (locator != null) {
             locator.registerService(PlayerDirectory.class, playerDirectory);

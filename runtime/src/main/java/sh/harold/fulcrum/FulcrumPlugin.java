@@ -101,6 +101,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new DataAPIFeature()); // Register DataAPI before PlayerData
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.session.PlayerSessionFeature());
         FeatureManager.register(new PlayerDataFeature()); // Depends on DataAPI & sessions
+        FeatureManager.register(new sh.harold.fulcrum.fundamentals.status.RuntimeStatusFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.environment.EnvironmentDirectoryFeature());
         FeatureManager.register(new NetworkConfigFeature());
         FeatureManager.register(new sh.harold.fulcrum.fundamentals.cooldown.CooldownFeature());

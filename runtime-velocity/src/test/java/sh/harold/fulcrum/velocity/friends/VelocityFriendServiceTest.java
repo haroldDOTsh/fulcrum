@@ -20,6 +20,7 @@ import sh.harold.fulcrum.velocity.session.LettuceSessionRedisClient;
 
 import java.net.ServerSocket;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -96,7 +97,11 @@ class VelocityFriendServiceTest {
         FriendMutationCommandMessage command = messageBus.lastCommand();
         assertThat(command).isNotNull();
 
-        FriendSnapshot actorSnapshot = new FriendSnapshot(5L, Set.of(target), Set.of(), Set.of());
+        FriendSnapshot actorSnapshot = new FriendSnapshot(
+                5L,
+                Map.of(target, new FriendSnapshot.FriendDetails(target, null, null)),
+                Map.of(),
+                Map.of());
         FriendMutationResponseMessage response = new FriendMutationResponseMessage(
                 command.getRequestId(), true, command.getMutationType(), actor, target, actorSnapshot, FriendSnapshot.empty(), null);
 
@@ -112,7 +117,7 @@ class VelocityFriendServiceTest {
         UUID actor = UUID.randomUUID();
         ObjectMapper mapper = new ObjectMapper();
 
-        FriendSnapshot initial = new FriendSnapshot(9L, Set.of(), Set.of(), Set.of());
+        FriendSnapshot initial = new FriendSnapshot(9L, Map.of(), Map.of(), Map.of());
         redisClient.set(FriendRedisKeys.snapshotKey(actor), mapper.writeValueAsString(initial), 0);
         assertThat(redisClient.get(FriendRedisKeys.snapshotKey(actor))).isNotBlank();
         FriendSnapshot parsed = mapper.readValue(redisClient.get(FriendRedisKeys.snapshotKey(actor)), FriendSnapshot.class);
@@ -121,7 +126,7 @@ class VelocityFriendServiceTest {
         FriendSnapshot first = service.getSnapshot(actor, true).toCompletableFuture().get(1, TimeUnit.SECONDS);
         assertThat(first.version()).isEqualTo(9L);
 
-        FriendSnapshot updated = new FriendSnapshot(15L, Set.of(), Set.of(), Set.of());
+        FriendSnapshot updated = new FriendSnapshot(15L, Map.of(), Map.of(), Map.of());
         redisClient.set(FriendRedisKeys.snapshotKey(actor), mapper.writeValueAsString(updated), 0);
         assertThat(redisClient.get(FriendRedisKeys.snapshotKey(actor))).contains("\"version\":15");
 

@@ -74,6 +74,7 @@ public class VelocityFeatureManager {
         registerFeature(new VelocityDataAPIFeature());
         registerFeature(new sh.harold.fulcrum.velocity.message.VelocityMessageFeature());
         registerFeature(new sh.harold.fulcrum.velocity.fundamentals.session.VelocityPlayerSessionFeature());
+        registerFeature(new sh.harold.fulcrum.velocity.status.VelocityStatusFeature());
         registerFeature(new sh.harold.fulcrum.velocity.rank.VelocityRankFeature());
         registerFeature(new sh.harold.fulcrum.velocity.friends.VelocityFriendFeature());
         registerFeature(new SlotFamilyFeature());

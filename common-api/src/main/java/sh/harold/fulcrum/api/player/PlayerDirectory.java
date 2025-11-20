@@ -3,6 +3,7 @@ package sh.harold.fulcrum.api.player;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import sh.harold.fulcrum.api.rank.Rank;
+import sh.harold.fulcrum.api.status.PlayerStatus;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -35,6 +36,16 @@ public interface PlayerDirectory {
     default CompletionStage<Optional<PlayerProfile>> findProfileByName(String username) {
         return findProfileByName(username, ProfileQuery.DEFAULT);
     }
+
+    /**
+     * Fetch the current status snapshot for a single player.
+     */
+    CompletionStage<PlayerStatus> getStatus(UUID playerId);
+
+    /**
+     * Fetch status snapshots for a batch of players.
+     */
+    CompletionStage<Map<UUID, PlayerStatus>> getStatuses(Collection<UUID> playerIds);
 
     /**
      * Evicts any cached representation for the given player.

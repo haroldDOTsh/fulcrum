@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.player.PlayerDirectory;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.api.status.StatusService;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.common.settings.PlayerSettingsService;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
@@ -64,7 +65,8 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         serviceLocator.register(PlayerSettingsService.class, playerSettingsService);
 
         RankService rankService = serviceLocator.getService(RankService.class).orElse(null);
-        this.playerDirectory = new VelocityPlayerDirectory(proxy, sessionService, dataAPI, rankService, logger);
+        StatusService statusService = serviceLocator.getService(StatusService.class).orElse(null);
+        this.playerDirectory = new VelocityPlayerDirectory(proxy, sessionService, dataAPI, rankService, statusService, logger);
         serviceLocator.register(PlayerDirectory.class, playerDirectory);
 
         // Register event listeners - MUST use plugin instance as container

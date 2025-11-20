@@ -13,6 +13,9 @@ import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.player.PlayerDirectory;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.api.status.PlayerStatus;
+import sh.harold.fulcrum.api.status.PresenceStatus;
+import sh.harold.fulcrum.api.status.StatusService;
 import sh.harold.fulcrum.session.PlayerSessionRecord;
 
 import java.time.Duration;
@@ -37,17 +40,20 @@ public final class RuntimePlayerDirectory implements PlayerDirectory {
     private final sh.harold.fulcrum.fundamentals.session.PlayerSessionService sessionService;
     private final DataAPI dataAPI;
     private final RankService rankService;
+    private final StatusService statusService;
     private final Executor executor;
     private final Cache<UUID, PlayerProfile> cache;
 
     public RuntimePlayerDirectory(JavaPlugin plugin,
                                   sh.harold.fulcrum.fundamentals.session.PlayerSessionService sessionService,
                                   DataAPI dataAPI,
-                                  RankService rankService) {
+                                  RankService rankService,
+                                  StatusService statusService) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.sessionService = sessionService;
         this.dataAPI = dataAPI;
         this.rankService = rankService;
+        this.statusService = statusService;
         this.executor = dataAPI != null ? dataAPI.executor() : ForkJoinPool.commonPool();
         this.cache = Caffeine.newBuilder()
                 .maximumSize(8_000)
@@ -148,6 +154,34 @@ public final class RuntimePlayerDirectory implements PlayerDirectory {
         return Optional.ofNullable(cache.getIfPresent(playerId));
     }
 
+    @Override
+    public CompletionStage<PlayerStatus> getStatus(UUID playerId) {
+        if (playerId == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        if (statusService == null) {
+            return CompletableFuture.completedFuture(fallbackStatus(playerId));
+        }
+        return statusService.getStatus(playerId);
+    }
+
+    @Override
+    public CompletionStage<Map<UUID, PlayerStatus>> getStatuses(Collection<UUID> playerIds) {
+        if (playerIds == null || playerIds.isEmpty()) {
+            return CompletableFuture.completedFuture(Map.of());
+        }
+        if (statusService == null) {
+            Map<UUID, PlayerStatus> offline = new LinkedHashMap<>();
+            for (UUID playerId : playerIds) {
+                if (playerId != null) {
+                    offline.put(playerId, fallbackStatus(playerId));
+                }
+            }
+            return CompletableFuture.completedFuture(offline);
+        }
+        return statusService.getStatuses(playerIds);
+    }
+
     private PlayerProfile loadProfile(UUID playerId, boolean includeRankData) {
         Player online = plugin.getServer().getPlayer(playerId);
         if (online != null) {
@@ -166,6 +200,10 @@ public final class RuntimePlayerDirectory implements PlayerDirectory {
             }
         }
         return PlayerProfile.missing(playerId);
+    }
+
+    private PlayerStatus fallbackStatus(UUID playerId) {
+        return new PlayerStatus(playerId, PresenceStatus.OFFLINE, null, 0L);
     }
 
     private PlayerProfile buildFromOnlinePlayer(Player player, boolean includeRankData) {
