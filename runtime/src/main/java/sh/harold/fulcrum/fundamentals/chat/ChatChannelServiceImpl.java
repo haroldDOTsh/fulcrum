@@ -27,6 +27,7 @@ import sh.harold.fulcrum.api.party.PartySnapshot;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature;
+import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
@@ -50,6 +51,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     private final ChatEmojiService chatEmojiService;
     private final LettuceRedisOperations redisOperations;
     private final Supplier<MinigameEngine> engineSupplier;
+    private final SlotPresenceService slotPresence;
     private volatile MinigameEngine cachedEngine;
     private final ObjectMapper mapper;
 
@@ -69,7 +71,8 @@ final class ChatChannelServiceImpl implements ChatChannelService {
                            LettuceRedisOperations redisOperations,
                            Supplier<MinigameEngine> engineSupplier,
                            RuntimePunishmentFeature.RuntimePunishmentManager punishmentManager,
-                           ChatEmojiService chatEmojiService) {
+                           ChatEmojiService chatEmojiService,
+                           SlotPresenceService slotPresence) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.messageBus = messageBus;
@@ -80,6 +83,7 @@ final class ChatChannelServiceImpl implements ChatChannelService {
         this.mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         this.punishmentManager = punishmentManager;
         this.chatEmojiService = chatEmojiService;
+        this.slotPresence = slotPresence;
     }
 
     @Override
@@ -190,16 +194,19 @@ final class ChatChannelServiceImpl implements ChatChannelService {
     }
 
     private void restrictViewersToSlot(AsyncChatEvent event) {
-        MinigameEngine minigameEngine = resolveEngine();
-        if (minigameEngine == null) {
-            return;
-        }
-        UUID senderId = event.getPlayer().getUniqueId();
-        Optional<String> slotId = minigameEngine.resolveSlotId(senderId);
+        Optional<String> slotId = resolveSlot(event.getPlayer().getUniqueId(), event.getPlayer().getWorld().getName());
         if (slotId.isEmpty()) {
             return;
         }
-        Set<UUID> allowed = new HashSet<>(minigameEngine.getPlayerIdsInSlot(slotId.get()));
+        UUID senderId = event.getPlayer().getUniqueId();
+        Set<UUID> allowed = new HashSet<>();
+        if (slotPresence != null) {
+            allowed.addAll(slotPresence.getPlayerIdsInSlot(slotId.get()));
+        }
+        MinigameEngine minigameEngine = resolveEngine();
+        if (allowed.isEmpty() && minigameEngine != null) {
+            allowed.addAll(minigameEngine.getPlayerIdsInSlot(slotId.get()));
+        }
         allowed.add(senderId);
         event.viewers().removeIf(audience -> audience instanceof Player viewer
                 && !allowed.contains(viewer.getUniqueId()));
@@ -218,6 +225,21 @@ final class ChatChannelServiceImpl implements ChatChannelService {
             cachedEngine = engine;
         }
         return engine;
+    }
+
+    private Optional<String> resolveSlot(UUID playerId, String worldName) {
+        if (slotPresence != null) {
+            Optional<String> resolved = slotPresence.resolveSlotId(playerId);
+            if (resolved.isPresent()) {
+                return resolved;
+            }
+            Optional<String> byWorld = slotPresence.resolveSlotId(worldName);
+            if (byWorld.isPresent()) {
+                return byWorld;
+            }
+        }
+        MinigameEngine engine = resolveEngine();
+        return engine != null ? engine.resolveSlotId(playerId) : Optional.empty();
     }
 
     private void suppressChatEvent(AsyncChatEvent event) {

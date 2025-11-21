@@ -21,6 +21,7 @@ import sh.harold.fulcrum.fundamentals.chat.command.ChatCommands;
 import sh.harold.fulcrum.fundamentals.chat.command.DisableMeCommand;
 import sh.harold.fulcrum.fundamentals.chat.command.EmojiListCommand;
 import sh.harold.fulcrum.fundamentals.punishment.RuntimePunishmentFeature;
+import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -65,6 +66,10 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(MinigameEngine.class).orElse(null)
                         : null);
+        SlotPresenceService slotPresenceService = container.getOptional(SlotPresenceService.class)
+                .orElseGet(() -> Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                        .flatMap(locator -> locator.findService(SlotPresenceService.class))
+                        .orElse(null));
 
         if (engineSupplier.get() == null) {
             logger.warning("MinigameEngine unavailable; chat isolation will fall back to global delivery.");
@@ -90,7 +95,7 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
                 .ifPresent(locator -> locator.registerService(ChatEmojiService.class, this.chatEmojiService));
 
-        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, engineSupplier, punishmentManager, this.chatEmojiService);
+        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, engineSupplier, punishmentManager, this.chatEmojiService, slotPresenceService);
 
         container.register(ChatChannelService.class, service);
         Optional.ofNullable(ServiceLocatorImpl.getInstance())

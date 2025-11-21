@@ -14,6 +14,7 @@ import sh.harold.fulcrum.fundamentals.routing.EnvironmentRoutingService;
 import sh.harold.fulcrum.fundamentals.session.PlayerReservationService;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
+import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.fundamentals.world.WorldManager;
 import sh.harold.fulcrum.fundamentals.world.WorldService;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
@@ -88,6 +89,11 @@ public class MinigameEngineFeature implements PluginFeature {
                         ? ServiceLocatorImpl.getInstance().findService(EnvironmentRoutingService.class).orElse(null)
                         : null);
 
+        SlotPresenceService slotPresenceService = container.getOptional(SlotPresenceService.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(SlotPresenceService.class).orElse(null)
+                        : null);
+
         MongoConnectionAdapter mongoAdapter = container.getOptional(MongoConnectionAdapter.class)
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(MongoConnectionAdapter.class).orElse(null)
@@ -134,7 +140,8 @@ public class MinigameEngineFeature implements PluginFeature {
                         : null);
 
         engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, actionFlagService,
-                sessionService, dataRegistry, matchHistoryWriter, matchLogWriter, messageBus, environmentRoutingService);
+                sessionService, dataRegistry, matchHistoryWriter, matchLogWriter, messageBus, environmentRoutingService,
+                slotPresenceService);
         if (orchestrator != null) {
             orchestrator.addProvisionListener(engine::handleProvisionedSlot);
         }
@@ -154,7 +161,7 @@ public class MinigameEngineFeature implements PluginFeature {
         }
         Bukkit.getPluginManager().registerEvents(new SpectatorListener(), plugin);
         Bukkit.getPluginManager().registerEvents(new MatchDamageListener(engine), plugin);
-        Bukkit.getPluginManager().registerEvents(new SlotTabCompletionListener(engine), plugin);
+        Bukkit.getPluginManager().registerEvents(new SlotTabCompletionListener(engine, slotPresenceService), plugin);
         PlayerReservationService reservationService = container.getOptional(PlayerReservationService.class)
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(PlayerReservationService.class).orElse(null)
@@ -173,7 +180,7 @@ public class MinigameEngineFeature implements PluginFeature {
         }
 
         routingListener = new PlayerRoutingListener(plugin, routeRegistry, gameManager, reservationService,
-                partyReservationConsumer, messageBus, sessionService, serverIdentifier);
+                partyReservationConsumer, messageBus, sessionService, serverIdentifier, slotPresenceService);
         Bukkit.getPluginManager().registerEvents(routingListener, plugin);
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(PlayerRoutingListener.class, routingListener);

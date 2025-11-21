@@ -5,6 +5,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChatTabCompleteEvent;
+import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.minigame.MinigameEngine;
 
 import java.util.*;
@@ -17,9 +18,11 @@ import java.util.stream.Collectors;
 public final class SlotTabCompletionListener implements Listener {
 
     private final MinigameEngine minigameEngine;
+    private final SlotPresenceService slotPresence;
 
-    public SlotTabCompletionListener(MinigameEngine minigameEngine) {
+    public SlotTabCompletionListener(MinigameEngine minigameEngine, SlotPresenceService slotPresence) {
         this.minigameEngine = minigameEngine;
+        this.slotPresence = slotPresence;
     }
 
     private static boolean isPlayerLikeToken(String token) {
@@ -44,7 +47,7 @@ public final class SlotTabCompletionListener implements Listener {
             return;
         }
         Player player = event.getPlayer();
-        Optional<String> slotId = minigameEngine.resolveSlotId(player.getUniqueId());
+        Optional<String> slotId = resolveSlotId(player.getUniqueId(), player.getWorld().getName());
         if (slotId.isEmpty()) {
             return;
         }
@@ -73,7 +76,7 @@ public final class SlotTabCompletionListener implements Listener {
         if (!(event.getSender() instanceof Player player)) {
             return;
         }
-        Optional<String> slotId = minigameEngine.resolveSlotId(player.getUniqueId());
+        Optional<String> slotId = resolveSlotId(player.getUniqueId(), player.getWorld().getName());
         if (slotId.isEmpty()) {
             return;
         }
@@ -96,11 +99,29 @@ public final class SlotTabCompletionListener implements Listener {
     }
 
     private Set<String> gatherNamesForSlot(String slotId, String fallbackName) {
-        Set<String> names = new HashSet<>(minigameEngine.getPlayerNameSnapshotInSlot(slotId));
+        Set<String> names = new HashSet<>();
+        if (slotPresence != null) {
+            names.addAll(slotPresence.getPlayerNamesInSlot(slotId));
+        }
+        names.addAll(minigameEngine.getPlayerNameSnapshotInSlot(slotId));
         if (fallbackName != null && !fallbackName.isBlank()) {
             names.add(fallbackName);
         }
         names.removeIf(Objects::isNull);
         return names;
+    }
+
+    private Optional<String> resolveSlotId(UUID playerId, String worldName) {
+        if (slotPresence != null) {
+            Optional<String> resolved = slotPresence.resolveSlotId(playerId);
+            if (resolved.isPresent()) {
+                return resolved;
+            }
+            Optional<String> byWorld = slotPresence.resolveSlotId(worldName);
+            if (byWorld.isPresent()) {
+                return byWorld;
+            }
+        }
+        return minigameEngine.resolveSlotId(playerId);
     }
 }

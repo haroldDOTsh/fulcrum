@@ -20,6 +20,7 @@ import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteAck;
 import sh.harold.fulcrum.api.messagebus.messages.PlayerRouteCommand;
 import sh.harold.fulcrum.fundamentals.session.PlayerReservationService;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
+import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.minigame.GameManager;
 import sh.harold.fulcrum.minigame.party.PartyReservationConsumer;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
@@ -51,6 +52,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
     private final Map<UUID, PendingTeleport> pendingTeleports = new ConcurrentHashMap<>();
     private final Map<UUID, Long> processedRequests = new ConcurrentHashMap<>();
     private final String localServerId;
+    private final SlotPresenceService slotPresence;
 
     public PlayerRoutingListener(Plugin plugin,
                                  PlayerRouteRegistry routeRegistry,
@@ -59,7 +61,8 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                                  PartyReservationConsumer partyReservationConsumer,
                                  MessageBus messageBus,
                                  PlayerSessionService sessionService,
-                                 ServerIdentifier serverIdentifier) {
+                                 ServerIdentifier serverIdentifier,
+                                 SlotPresenceService slotPresence) {
         this.plugin = plugin;
         this.routeRegistry = routeRegistry;
         this.gameManager = gameManager;
@@ -67,6 +70,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
         this.partyReservationConsumer = partyReservationConsumer;
         this.messageBus = messageBus;
         this.sessionService = sessionService;
+        this.slotPresence = slotPresence;
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         this.localServerId = serverIdentifier != null && serverIdentifier.getServerId() != null
@@ -262,6 +266,9 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             sessionService.clearHandoff(command.getPlayerId());
             sessionService.clearMinigameContext(command.getPlayerId());
         }
+        if (slotPresence != null && command.getPlayerId() != null) {
+            slotPresence.unbindPlayer(command.getPlayerId());
+        }
     }
 
     private boolean isLocalRoute(PlayerRouteCommand command, Player player) {
@@ -289,7 +296,6 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             ack.setStatus(PlayerRouteAck.Status.SUCCESS);
             messageBus.broadcast(ChannelConstants.PLAYER_ROUTE_ACK, ack);
         }
-
         if (sessionService != null) {
             Map<String, String> metadata = command.getMetadata() != null ? command.getMetadata() : Map.of();
             Map<String, Object> segmentMetadata = new HashMap<>(metadata);
@@ -304,6 +310,14 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
                     metadata,
                     command.getSlotId());
         }
+        if (slotPresence != null && command.getPlayerId() != null && command.getSlotId() != null) {
+            Player player = Bukkit.getPlayer(command.getPlayerId());
+            String playerName = player != null ? player.getName() : command.getPlayerName();
+            slotPresence.bindPlayer(command.getPlayerId(), playerName, command.getSlotId());
+            if (command.getTargetWorld() != null && !command.getTargetWorld().isBlank()) {
+                slotPresence.bindWorld(command.getTargetWorld(), command.getSlotId());
+            }
+        }
     }
 
     private void handleDisconnect(PlayerRouteCommand command) {
@@ -315,6 +329,9 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             sessionService.endActiveSegment(playerId);
             sessionService.clearHandoff(playerId);
             sessionService.clearMinigameContext(playerId);
+        }
+        if (slotPresence != null && playerId != null) {
+            slotPresence.unbindPlayer(playerId);
         }
 
         Player target = Bukkit.getPlayer(playerId);
@@ -448,6 +465,9 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             gameManager.handlePlayerQuit(event.getPlayer());
         }
         routeRegistry.remove(playerId);
+        if (slotPresence != null) {
+            slotPresence.unbindPlayer(playerId);
+        }
     }
 
     private record PendingTeleport(Location location, PlayerRouteCommand command, long enqueuedAt) {

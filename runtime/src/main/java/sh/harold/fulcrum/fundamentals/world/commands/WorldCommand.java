@@ -30,6 +30,7 @@ import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.world.generator.VoidChunkGenerator;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
+import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.fundamentals.world.WorldManager;
 import sh.harold.fulcrum.fundamentals.world.WorldService;
 import sh.harold.fulcrum.fundamentals.world.model.LoadedWorld;
@@ -313,6 +314,9 @@ public class WorldCommand {
 
         final String familyForSlot = familyToUse;
         final SimpleSlotOrchestrator orchestratorRef = orchestrator;
+        final SlotPresenceService slotPresence = Optional.ofNullable(ServiceLocatorImpl.getInstance())
+                .flatMap(locator -> locator.findService(SlotPresenceService.class))
+                .orElse(null);
         worldManager.pasteWorld(loadedWorld.getId(), debugWorld, pasteLocation).whenComplete((result, throwable) ->
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     if (throwable != null) {
@@ -359,6 +363,9 @@ public class WorldCommand {
                         );
 
                         if (slotId != null) {
+                            if (slotPresence != null) {
+                                slotPresence.bindWorld(debugWorldName, slotId);
+                            }
                             sender.sendMessage(Component.text(
                                     "Registered debug slot " + slotId + " for family " + familyForSlot,
                                     NamedTextColor.AQUA));

@@ -16,6 +16,7 @@ import sh.harold.fulcrum.fundamentals.routing.EnvironmentRoutingService;
 import sh.harold.fulcrum.fundamentals.routing.EnvironmentRoutingService.RouteOptions;
 import sh.harold.fulcrum.fundamentals.session.PlayerSessionService;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
+import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.minigame.data.MinigameDataRegistry;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
@@ -58,6 +59,7 @@ public final class MinigameEngine {
     private final MatchHistoryWriter matchHistoryWriter;
     private final MatchLogWriter matchLogWriter;
     private final MessageBus messageBus;
+    private final SlotPresenceService slotPresence;
     private final Map<String, Set<UUID>> rejoinWatchers = new ConcurrentHashMap<>();
     private final Set<String> provisioningSlots = ConcurrentHashMap.newKeySet();
     private final Map<String, MinigameRegistration> registrations = new ConcurrentHashMap<>();
@@ -94,7 +96,8 @@ public final class MinigameEngine {
                           MatchHistoryWriter matchHistoryWriter,
                           MatchLogWriter matchLogWriter,
                           MessageBus messageBus,
-                          EnvironmentRoutingService environmentRoutingService) {
+                          EnvironmentRoutingService environmentRoutingService,
+                          SlotPresenceService slotPresence) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.routeRegistry = routeRegistry;
         this.environmentService = environmentService;
@@ -106,6 +109,7 @@ public final class MinigameEngine {
         this.matchLogWriter = matchLogWriter;
         this.messageBus = messageBus;
         this.environmentRoutingService = environmentRoutingService;
+        this.slotPresence = slotPresence;
     }
 
     public void setEnvironmentRoutingService(EnvironmentRoutingService environmentRoutingService) {
@@ -173,6 +177,7 @@ public final class MinigameEngine {
                     visibilityRefreshNeeded = true;
                 }
                 playerNameIndex.remove(playerId);
+                unbindPresence(playerId);
             }
         }
 
@@ -181,6 +186,7 @@ public final class MinigameEngine {
 
         if (slotId != null) {
             slotMatches.remove(slotId);
+            clearPresenceForSlot(slotId);
 
             Map<String, String> removalMetadata = metadataSnapshot != null
                     ? new HashMap<>(metadataSnapshot)
@@ -249,12 +255,14 @@ public final class MinigameEngine {
                     if (!id.equals(previous)) {
                         refreshSlotVisibility();
                     }
+                    bindPresence(playerId, player.getName(), id);
                 });
             } else {
                 String previous = playerSlotIndex.put(playerId, slotId);
                 if (!slotId.equals(previous)) {
                     refreshSlotVisibility();
                 }
+                bindPresence(playerId, player.getName(), slotId);
             }
             if (slotId != null && !slotId.isBlank() && MinigameBlueprint.STATE_PRE_LOBBY.equals(match.getContext().currentStateId())) {
                 trackRejoinWatcher(slotId, playerId);
@@ -275,6 +283,7 @@ public final class MinigameEngine {
         MinigameMatch match = activeMatches.get(matchId);
         boolean slotUnregistered = playerSlotIndex.remove(playerId) != null;
         playerNameIndex.remove(playerId);
+        unbindPresence(playerId);
         if (match != null) {
             String slotId = matchSlotIds.get(matchId);
             match.removePlayer(playerId);
@@ -540,6 +549,7 @@ public final class MinigameEngine {
                 slotOrchestrator.updateSlotStatus(slotId, SlotLifecycleStatus.FAULTED, 0, metadata);
             }
         }
+        clearPresenceForSlot(slotId);
         cleanupEnvironment(slotId);
     }
 
@@ -567,6 +577,7 @@ public final class MinigameEngine {
         metadata.put("spawnYaw", Float.toString(lobbySpawn.getYaw()));
         metadata.put("spawnPitch", Float.toString(lobbySpawn.getPitch()));
 
+        bindWorldToPresence(worldName, slot.slotId());
         slotOrchestrator.updateSlotStatus(slot.slotId(), SlotLifecycleStatus.AVAILABLE, 0, metadata);
         plugin.getLogger().info("Provisioned slot " + slot.slotId() + " for family " + slot.familyId()
                 + " (world=" + worldName + ")");
@@ -875,6 +886,7 @@ public final class MinigameEngine {
             playerNameIndex.put(playerId, player.getName());
             if (slotId != null) {
                 playerSlotIndex.put(playerId, slotId);
+                bindPresence(playerId, player.getName(), slotId);
             }
         }
         if (slotId != null) {
@@ -1260,6 +1272,12 @@ public final class MinigameEngine {
         if (playerId == null) {
             return Optional.empty();
         }
+        if (slotPresence != null) {
+            Optional<String> resolved = slotPresence.resolveSlotId(playerId);
+            if (resolved.isPresent()) {
+                return resolved;
+            }
+        }
         String slotId = playerSlotIndex.get(playerId);
         if (slotId != null) {
             return Optional.of(slotId);
@@ -1281,6 +1299,12 @@ public final class MinigameEngine {
     public Optional<String> resolveSlotId(World world) {
         if (world == null) {
             return Optional.empty();
+        }
+        if (slotPresence != null) {
+            Optional<String> resolved = slotPresence.resolveSlotId(world.getName());
+            if (resolved.isPresent()) {
+                return resolved;
+            }
         }
         if (environmentService != null) {
             Optional<String> slot = environmentService.resolveSlotIdByWorld(world.getName());
@@ -1308,6 +1332,12 @@ public final class MinigameEngine {
         if (slotId == null || slotId.isBlank()) {
             return Set.of();
         }
+        if (slotPresence != null) {
+            Set<UUID> membership = slotPresence.getPlayerIdsInSlot(slotId);
+            if (!membership.isEmpty()) {
+                return membership;
+            }
+        }
         Set<UUID> result = new HashSet<>();
         for (Map.Entry<UUID, String> entry : playerSlotIndex.entrySet()) {
             if (entry.getValue() != null && slotId.equalsIgnoreCase(entry.getValue())) {
@@ -1330,6 +1360,12 @@ public final class MinigameEngine {
         if (slotId == null || slotId.isBlank()) {
             return List.of();
         }
+        if (slotPresence != null) {
+            Collection<Player> fromPresence = slotPresence.getOnlinePlayersInSlot(slotId);
+            if (!fromPresence.isEmpty()) {
+                return fromPresence;
+            }
+        }
         List<Player> players = new ArrayList<>();
         for (UUID playerId : getPlayerIdsInSlot(slotId)) {
             Player player = plugin.getServer().getPlayer(playerId);
@@ -1341,6 +1377,12 @@ public final class MinigameEngine {
     }
 
     public List<String> getPlayerNamesInSlot(String slotId) {
+        if (slotPresence != null) {
+            Set<String> names = slotPresence.getPlayerNamesInSlot(slotId);
+            if (!names.isEmpty()) {
+                return List.copyOf(names);
+            }
+        }
         return getPlayersInSlot(slotId).stream()
                 .map(Player::getName)
                 .filter(Objects::nonNull)
@@ -1350,6 +1392,12 @@ public final class MinigameEngine {
     public Set<String> getPlayerNameSnapshotInSlot(String slotId) {
         if (slotId == null || slotId.isBlank()) {
             return Set.of();
+        }
+        if (slotPresence != null) {
+            Set<String> names = slotPresence.getPlayerNamesInSlot(slotId);
+            if (!names.isEmpty()) {
+                return names;
+            }
         }
         Set<UUID> ids = getPlayerIdsInSlot(slotId);
         if (ids.isEmpty()) {
@@ -1366,6 +1414,10 @@ public final class MinigameEngine {
     }
 
     private void refreshSlotVisibility() {
+        if (slotPresence != null) {
+            slotPresence.refreshVisibility();
+            return;
+        }
         if (!plugin.getServer().isPrimaryThread()) {
             plugin.getServer().getScheduler().runTask(plugin, this::refreshSlotVisibilitySync);
         } else {
@@ -1398,6 +1450,32 @@ public final class MinigameEngine {
         }
         slotHiddenPairs.removeIf(key -> plugin.getServer().getPlayer(key.viewer()) == null
                 || plugin.getServer().getPlayer(key.target()) == null);
+    }
+
+    private void bindPresence(UUID playerId, String playerName, String slotId) {
+        if (slotPresence != null && slotId != null && !slotId.isBlank()) {
+            slotPresence.bindPlayer(playerId, playerName, slotId);
+        }
+    }
+
+    private void unbindPresence(UUID playerId) {
+        if (slotPresence != null && playerId != null) {
+            slotPresence.unbindPlayer(playerId);
+        }
+    }
+
+    private void clearPresenceForSlot(String slotId) {
+        if (slotPresence == null || slotId == null || slotId.isBlank()) {
+            return;
+        }
+        slotPresence.clearSlot(slotId);
+        slotPresence.unbindWorldsForSlot(slotId);
+    }
+
+    private void bindWorldToPresence(String worldName, String slotId) {
+        if (slotPresence != null) {
+            slotPresence.bindWorld(worldName, slotId);
+        }
     }
 
     private static final class PostMatchTimeline {

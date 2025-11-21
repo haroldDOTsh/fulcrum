@@ -11,6 +11,7 @@ import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.fun.command.KaboomCommand;
 import sh.harold.fulcrum.fundamentals.fun.quickmaths.QuickMathsCommand;
 import sh.harold.fulcrum.fundamentals.fun.quickmaths.QuickMathsManager;
+import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -44,7 +45,11 @@ public final class FunFeature implements PluginFeature, Listener {
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null)
                         : null);
-        this.quickMathsManager = new QuickMathsManager(plugin, engineSupplier, rankServiceSupplier);
+        Supplier<SlotPresenceService> presenceSupplier = () -> container.getOptional(SlotPresenceService.class)
+                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                        ? ServiceLocatorImpl.getInstance().findService(SlotPresenceService.class).orElse(null)
+                        : null);
+        this.quickMathsManager = new QuickMathsManager(plugin, engineSupplier, rankServiceSupplier, presenceSupplier);
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         CommandRegistrar.register(new KaboomCommand().build());
