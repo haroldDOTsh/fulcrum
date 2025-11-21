@@ -161,7 +161,7 @@ public class MinigameEngineFeature implements PluginFeature {
         }
         Bukkit.getPluginManager().registerEvents(new SpectatorListener(), plugin);
         Bukkit.getPluginManager().registerEvents(new MatchDamageListener(engine), plugin);
-        Bukkit.getPluginManager().registerEvents(new SlotTabCompletionListener(engine, slotPresenceService), plugin);
+        Bukkit.getPluginManager().registerEvents(new SlotTabCompletionListener(slotPresenceService), plugin);
         PlayerReservationService reservationService = container.getOptional(PlayerReservationService.class)
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(PlayerReservationService.class).orElse(null)

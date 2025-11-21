@@ -7,7 +7,6 @@ import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
-import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -16,7 +15,6 @@ import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.message.Message;
-import sh.harold.fulcrum.minigame.MinigameEngine;
 
 import java.security.SecureRandom;
 import java.text.DecimalFormat;
@@ -49,18 +47,15 @@ public final class QuickMathsManager {
     });
 
     private final JavaPlugin plugin;
-    private final Supplier<MinigameEngine> engineSupplier;
     private final Supplier<RankService> rankServiceSupplier;
     private final Supplier<SlotPresenceService> presenceSupplier;
     private final Map<QuickMathsScope, QuickMathsSession> activeSessions = new ConcurrentHashMap<>();
     private final SecureRandom secureRandom = new SecureRandom();
 
     public QuickMathsManager(JavaPlugin plugin,
-                             Supplier<MinigameEngine> engineSupplier,
                              Supplier<RankService> rankServiceSupplier,
                              Supplier<SlotPresenceService> presenceSupplier) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
-        this.engineSupplier = Objects.requireNonNull(engineSupplier, "engineSupplier");
         this.rankServiceSupplier = rankServiceSupplier != null ? rankServiceSupplier : () -> null;
         this.presenceSupplier = presenceSupplier != null ? presenceSupplier : () -> null;
     }
@@ -142,42 +137,26 @@ public final class QuickMathsManager {
     }
 
     private ScopeResolution resolveScope(CommandSender initiator) {
-        MinigameEngine engine = engineSupplier.get();
         SlotPresenceService presence = presence();
-        if (engine == null && presence == null) {
+        if (presence == null) {
             return ScopeResolution.allowed(GLOBAL_SCOPE);
         }
 
         if (initiator instanceof Player player) {
-            Optional<String> slot = presence != null
-                    ? presence.resolveSlotId(player.getUniqueId())
-                    : Optional.empty();
-            if (slot.isEmpty() && engine != null) {
-                slot = engine.resolveSlotId(player.getUniqueId());
-            }
+            Optional<String> slot = presence.resolveSlotId(player.getUniqueId());
             if (slot.isPresent() && !slot.get().isBlank()) {
                 return ScopeResolution.allowed(QuickMathsScope.slot(slot.get()));
             }
         }
 
-        if (hasActiveMinigamePlayers(engine, presence)) {
+        if (hasActiveMinigamePlayers(presence)) {
             return ScopeResolution.denied("Quick Maths must target a specific match on this server.");
         }
         return ScopeResolution.allowed(GLOBAL_SCOPE);
     }
 
-    private boolean hasActiveMinigamePlayers(MinigameEngine engine, SlotPresenceService presence) {
-        if (presence != null && presence.hasAnyMemberships()) {
-            return true;
-        }
-        if (engine != null) {
-            for (Player online : Bukkit.getOnlinePlayers()) {
-                if (engine.resolveSlotId(online.getUniqueId()).isPresent()) {
-                    return true;
-                }
-            }
-        }
-        return false;
+    private boolean hasActiveMinigamePlayers(SlotPresenceService presence) {
+        return presence != null && presence.hasAnyMemberships();
     }
 
     private QuickMathsSession findSessionForPlayer(Player player) {
@@ -192,25 +171,14 @@ public final class QuickMathsManager {
                 }
             }
         }
-        MinigameEngine engine = engineSupplier.get();
-        if (engine != null) {
-            Optional<String> slot = engine.resolveSlotId(player.getUniqueId());
-            if (slot.isPresent()) {
-                QuickMathsScope scope = QuickMathsScope.slot(slot.get());
-                QuickMathsSession scoped = activeSessions.get(scope);
-                if (scoped != null) {
-                    return scoped;
-                }
-            }
-        }
         return activeSessions.get(GLOBAL_SCOPE);
     }
 
     private QuickMathsSession findSessionForCancellation(CommandSender sender) {
         if (sender instanceof Player player) {
-            MinigameEngine engine = engineSupplier.get();
-            if (engine != null) {
-                Optional<String> slot = engine.resolveSlotId(player.getUniqueId());
+            SlotPresenceService presence = presence();
+            if (presence != null) {
+                Optional<String> slot = presence.resolveSlotId(player.getUniqueId());
                 if (slot.isPresent()) {
                     QuickMathsScope scope = QuickMathsScope.slot(slot.get());
                     QuickMathsSession scoped = activeSessions.get(scope);
@@ -264,17 +232,10 @@ public final class QuickMathsManager {
             return new ArrayList<>(plugin.getServer().getOnlinePlayers());
         }
         SlotPresenceService presence = presence();
-        if (presence != null) {
-            Collection<Player> players = presence.getOnlinePlayersInSlot(scope.slotId);
-            if (!players.isEmpty()) {
-                return players;
-            }
-        }
-        MinigameEngine engine = engineSupplier.get();
-        if (engine == null) {
+        if (presence == null) {
             return List.of();
         }
-        return new ArrayList<>(engine.getPlayersInSlot(scope.slotId));
+        return new ArrayList<>(presence.getOnlinePlayersInSlot(scope.slotId));
     }
 
     private Component withPrefix(Component body, PrefixStyle style) {
@@ -334,12 +295,6 @@ public final class QuickMathsManager {
             Optional<String> slotId = presence != null
                     ? presence.resolveSlotId(player.getUniqueId())
                     : Optional.empty();
-            if (slotId.isEmpty()) {
-                MinigameEngine engine = engineSupplier.get();
-                if (engine != null) {
-                    slotId = engine.resolveSlotId(player.getUniqueId());
-                }
-            }
             if (slotId.isEmpty() || !slotId.get().equalsIgnoreCase(session.scope.slotId)) {
                 return;
             }

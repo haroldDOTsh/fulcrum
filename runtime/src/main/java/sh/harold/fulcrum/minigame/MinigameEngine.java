@@ -19,7 +19,6 @@ import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
 import sh.harold.fulcrum.minigame.data.MinigameDataRegistry;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
-import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
 import sh.harold.fulcrum.minigame.match.MatchHistoryWriter;
 import sh.harold.fulcrum.minigame.match.MatchLogWriter;
 import sh.harold.fulcrum.minigame.match.MinigameMatch;
@@ -1272,145 +1271,43 @@ public final class MinigameEngine {
         if (playerId == null) {
             return Optional.empty();
         }
-        if (slotPresence != null) {
-            Optional<String> resolved = slotPresence.resolveSlotId(playerId);
-            if (resolved.isPresent()) {
-                return resolved;
-            }
-        }
-        String slotId = playerSlotIndex.get(playerId);
-        if (slotId != null) {
-            return Optional.of(slotId);
-        }
-        UUID matchId = playerMatchIndex.get(playerId);
-        if (matchId != null) {
-            String matchSlot = matchSlotIds.get(matchId);
-            if (matchSlot != null) {
-                return Optional.of(matchSlot);
-            }
-            MinigameMatch match = activeMatches.get(matchId);
-            if (match != null) {
-                return match.getContext().getSlotId();
-            }
-        }
-        return Optional.empty();
+        return slotPresence != null ? slotPresence.resolveSlotId(playerId) : Optional.empty();
     }
 
     public Optional<String> resolveSlotId(World world) {
         if (world == null) {
             return Optional.empty();
         }
-        if (slotPresence != null) {
-            Optional<String> resolved = slotPresence.resolveSlotId(world.getName());
-            if (resolved.isPresent()) {
-                return resolved;
-            }
-        }
-        if (environmentService != null) {
-            Optional<String> slot = environmentService.resolveSlotIdByWorld(world.getName());
-            if (slot.isPresent()) {
-                return slot;
-            }
-        }
-        for (Map.Entry<String, UUID> entry : slotMatches.entrySet()) {
-            UUID matchId = entry.getValue();
-            MinigameMatch match = activeMatches.get(matchId);
-            if (match == null) {
-                continue;
-            }
-            MatchEnvironment environment = match.getContext()
-                    .getAttributeOptional(MinigameAttributes.MATCH_ENVIRONMENT, MatchEnvironment.class)
-                    .orElse(null);
-            if (environment != null && world.getName().equalsIgnoreCase(environment.worldName())) {
-                return Optional.of(entry.getKey());
-            }
-        }
-        return Optional.empty();
+        return slotPresence != null ? slotPresence.resolveSlotId(world.getName()) : Optional.empty();
     }
 
     public Set<UUID> getPlayerIdsInSlot(String slotId) {
         if (slotId == null || slotId.isBlank()) {
             return Set.of();
         }
-        if (slotPresence != null) {
-            Set<UUID> membership = slotPresence.getPlayerIdsInSlot(slotId);
-            if (!membership.isEmpty()) {
-                return membership;
-            }
-        }
-        Set<UUID> result = new HashSet<>();
-        for (Map.Entry<UUID, String> entry : playerSlotIndex.entrySet()) {
-            if (entry.getValue() != null && slotId.equalsIgnoreCase(entry.getValue())) {
-                result.add(entry.getKey());
-            }
-        }
-        if (result.isEmpty()) {
-            UUID matchId = slotMatches.get(slotId);
-            if (matchId != null) {
-                MinigameMatch match = activeMatches.get(matchId);
-                if (match != null) {
-                    result.addAll(match.getContext().getActivePlayers());
-                }
-            }
-        }
-        return result;
+        return slotPresence != null ? slotPresence.getPlayerIdsInSlot(slotId) : Set.of();
     }
 
     public Collection<Player> getPlayersInSlot(String slotId) {
         if (slotId == null || slotId.isBlank()) {
             return List.of();
         }
-        if (slotPresence != null) {
-            Collection<Player> fromPresence = slotPresence.getOnlinePlayersInSlot(slotId);
-            if (!fromPresence.isEmpty()) {
-                return fromPresence;
-            }
-        }
-        List<Player> players = new ArrayList<>();
-        for (UUID playerId : getPlayerIdsInSlot(slotId)) {
-            Player player = plugin.getServer().getPlayer(playerId);
-            if (player != null && player.isOnline()) {
-                players.add(player);
-            }
-        }
-        return players;
+        return slotPresence != null ? slotPresence.getOnlinePlayersInSlot(slotId) : List.of();
     }
 
     public List<String> getPlayerNamesInSlot(String slotId) {
-        if (slotPresence != null) {
-            Set<String> names = slotPresence.getPlayerNamesInSlot(slotId);
-            if (!names.isEmpty()) {
-                return List.copyOf(names);
-            }
+        if (slotPresence == null) {
+            return List.of();
         }
-        return getPlayersInSlot(slotId).stream()
-                .map(Player::getName)
-                .filter(Objects::nonNull)
-                .toList();
+        Set<String> names = slotPresence.getPlayerNamesInSlot(slotId);
+        return names.isEmpty() ? List.of() : List.copyOf(names);
     }
 
     public Set<String> getPlayerNameSnapshotInSlot(String slotId) {
         if (slotId == null || slotId.isBlank()) {
             return Set.of();
         }
-        if (slotPresence != null) {
-            Set<String> names = slotPresence.getPlayerNamesInSlot(slotId);
-            if (!names.isEmpty()) {
-                return names;
-            }
-        }
-        Set<UUID> ids = getPlayerIdsInSlot(slotId);
-        if (ids.isEmpty()) {
-            return Set.of();
-        }
-        Set<String> names = new HashSet<>();
-        for (UUID id : ids) {
-            String name = playerNameIndex.get(id);
-            if (name != null && !name.isBlank()) {
-                names.add(name);
-            }
-        }
-        return names;
+        return slotPresence != null ? slotPresence.getPlayerNamesInSlot(slotId) : Set.of();
     }
 
     private void refreshSlotVisibility() {

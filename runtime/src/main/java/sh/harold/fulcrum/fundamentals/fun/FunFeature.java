@@ -16,7 +16,6 @@ import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
-import sh.harold.fulcrum.minigame.MinigameEngine;
 
 import java.util.function.Supplier;
 
@@ -37,10 +36,6 @@ public final class FunFeature implements PluginFeature, Listener {
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
-        Supplier<MinigameEngine> engineSupplier = () -> container.getOptional(MinigameEngine.class)
-                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
-                        ? ServiceLocatorImpl.getInstance().findService(MinigameEngine.class).orElse(null)
-                        : null);
         Supplier<RankService> rankServiceSupplier = () -> container.getOptional(RankService.class)
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(RankService.class).orElse(null)
@@ -49,7 +44,7 @@ public final class FunFeature implements PluginFeature, Listener {
                 .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                         ? ServiceLocatorImpl.getInstance().findService(SlotPresenceService.class).orElse(null)
                         : null);
-        this.quickMathsManager = new QuickMathsManager(plugin, engineSupplier, rankServiceSupplier, presenceSupplier);
+        this.quickMathsManager = new QuickMathsManager(plugin, rankServiceSupplier, presenceSupplier);
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         CommandRegistrar.register(new KaboomCommand().build());

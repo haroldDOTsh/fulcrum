@@ -6,7 +6,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChatTabCompleteEvent;
 import sh.harold.fulcrum.fundamentals.slot.presence.SlotPresenceService;
-import sh.harold.fulcrum.minigame.MinigameEngine;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -17,11 +16,9 @@ import java.util.stream.Collectors;
  */
 public final class SlotTabCompletionListener implements Listener {
 
-    private final MinigameEngine minigameEngine;
     private final SlotPresenceService slotPresence;
 
-    public SlotTabCompletionListener(MinigameEngine minigameEngine, SlotPresenceService slotPresence) {
-        this.minigameEngine = minigameEngine;
+    public SlotTabCompletionListener(SlotPresenceService slotPresence) {
         this.slotPresence = slotPresence;
     }
 
@@ -43,7 +40,7 @@ public final class SlotTabCompletionListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onChatTabComplete(PlayerChatTabCompleteEvent event) {
-        if (minigameEngine == null) {
+        if (slotPresence == null) {
             return;
         }
         Player player = event.getPlayer();
@@ -70,7 +67,7 @@ public final class SlotTabCompletionListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onAsyncTabComplete(AsyncTabCompleteEvent event) {
-        if (minigameEngine == null) {
+        if (slotPresence == null) {
             return;
         }
         if (!(event.getSender() instanceof Player player)) {
@@ -99,11 +96,7 @@ public final class SlotTabCompletionListener implements Listener {
     }
 
     private Set<String> gatherNamesForSlot(String slotId, String fallbackName) {
-        Set<String> names = new HashSet<>();
-        if (slotPresence != null) {
-            names.addAll(slotPresence.getPlayerNamesInSlot(slotId));
-        }
-        names.addAll(minigameEngine.getPlayerNameSnapshotInSlot(slotId));
+        Set<String> names = new HashSet<>(slotPresence.getPlayerNamesInSlot(slotId));
         if (fallbackName != null && !fallbackName.isBlank()) {
             names.add(fallbackName);
         }
@@ -112,16 +105,13 @@ public final class SlotTabCompletionListener implements Listener {
     }
 
     private Optional<String> resolveSlotId(UUID playerId, String worldName) {
-        if (slotPresence != null) {
-            Optional<String> resolved = slotPresence.resolveSlotId(playerId);
-            if (resolved.isPresent()) {
-                return resolved;
-            }
-            Optional<String> byWorld = slotPresence.resolveSlotId(worldName);
-            if (byWorld.isPresent()) {
-                return byWorld;
-            }
+        if (slotPresence == null) {
+            return Optional.empty();
         }
-        return minigameEngine.resolveSlotId(playerId);
+        Optional<String> resolved = slotPresence.resolveSlotId(playerId);
+        if (resolved.isPresent()) {
+            return resolved;
+        }
+        return slotPresence.resolveSlotId(worldName);
     }
 }

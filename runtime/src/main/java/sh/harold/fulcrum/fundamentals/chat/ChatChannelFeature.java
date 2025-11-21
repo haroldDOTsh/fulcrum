@@ -26,7 +26,6 @@ import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
-import sh.harold.fulcrum.minigame.MinigameEngine;
 import sh.harold.fulcrum.runtime.redis.LettuceRedisOperations;
 
 import java.util.Optional;
@@ -62,18 +61,10 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
                         .flatMap(locator -> locator.findService(PlayerCache.class))
                         .orElse(null));
         LettuceRedisOperations redis = container.getOptional(LettuceRedisOperations.class).orElse(null);
-        java.util.function.Supplier<MinigameEngine> engineSupplier = () -> container.getOptional(MinigameEngine.class)
-                .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
-                        ? ServiceLocatorImpl.getInstance().findService(MinigameEngine.class).orElse(null)
-                        : null);
         SlotPresenceService slotPresenceService = container.getOptional(SlotPresenceService.class)
                 .orElseGet(() -> Optional.ofNullable(ServiceLocatorImpl.getInstance())
                         .flatMap(locator -> locator.findService(SlotPresenceService.class))
                         .orElse(null));
-
-        if (engineSupplier.get() == null) {
-            logger.warning("MinigameEngine unavailable; chat isolation will fall back to global delivery.");
-        }
 
         RuntimePunishmentFeature.RuntimePunishmentManager punishmentManager =
                 container.getOptional(RuntimePunishmentFeature.RuntimePunishmentManager.class)
@@ -95,7 +86,7 @@ public final class ChatChannelFeature implements PluginFeature, Listener {
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
                 .ifPresent(locator -> locator.registerService(ChatEmojiService.class, this.chatEmojiService));
 
-        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, engineSupplier, punishmentManager, this.chatEmojiService, slotPresenceService);
+        this.service = new ChatChannelServiceImpl(plugin, messageBus, chatFormatService, rankService, redis, punishmentManager, this.chatEmojiService, slotPresenceService);
 
         container.register(ChatChannelService.class, service);
         Optional.ofNullable(ServiceLocatorImpl.getInstance())
