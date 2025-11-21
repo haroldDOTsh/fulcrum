@@ -14,6 +14,8 @@ import sh.harold.fulcrum.api.player.PlayerDirectory;
 import sh.harold.fulcrum.api.player.PlayerDirectory.PlayerProfile;
 import sh.harold.fulcrum.api.player.PlayerDirectory.ProfileQuery;
 import sh.harold.fulcrum.api.rank.RankService;
+import sh.harold.fulcrum.api.status.PlayerStatus;
+import sh.harold.fulcrum.api.status.PresenceStatus;
 import sh.harold.fulcrum.common.cache.PlayerCache;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.routing.PlayerRoutingFeature;
@@ -196,7 +198,12 @@ public final class FriendCommand implements SimpleCommand {
                 return;
             }
             playerDirectory.getProfiles(friends, ProfileQuery.DEFAULT)
-                    .whenComplete((profiles, throwable) -> schedule(() -> {
+                    .thenCombine(playerDirectory.getStatuses(friends), (profiles, statuses) -> Map.entry(profiles, statuses))
+                    .whenComplete((result, throwable) -> schedule(() -> {
+                        Map<UUID, PlayerProfile> profiles = result != null ? result.getKey() : null;
+                        Map<UUID, PlayerStatus> statuses = result != null && result.getValue() != null
+                                ? result.getValue()
+                                : Map.of();
                         if (throwable != null || profiles == null) {
                             sendFramed(player, error("Unable to load your friend directory."));
                             return;
@@ -211,7 +218,8 @@ public final class FriendCommand implements SimpleCommand {
                         debug(player, "rendering friend list page={} totalPages={} totalFriends={}", page, totalPages, friends.size());
                         for (UUID id : slice) {
                             PlayerProfile profile = profiles.getOrDefault(id, PlayerProfile.missing(id));
-                            lines.add(renderFriendPresence(id, profile));
+                            PlayerStatus status = statuses.get(id);
+                            lines.add(renderFriendPresence(id, profile, status));
                         }
                         sendFramed(player, lines);
                     }));
@@ -614,14 +622,32 @@ public final class FriendCommand implements SimpleCommand {
     }
 
     private Component renderFriendPresence(UUID friendId) {
-        return renderFriendPresence(friendId, PlayerProfile.missing(friendId));
+        return renderFriendPresence(friendId, PlayerProfile.missing(friendId), null);
     }
 
-    private Component renderFriendPresence(UUID friendId, PlayerProfile profile) {
+    private Component renderFriendPresence(UUID friendId, PlayerProfile profile, PlayerStatus status) {
         Component name = profile != null ? profile.formattedName() : FriendTextFormatter.formatName(friendId, shortUuid(friendId), rankService, logger);
+        PresenceStatus presence = status != null ? status.presence() : PresenceStatus.OFFLINE;
+        NamedTextColor dotColor = switch (presence) {
+            case ONLINE -> NamedTextColor.GREEN;
+            case AWAY -> NamedTextColor.GOLD;
+            case BUSY -> NamedTextColor.RED;
+            case FAKE_OFFLINE, OFFLINE -> NamedTextColor.GRAY;
+        };
+        Component dot = Component.text("● ", dotColor);
+
+        if (presence == PresenceStatus.OFFLINE || presence == PresenceStatus.FAKE_OFFLINE) {
+            return Component.text()
+                    .append(dot)
+                    .append(name)
+                    .append(FriendTextFormatter.yellow(" is currently offline"))
+                    .build();
+        }
+
         Optional<Player> online = proxy.getPlayer(friendId);
         if (online.isEmpty()) {
             return Component.text()
+                    .append(dot)
                     .append(name)
                     .append(FriendTextFormatter.yellow(" is currently offline"))
                     .build();
@@ -632,6 +658,7 @@ public final class FriendCommand implements SimpleCommand {
             familyLabel = "unknown";
         }
         return Component.text()
+                .append(dot)
                 .append(name)
                 .append(FriendTextFormatter.yellow(" is in "))
                 .append(Component.text(familyLabel, NamedTextColor.GOLD))
