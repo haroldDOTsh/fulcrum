@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  * Add additional enum constants to expose new emojis.
  */
 public enum ChatEmoji {
-    HEART(":heart:", "❤️", ChatEmojiPack.CORE),
+    HEART(":heart:", "❤", ChatEmojiPack.CORE),
     FIRE(":fire:", "🔥", ChatEmojiPack.CORE),
     STAR(":star:", "⭐", ChatEmojiPack.CORE),
     SMILE(":smile:", "😊", ChatEmojiPack.CORE),
