@@ -27,7 +27,7 @@ final class ChatEmojiServiceImplTest {
         ChatEmojiServiceImpl service = new ChatEmojiServiceImpl(rankService, packService);
 
         Component result = service.apply(mockPlayer(playerId), Component.text("I :heart: this"));
-        assertEquals("I ❤️ this", PLAIN.serialize(result));
+        assertEquals("I ❤ this", PLAIN.serialize(result));
     }
 
     @Test
