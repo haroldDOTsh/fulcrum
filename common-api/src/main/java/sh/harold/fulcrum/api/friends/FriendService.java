@@ -81,6 +81,16 @@ public interface FriendService {
                 .build());
     }
 
+    default CompletionStage<FriendOperationResult> setNickname(UUID actor,
+                                                               UUID target,
+                                                               String nickname) {
+        return execute(FriendMutationRequest.builder(FriendMutationType.SET_METADATA)
+                .actor(actor)
+                .target(target)
+                .nickname(nickname)
+                .build());
+    }
+
     default CompletionStage<FriendOperationResult> syncSnapshot(UUID playerId) {
         return execute(FriendMutationRequest.builder(FriendMutationType.SNAPSHOT_SYNC)
                 .actor(playerId)

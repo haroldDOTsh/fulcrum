@@ -15,7 +15,8 @@ public record FriendSnapshot(
         long version,
         Map<UUID, FriendDetails> friends,
         Map<UUID, BlockDetails> ignoresOut,
-        Map<UUID, BlockDetails> ignoresIn
+        Map<UUID, BlockDetails> ignoresIn,
+        @JsonProperty("friendMeta") Map<UUID, FriendMetadata> metadata
 ) {
 
     public FriendSnapshot {
@@ -23,6 +24,7 @@ public record FriendSnapshot(
         friends = sanitizeFriendMap(friends);
         ignoresOut = sanitizeBlockMap(ignoresOut);
         ignoresIn = sanitizeBlockMap(ignoresIn);
+        metadata = sanitizeMetadataMap(metadata);
     }
 
     private static Map<UUID, FriendDetails> sanitizeFriendMap(Map<UUID, FriendDetails> source) {
@@ -61,20 +63,42 @@ public record FriendSnapshot(
         return Collections.unmodifiableMap(sanitized);
     }
 
+    private static Map<UUID, FriendMetadata> sanitizeMetadataMap(Map<UUID, FriendMetadata> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashMap<UUID, FriendMetadata> sanitized = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            UUID resolvedKey = key != null ? key : (value != null ? value.playerId() : null);
+            if (resolvedKey == null) {
+                return;
+            }
+            FriendMetadata normalized = value == null
+                    ? null
+                    : value.withFallbackId(resolvedKey);
+            if (normalized != null && !normalized.isEmpty()) {
+                sanitized.put(resolvedKey, normalized);
+            }
+        });
+        return Collections.unmodifiableMap(sanitized);
+    }
+
     public static FriendSnapshot empty() {
-        return new FriendSnapshot(0L, Map.of(), Map.of(), Map.of());
+        return new FriendSnapshot(0L, Map.of(), Map.of(), Map.of(), Map.of());
     }
 
     @JsonCreator
     public static FriendSnapshot create(@JsonProperty("version") long version,
                                         @JsonProperty("friends") Object friends,
                                         @JsonProperty("ignoresOut") Object ignoresOut,
-                                        @JsonProperty("ignoresIn") Object ignoresIn) {
+                                        @JsonProperty("ignoresIn") Object ignoresIn,
+                                        @JsonProperty("friendMeta") Object metadata) {
         return new FriendSnapshot(
                 version,
                 normalizeFriends(friends),
                 normalizeBlocks(ignoresOut),
-                normalizeBlocks(ignoresIn));
+                normalizeBlocks(ignoresIn),
+                normalizeMetadata(metadata));
     }
 
     private static Map<UUID, FriendDetails> normalizeFriends(Object raw) {
@@ -122,6 +146,46 @@ public record FriendSnapshot(
             }
         }
         return entries.isEmpty() ? Map.of() : Collections.unmodifiableMap(entries);
+    }
+
+    private static Map<UUID, FriendMetadata> normalizeMetadata(Object raw) {
+        if (raw == null) {
+            return Map.of();
+        }
+        if (raw instanceof Map<?, ?> map) {
+            LinkedHashMap<UUID, FriendMetadata> entries = new LinkedHashMap<>();
+            map.forEach((key, value) -> {
+                UUID playerId = parseUuid(key);
+                FriendMetadata parsed = parseMetadataEntry(value);
+                if (playerId != null && parsed != null && !parsed.isEmpty()) {
+                    entries.put(playerId, parsed.withFallbackId(playerId));
+                }
+            });
+            return entries.isEmpty() ? Map.of() : Collections.unmodifiableMap(entries);
+        }
+        if (!(raw instanceof Collection<?> collection)) {
+            return Map.of();
+        }
+        LinkedHashMap<UUID, FriendMetadata> entries = new LinkedHashMap<>();
+        for (Object element : collection) {
+            FriendMetadata parsed = parseMetadataEntry(element);
+            if (parsed != null && parsed.playerId() != null && !parsed.isEmpty()) {
+                entries.put(parsed.playerId(), parsed);
+            }
+        }
+        return entries.isEmpty() ? Map.of() : Collections.unmodifiableMap(entries);
+    }
+
+    private static FriendMetadata parseMetadataEntry(Object element) {
+        if (element instanceof FriendMetadata meta) {
+            return meta;
+        }
+        if (element instanceof Map<?, ?> map) {
+            UUID playerId = parseUuid(map.get("playerId"));
+            String nickname = optionalText(map.get("nickname"));
+            return playerId == null ? null : new FriendMetadata(playerId, nickname);
+        }
+        return null;
     }
 
     private static BlockDetails parseBlockDetails(Object element) {
@@ -198,6 +262,11 @@ public record FriendSnapshot(
         return ignoresIn.keySet();
     }
 
+    @JsonIgnore
+    public Optional<FriendMetadata> metadata(UUID playerId) {
+        return playerId == null ? Optional.empty() : Optional.ofNullable(metadata.get(playerId));
+    }
+
     public Optional<FriendDetails> friendDetails(UUID playerId) {
         return playerId == null ? Optional.empty() : Optional.ofNullable(friends.get(playerId));
     }
@@ -222,7 +291,8 @@ public record FriendSnapshot(
     public boolean isEmpty() {
         return friends.isEmpty()
                 && ignoresOut.isEmpty()
-                && ignoresIn.isEmpty();
+                && ignoresIn.isEmpty()
+                && metadata.isEmpty();
     }
 
     public record FriendDetails(UUID playerId, Instant since, String nickname) {
@@ -236,6 +306,31 @@ public record FriendSnapshot(
         private BlockDetails withFallbackId(UUID fallback) {
             UUID resolved = playerId != null ? playerId : Objects.requireNonNull(fallback, "fallback");
             return new BlockDetails(resolved, blockedAt);
+        }
+    }
+
+    /**
+     * Optional per-owner metadata about a friend entry. Purely cosmetic.
+     *
+     * @param playerId target player id
+     * @param nickname optional nickname label
+     */
+    public record FriendMetadata(UUID playerId, String nickname) {
+        public FriendMetadata {
+            if (nickname != null) {
+                String trimmed = nickname.trim();
+                nickname = trimmed.isEmpty() ? null : trimmed;
+            }
+        }
+
+        private FriendMetadata withFallbackId(UUID fallback) {
+            UUID resolved = playerId != null ? playerId : Objects.requireNonNull(fallback, "fallback");
+            return new FriendMetadata(resolved, nickname);
+        }
+
+        @JsonIgnore
+        public boolean isEmpty() {
+            return nickname == null || nickname.isBlank();
         }
     }
 }

@@ -11,5 +11,6 @@ public enum FriendMutationType {
     UNFRIEND,
     BLOCK,
     UNBLOCK,
-    SNAPSHOT_SYNC
+    SNAPSHOT_SYNC,
+    SET_METADATA
 }

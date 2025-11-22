@@ -19,6 +19,7 @@ public record FriendMutationRequest(
 ) {
     public static final String METADATA_IGNORE_BYPASS = "fulcrum.ignore.bypass";
     public static final String METADATA_ACTOR_NAME = "actorName";
+    public static final String METADATA_NICKNAME = "friend.nickname";
 
     public FriendMutationRequest {
         Objects.requireNonNull(type, "type");
@@ -72,6 +73,10 @@ public record FriendMutationRequest(
         public Builder reason(String reason) {
             this.reason = reason;
             return this;
+        }
+
+        public Builder nickname(String nickname) {
+            return putMetadata(METADATA_NICKNAME, nickname);
         }
 
         public Builder putMetadata(String key, Object value) {

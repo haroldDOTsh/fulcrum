@@ -32,7 +32,8 @@ public final class FriendSnapshotStore {
         Object friends = socialMap.get("friends");
         Object ignoresOut = socialMap.get("ignoresOut");
         Object ignoresIn = socialMap.get("ignoresIn");
-        return FriendSnapshot.create(version, friends, ignoresOut, ignoresIn);
+        Object metadata = socialMap.get("friendMeta");
+        return FriendSnapshot.create(version, friends, ignoresOut, ignoresIn, metadata);
     }
 
     void save(UUID playerId, FriendSnapshot snapshot) {
@@ -42,6 +43,7 @@ public final class FriendSnapshotStore {
         social.put("friends", serializeFriends(snapshot.friends().values()));
         social.put("ignoresOut", serializeBlocks(snapshot.ignoresOut().values()));
         social.put("ignoresIn", serializeBlocks(snapshot.ignoresIn().values()));
+        social.put("friendMeta", serializeMetadata(snapshot.metadata().values()));
         document.set("social", social);
     }
 
@@ -74,9 +76,6 @@ public final class FriendSnapshotStore {
             if (details.since() != null) {
                 entry.put("since", details.since().toEpochMilli());
             }
-            if (details.nickname() != null && !details.nickname().isBlank()) {
-                entry.put("nickname", details.nickname());
-            }
             entries.add(entry);
         }
         return entries;
@@ -95,6 +94,25 @@ public final class FriendSnapshotStore {
             entry.put("playerId", block.playerId().toString());
             if (block.blockedAt() != null) {
                 entry.put("blockedAt", block.blockedAt().toEpochMilli());
+            }
+            entries.add(entry);
+        }
+        return entries;
+    }
+
+    private List<Map<String, Object>> serializeMetadata(Collection<FriendSnapshot.FriendMetadata> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> entries = new ArrayList<>(metadata.size());
+        for (FriendSnapshot.FriendMetadata meta : metadata) {
+            if (meta == null || meta.playerId() == null || meta.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("playerId", meta.playerId().toString());
+            if (meta.nickname() != null && !meta.nickname().isBlank()) {
+                entry.put("nickname", meta.nickname());
             }
             entries.add(entry);
         }

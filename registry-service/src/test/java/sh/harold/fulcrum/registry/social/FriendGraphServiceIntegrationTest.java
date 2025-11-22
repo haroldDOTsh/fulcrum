@@ -85,8 +85,8 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         FriendSnapshot targetSnapshot = service.getSnapshot(target, true);
         assertThat(actorSnapshot.friendIds()).containsExactly(target);
         assertThat(targetSnapshot.friendIds()).containsExactly(actor);
-        assertThat(actorSnapshot.friends().get(target).nickname()).isEqualTo("Alpha");
-        assertThat(targetSnapshot.friends().get(actor).nickname()).isEqualTo("Bravo");
+        assertThat(actorSnapshot.friends().get(target).nickname()).isNull();
+        assertThat(targetSnapshot.friends().get(actor).nickname()).isNull();
         assertThat(actorSnapshot.friends().get(target).since()).isNotNull();
         assertThat(targetSnapshot.friends().get(actor).since()).isNotNull();
         assertThat(inviteStore.listPendingInvites(target)).isEmpty();
@@ -151,6 +151,37 @@ class FriendGraphServiceIntegrationTest extends RedisIntegrationTestSupport {
         FriendSnapshot unblockedTarget = service.getSnapshot(target, true);
         assertThat(unblockedActor.ignoresOutIds()).isEmpty();
         assertThat(unblockedTarget.ignoresInIds()).isEmpty();
+    }
+
+    @Test
+    void setNicknameStoresMetadataUnidirectionally() {
+        UUID actor = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+
+        establishFriendship(actor, target);
+
+        FriendMutationRequest setNickname = FriendMutationRequest.builder(FriendMutationType.SET_METADATA)
+                .actor(actor)
+                .target(target)
+                .nickname("Buddy")
+                .build();
+        assertThat(service.apply(setNickname).result().success()).isTrue();
+
+        FriendSnapshot actorSnapshot = service.getSnapshot(actor, true);
+        FriendSnapshot targetSnapshot = service.getSnapshot(target, true);
+
+        assertThat(actorSnapshot.metadata().get(target).nickname()).isEqualTo("Buddy");
+        assertThat(targetSnapshot.metadata().get(actor)).isNull();
+
+        FriendMutationRequest clearNickname = FriendMutationRequest.builder(FriendMutationType.SET_METADATA)
+                .actor(actor)
+                .target(target)
+                .nickname("   ")
+                .build();
+        assertThat(service.apply(clearNickname).result().success()).isTrue();
+
+        FriendSnapshot cleared = service.getSnapshot(actor, true);
+        assertThat(cleared.metadata().get(target)).isNull();
     }
 
     @Test
