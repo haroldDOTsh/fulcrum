@@ -58,18 +58,7 @@ final class PersistentChatEmojiPackService implements ChatEmojiPackService {
                                   java.util.function.Consumer<EnumSet<ChatEmojiPack>> mutator) {
         EnumSet<ChatEmojiPack> packs = loadExplicitPacks(document);
         mutator.accept(packs);
-        packs.removeIf(ChatEmojiPack::unlockedByDefault);
-
-        if (packs.isEmpty()) {
-            document.remove(PACKS_KEY);
-            return;
-        }
-
-        List<String> serialized = packs.stream()
-                .map(Enum::name)
-                .sorted()
-                .collect(Collectors.toCollection(ArrayList::new));
-        document.set(PACKS_KEY, serialized);
+        writeExplicitPacks(document, packs);
     }
 
     private EnumSet<ChatEmojiPack> loadExplicitPacks(PlayerCache.CachedDocument document) {
@@ -79,14 +68,29 @@ final class PersistentChatEmojiPackService implements ChatEmojiPackService {
             return packs;
         }
         for (Object entry : stored.get()) {
-            if (entry instanceof String token && !token.isBlank()) {
-                try {
-                    packs.add(ChatEmojiPack.valueOf(token.toUpperCase(Locale.ROOT)));
-                } catch (IllegalArgumentException ignored) {
-                    // Ignore invalid tokens and allow cleanup on next persist.
-                }
+            if (!(entry instanceof String token) || token.isBlank()) {
+                continue;
             }
+            ChatEmojiPack.fromToken(token).ifPresent(packs::add);
         }
         return packs;
+    }
+
+    private void writeExplicitPacks(PlayerCache.CachedDocument document, EnumSet<ChatEmojiPack> packs) {
+        EnumSet<ChatEmojiPack> explicit = packs.isEmpty()
+                ? EnumSet.noneOf(ChatEmojiPack.class)
+                : EnumSet.copyOf(packs);
+        explicit.removeIf(ChatEmojiPack::unlockedByDefault);
+
+        if (explicit.isEmpty()) {
+            document.remove(PACKS_KEY);
+            return;
+        }
+
+        List<String> serialized = explicit.stream()
+                .map(ChatEmojiPack::namespacedId)
+                .sorted()
+                .collect(Collectors.toCollection(ArrayList::new));
+        document.set(PACKS_KEY, serialized);
     }
 }

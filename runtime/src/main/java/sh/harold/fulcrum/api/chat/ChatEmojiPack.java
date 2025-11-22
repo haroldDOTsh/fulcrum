@@ -4,6 +4,7 @@ import sh.harold.fulcrum.api.rank.Rank;
 
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -27,6 +28,7 @@ public enum ChatEmojiPack {
     STAFF(false, Rank.HELPER);
 
     private static final Set<ChatEmojiPack> DEFAULT_PACKS;
+    private static final String NAMESPACE_PREFIX = "emoji:pack:";
 
     static {
         EnumSet<ChatEmojiPack> defaults = EnumSet.noneOf(ChatEmojiPack.class);
@@ -68,6 +70,37 @@ public enum ChatEmojiPack {
 
     public Optional<Rank> minimumRank() {
         return Optional.ofNullable(minimumRank);
+    }
+
+    /**
+     * Returns the namespaced identifier for this pack suitable for storage.
+     *
+     * @return namespaced id (e.g. emoji:pack:celebration)
+     */
+    public String namespacedId() {
+        return NAMESPACE_PREFIX + name().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Parses a stored namespaced token into a pack.
+     *
+     * @param token stored token
+     * @return optional pack
+     */
+    public static Optional<ChatEmojiPack> fromToken(String token) {
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        String normalized = token.trim();
+        if (!normalized.toLowerCase(Locale.ROOT).startsWith(NAMESPACE_PREFIX)) {
+            return Optional.empty();
+        }
+        normalized = normalized.substring(NAMESPACE_PREFIX.length()).toUpperCase(Locale.ROOT);
+        try {
+            return Optional.of(ChatEmojiPack.valueOf(normalized));
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
     }
 
     /**

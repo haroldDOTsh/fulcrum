@@ -36,7 +36,7 @@ final class PersistentChatEmojiPackServiceTest {
         @SuppressWarnings("unchecked")
         List<String> stored = (List<String>) snapshot.get("emojiPacks");
         assertNotNull(stored);
-        assertTrue(stored.contains(ChatEmojiPack.CELEBRATION.name()));
+        assertTrue(stored.contains(ChatEmojiPack.CELEBRATION.namespacedId()));
     }
 
     @Test
