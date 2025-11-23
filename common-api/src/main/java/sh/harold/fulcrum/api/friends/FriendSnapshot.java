@@ -102,17 +102,20 @@ public record FriendSnapshot(
     }
 
     private static Map<UUID, FriendDetails> normalizeFriends(Object raw) {
-        if (!(raw instanceof Collection<?> collection)) {
-            return Map.of();
+        if (raw instanceof Map<?, ?> map) {
+            return normalizeFriends(map.values());
         }
-        LinkedHashMap<UUID, FriendDetails> entries = new LinkedHashMap<>();
-        for (Object element : collection) {
-            FriendDetails parsed = parseFriendDetails(element);
-            if (parsed != null) {
-                entries.put(parsed.playerId(), parsed);
+        if (raw instanceof Collection<?> collection) {
+            LinkedHashMap<UUID, FriendDetails> entries = new LinkedHashMap<>();
+            for (Object element : collection) {
+                FriendDetails parsed = parseFriendDetails(element);
+                if (parsed != null) {
+                    entries.put(parsed.playerId(), parsed);
+                }
             }
+            return entries.isEmpty() ? Map.of() : Collections.unmodifiableMap(entries);
         }
-        return entries.isEmpty() ? Map.of() : Collections.unmodifiableMap(entries);
+        return Map.of();
     }
 
     private static FriendDetails parseFriendDetails(Object element) {
@@ -135,17 +138,20 @@ public record FriendSnapshot(
     }
 
     private static Map<UUID, BlockDetails> normalizeBlocks(Object raw) {
-        if (!(raw instanceof Collection<?> collection)) {
-            return Map.of();
+        if (raw instanceof Map<?, ?> map) {
+            return normalizeBlocks(map.values());
         }
-        LinkedHashMap<UUID, BlockDetails> entries = new LinkedHashMap<>();
-        for (Object element : collection) {
-            BlockDetails parsed = parseBlockDetails(element);
-            if (parsed != null) {
-                entries.put(parsed.playerId(), parsed);
+        if (raw instanceof Collection<?> collection) {
+            LinkedHashMap<UUID, BlockDetails> entries = new LinkedHashMap<>();
+            for (Object element : collection) {
+                BlockDetails parsed = parseBlockDetails(element);
+                if (parsed != null) {
+                    entries.put(parsed.playerId(), parsed);
+                }
             }
+            return entries.isEmpty() ? Map.of() : Collections.unmodifiableMap(entries);
         }
-        return entries.isEmpty() ? Map.of() : Collections.unmodifiableMap(entries);
+        return Map.of();
     }
 
     private static Map<UUID, FriendMetadata> normalizeMetadata(Object raw) {
