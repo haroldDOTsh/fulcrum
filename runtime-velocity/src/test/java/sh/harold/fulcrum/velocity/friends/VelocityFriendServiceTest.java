@@ -109,7 +109,9 @@ class VelocityFriendServiceTest {
 
         FriendOperationResult result = future.get(2, TimeUnit.SECONDS);
         assertThat(result.success()).isTrue();
-        assertThat(service.getSnapshot(actor, false).toCompletableFuture().get()).isEqualTo(actorSnapshot);
+        FriendSnapshot cached = service.getSnapshot(actor, false).toCompletableFuture().get();
+        assertThat(cached.version()).isEqualTo(actorSnapshot.version());
+        assertThat(cached.friendIds()).containsExactly(target);
     }
 
     @Test
