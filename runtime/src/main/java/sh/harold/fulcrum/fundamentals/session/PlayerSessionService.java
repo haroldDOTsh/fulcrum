@@ -235,8 +235,11 @@ public class PlayerSessionService {
             }
             String environment = currentEnvironment();
             enriched.putIfAbsent("environment", environment);
+            String effectiveServerId = serverId != null && !serverId.isBlank() ? serverId : currentServerId();
+            enriched.putIfAbsent("serverId", effectiveServerId);
             ensureEnvironment(record);
-            record.setServerId(environment != null ? environment : serverId);
+            // Keep the physical server identifier intact so shutdown sweeps can match this record.
+            record.setServerId(effectiveServerId);
             // surface logical family/variant fallback on the segment itself
             if (!enriched.containsKey("family")) {
                 Object active = record.getMinigames().get("active");
@@ -252,7 +255,6 @@ public class PlayerSessionService {
                 }
             }
 
-            // we no longer care about the physical serverId; persist the logical context instead
             record.startSegment(type, context, environment, enriched, now);
         });
     }
