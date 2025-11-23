@@ -255,7 +255,7 @@ public final class VelocityPartyFeature implements VelocityFeature {
                             .append(formatRankedName(targetId, safeName(snapshot, targetId)))
                             .append(PartyTextFormatter.yellow(" has joined the party!"))
                             .build();
-                    broadcastToParty(snapshot, joined);
+                    broadcastToPartyExcept(snapshot, targetId, joined);
                 }
                 case INVITE_REVOKED, INVITE_EXPIRED -> {
                     String expiredName = resolveRemovedMemberName(snapshot, message);
@@ -517,6 +517,14 @@ public final class VelocityPartyFeature implements VelocityFeature {
 
     private void broadcastToParty(PartySnapshot snapshot, Component message) {
         snapshot.getMembers().keySet().forEach(memberId -> notifyPlayer(memberId, message));
+    }
+
+    private void broadcastToPartyExcept(PartySnapshot snapshot, UUID excludedMember, Component message) {
+        snapshot.getMembers().keySet().forEach(memberId -> {
+            if (!memberId.equals(excludedMember)) {
+                notifyPlayer(memberId, message);
+            }
+        });
     }
 
     private Component buildInviteeNotification(PartySnapshot snapshot,
