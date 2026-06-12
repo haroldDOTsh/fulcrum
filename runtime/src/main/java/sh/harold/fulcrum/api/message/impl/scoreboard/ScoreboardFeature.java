@@ -11,6 +11,7 @@ import sh.harold.fulcrum.api.message.impl.scoreboard.impl.DefaultRenderingPipeli
 import sh.harold.fulcrum.api.message.impl.scoreboard.impl.DefaultScoreboardRegistry;
 import sh.harold.fulcrum.api.message.impl.scoreboard.impl.DefaultTitleManager;
 import sh.harold.fulcrum.api.message.impl.scoreboard.nms.NMSAdapter;
+import sh.harold.fulcrum.api.message.impl.scoreboard.nms.paper_26_1.NMSAdapterPaper26_1;
 import sh.harold.fulcrum.api.message.scoreboard.ScoreboardService;
 import sh.harold.fulcrum.api.message.scoreboard.player.PlayerScoreboardManager;
 import sh.harold.fulcrum.api.message.scoreboard.registry.ScoreboardDefinition;
@@ -41,6 +42,14 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         NMSAdapter nmsAdapter = createNMSAdapter(plugin);
         if (nmsAdapter == null) {
             plugin.getLogger().severe("Failed to create NMS adapter for server version: " + getServerVersion(plugin));
+            return;
+        }
+
+        try {
+            nmsAdapter.initialize();
+        } catch (Exception e) {
+            plugin.getLogger().severe("Failed to initialize scoreboard NMS adapter for server version: " + getServerVersion(plugin));
+            plugin.getLogger().severe(e.getMessage());
             return;
         }
 
@@ -95,11 +104,10 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         try {
             switch (version) {
-                case "v1_21_R1":
-                    return (NMSAdapter) Class.forName("sh.harold.fulcrum.api.message.impl.scoreboard.nms.v1_21_R1.NMSAdapterV1_21_R1")
-                            .getDeclaredConstructor().newInstance();
+                case "paper_26_1":
+                    return new NMSAdapterPaper26_1();
                 default:
-                    Bukkit.getLogger().severe("Unsupported server version: " + version + ". Supported versions: v1_21_R1 (Minecraft 1.21.6/7)");
+                    Bukkit.getLogger().severe("Unsupported server version: " + version + ". Supported versions: paper_26_1 (Paper 26.1.x)");
                     return null;
             }
         } catch (Exception e) {
@@ -113,9 +121,9 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             String minecraftVersion = Bukkit.getMinecraftVersion();
             plugin.getLogger().info("Detected Minecraft version: " + minecraftVersion);
 
-            // Map Minecraft versions to NMS versions
+            // Map Minecraft versions to the isolated scoreboard internals adapter.
             String nmsVersion = mapMinecraftVersionToNMS(minecraftVersion);
-            plugin.getLogger().info("Mapped to NMS version: " + nmsVersion);
+            plugin.getLogger().info("Mapped to scoreboard internals adapter: " + nmsVersion);
 
             return nmsVersion;
         } catch (Exception e) {
@@ -129,10 +137,8 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             return "unknown";
         }
 
-        // Map Minecraft versions to their corresponding NMS versions
-        // Minecraft 1.21.6 and 1.21.7 both use v1_21_R1
-        if (minecraftVersion.startsWith("1.21.6") || minecraftVersion.startsWith("1.21.7") || minecraftVersion.startsWith("1.21.8")) {
-            return "v1_21_R1";
+        if (minecraftVersion.startsWith("26.1.")) {
+            return "paper_26_1";
         }
 
         return "unknown";

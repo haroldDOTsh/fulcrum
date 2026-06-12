@@ -1,39 +1,36 @@
-package sh.harold.fulcrum.api.message.impl.scoreboard.nms.v1_21_R1;
+package sh.harold.fulcrum.api.message.impl.scoreboard.nms.paper_26_1;
 
 import org.bukkit.Bukkit;
 import sh.harold.fulcrum.api.message.impl.scoreboard.nms.NMSAdapter;
 import sh.harold.fulcrum.api.message.scoreboard.render.PacketRenderer;
 
 /**
- * NMS adapter for Minecraft 1.21.6/7 (v1_21_R1).
- * This adapter provides version-specific implementations for packet-based scoreboard rendering
- * using proper NMS classes with paper-userdev.
+ * NMS adapter for Paper 26.1.x scoreboard packet rendering.
  */
-public class NMSAdapterV1_21_R1 extends NMSAdapter {
+public class NMSAdapterPaper26_1 extends NMSAdapter {
 
-    private static final String VERSION = "v1_21_R1";
-    private static final int MAX_CHARACTERS_PER_LINE = 128; // 1.21 supports longer lines
+    private static final String VERSION = "paper_26_1";
+    private static final int MAX_CHARACTERS_PER_LINE = 128;
     private static final int MAX_LINES = 15;
 
-    private PacketRendererV1_21_R1 packetRenderer;
+    private PacketRendererPaper26_1 packetRenderer;
 
     @Override
     public PacketRenderer createPacketRenderer() {
         if (packetRenderer == null) {
-            packetRenderer = new PacketRendererV1_21_R1();
+            packetRenderer = new PacketRendererPaper26_1();
         }
         return packetRenderer;
     }
 
     @Override
     public String getVersionInfo() {
-        return "Minecraft 1.21.6/7/8 (" + VERSION + ")";
+        return "Paper 26.1.x (" + VERSION + ")";
     }
 
     @Override
     public boolean isCompatible() {
         try {
-            // Check if the required NMS classes exist for 1.21.6/7
             Class.forName("net.minecraft.network.protocol.game.ClientboundSetObjectivePacket");
             Class.forName("net.minecraft.network.protocol.game.ClientboundSetScorePacket");
             Class.forName("net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket");
@@ -43,9 +40,7 @@ public class NMSAdapterV1_21_R1 extends NMSAdapter {
             Class.forName("net.minecraft.server.level.ServerPlayer");
             Class.forName("net.minecraft.world.scores.criteria.ObjectiveCriteria");
 
-            // Check server version compatibility
-            String serverVersion = Bukkit.getServer().getClass().getPackage().getName();
-            return serverVersion.contains("v1_21_R1");
+            return Bukkit.getMinecraftVersion().startsWith("26.1.");
         } catch (ClassNotFoundException e) {
             return false;
         }
@@ -63,39 +58,32 @@ public class NMSAdapterV1_21_R1 extends NMSAdapter {
 
     @Override
     public boolean supportsColoredText() {
-        return true; // 1.21 fully supports colored text via Component system
+        return true;
     }
 
     @Override
     public boolean supportsCustomTitles() {
-        return true; // 1.21 supports custom titles via Component system
+        return true;
     }
 
     @Override
     public void initialize() throws Exception {
-        // Verify NMS classes are available
         if (!isCompatible()) {
-            throw new UnsupportedOperationException("NMS adapter v1_21_R1 is not compatible with this server version");
+            throw new UnsupportedOperationException("NMS adapter " + VERSION + " is not compatible with this server version");
         }
 
-        // Initialize packet renderer
-        packetRenderer = new PacketRendererV1_21_R1();
+        packetRenderer = new PacketRendererPaper26_1();
 
-        // Verify critical NMS functionality
         try {
-            // Test that we can access the required NMS classes
             Class.forName("net.minecraft.world.scores.criteria.ObjectiveCriteria");
             Class.forName("net.minecraft.server.network.ServerGamePacketListenerImpl");
         } catch (ClassNotFoundException e) {
-            throw new Exception("Critical NMS classes not found for v1_21_R1: " + e.getMessage());
+            throw new Exception("Critical NMS classes not found for " + VERSION + ": " + e.getMessage());
         }
     }
 
     @Override
     public void cleanup() {
-        if (packetRenderer != null) {
-            // Clean up any resources
-            packetRenderer = null;
-        }
+        packetRenderer = null;
     }
 }
