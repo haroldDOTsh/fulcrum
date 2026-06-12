@@ -1,6 +1,8 @@
 package sh.harold.fulcrum.minigame.listener;
 
-import org.bukkit.ChatColor;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -11,6 +13,7 @@ import org.bukkit.inventory.ItemStack;
  * Handles placeholder interactions for spectator utilities.
  */
 public final class SpectatorListener implements Listener {
+    private static final PlainTextComponentSerializer PLAIN_TEXT = PlainTextComponentSerializer.plainText();
 
     @EventHandler(ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent event) {
@@ -20,9 +23,14 @@ public final class SpectatorListener implements Listener {
         }
         if (item.hasItemMeta()
             && item.getItemMeta().hasDisplayName()
-            && ChatColor.stripColor(item.getItemMeta().getDisplayName()).equalsIgnoreCase("Return to Lobby")) {
-            event.getPlayer().sendMessage(ChatColor.GRAY + "Lobby warp coming soon; hang tight!");
+            && isReturnToLobby(item.getItemMeta().displayName())) {
+            event.getPlayer().sendMessage(Component.text("Lobby warp coming soon; hang tight!", NamedTextColor.GRAY));
             event.setCancelled(true);
         }
+    }
+
+    private boolean isReturnToLobby(Component displayName) {
+        return displayName != null
+            && PLAIN_TEXT.serialize(displayName).equalsIgnoreCase("Return to Lobby");
     }
 }

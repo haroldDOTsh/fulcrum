@@ -7,8 +7,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -84,6 +85,10 @@ public final class StateContext {
     }
 
     public void broadcast(String message) {
+        broadcast(Component.text(message));
+    }
+
+    public void broadcast(Component message) {
         for (UUID playerId : activePlayers) {
             Player player = Bukkit.getPlayer(playerId);
             if (player != null) {
@@ -152,7 +157,7 @@ public final class StateContext {
         ItemStack bed = new ItemStack(Material.RED_BED);
         ItemMeta meta = bed.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(ChatColor.RED + "Return to Lobby");
+            meta.displayName(Component.text("Return to Lobby", NamedTextColor.RED));
             meta.addItemFlags(ItemFlag.values());
             bed.setItemMeta(meta);
         }

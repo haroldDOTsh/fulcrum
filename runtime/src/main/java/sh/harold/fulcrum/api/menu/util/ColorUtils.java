@@ -1,5 +1,6 @@
 package sh.harold.fulcrum.api.menu.util;
 
+import java.util.regex.Pattern;
 import org.bukkit.ChatColor;
 
 /**
@@ -7,6 +8,8 @@ import org.bukkit.ChatColor;
  * Centralizes color handling logic to avoid code duplication.
  */
 public final class ColorUtils {
+    private static final char COLOR_CHAR = '\u00A7';
+    private static final Pattern STRIP_COLOR_PATTERN = Pattern.compile("(?i)" + COLOR_CHAR + "[0-9A-FK-ORX]");
     
     private ColorUtils() {
         // Private constructor to prevent instantiation
@@ -19,6 +22,7 @@ public final class ColorUtils {
      * @param color The color string to convert
      * @return The corresponding ChatColor, or null if the color is invalid
      */
+    @SuppressWarnings("deprecation")
     public static ChatColor convertColor(String color) {
         if (color == null || color.isEmpty()) {
             return null;
@@ -94,7 +98,14 @@ public final class ColorUtils {
         if (text == null) {
             return null;
         }
-        return ChatColor.translateAlternateColorCodes('&', text);
+        char[] chars = text.toCharArray();
+        for (int i = 0; i < chars.length - 1; i++) {
+            if (chars[i] == '&' && isLegacyColorCode(chars[i + 1])) {
+                chars[i] = COLOR_CHAR;
+                chars[i + 1] = Character.toLowerCase(chars[i + 1]);
+            }
+        }
+        return new String(chars);
     }
     
     /**
@@ -107,6 +118,16 @@ public final class ColorUtils {
         if (text == null) {
             return null;
         }
-        return ChatColor.stripColor(text);
+        return STRIP_COLOR_PATTERN.matcher(text).replaceAll("");
+    }
+
+    private static boolean isLegacyColorCode(char character) {
+        return (character >= '0' && character <= '9')
+            || (character >= 'a' && character <= 'f')
+            || (character >= 'A' && character <= 'F')
+            || (character >= 'k' && character <= 'o')
+            || (character >= 'K' && character <= 'O')
+            || character == 'r'
+            || character == 'R';
     }
 }

@@ -7,8 +7,9 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.scheduler.BukkitTask;
@@ -68,7 +69,7 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
             if (maxPlayers > 0 && context.roster().activeCount() >= maxPlayers) {
                 int reduced = remainingSeconds.updateAndGet(current -> Math.min(current, 10));
                 if (reduced == 10 && accelerated.compareAndSet(false, true)) {
-                    context.broadcast(ChatColor.YELLOW + "All slots filled! Match starting in 10 seconds.");
+                    context.broadcast(Component.text("All slots filled! Match starting in 10 seconds.", NamedTextColor.YELLOW));
                 }
             }
 

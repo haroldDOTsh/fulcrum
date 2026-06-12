@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -27,6 +28,7 @@ import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
  */
 public final class PlayerRoutingListener implements Listener, PluginMessageListener {
     private static final String CHANNEL = "fulcrum:route";
+    private static final LegacyComponentSerializer LEGACY_SECTION = LegacyComponentSerializer.legacySection();
 
     private final Plugin plugin;
     private final PlayerRouteRegistry routeRegistry;
@@ -123,7 +125,7 @@ public final class PlayerRoutingListener implements Listener, PluginMessageListe
             String reason = Optional.ofNullable(command.getMetadata())
                 .map(meta -> meta.getOrDefault("reason", "Disconnected"))
                 .orElse("Disconnected");
-            target.kickPlayer(reason);
+            target.kick(LEGACY_SECTION.deserialize(reason));
         }
     }
 

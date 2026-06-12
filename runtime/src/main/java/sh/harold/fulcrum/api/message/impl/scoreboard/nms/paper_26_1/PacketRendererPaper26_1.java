@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.api.message.impl.scoreboard.nms.paper_26_1;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import sh.harold.fulcrum.api.message.scoreboard.render.PacketRenderer;
@@ -23,6 +25,7 @@ public class PacketRendererPaper26_1 implements PacketRenderer {
     private static final int MAX_CHARACTERS_PER_LINE = 128;
     private static final int MAX_LINES = 15;
     private static final String OBJECTIVE_NAME = "fulcrum_sb";
+    private static final LegacyComponentSerializer LEGACY_SECTION = LegacyComponentSerializer.legacySection();
 
     private final ConcurrentMap<UUID, Object> activeObjectives = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, Object> activeScoreboards = new ConcurrentHashMap<>();
@@ -124,8 +127,8 @@ public class PacketRendererPaper26_1 implements PacketRenderer {
             org.bukkit.scoreboard.Scoreboard bukkitScoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
             org.bukkit.scoreboard.Objective objective = bukkitScoreboard.registerNewObjective(
                     OBJECTIVE_NAME,
-                    "dummy",
-                    scoreboard.getEffectiveTitle()
+                    org.bukkit.scoreboard.Criteria.DUMMY,
+                    legacyComponent(scoreboard.getEffectiveTitle())
             );
 
             objective.setDisplaySlot(org.bukkit.scoreboard.DisplaySlot.SIDEBAR);
@@ -194,7 +197,7 @@ public class PacketRendererPaper26_1 implements PacketRenderer {
             org.bukkit.scoreboard.Objective bukkitObjective = player.getScoreboard().getObjective(OBJECTIVE_NAME);
             if (bukkitObjective != null) {
                 try {
-                    bukkitObjective.setDisplayName(title != null ? title : "");
+                    bukkitObjective.displayName(legacyComponent(title));
                 } catch (Exception e) {
                     Bukkit.getLogger().warning("Failed to update Bukkit title for player " + playerId + ": " + e.getMessage());
                 }
@@ -386,6 +389,10 @@ public class PacketRendererPaper26_1 implements PacketRenderer {
         Class<?> componentClass = Class.forName("net.minecraft.network.chat.Component");
         Method literal = componentClass.getMethod("literal", String.class);
         return literal.invoke(null, text);
+    }
+
+    private static Component legacyComponent(String text) {
+        return LEGACY_SECTION.deserialize(text != null ? text : "");
     }
 
     private static Object staticField(String className, String fieldName) throws ReflectiveOperationException {

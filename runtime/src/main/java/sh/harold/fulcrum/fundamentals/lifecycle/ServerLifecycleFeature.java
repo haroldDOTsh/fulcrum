@@ -1,5 +1,8 @@
 package sh.harold.fulcrum.fundamentals.lifecycle;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -910,7 +913,8 @@ public class ServerLifecycleFeature implements PluginFeature {
                 }
                 
                 if (targetServer != null) {
-                    player.sendMessage("§c§lServer is shutting down! Moving you to another server...");
+                    player.sendMessage(Component.text("Server is shutting down! Moving you to another server...",
+                        NamedTextColor.RED, TextDecoration.BOLD));
                     
                     // Transfer player using BungeeCord messaging
                     transferPlayer(player, targetServer);
@@ -919,14 +923,14 @@ public class ServerLifecycleFeature implements PluginFeature {
                     LOGGER.info("Evacuated player " + player.getName() + " to " + targetServer);
                 } else {
                     // No available servers, disconnect player with message
-                    player.kickPlayer("§c§lServer is shutting down!\n§7No available servers to transfer you to.\n§7Please reconnect in a moment.");
+                    player.kick(shutdownKickMessage("No available servers to transfer you to."));
                     failedCount++;
                     LOGGER.warning("Failed to evacuate player " + player.getName() + " - no available servers");
                 }
             } catch (Exception e) {
                 failedCount++;
                 LOGGER.severe("Error evacuating player " + player.getName() + ": " + e.getMessage());
-                player.kickPlayer("§c§lServer is shutting down!\n§7Failed to transfer you to another server.\n§7Please reconnect in a moment.");
+                player.kick(shutdownKickMessage("Failed to transfer you to another server."));
             }
         }
         
@@ -941,6 +945,14 @@ public class ServerLifecycleFeature implements PluginFeature {
         
         messageBus.broadcast(ChannelConstants.SERVER_EVACUATION_RESPONSE, response);
         LOGGER.info("Evacuation completed: " + evacuatedCount + " players evacuated, " + failedCount + " failed");
+    }
+
+    private Component shutdownKickMessage(String detail) {
+        return Component.text("Server is shutting down!", NamedTextColor.RED, TextDecoration.BOLD)
+            .append(Component.newline())
+            .append(Component.text(detail, NamedTextColor.GRAY))
+            .append(Component.newline())
+            .append(Component.text("Please reconnect in a moment.", NamedTextColor.GRAY));
     }
     
     private String findAvailableLobbyServer() {
