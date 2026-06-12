@@ -112,14 +112,14 @@ public final class PregameLobbyManager {
             for (PoiDefinition poi : pois) {
                 if (PREORIGIN_TYPE.equalsIgnoreCase(poi.type())) {
                     BlockVector3 relative = poi.position();
-                    double x = pasteOffset.getX() + relative.getX() + 0.5D;
-                    double y = pasteOffset.getY() + relative.getY();
-                    double z = pasteOffset.getZ() + relative.getZ() + 0.5D;
+                    double x = pasteOffset.x() + relative.x() + 0.5D;
+                    double y = pasteOffset.y() + relative.y();
+                    double z = pasteOffset.z() + relative.z() + 0.5D;
                     return new Location(world, x, y, z);
                 }
             }
         }
-        return new Location(world, pasteOffset.getX() + 0.5D, pasteOffset.getY() + 1.0D, pasteOffset.getZ() + 0.5D);
+        return new Location(world, pasteOffset.x() + 0.5D, pasteOffset.y() + 1.0D, pasteOffset.z() + 0.5D);
     }
 
     public static final class PregameLobbyInstance {

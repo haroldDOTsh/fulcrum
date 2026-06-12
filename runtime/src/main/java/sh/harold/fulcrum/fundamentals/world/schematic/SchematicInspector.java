@@ -3,11 +3,6 @@ package sh.harold.fulcrum.fundamentals.world.schematic;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.sk89q.jnbt.CompoundTag;
-import com.sk89q.jnbt.LinBusConverter;
-import com.sk89q.jnbt.ListTag;
-import com.sk89q.jnbt.StringTag;
-import com.sk89q.jnbt.Tag;
 import com.sk89q.worldedit.extent.clipboard.BlockArrayClipboard;
 import com.sk89q.worldedit.extent.clipboard.Clipboard;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormat;
@@ -20,6 +15,9 @@ import com.sk89q.worldedit.world.block.BaseBlock;
 import com.sk89q.worldedit.world.block.BlockStateHolder;
 import com.sk89q.worldedit.world.block.BlockTypes;
 import org.enginehub.linbus.tree.LinCompoundTag;
+import org.enginehub.linbus.tree.LinListTag;
+import org.enginehub.linbus.tree.LinStringTag;
+import org.enginehub.linbus.tree.LinTagType;
 import sh.harold.fulcrum.fundamentals.world.model.PoiDefinition;
 
 import java.io.ByteArrayInputStream;
@@ -46,7 +44,7 @@ public class SchematicInspector {
     }
 
     private static ClipboardFormat resolveDefaultFormat() {
-        ClipboardFormat format = ClipboardFormats.findByExtension("schem");
+        ClipboardFormat format = ClipboardFormats.findByExplicitExtension("schem");
         if (format == null) {
             format = ClipboardFormats.findByAlias("schematic");
         }
@@ -171,7 +169,7 @@ public class SchematicInspector {
 
 
 
-            CompoundTag blockEntity = extractBlockEntity(block);
+            LinCompoundTag blockEntity = extractBlockEntity(block);
 
             List<String> lines = extractSignLines(blockEntity);
 
@@ -288,7 +286,7 @@ public class SchematicInspector {
 
 
 
-    private CompoundTag extractBlockEntity(BlockStateHolder<?> block) {
+    private LinCompoundTag extractBlockEntity(BlockStateHolder<?> block) {
         if (block == null) {
             return null;
         }
@@ -301,22 +299,18 @@ public class SchematicInspector {
         if (linCompound == null) {
             return null;
         }
-        Tag tag = LinBusConverter.fromLinBus(linCompound);
-        if (tag instanceof CompoundTag compoundTag) {
-            return compoundTag;
-        }
-        return null;
+        return linCompound;
     }
 
     private boolean isSign(BlockStateHolder<?> block) {
         if (block == null) {
             return false;
         }
-        String id = block.getBlockType().getId().toLowerCase(Locale.ROOT);
+        String id = block.getBlockType().id().toLowerCase(Locale.ROOT);
         return id.contains("sign");
     }
 
-    private List<String> extractSignLines(CompoundTag tag) {
+    private List<String> extractSignLines(LinCompoundTag tag) {
         if (tag == null) {
             return List.of();
         }
@@ -326,34 +320,26 @@ public class SchematicInspector {
         return lines.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 
-    @SuppressWarnings("rawtypes")
-    private CompoundTag extractCompound(CompoundTag parent, String key) {
+    private LinCompoundTag extractCompound(LinCompoundTag parent, String key) {
         if (parent == null) {
             return null;
         }
-        Map value = parent.getValue();
-        Object child = value.get(key);
-        return child instanceof CompoundTag compoundTag ? compoundTag : null;
+        return parent.findTag(key, LinTagType.compoundTag());
     }
 
-    @SuppressWarnings("rawtypes")
-    private void readSignSide(CompoundTag side, List<String> lines) {
+    private void readSignSide(LinCompoundTag side, List<String> lines) {
         if (side == null) {
             return;
         }
-        Map value = side.getValue();
-        Object messagesTag = value.get("messages");
-        if (!(messagesTag instanceof ListTag listTag)) {
+        LinListTag<LinStringTag> messagesTag = side.findListTag("messages", LinTagType.stringTag());
+        if (messagesTag == null) {
             return;
         }
-        List rawList = listTag.getValue();
-        for (Object element : rawList) {
-            if (element instanceof StringTag stringTag) {
-                String raw = stringTag.getValue();
-                String parsed = parseTextComponent(raw);
-                if (parsed != null) {
-                    lines.add(parsed);
-                }
+        for (LinStringTag stringTag : messagesTag.value()) {
+            String raw = stringTag.value();
+            String parsed = parseTextComponent(raw);
+            if (parsed != null) {
+                lines.add(parsed);
             }
         }
     }

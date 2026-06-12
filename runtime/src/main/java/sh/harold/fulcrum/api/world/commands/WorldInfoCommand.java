@@ -11,6 +11,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
+import org.bukkit.GameRules;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 
@@ -97,16 +98,17 @@ public class WorldInfoCommand {
                         
                         // Game Rules
                         sender.sendMessage(Component.text("--- Game Rules ---", NamedTextColor.GOLD));
+                        boolean pvp = Boolean.TRUE.equals(world.getGameRuleValue(GameRules.PVP));
                         sender.sendMessage(Component.text("PVP: ", NamedTextColor.GRAY)
-                            .append(Component.text(world.getPVP() ? "Enabled" : "Disabled", 
-                                world.getPVP() ? NamedTextColor.GREEN : NamedTextColor.RED)));
+                            .append(Component.text(pvp ? "Enabled" : "Disabled",
+                                pvp ? NamedTextColor.GREEN : NamedTextColor.RED)));
                         
                         sender.sendMessage(Component.text("Keep Inventory: ", NamedTextColor.GRAY)
-                            .append(Component.text(world.getGameRuleValue(org.bukkit.GameRule.KEEP_INVENTORY).toString(), 
+                            .append(Component.text(String.valueOf(world.getGameRuleValue(GameRules.KEEP_INVENTORY)),
                                 NamedTextColor.AQUA)));
                         
                         sender.sendMessage(Component.text("Mob Spawning: ", NamedTextColor.GRAY)
-                            .append(Component.text(world.getGameRuleValue(org.bukkit.GameRule.DO_MOB_SPAWNING).toString(), 
+                            .append(Component.text(String.valueOf(world.getGameRuleValue(GameRules.SPAWN_MOBS)),
                                 NamedTextColor.AQUA)));
                         
                         return Command.SINGLE_SUCCESS;
