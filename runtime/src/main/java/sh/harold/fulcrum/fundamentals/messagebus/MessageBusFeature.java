@@ -10,6 +10,7 @@ import sh.harold.fulcrum.fundamentals.messagebus.commands.MessageDebugCommand;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.io.File;
 import java.util.logging.Logger;
@@ -38,7 +39,8 @@ public class MessageBusFeature implements PluginFeature {
         MessageBusConnectionConfig config = loadConfiguration(plugin);
         
         // Create Paper-specific adapter
-        adapter = new PaperMessageBusAdapter(plugin, config);
+        PaperRuntime runtime = container.get(PaperRuntime.class);
+        adapter = new PaperMessageBusAdapter(plugin, config, runtime);
         
         // Create message bus using factory
         try {
@@ -86,6 +88,11 @@ public class MessageBusFeature implements PluginFeature {
         adapter = null;
         
         LOGGER.info("Message Bus Feature shutdown complete");
+    }
+
+    @Override
+    public Class<?>[] getDependencies() {
+        return new Class<?>[] { PaperRuntime.class };
     }
     
     private MessageBusConnectionConfig loadConfiguration(JavaPlugin plugin) {

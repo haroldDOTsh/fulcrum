@@ -6,6 +6,7 @@ import sh.harold.fulcrum.api.world.WorldManager;
 import sh.harold.fulcrum.api.world.generator.VoidChunkGenerator;
 import sh.harold.fulcrum.api.world.paste.*;
 import sh.harold.fulcrum.api.world.paste.impl.FAWEWorldPaster;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.io.File;
 import java.util.Map;
@@ -22,13 +23,20 @@ public class DefaultWorldManager implements WorldManager {
     private final Plugin plugin;
     private final Logger logger;
     private final WorldPaster worldPaster;
+    private final PaperRuntime runtime;
     private final Map<String, File> templates = new ConcurrentHashMap<>();
     private final File schematicsDirectory;
     
+    @Deprecated
     public DefaultWorldManager(Plugin plugin) {
+        this(plugin, null);
+    }
+
+    public DefaultWorldManager(Plugin plugin, PaperRuntime runtime) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
-        this.worldPaster = new FAWEWorldPaster(plugin);
+        this.runtime = runtime;
+        this.worldPaster = new FAWEWorldPaster(plugin, runtime);
         
         // Create schematics directory
         this.schematicsDirectory = new File(plugin.getDataFolder(), "schematics");
@@ -54,7 +62,7 @@ public class DefaultWorldManager implements WorldManager {
         }
         
         // Otherwise, just clear the world
-        return CompletableFuture.supplyAsync(() -> {
+        return callSync("reset world " + world.getName(), () -> {
             try {
                 // Clear entities (except players)
                 world.getEntities().stream()
@@ -79,40 +87,40 @@ public class DefaultWorldManager implements WorldManager {
             return CompletableFuture.completedFuture(false);
         }
         
-        return CompletableFuture.supplyAsync(() -> {
+        String worldName = world.getName();
+        return callSync("prepare world reset from template " + worldName, () -> {
             try {
                 // Clear entities first
                 world.getEntities().stream()
                         .filter(entity -> !(entity instanceof org.bukkit.entity.Player))
                         .forEach(org.bukkit.entity.Entity::remove);
-                
-                // Determine spawn location
-                Location spawnLocation = new Location(world, 0, 64, 0);
-                
-                // Paste the template
-                PasteOptions options = PasteOptions.builder()
-                        .ignoreAirBlocks(false)
-                        .copyEntities(true)
-                        .copyBiomes(true)
-                        .fastMode(true)
-                        .build();
-                
-                PasteResult result = worldPaster.pasteSchematic(templateSchematic, spawnLocation, options)
-                        .join();
-                
-                if (result.isSuccess()) {
-                    // Update spawn location if needed
-                    world.setSpawnLocation(spawnLocation);
-                    logger.info("Reset world " + world.getName() + " from template: " + templateSchematic.getName());
-                    return true;
-                } else {
-                    logger.warning("Failed to reset world from template: " + result.getErrorMessage().orElse("Unknown error"));
-                    return false;
-                }
+                return new Location(world, 0, 64, 0);
             } catch (Exception e) {
-                logger.log(Level.SEVERE, "Failed to reset world: " + world.getName(), e);
-                return false;
+                logger.log(Level.SEVERE, "Failed to prepare world reset: " + worldName, e);
+                return null;
             }
+        }).thenCompose(spawnLocation -> {
+            if (spawnLocation == null) {
+                return CompletableFuture.completedFuture(false);
+            }
+
+            PasteOptions options = PasteOptions.builder()
+                    .ignoreAirBlocks(false)
+                    .copyEntities(true)
+                    .copyBiomes(true)
+                    .fastMode(true)
+                    .build();
+
+            return worldPaster.pasteSchematic(templateSchematic, spawnLocation, options)
+                    .thenCompose(result -> callSync("finish world reset from template " + worldName, () -> {
+                        if (result.isSuccess()) {
+                            world.setSpawnLocation(spawnLocation);
+                            logger.info("Reset world " + worldName + " from template: " + templateSchematic.getName());
+                            return true;
+                        }
+                        logger.warning("Failed to reset world from template: " + result.getErrorMessage().orElse("Unknown error"));
+                        return false;
+                    }));
         });
     }
     
@@ -128,7 +136,7 @@ public class DefaultWorldManager implements WorldManager {
             return CompletableFuture.completedFuture(null);
         }
         
-        return CompletableFuture.supplyAsync(() -> {
+        return callSync("create world shell " + worldName, () -> {
             try {
                 // Create a new world
                 WorldCreator creator = new WorldCreator(worldName);
@@ -146,26 +154,31 @@ public class DefaultWorldManager implements WorldManager {
                 world.getEntities().stream()
                         .filter(entity -> !(entity instanceof org.bukkit.entity.Player))
                         .forEach(org.bukkit.entity.Entity::remove);
-                
-                // Paste the template
-                Location origin = new Location(world, 0, 64, 0);
-                PasteResult result = worldPaster.pasteSchematic(templateSchematic, origin, options).join();
-                
-                if (result.isSuccess()) {
-                    world.setSpawnLocation(origin);
-                    logger.info("Created world " + worldName + " from template: " + templateSchematic.getName());
-                    return world;
-                } else {
-                    logger.warning("Failed to paste template into new world: " + 
-                            result.getErrorMessage().orElse("Unknown error"));
-                    // Unload the failed world
-                    Bukkit.unloadWorld(world, false);
-                    return null;
-                }
+
+                return world;
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "Failed to create world from template: " + worldName, e);
                 return null;
             }
+        }).thenCompose(world -> {
+            if (world == null) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            Location origin = new Location(world, 0, 64, 0);
+            return worldPaster.pasteSchematic(templateSchematic, origin, options)
+                    .thenCompose(result -> callSync("finish world template paste " + worldName, () -> {
+                        if (result.isSuccess()) {
+                            world.setSpawnLocation(origin);
+                            logger.info("Created world " + worldName + " from template: " + templateSchematic.getName());
+                            return world;
+                        }
+
+                        logger.warning("Failed to paste template into new world: " +
+                                result.getErrorMessage().orElse("Unknown error"));
+                        Bukkit.unloadWorld(world, false);
+                        return null;
+                    }));
         });
     }
     
@@ -187,10 +200,8 @@ public class DefaultWorldManager implements WorldManager {
     public CompletableFuture<Boolean> saveRegionAsSchematic(Region region, File outputFile) {
         // This would require additional FAWE API for saving
         // For now, return a not-implemented response
-        return CompletableFuture.supplyAsync(() -> {
-            logger.warning("Saving regions as schematics is not yet implemented");
-            return false;
-        });
+        logger.warning("Saving regions as schematics is not yet implemented");
+        return CompletableFuture.completedFuture(false);
     }
     
     @Override
@@ -240,11 +251,6 @@ public class DefaultWorldManager implements WorldManager {
             );
         }
         
-        // Clear the world first
-        world.getEntities().stream()
-                .filter(entity -> !(entity instanceof org.bukkit.entity.Player))
-                .forEach(org.bukkit.entity.Entity::remove);
-        
         // Paste the minigame template
         PasteOptions options = PasteOptions.builder()
                 .ignoreAirBlocks(false)
@@ -254,8 +260,12 @@ public class DefaultWorldManager implements WorldManager {
                 .trackProgress(true)
                 .build();
         
-        Location origin = world.getSpawnLocation();
-        return worldPaster.pasteSchematic(template, origin, options);
+        return callSync("prepare minigame world " + world.getName(), () -> {
+            world.getEntities().stream()
+                    .filter(entity -> !(entity instanceof org.bukkit.entity.Player))
+                    .forEach(org.bukkit.entity.Entity::remove);
+            return world.getSpawnLocation();
+        }).thenCompose(origin -> worldPaster.pasteSchematic(template, origin, options));
     }
     
     private void loadTemplates() {
@@ -270,6 +280,20 @@ public class DefaultWorldManager implements WorldManager {
                         .replace(".schematic", "");
                 registerTemplate(templateName, schematic);
             }
+        }
+    }
+
+    private <T> CompletableFuture<T> callSync(String operation, java.util.function.Supplier<T> supplier) {
+        if (runtime != null) {
+            return runtime.callSync(operation, supplier);
+        }
+        if (!Bukkit.isPrimaryThread()) {
+            return CompletableFuture.failedFuture(new IllegalStateException(operation + " requires the Paper primary thread"));
+        }
+        try {
+            return CompletableFuture.completedFuture(supplier.get());
+        } catch (Throwable throwable) {
+            return CompletableFuture.failedFuture(throwable);
         }
     }
 }

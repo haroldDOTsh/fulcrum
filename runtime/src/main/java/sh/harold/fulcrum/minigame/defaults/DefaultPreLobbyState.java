@@ -133,12 +133,12 @@ public final class DefaultPreLobbyState extends AbstractMinigameState {
             .map(value -> (Map<String, String>) value)
             .orElse(Map.of());
 
-        MatchEnvironment environment = environmentService.getEnvironment(slotId)
-            .orElseGet(() -> environmentService.prepareEnvironment(slotId, metadata));
-        if (environment == null) {
+        Optional<MatchEnvironment> environmentOpt = environmentService.getEnvironment(slotId);
+        if (environmentOpt.isEmpty()) {
             context.getPlugin().getLogger().warning("Pre-lobby spawn skipped; environment not prepared for slot " + slotId);
             return;
         }
+        MatchEnvironment environment = environmentOpt.get();
 
         World world = Bukkit.getWorld(environment.worldName());
         if (world == null) {

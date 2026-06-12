@@ -248,7 +248,7 @@ public class DefaultListMenuBuilder implements ListMenuBuilder {
     }
     
     private CompletableFuture<Menu> buildAsync(Player player, boolean allowNullPlayer) {
-        return CompletableFuture.supplyAsync(() -> {
+        return menuService.getRuntime().callSync("build list menu", () -> {
             // Generate unique menu ID
             String menuId = "list-menu-" + UUID.randomUUID();
             

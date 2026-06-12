@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import sh.harold.fulcrum.api.menu.*;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -19,15 +20,17 @@ public class DefaultMenuService implements MenuService {
     
     private final Plugin plugin;
     private final MenuRegistry menuRegistry;
+    private final PaperRuntime runtime;
     private final Map<UUID, Menu> openMenus = new ConcurrentHashMap<>();
     private final Map<Plugin, Set<String>> pluginMenus = new ConcurrentHashMap<>();
     
     // NEW: Menu instance registry for ID-based menu storage and retrieval
     private final Map<String, Menu> menuInstances = new ConcurrentHashMap<>();
     
-    public DefaultMenuService(Plugin plugin, MenuRegistry menuRegistry) {
+    public DefaultMenuService(Plugin plugin, MenuRegistry menuRegistry, PaperRuntime runtime) {
         this.plugin = Objects.requireNonNull(plugin, "Plugin cannot be null");
         this.menuRegistry = Objects.requireNonNull(menuRegistry, "MenuRegistry cannot be null");
+        this.runtime = Objects.requireNonNull(runtime, "Runtime cannot be null");
         
         System.out.println("[MENU SERVICE] DefaultMenuService initialized (simplified version)");
     }
@@ -47,7 +50,7 @@ public class DefaultMenuService implements MenuService {
         Objects.requireNonNull(menu, "Menu cannot be null");
         Objects.requireNonNull(player, "Player cannot be null");
         
-        return CompletableFuture.runAsync(() -> {
+        return runtime.runSync("open menu " + menu.getId(), () -> {
             try {
                 System.out.println("[MENU SERVICE] Opening menu: " + menu.getTitle() + " for " + player.getName());
                 
@@ -55,11 +58,8 @@ public class DefaultMenuService implements MenuService {
                 openMenus.put(player.getUniqueId(), menu);
                 trackMenuForPlugin(menu);
                 
-                // Open the menu on the main thread
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    player.openInventory(menu.getInventory());
-                    menu.update();
-                });
+                player.openInventory(menu.getInventory());
+                menu.update();
                 
                 System.out.println("[MENU SERVICE] Successfully opened menu: " + menu.getTitle());
                 
@@ -73,10 +73,11 @@ public class DefaultMenuService implements MenuService {
     @Override
     public boolean closeMenu(Player player) {
         Objects.requireNonNull(player, "Player cannot be null");
+        runtime.requirePrimary("close menu");
         
         Menu menu = openMenus.remove(player.getUniqueId());
         if (menu != null) {
-            Bukkit.getScheduler().runTask(plugin, () -> player.closeInventory());
+            player.closeInventory();
             System.out.println("[MENU SERVICE] Closed menu for " + player.getName());
             return true;
         }
@@ -85,6 +86,7 @@ public class DefaultMenuService implements MenuService {
     
     @Override
     public int closeAllMenus() {
+        runtime.requirePrimary("close all menus");
         int count = 0;
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (closeMenu(player)) {
@@ -109,6 +111,7 @@ public class DefaultMenuService implements MenuService {
     @Override
     public boolean refreshMenu(Player player) {
         Objects.requireNonNull(player, "Player cannot be null");
+        runtime.requirePrimary("refresh menu");
         Menu menu = openMenus.get(player.getUniqueId());
         if (menu != null) {
             menu.update();
@@ -131,6 +134,7 @@ public class DefaultMenuService implements MenuService {
     @Override
     public void unregisterPlugin(Plugin plugin) {
         Objects.requireNonNull(plugin, "Plugin cannot be null");
+        runtime.requirePrimary("unregister plugin menus");
         
         Set<String> menuIds = pluginMenus.remove(plugin);
         if (menuIds != null) {
@@ -165,6 +169,10 @@ public class DefaultMenuService implements MenuService {
      */
     public Plugin getPlugin() {
         return plugin;
+    }
+
+    public PaperRuntime getRuntime() {
+        return runtime;
     }
     
     /**
@@ -235,6 +243,7 @@ public class DefaultMenuService implements MenuService {
      * Shuts down the menu service.
      */
     public void shutdown() {
+        runtime.requirePrimary("shutdown menu service");
         // Close all menus
         closeAllMenus();
         
@@ -255,6 +264,7 @@ public class DefaultMenuService implements MenuService {
      * @param player the player whose menu closed
      */
     public void handleMenuClosed(Player player) {
+        runtime.requirePrimary("handle menu closed");
         openMenus.remove(player.getUniqueId());
         System.out.println("[MENU SERVICE] External menu close handled for " + player.getName());
     }

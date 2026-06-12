@@ -23,10 +23,12 @@ import sh.harold.fulcrum.api.message.scoreboard.render.TitleManager;
 import sh.harold.fulcrum.api.message.scoreboard.util.ScoreboardFlashTask;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.*;
+import org.bukkit.scheduler.BukkitTask;
 
 public class ScoreboardFeature implements PluginFeature, Listener {
 
@@ -35,6 +37,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
     private DefaultRenderingPipeline renderingPipeline;
     private PacketRenderer packetRenderer;
     private ScoreboardRegistry registry;
+    private SimpleScoreboardService simpleService;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -63,7 +66,9 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         this.renderingPipeline = new DefaultRenderingPipeline(titleManager, playerManager);
 
         // Create main service
-        this.scoreboardService = new SimpleScoreboardService(registry, playerManager, renderingPipeline, packetRenderer);
+        PaperRuntime runtime = container.get(PaperRuntime.class);
+        this.simpleService = new SimpleScoreboardService(plugin, runtime, registry, playerManager, renderingPipeline, packetRenderer);
+        this.scoreboardService = simpleService;
 
         // Register services in dependency container
         container.register(ScoreboardService.class, scoreboardService);
@@ -85,6 +90,11 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             playerManager.clearAllPlayerData();
         }
 
+        if (simpleService != null) {
+            simpleService.shutdown();
+            simpleService = null;
+        }
+
         if (packetRenderer != null) {
             // Clear all active scoreboard displays
             for (int i = 0; i < packetRenderer.getActiveDisplayCount(); i++) {
@@ -97,6 +107,11 @@ public class ScoreboardFeature implements PluginFeature, Listener {
     @Override
     public int getPriority() {
         return 5; // Load after core features but before game features
+    }
+
+    @Override
+    public Class<?>[] getDependencies() {
+        return new Class<?>[] { PaperRuntime.class };
     }
 
     private NMSAdapter createNMSAdapter(JavaPlugin plugin) {
@@ -154,24 +169,26 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         private final PlayerScoreboardManager playerManager;
         private final RenderingPipeline renderingPipeline;
         private final PacketRenderer packetRenderer;
-        private final ScheduledExecutorService scheduler;
+        private final JavaPlugin plugin;
+        private final PaperRuntime runtime;
+        private final BukkitTask refreshTicker;
 
-        // Active refresh tasks
-        private final ConcurrentHashMap<UUID, CompletableFuture<Void>> refreshTasks = new ConcurrentHashMap<>();
-
-        public SimpleScoreboardService(ScoreboardRegistry registry,
+        public SimpleScoreboardService(JavaPlugin plugin,
+                                       PaperRuntime runtime,
+                                       ScoreboardRegistry registry,
                                        PlayerScoreboardManager playerManager,
                                        RenderingPipeline renderingPipeline,
                                        PacketRenderer packetRenderer) {
+            this.plugin = plugin;
+            this.runtime = runtime;
             this.registry = registry;
             this.playerManager = playerManager;
             this.renderingPipeline = renderingPipeline;
             this.packetRenderer = packetRenderer;
-            this.scheduler = Executors.newScheduledThreadPool(2);
 
             // Register event listener and start refresh task
-            Bukkit.getPluginManager().registerEvents(new PlayerListener(), Bukkit.getPluginManager().getPlugin("Fulcrum"));
-            scheduler.scheduleAtFixedRate(this::refreshActiveScoreboards, 1, 1, TimeUnit.SECONDS);
+            Bukkit.getPluginManager().registerEvents(new PlayerListener(), plugin);
+            this.refreshTicker = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshActiveScoreboards, 20L, 20L);
         }
 
         @Override
@@ -195,6 +212,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         @Override
         public void unregisterScoreboard(String scoreboardId) {
+            runtime.requirePrimary("unregister scoreboard");
             if (scoreboardId == null || scoreboardId.isEmpty()) {
                 throw new IllegalArgumentException("Scoreboard ID cannot be null or empty");
             }
@@ -218,6 +236,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         @Override
         public void showScoreboard(UUID playerId, String scoreboardId) {
+            runtime.requirePrimary("show scoreboard");
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
@@ -236,6 +255,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         @Override
         public void hideScoreboard(UUID playerId) {
+            runtime.requirePrimary("hide scoreboard");
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
@@ -245,6 +265,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         @Override
         public void flashModule(UUID playerId, int moduleIndex, sh.harold.fulcrum.api.message.scoreboard.module.ScoreboardModule module, Duration duration) {
+            runtime.requirePrimary("flash scoreboard module");
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
@@ -255,26 +276,19 @@ public class ScoreboardFeature implements PluginFeature, Listener {
                 throw new IllegalArgumentException("Duration cannot be null or negative");
             }
 
-            // Create and schedule the flash task for automatic expiration
-            ScoreboardFlashTask flashTask = new ScoreboardFlashTask(playerId, moduleIndex, module, playerManager, duration);
-
-            // Set the refresh callback to trigger immediate refresh on expiration
-            flashTask.setRefreshCallback(this::refreshPlayerScoreboard);
-
-            // Schedule the task to run after the flash duration
-            ScheduledFuture<?> scheduledTask = scheduler.schedule(flashTask, duration.toMillis(), TimeUnit.MILLISECONDS);
-
-            // Set the scheduled future on the task for proper cancellation handling
-            flashTask.setScheduledFuture(scheduledTask);
-
-            // Start the flash operation
             playerManager.startFlash(playerId, moduleIndex, module, duration);
-
             refreshPlayerScoreboard(playerId);
+            long delayTicks = Math.max(1L, duration.toMillis() / 50L);
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                playerManager.stopFlash(playerId, moduleIndex);
+                playerManager.markForRefresh(playerId);
+                refreshPlayerScoreboard(playerId);
+            }, delayTicks);
         }
 
         @Override
         public void setPlayerTitle(UUID playerId, String title) {
+            runtime.requirePrimary("set scoreboard title");
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
@@ -290,6 +304,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         @Override
         public void clearPlayerTitle(UUID playerId) {
+            runtime.requirePrimary("clear scoreboard title");
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
@@ -300,6 +315,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         @Override
         public void refreshPlayerScoreboard(UUID playerId) {
+            runtime.requirePrimary("refresh scoreboard");
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
@@ -314,23 +330,12 @@ public class ScoreboardFeature implements PluginFeature, Listener {
                 return;
             }
 
-            // Cancel any existing refresh task
-            CompletableFuture<Void> existingTask = refreshTasks.get(playerId);
-            if (existingTask != null) {
-                existingTask.cancel(false);
+            try {
+                RenderedScoreboard rendered = renderingPipeline.renderScoreboard(playerId, definition);
+                packetRenderer.updateScoreboard(playerId, rendered);
+            } catch (Exception e) {
+                Bukkit.getLogger().warning("Failed to refresh scoreboard for player " + playerId + ": " + e.getMessage());
             }
-
-            // Create new refresh task
-            CompletableFuture<Void> refreshTask = CompletableFuture.runAsync(() -> {
-                try {
-                    RenderedScoreboard rendered = renderingPipeline.renderScoreboard(playerId, definition);
-                    packetRenderer.updateScoreboard(playerId, rendered);
-                } catch (Exception e) {
-                    Bukkit.getLogger().warning("Failed to refresh scoreboard for player " + playerId + ": " + e.getMessage());
-                }
-            }, scheduler);
-
-            refreshTasks.put(playerId, refreshTask);
         }
 
         @Override
@@ -351,6 +356,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         @Override
         public void setModuleOverride(UUID playerId, String moduleId, boolean enabled) {
+            runtime.requirePrimary("set scoreboard module override");
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
             }
@@ -375,14 +381,9 @@ public class ScoreboardFeature implements PluginFeature, Listener {
 
         @Override
         public void clearPlayerData(UUID playerId) {
+            runtime.requirePrimary("clear scoreboard player data");
             if (playerId == null) {
                 throw new IllegalArgumentException("Player ID cannot be null");
-            }
-
-            // Cancel any refresh tasks
-            CompletableFuture<Void> refreshTask = refreshTasks.remove(playerId);
-            if (refreshTask != null) {
-                refreshTask.cancel(false);
             }
 
             // Clear packet renderer state
@@ -393,6 +394,7 @@ public class ScoreboardFeature implements PluginFeature, Listener {
         }
 
         private void refreshActiveScoreboards() {
+            runtime.requirePrimary("refresh active scoreboards");
             for (Player player : Bukkit.getOnlinePlayers()) {
                 UUID playerId = player.getUniqueId();
 
@@ -409,6 +411,10 @@ public class ScoreboardFeature implements PluginFeature, Listener {
             public void onPlayerQuit(PlayerQuitEvent event) {
                 clearPlayerData(event.getPlayer().getUniqueId());
             }
+        }
+
+        private void shutdown() {
+            refreshTicker.cancel();
         }
     }
 }

@@ -22,6 +22,8 @@ import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEn
 import sh.harold.fulcrum.minigame.match.MinigameMatch;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
+import sh.harold.fulcrum.runtime.threading.RuntimeIntent;
 
 /**
  * Runtime engine that manages active minigame matches.
@@ -31,6 +33,7 @@ public final class MinigameEngine {
     private final PlayerRouteRegistry routeRegistry;
     private final MinigameEnvironmentService environmentService;
     private final SimpleSlotOrchestrator slotOrchestrator;
+    private final PaperRuntime runtime;
     private final Set<String> provisioningSlots = ConcurrentHashMap.newKeySet();
     private final Map<String, MinigameRegistration> registrations = new ConcurrentHashMap<>();
     private final Map<UUID, MinigameMatch> activeMatches = new ConcurrentHashMap<>();
@@ -47,11 +50,13 @@ public final class MinigameEngine {
     public MinigameEngine(JavaPlugin plugin,
                           PlayerRouteRegistry routeRegistry,
                           MinigameEnvironmentService environmentService,
-                          SimpleSlotOrchestrator slotOrchestrator) {
+                          SimpleSlotOrchestrator slotOrchestrator,
+                          PaperRuntime runtime) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.routeRegistry = routeRegistry;
         this.environmentService = environmentService;
         this.slotOrchestrator = slotOrchestrator;
+        this.runtime = Objects.requireNonNull(runtime, "runtime");
     }
 
     public void registerRegistration(MinigameRegistration registration) {
@@ -189,16 +194,19 @@ public final class MinigameEngine {
             return;
         }
         plugin.getLogger().info("Finalizing provisioning for slot " + slot.slotId() + " (family=" + slot.familyId() + ")");
-        plugin.getServer().getScheduler().runTask(plugin, () -> processProvisionedSlot(slot));
+        runtime.enqueue(RuntimeIntent.of("process provisioned slot " + slot.slotId(), runtime.epoch(),
+            ignored -> processProvisionedSlot(slot)));
     }
 
     private void processProvisionedSlot(SimpleSlotOrchestrator.ProvisionedSlot slot) {
         try {
+            runtime.requirePrimary("process provisioned slot");
             Optional<MinigameRegistration> registrationOpt = getRegistration(slot.familyId());
             if (registrationOpt.isEmpty()) {
                 plugin.getLogger().warning("Provisioned slot " + slot.slotId()
                     + " has no registered family " + slot.familyId());
                 markSlotFault(slot.slotId(), "unknown-family");
+                provisioningSlots.remove(slot.slotId());
                 return;
             }
 
@@ -211,10 +219,31 @@ public final class MinigameEngine {
             if (environmentService == null) {
                 plugin.getLogger().warning("Environment service unavailable; cannot prepare world for slot " + slot.slotId());
                 markSlotFault(slot.slotId(), "environment-service-unavailable");
+                provisioningSlots.remove(slot.slotId());
                 return;
             }
 
-            MatchEnvironment environment = environmentService.prepareEnvironment(slot.slotId(), metadata);
+            environmentService.prepareEnvironment(slot.slotId(), metadata)
+                .whenComplete((environment, error) -> runtime.runSync("complete provisioned slot " + slot.slotId(),
+                    () -> completeProvisionedSlot(slot, metadata, environment, error)));
+        } catch (Exception exception) {
+            plugin.getLogger().log(Level.WARNING, "Failed to finalize provisioning for slot " + slot.slotId(), exception);
+            markSlotFault(slot.slotId(), "provisioning-error");
+            provisioningSlots.remove(slot.slotId());
+        }
+    }
+
+    private void completeProvisionedSlot(SimpleSlotOrchestrator.ProvisionedSlot slot,
+                                         Map<String, String> metadata,
+                                         MatchEnvironment environment,
+                                         Throwable error) {
+        try {
+            runtime.requirePrimary("complete provisioned slot");
+            if (error != null) {
+                plugin.getLogger().log(Level.WARNING, "Failed to prepare environment for slot " + slot.slotId(), error);
+                markSlotFault(slot.slotId(), "environment-unavailable");
+                return;
+            }
             if (environment == null) {
                 plugin.getLogger().warning("Failed to prepare environment for slot " + slot.slotId()
                     + " (family=" + slot.familyId() + ", map=" + metadata.getOrDefault("mapId", "unknown") + ")");
@@ -241,9 +270,6 @@ public final class MinigameEngine {
             slotOrchestrator.updateSlotStatus(slot.slotId(), SlotLifecycleStatus.AVAILABLE, 0, metadata);
             plugin.getLogger().info("Provisioned slot " + slot.slotId() + " for family " + slot.familyId()
                 + " (world=" + worldName + ")");
-        } catch (Exception exception) {
-            plugin.getLogger().log(Level.WARNING, "Failed to finalize provisioning for slot " + slot.slotId(), exception);
-            markSlotFault(slot.slotId(), "provisioning-error");
         } finally {
             provisioningSlots.remove(slot.slotId());
         }

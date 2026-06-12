@@ -19,6 +19,7 @@ import sh.harold.fulcrum.lifecycle.CommandRegistrar;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.io.File;
 import java.util.concurrent.CompletableFuture;
@@ -39,11 +40,13 @@ public class WorldFeature implements PluginFeature {
     private WorldCommand worldCommand;
     private Logger logger;
     private boolean ownsConnectionAdapter;
+    private PaperRuntime runtime;
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
+        this.runtime = container.get(PaperRuntime.class);
 
         resolveConnectionAdapter(container);
         if (connectionAdapter == null) {
@@ -52,9 +55,15 @@ public class WorldFeature implements PluginFeature {
             return;
         }
 
-        this.worldService = new WorldService(plugin, connectionAdapter);
+        this.worldService = new WorldService(plugin, connectionAdapter, runtime.asyncExecutor());
         try {
-            worldService.initialize().join();
+            worldService.initialize().whenComplete((ignored, throwable) -> {
+                if (throwable != null) {
+                    logger.severe("World cache failed to initialize: " + throwable.getMessage());
+                    return;
+                }
+                logger.info("World cache initialized with " + worldService.getAllWorlds().size() + " world definitions.");
+            });
         } catch (CompletionException ex) {
             Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
             logger.severe("Failed to initialize WorldService: " + cause.getMessage());
@@ -71,7 +80,11 @@ public class WorldFeature implements PluginFeature {
         }
 
         this.poiRegistry = new POIRegistry(logger);
-        this.worldManager = new WorldManager(plugin, worldService, poiRegistry);
+        this.worldManager = new WorldManager(plugin, worldService, poiRegistry, runtime);
+
+        container.register(WorldService.class, worldService);
+        container.register(WorldManager.class, worldManager);
+        container.register(POIRegistry.class, poiRegistry);
 
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().registerService(WorldService.class, worldService);
@@ -208,6 +221,11 @@ public class WorldFeature implements PluginFeature {
     @Override
     public int getPriority() {
         return 200;
+    }
+
+    @Override
+    public Class<?>[] getDependencies() {
+        return new Class<?>[] { PaperRuntime.class };
     }
 
 }

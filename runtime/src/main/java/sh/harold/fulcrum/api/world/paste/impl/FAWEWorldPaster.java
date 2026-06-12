@@ -1,7 +1,5 @@
 package sh.harold.fulcrum.api.world.paste.impl;
 
-import com.fastasyncworldedit.core.FaweAPI;
-import com.fastasyncworldedit.core.util.TaskManager;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
@@ -19,6 +17,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.plugin.Plugin;
 import sh.harold.fulcrum.api.world.paste.*;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -39,10 +38,17 @@ public class FAWEWorldPaster implements WorldPaster {
     private final Plugin plugin;
     private final Logger logger;
     private final Map<String, PasteOperation> activeOperations = new ConcurrentHashMap<>();
+    private final PaperRuntime runtime;
     
+    @Deprecated
     public FAWEWorldPaster(Plugin plugin) {
+        this(plugin, null);
+    }
+
+    public FAWEWorldPaster(Plugin plugin, PaperRuntime runtime) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
+        this.runtime = runtime;
     }
     
     @Override
@@ -65,9 +71,7 @@ public class FAWEWorldPaster implements WorldPaster {
         String operationId = generateOperationId();
         Instant startTime = Instant.now();
         
-        CompletableFuture<PasteResult> future = new CompletableFuture<>();
-        
-        TaskManager.taskManager().async(() -> {
+        return callSync("paste region " + operationId, () -> {
             try {
                 World world = BukkitAdapter.adapt(source.getWorld());
                 
@@ -112,15 +116,13 @@ public class FAWEWorldPaster implements WorldPaster {
                         affectedRegion
                 );
                 
-                future.complete(result);
+                return result;
                 
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "Failed to paste region", e);
-                future.complete(PasteResult.failure(operationId, e.getMessage(), startTime));
+                return PasteResult.failure(operationId, e.getMessage(), startTime);
             }
         });
-        
-        return future;
     }
     
     @Override
@@ -141,19 +143,7 @@ public class FAWEWorldPaster implements WorldPaster {
         String operationId = generateOperationId();
         Instant startTime = Instant.now();
         
-        CompletableFuture<PasteResult> future = new CompletableFuture<>();
-        
-        // Track the operation if progress tracking is enabled
-        PasteOperation operation = null;
-        if (options.isTrackProgress()) {
-            operation = new PasteOperation(operationId, future);
-            activeOperations.put(operationId, operation);
-        }
-        
-        final PasteOperation trackedOperation = operation;
-        
-        // Execute async with FAWE
-        TaskManager.taskManager().async(() -> {
+        CompletableFuture<PasteResult> future = callSync("paste schematic " + operationId, () -> {
             try {
                 // Load the schematic
                 ClipboardFormat format = ClipboardFormats.findByFile(schematic);
@@ -223,7 +213,7 @@ public class FAWEWorldPaster implements WorldPaster {
                     Operations.complete(pasteOperation);
                 } else {
                     // Execute with delay between operations
-                    executeWithDelay(pasteOperation, editSession, options.getTicksPerOperation(), trackedOperation);
+                    executeWithDelay(pasteOperation, editSession, options.getTicksPerOperation(), null);
                 }
                 
                 editSession.close();
@@ -241,16 +231,18 @@ public class FAWEWorldPaster implements WorldPaster {
                         affectedRegion
                 );
                 
-                future.complete(result);
+                return result;
                 
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "Failed to paste schematic: " + schematic.getName(), e);
-                future.complete(PasteResult.failure(operationId, e.getMessage(), startTime));
-            } finally {
-                if (trackedOperation != null) {
-                    activeOperations.remove(operationId);
-                }
+                return PasteResult.failure(operationId, e.getMessage(), startTime);
             }
+        });
+        if (options.isTrackProgress()) {
+            activeOperations.put(operationId, new PasteOperation(operationId, future));
+        }
+        future.whenComplete((ignored, throwable) -> {
+            activeOperations.remove(operationId);
         });
         
         return future;
@@ -289,6 +281,20 @@ public class FAWEWorldPaster implements WorldPaster {
     
     private String generateOperationId() {
         return UUID.randomUUID().toString();
+    }
+
+    private <T> CompletableFuture<T> callSync(String operation, java.util.function.Supplier<T> supplier) {
+        if (runtime != null) {
+            return runtime.callSync(operation, supplier);
+        }
+        if (!Bukkit.isPrimaryThread()) {
+            return CompletableFuture.failedFuture(new IllegalStateException(operation + " requires the Paper primary thread"));
+        }
+        try {
+            return CompletableFuture.completedFuture(supplier.get());
+        } catch (Throwable throwable) {
+            return CompletableFuture.failedFuture(throwable);
+        }
     }
     
     private Region calculateAffectedRegion(Location origin, Clipboard clipboard) {

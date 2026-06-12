@@ -36,6 +36,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -49,16 +51,22 @@ public class WorldService {
     private final Logger logger;
     private final File cacheDirectory;
     private final SchematicInspector inspector;
+    private final Executor asyncExecutor;
     private final Map<UUID, LoadedWorld> cacheById = new ConcurrentHashMap<>();
     private final Map<String, LoadedWorld> cacheByName = new ConcurrentHashMap<>();
     private final Map<String, LoadedWorld> cacheByMapId = new ConcurrentHashMap<>();
 
     public WorldService(Plugin plugin, PostgresConnectionAdapter connectionAdapter) {
+        this(plugin, connectionAdapter, ForkJoinPool.commonPool());
+    }
+
+    public WorldService(Plugin plugin, PostgresConnectionAdapter connectionAdapter, Executor asyncExecutor) {
         this.plugin = plugin;
         this.connectionAdapter = connectionAdapter;
         this.logger = plugin.getLogger();
         this.cacheDirectory = new File(plugin.getDataFolder(), "world-cache");
         this.inspector = new SchematicInspector(logger);
+        this.asyncExecutor = asyncExecutor != null ? asyncExecutor : ForkJoinPool.commonPool();
     }
 
     public CompletableFuture<Void> initialize() {
@@ -72,7 +80,7 @@ public class WorldService {
     }
 
     public CompletableFuture<Void> refreshCache() {
-        return CompletableFuture.runAsync(this::loadWorlds);
+        return CompletableFuture.runAsync(this::loadWorlds, asyncExecutor);
     }
 
     public void shutdown() {
@@ -162,7 +170,7 @@ public class WorldService {
             } catch (SQLException e) {
                 throw new CompletionException("Failed to persist world map " + worldName, e);
             }
-        });
+        }, asyncExecutor);
     }
 
     private void loadWorlds() {

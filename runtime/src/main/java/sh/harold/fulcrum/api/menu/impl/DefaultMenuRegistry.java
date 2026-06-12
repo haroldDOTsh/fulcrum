@@ -210,28 +210,26 @@ public class DefaultMenuRegistry implements MenuRegistry {
         
         @Override
         public CompletableFuture<Menu> build(Player player, MenuContext context) {
-            return CompletableFuture.supplyAsync(() -> {
-                // Get menu service
-                MenuService menuService = plugin.getServer().getServicesManager()
-                    .load(MenuService.class);
-                
-                if (menuService == null) {
-                    throw new IllegalStateException("MenuService not available");
-                }
-                
-                // Create list menu builder
-                ListMenuBuilder builder = menuService.createListMenu()
-                    .title(title);
-                
-                // Add items if player is provided
-                if (player != null) {
-                    Collection<? extends MenuItem> items = itemProvider.apply(player);
-                    builder.addItems(items);
-                }
-                
-                // Build without opening
-                return builder.buildAsync().join();
-            });
+            // Get menu service
+            MenuService menuService = plugin.getServer().getServicesManager()
+                .load(MenuService.class);
+
+            if (menuService == null) {
+                return CompletableFuture.failedFuture(new IllegalStateException("MenuService not available"));
+            }
+
+            // Create list menu builder
+            ListMenuBuilder builder = menuService.createListMenu()
+                .title(title);
+
+            // Add items if player is provided
+            if (player != null) {
+                Collection<? extends MenuItem> items = itemProvider.apply(player);
+                builder.addItems(items);
+            }
+
+            // Build without opening
+            return builder.buildAsync();
         }
         
         @Override

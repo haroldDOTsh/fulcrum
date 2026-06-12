@@ -7,6 +7,7 @@ import sh.harold.fulcrum.api.messagebus.adapter.MessageBusAdapter;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.module.ServiceLocator;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -20,12 +21,14 @@ public class PaperMessageBusAdapter implements MessageBusAdapter {
     private final JavaPlugin plugin;
     private final Logger logger;
     private final MessageBusConnectionConfig config;
+    private final PaperRuntime runtime;
     private final AtomicBoolean running = new AtomicBoolean(true);
     
-    public PaperMessageBusAdapter(JavaPlugin plugin, MessageBusConnectionConfig config) {
+    public PaperMessageBusAdapter(JavaPlugin plugin, MessageBusConnectionConfig config, PaperRuntime runtime) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.config = config;
+        this.runtime = runtime;
     }
     
     @Override
@@ -46,8 +49,7 @@ public class PaperMessageBusAdapter implements MessageBusAdapter {
     
     @Override
     public Executor getAsyncExecutor() {
-        // Use Bukkit's async scheduler as executor
-        return task -> Bukkit.getScheduler().runTaskAsynchronously(plugin, task);
+        return runtime.asyncExecutor();
     }
     
     @Override

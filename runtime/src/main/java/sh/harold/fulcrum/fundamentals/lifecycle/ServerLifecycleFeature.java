@@ -30,6 +30,8 @@ import sh.harold.fulcrum.fundamentals.slot.discovery.SlotFamilyService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
+import sh.harold.fulcrum.runtime.threading.RuntimeIntent;
 
 import java.io.File;
 import java.io.IOException;
@@ -67,6 +69,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     private JavaPlugin plugin;
     private MessageBus messageBus;
     private DependencyContainer container;
+    private PaperRuntime runtime;
     private DefaultServerIdentifier serverIdentifier;
     private BukkitRunnable heartbeatTask;
     private AtomicBoolean registered = new AtomicBoolean(false);
@@ -106,6 +109,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
         this.container = container;
+        this.runtime = container.get(PaperRuntime.class);
         this.startTime = System.currentTimeMillis();
         
         // Check development mode from config
@@ -305,13 +309,13 @@ public class ServerLifecycleFeature implements PluginFeature {
                 if (command == null) {
                     return;
                 }
-                Bukkit.getScheduler().runTask(plugin, () -> {
+                runtime.enqueue(RuntimeIntent.of("handle player route command " + command.getRequestId(), runtime.epoch(), ignored -> {
                     ServiceLocatorImpl locator = ServiceLocatorImpl.getInstance();
                     if (locator != null) {
                         locator.findService(PlayerRoutingListener.class)
                             .ifPresent(listener -> listener.handleRouteCommand(command));
                     }
-                });
+                }));
             } catch (Exception ex) {
                 LOGGER.warning("Failed to handle player route command from registry: " + ex.getMessage());
             }
@@ -334,7 +338,8 @@ public class ServerLifecycleFeature implements PluginFeature {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 SlotProvisionCommand command = mapper.treeToValue(envelope.getPayload(), SlotProvisionCommand.class);
                 if (slotOrchestrator != null) {
-                    slotOrchestrator.handleProvisionCommand(command);
+                    runtime.enqueue(RuntimeIntent.of("handle slot provision " + command.getRequestId(), runtime.epoch(),
+                        ignored -> slotOrchestrator.handleProvisionCommand(command)));
                 }
             } catch (Exception e) {
                 LOGGER.warning("Failed to handle slot provision command: " + e.getMessage());
@@ -490,7 +495,7 @@ public class ServerLifecycleFeature implements PluginFeature {
             // to ensure the registration response handler doesn't block
             if (!oldId.equals(permanentId)) {
                 // Run subscriptions asynchronously to avoid blocking the registration response handler
-                CompletableFuture.runAsync(() -> {
+                runtime.runAsync("resubscribe permanent server channels", () -> {
                     try {
                         // Subscribe to new channel for permanent ID
                         messageBus.subscribe(ChannelConstants.getServerDirectChannel(permanentId), envelope -> {
@@ -499,7 +504,8 @@ public class ServerLifecycleFeature implements PluginFeature {
                                 try {
                                     com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                                     ServerRegistrationResponse resp = mapper.treeToValue(envelope.getPayload(), ServerRegistrationResponse.class);
-                                    handleProxyRegistrationResponse(resp);
+                                    runtime.enqueue(RuntimeIntent.of("handle proxy registration response", runtime.epoch(),
+                                        ignored -> handleProxyRegistrationResponse(resp)));
                                 } catch (Exception e) {
                                     LOGGER.warning("Failed to deserialize registration response: " + e.getMessage());
                                 }
@@ -571,6 +577,7 @@ public class ServerLifecycleFeature implements PluginFeature {
     }
     
     private void sendHeartbeat() {
+        runtime.requirePrimary("send server heartbeat");
         // Skip heartbeat in development mode
         if (plugin.getConfig().getBoolean("development-mode", false)) {
             LOGGER.fine("Development mode - skipping heartbeat");
@@ -683,7 +690,8 @@ public class ServerLifecycleFeature implements PluginFeature {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 ProxyAnnouncementMessage announcement = mapper.treeToValue(envelope.getPayload(), ProxyAnnouncementMessage.class);
-                handleProxyAnnouncement(announcement);
+                runtime.enqueue(RuntimeIntent.of("handle proxy announcement " + announcement.getProxyId(), runtime.epoch(),
+                    ignored -> handleProxyAnnouncement(announcement)));
             } catch (Exception e) {
                 LOGGER.warning("Failed to deserialize proxy announcement: " + e.getMessage());
             }
@@ -692,9 +700,11 @@ public class ServerLifecycleFeature implements PluginFeature {
         // Handle proxy request for registrations (when new proxy comes online)
         messageBus.subscribe(ChannelConstants.PROXY_REQUEST_REGISTRATIONS, envelope -> {
             try {
-                LOGGER.info("New proxy came online - sending our registration");
-                // Send our registration information with current ID (permanent if already assigned)
-                sendInitialRegistration();
+                runtime.enqueue(RuntimeIntent.of("handle proxy registration request", runtime.epoch(), ignored -> {
+                    LOGGER.info("New proxy came online - sending our registration");
+                    // Send our registration information with current ID (permanent if already assigned)
+                    sendInitialRegistration();
+                }));
             } catch (Exception e) {
                 LOGGER.warning("Failed to handle registration request: " + e.getMessage());
             }
@@ -703,15 +713,17 @@ public class ServerLifecycleFeature implements PluginFeature {
         // Handle registry re-registration requests (when registry restarts)
         messageBus.subscribe(ChannelConstants.REGISTRY_REREGISTRATION_REQUEST, envelope -> {
             try {
-                LOGGER.info("Registry Service requested re-registration - sending our current registration");
-                // Re-send our registration with current ID
-                sendInitialRegistration();
-                
-                // If we're already registered, also send an immediate heartbeat
-                if (registered.get()) {
-                    sendHeartbeat();
-                    LOGGER.info("Sent immediate heartbeat after re-registration request");
-                }
+                runtime.enqueue(RuntimeIntent.of("handle registry re-registration request", runtime.epoch(), ignored -> {
+                    LOGGER.info("Registry Service requested re-registration - sending our current registration");
+                    // Re-send our registration with current ID
+                    sendInitialRegistration();
+
+                    // If we're already registered, also send an immediate heartbeat
+                    if (registered.get()) {
+                        sendHeartbeat();
+                        LOGGER.info("Sent immediate heartbeat after re-registration request");
+                    }
+                }));
             } catch (Exception e) {
                 LOGGER.warning("Failed to handle re-registration request: " + e.getMessage());
             }
@@ -721,13 +733,15 @@ public class ServerLifecycleFeature implements PluginFeature {
         String reregisterChannel = ChannelConstants.getServerReregisterChannel(serverIdentifier.getServerId());
         messageBus.subscribe(reregisterChannel, envelope -> {
             try {
-                LOGGER.info("Registry requested targeted re-registration for this server");
-                sendInitialRegistration();
-                
-                // Send immediate heartbeat
-                if (registered.get()) {
-                    sendHeartbeat();
-                }
+                runtime.enqueue(RuntimeIntent.of("handle targeted registry re-registration request", runtime.epoch(), ignored -> {
+                    LOGGER.info("Registry requested targeted re-registration for this server");
+                    sendInitialRegistration();
+
+                    // Send immediate heartbeat
+                    if (registered.get()) {
+                        sendHeartbeat();
+                    }
+                }));
             } catch (Exception e) {
                 LOGGER.warning("Failed to handle targeted re-registration request: " + e.getMessage());
             }
@@ -756,7 +770,8 @@ public class ServerLifecycleFeature implements PluginFeature {
                     response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
                     response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
                     
-                    handleRegistrationResponse(response);
+                    runtime.enqueue(RuntimeIntent.of("handle server registration response", runtime.epoch(),
+                        ignored -> handleRegistrationResponse(response)));
                 } else if (tempId != null) {
                     // Response for another server, ignore
                     LOGGER.fine("Ignoring registration response for different server: " + tempId);
@@ -782,7 +797,8 @@ public class ServerLifecycleFeature implements PluginFeature {
                 response.setProxyId(payload.has("proxyId") ? payload.get("proxyId").asText() : "registry");
                 response.setMessage(payload.has("message") ? payload.get("message").asText() : "");
                 
-                handleRegistrationResponse(response);
+                runtime.enqueue(RuntimeIntent.of("handle server-specific registration response", runtime.epoch(),
+                    ignored -> handleRegistrationResponse(response)));
             } catch (Exception e) {
                 LOGGER.warning("Failed to deserialize registration response on server-specific channel: " + e.getMessage());
                 e.printStackTrace();
@@ -806,7 +822,8 @@ public class ServerLifecycleFeature implements PluginFeature {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 ServerAnnouncementMessage announcement = mapper.treeToValue(envelope.getPayload(), ServerAnnouncementMessage.class);
-                handleServerAnnouncement(announcement);
+                runtime.enqueue(RuntimeIntent.of("handle server announcement " + announcement.getServerId(), runtime.epoch(),
+                    ignored -> handleServerAnnouncement(announcement)));
             } catch (Exception e) {
                 LOGGER.warning("Failed to deserialize server announcement: " + e.getMessage());
             }
@@ -872,13 +889,12 @@ public class ServerLifecycleFeature implements PluginFeature {
         
         LOGGER.warning("Received evacuation request: " + request.getReason());
         
-        // Perform evacuation asynchronously
-        CompletableFuture.runAsync(() -> {
-            evacuateAllPlayers(request);
-        });
+        runtime.enqueue(RuntimeIntent.of("evacuate players " + request.getServerId(), runtime.epoch(),
+            ignored -> evacuateAllPlayers(request)));
     }
     
     private void evacuateAllPlayers(ServerEvacuationRequest request) {
+        runtime.requirePrimary("evacuate all players");
         var players = Bukkit.getOnlinePlayers();
         int evacuatedCount = 0;
         int failedCount = 0;
@@ -951,17 +967,16 @@ public class ServerLifecycleFeature implements PluginFeature {
     
     private void transferPlayer(Player player, String targetServer) {
         // Using BungeeCord messaging channel for compatibility
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            try {
-                ByteArrayOutputStream b = new ByteArrayOutputStream();
-                DataOutputStream out = new DataOutputStream(b);
-                out.writeUTF("Connect");
-                out.writeUTF(targetServer);
-                player.sendPluginMessage(plugin, "BungeeCord", b.toByteArray());
-            } catch (Exception e) {
-                LOGGER.severe("Failed to send player transfer message: " + e.getMessage());
-            }
-        });
+        runtime.requirePrimary("transfer player");
+        try {
+            ByteArrayOutputStream b = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(b);
+            out.writeUTF("Connect");
+            out.writeUTF(targetServer);
+            player.sendPluginMessage(plugin, "BungeeCord", b.toByteArray());
+        } catch (Exception e) {
+            LOGGER.severe("Failed to send player transfer message: " + e.getMessage());
+        }
     }
     
     private void handleServerAnnouncement(ServerAnnouncementMessage announcement) {

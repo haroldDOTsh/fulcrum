@@ -1,7 +1,5 @@
 package sh.harold.fulcrum.fundamentals.playerdata;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -14,9 +12,9 @@ import sh.harold.fulcrum.api.data.DataAPI;
 import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
+import sh.harold.fulcrum.runtime.threading.PlayerSnapshot;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
@@ -29,12 +27,16 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private Logger logger;
     private DataAPI dataAPI;
     private FileConfiguration config;
+    private PaperRuntime runtime;
+    private boolean trackIps;
     
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.config = plugin.getConfig();
+        this.runtime = container.get(PaperRuntime.class);
+        this.trackIps = config.getBoolean("player-data.track-ips", false);
         
         // Get DataAPI from DependencyContainer
         this.dataAPI = container.getOptional(DataAPI.class).orElse(null);
@@ -52,122 +54,114 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
-        Player player = event.getPlayer();
-        
-        // Run async to avoid blocking main thread
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            updatePlayerData(player);
-        });
+        PlayerSnapshot snapshot = PlayerSnapshot.capture(runtime, event.getPlayer(), true);
+        runtime.runAsync("player data join save", () -> updatePlayerData(snapshot));
     }
     
-    private void updatePlayerData(Player player) {
+    private void updatePlayerData(PlayerSnapshot snapshot) {
         try {
             // Access player document
-            Document playerDoc = dataAPI.collection(PLAYERS_COLLECTION).document(player.getUniqueId().toString());
+            Document playerDoc = dataAPI.collection(PLAYERS_COLLECTION).document(snapshot.playerId().toString());
             
             boolean exists = playerDoc.exists();
             
             if (!exists) {
                 // Create new player document with unified structure
-                logger.info("Creating new player document for: " + player.getName() + " (" + player.getUniqueId() + ")");
+                logger.info("Creating new player document for: " + snapshot.username() + " (" + snapshot.playerId() + ")");
                 
                 // Core fields - consistent across all servers
-                playerDoc.set("uuid", player.getUniqueId().toString());
-                playerDoc.set("username", player.getName());
-                playerDoc.set("firstJoin", System.currentTimeMillis());
-                playerDoc.set("lastJoin", System.currentTimeMillis());
-                playerDoc.set("lastSeen", System.currentTimeMillis());
+                playerDoc.set("uuid", snapshot.playerId().toString());
+                playerDoc.set("username", snapshot.username());
+                playerDoc.set("firstJoin", snapshot.capturedAtMillis());
+                playerDoc.set("lastJoin", snapshot.capturedAtMillis());
+                playerDoc.set("lastSeen", snapshot.capturedAtMillis());
                 playerDoc.set("joinCount", 1);
                 playerDoc.set("totalPlaytime", 0L);
             } else {
                 // Update existing player document
-                logger.fine("Updating existing player document for: " + player.getName());
+                logger.fine("Updating existing player document for: " + snapshot.username());
                 
                 // Update core fields
-                playerDoc.set("username", player.getName());
+                playerDoc.set("username", snapshot.username());
                 
                 // Check if this is a new session (last join was more than 30 seconds ago)
                 // Handle numeric type conversion (JSON storage may return Double instead of Long)
                 Long lastJoin = getNumericAsLong(playerDoc.get("lastJoin"), 0L);
                 
-                if (System.currentTimeMillis() - lastJoin > 30000) {
+                if (snapshot.capturedAtMillis() - lastJoin > 30000) {
                     Integer joinCount = getNumericAsInteger(playerDoc.get("joinCount"), 0);
                     playerDoc.set("joinCount", joinCount + 1);
                 }
                 
-                playerDoc.set("lastJoin", System.currentTimeMillis());
-                playerDoc.set("lastSeen", System.currentTimeMillis());
+                playerDoc.set("lastJoin", snapshot.capturedAtMillis());
+                playerDoc.set("lastSeen", snapshot.capturedAtMillis());
             }
             
             // Update backend-specific fields
-            Location loc = player.getLocation();
-            playerDoc.set("lastWorld", player.getWorld().getName());
-            playerDoc.set("lastLocation", String.format("%.2f,%.2f,%.2f",
-                loc.getX(), loc.getY(), loc.getZ()));
-            playerDoc.set("gamemode", player.getGameMode().toString());
+            playerDoc.set("online", snapshot.online());
+            playerDoc.set("lastWorld", snapshot.worldName());
+            playerDoc.set("lastLocation", snapshot.compactLocation());
+            playerDoc.set("gamemode", snapshot.gameMode());
             
             // Update player stats
-            playerDoc.set("level", player.getLevel());
-            playerDoc.set("exp", player.getExp());
-            playerDoc.set("health", player.getHealth());
-            playerDoc.set("foodLevel", player.getFoodLevel());
+            playerDoc.set("level", snapshot.level());
+            playerDoc.set("exp", snapshot.exp());
+            playerDoc.set("health", snapshot.health());
+            playerDoc.set("foodLevel", snapshot.foodLevel());
             
             // Update IP if tracking is enabled (unified field)
-            if (config.getBoolean("player-data.track-ips", false)) {
-                if (player.getAddress() != null) {
-                    playerDoc.set("lastIp", player.getAddress().getAddress().getHostAddress());
-                }
+            if (trackIps && snapshot.ipAddress() != null) {
+                playerDoc.set("lastIp", snapshot.ipAddress());
             }
             
-            logger.fine("Successfully updated player data for " + player.getName());
+            logger.fine("Successfully updated player data for " + snapshot.username());
             
         } catch (Exception e) {
-            logger.log(Level.WARNING, "Failed to update player data for " + player.getName(), e);
+            logger.log(Level.WARNING, "Failed to update player data for " + snapshot.username(), e);
         }
     }
     
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
-        Player player = event.getPlayer();
-        
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        PlayerSnapshot snapshot = PlayerSnapshot.capture(runtime, event.getPlayer(), false);
+        runtime.runAsync("player data quit save", () -> updateQuitData(snapshot));
+    }
+
+    private void updateQuitData(PlayerSnapshot snapshot) {
             try {
-                Document playerDoc = dataAPI.collection(PLAYERS_COLLECTION).document(player.getUniqueId().toString());
+                Document playerDoc = dataAPI.collection(PLAYERS_COLLECTION).document(snapshot.playerId().toString());
                     
                 if (!playerDoc.exists()) {
-                    logger.warning("Player document not found for quitting player: " + player.getName());
+                    logger.warning("Player document not found for quitting player: " + snapshot.username());
                     return;
                 }
                 
                 // Update last seen
-                playerDoc.set("lastSeen", System.currentTimeMillis());
+                playerDoc.set("lastSeen", snapshot.capturedAtMillis());
                 playerDoc.set("online", false);
                 
                 // Save last location and game state before quit
-                Location loc = player.getLocation();
-                playerDoc.set("lastWorld", player.getWorld().getName());
-                playerDoc.set("lastLocation", String.format("%.2f,%.2f,%.2f",
-                    loc.getX(), loc.getY(), loc.getZ()));
-                playerDoc.set("gamemode", player.getGameMode().toString());
+                playerDoc.set("lastWorld", snapshot.worldName());
+                playerDoc.set("lastLocation", snapshot.compactLocation());
+                playerDoc.set("gamemode", snapshot.gameMode());
                 
                 // Calculate and update session time
                 // Handle numeric type conversion (JSON storage may return Double instead of Long)
                 Long lastJoin = getNumericAsLong(playerDoc.get("lastJoin"), 0L);
                 if (lastJoin > 0) {
-                    long sessionDuration = System.currentTimeMillis() - lastJoin;
+                    long sessionDuration = snapshot.capturedAtMillis() - lastJoin;
                     Long totalPlaytime = getNumericAsLong(playerDoc.get("totalPlaytime"), 0L);
                     playerDoc.set("totalPlaytime", totalPlaytime + sessionDuration);
                     
                     logger.fine(String.format("Updated playtime for %s: session %d ms, total %d ms",
-                               player.getName(), sessionDuration, totalPlaytime + sessionDuration));
+                               snapshot.username(), sessionDuration, totalPlaytime + sessionDuration));
                 }
                 
-                logger.info("Updated quit data for player: " + player.getName());
+                logger.info("Updated quit data for player: " + snapshot.username());
                 
             } catch (Exception e) {
-                logger.log(Level.WARNING, "Failed to update quit data for " + player.getName(), e);
+                logger.log(Level.WARNING, "Failed to update quit data for " + snapshot.username(), e);
             }
-        });
     }
     
     /**
@@ -175,7 +169,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
      * Checks for document existence to ensure compatibility with proxy
      */
     public CompletableFuture<Document> getPlayerData(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> {
+        return runtime.supplyAsync("player data get", () -> {
             try {
                 Document doc = dataAPI.collection(PLAYERS_COLLECTION).document(uuid.toString());
                 return doc.exists() ? doc : null;
@@ -190,7 +184,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
      * Check if a player document exists before creating
      */
     public CompletableFuture<Boolean> playerDataExists(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> {
+        return runtime.supplyAsync("player data exists", () -> {
             try {
                 Document doc = dataAPI.collection(PLAYERS_COLLECTION).document(uuid.toString());
                 return doc.exists();
@@ -213,7 +207,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     
     @Override
     public Class<?>[] getDependencies() {
-        return new Class<?>[] { DataAPI.class };
+        return new Class<?>[] { DataAPI.class, PaperRuntime.class };
     }
     
     /**

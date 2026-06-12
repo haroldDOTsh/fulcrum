@@ -334,7 +334,7 @@ public class DefaultCustomMenuBuilder implements CustomMenuBuilder {
     }
     
     private CompletableFuture<Menu> buildAsync(Player player, boolean allowNullPlayer) {
-        return CompletableFuture.supplyAsync(() -> {
+        return menuService.getRuntime().callSync("build custom menu", () -> {
             // Generate unique menu ID
             String menuId = "custom-menu-" + UUID.randomUUID();
             

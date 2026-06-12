@@ -6,6 +6,7 @@ import sh.harold.fulcrum.api.menu.MenuRegistry;
 import sh.harold.fulcrum.api.menu.MenuService;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 public class MenuFeature implements PluginFeature {
     
@@ -14,12 +15,13 @@ public class MenuFeature implements PluginFeature {
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
+        PaperRuntime runtime = container.get(PaperRuntime.class);
         // Create menu registry
         DefaultMenuRegistry menuRegistry = new DefaultMenuRegistry();
         container.register(MenuRegistry.class, menuRegistry);
         
         // Create simplified menu service
-        menuService = new DefaultMenuService(plugin, menuRegistry);
+        menuService = new DefaultMenuService(plugin, menuRegistry, runtime);
         container.register(MenuService.class, menuService);
         
         // Register MenuService with Bukkit's ServicesManager for access from other components
@@ -53,5 +55,10 @@ public class MenuFeature implements PluginFeature {
     @Override
     public int getPriority() {
         return 25; // Load after message-api (priority 1) but before other features
+    }
+
+    @Override
+    public Class<?>[] getDependencies() {
+        return new Class<?>[] { PaperRuntime.class };
     }
 }

@@ -13,6 +13,7 @@ import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
 import sh.harold.fulcrum.minigame.listener.PlayerRoutingListener;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.listener.SpectatorListener;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 /**
  * Bootstraps the minigame engine and registers it in the service locator.
@@ -23,6 +24,7 @@ public class MinigameEngineFeature implements PluginFeature {
     private PlayerRouteRegistry routeRegistry;
     private PlayerRoutingListener routingListener;
     private MinigameEnvironmentService environmentService;
+    private PaperRuntime runtime;
 
     @Override
     public int getPriority() {
@@ -31,6 +33,7 @@ public class MinigameEngineFeature implements PluginFeature {
 
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
+        runtime = container.get(PaperRuntime.class);
         routeRegistry = new PlayerRouteRegistry();
         container.register(PlayerRouteRegistry.class, routeRegistry);
         environmentService = createEnvironmentService(plugin, container);
@@ -41,7 +44,7 @@ public class MinigameEngineFeature implements PluginFeature {
         if (orchestrator == null) {
             plugin.getLogger().warning("SimpleSlotOrchestrator unavailable; provisioning events will be deferred.");
         }
-        engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator);
+        engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, runtime);
         if (orchestrator != null) {
             orchestrator.addProvisionListener(engine::handleProvisionedSlot);
         }
@@ -82,6 +85,7 @@ public class MinigameEngineFeature implements PluginFeature {
         }
         routeRegistry = null;
         environmentService = null;
+        runtime = null;
     }
 
     private MinigameEnvironmentService createEnvironmentService(JavaPlugin plugin, DependencyContainer container) {
@@ -98,6 +102,11 @@ public class MinigameEngineFeature implements PluginFeature {
             return null;
         }
         Logger logger = plugin.getLogger();
-        return new MinigameEnvironmentService(logger, worldService, worldManager);
+        return new MinigameEnvironmentService(logger, worldService, worldManager, runtime);
+    }
+
+    @Override
+    public Class<?>[] getDependencies() {
+        return new Class<?>[] { PaperRuntime.class };
     }
 }
