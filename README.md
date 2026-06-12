@@ -66,8 +66,8 @@ rankService.setRank(playerId, Rank.VIP, expiration);
 
 ## Requirements
 
-- Java 21
-- Minecraft 1.21+ (Paper/Spigot)
+- Java 25 for the Paper runtime; Java 17/21 for individual API and service modules as configured
+- Paper 26.1.2+
 - Optional: Redis for message bus
 - Optional: MongoDB for data storage
 

@@ -3,9 +3,9 @@ import xyz.jpenilla.runpaper.task.RunServer
 
 plugins {
     java
-    id("com.gradleup.shadow") version "9.0.0-beta17"
-    id("xyz.jpenilla.run-paper") version "2.3.1"
-    id("io.papermc.paperweight.userdev") version "2.0.0-beta.18"
+    id("com.gradleup.shadow") version "9.4.2"
+    id("xyz.jpenilla.run-paper") version "3.0.2"
+    id("io.papermc.paperweight.userdev") version "2.0.0-beta.21"
 }
 
 group = "sh.harold.fulcrum"
@@ -22,8 +22,8 @@ dependencies {
     implementation(project(":message-bus-api"))
     implementation(project(":data-api"))
 
-    // Paper API (temporary fallback until userdev configuration is resolved)
-    paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.21.8-R0.1-SNAPSHOT")
+    // Paper 26.1 dev bundle includes the Paper API and server internals for userdev.
+    paperweight.paperDevBundle("26.1.2.build.+")
 
     // Other runtime deps
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
@@ -52,7 +52,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
 }
 
-val targetJavaVersion = 21
+val targetJavaVersion = 25
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(targetJavaVersion))
@@ -69,7 +69,7 @@ tasks.named<Copy>("processResources") {
     val props = mapOf("version" to version)
     inputs.properties(props)
     filteringCharset = "UTF-8"
-    filesMatching("plugin.yml") {
+    filesMatching("paper-plugin.yml") {
         expand(props)
     }
 }
@@ -113,7 +113,7 @@ tasks.named("build") {
 // Ensure runServer uses the shaded jar
 tasks.named<RunServer>("runServer") {
     systemProperty("com.mojang.eula.agree", "true")
-    minecraftVersion("1.21.8")
+    minecraftVersion("26.1.2")
     dependsOn(tasks.named("shadowJar"))
     pluginJars.setFrom(tasks.named<ShadowJar>("shadowJar").map { it.archiveFile })
 }

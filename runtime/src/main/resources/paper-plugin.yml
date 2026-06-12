@@ -4,7 +4,7 @@ main: sh.harold.fulcrum.FulcrumPlugin
 description: DEEZ
 author: Hqrxld, ZECHEESELORD
 website: https://github.com/harold-waste/fulcrum
-api-version: '1.21'
+api-version: '26.1.2'
 folia-supported: false
 
 # Bootstrap configuration

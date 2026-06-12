@@ -71,7 +71,7 @@ name: MyModule
 version: 1.0.0
 main: com.example.MyModulePlugin
 bootstrapper: com.example.MyModuleBootstrapper
-api-version: '1.21'
+api-version: '26.1.2'
 ```
 
 ## Service Integration

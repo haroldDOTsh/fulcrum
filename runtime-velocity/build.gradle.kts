@@ -1,8 +1,8 @@
 plugins {
     id("java-library")
     id("maven-publish")
-    id("xyz.jpenilla.run-velocity") version "2.3.1"
-    id("com.gradleup.shadow") version "9.0.0-beta17"
+    id("xyz.jpenilla.run-velocity") version "3.0.2"
+    id("com.gradleup.shadow") version "9.4.2"
 }
 
 group = "sh.harold.fulcrum"
@@ -18,8 +18,8 @@ dependencies {
     api(project(":data-api"))
     
     // Velocity API
-    compileOnly("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
-    annotationProcessor("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
+    compileOnly("com.velocitypowered:velocity-api:3.4.0-SNAPSHOT")
+    annotationProcessor("com.velocitypowered:velocity-api:3.4.0-SNAPSHOT")
     
     // Redis client - using Lettuce for consistency with Paper servers
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
