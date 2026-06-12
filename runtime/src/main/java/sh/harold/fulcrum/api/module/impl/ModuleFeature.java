@@ -31,6 +31,7 @@ public class ModuleFeature implements PluginFeature {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public void initialize(JavaPlugin plugin) {
         // Legacy initialization - just store the plugin reference
         this.plugin = plugin;

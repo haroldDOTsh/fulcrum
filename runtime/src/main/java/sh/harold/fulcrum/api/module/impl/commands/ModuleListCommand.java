@@ -56,9 +56,9 @@ public final class ModuleListCommand {
         sender.sendMessage(Component.text("=== Fulcrum Runtime Info ===", NamedTextColor.GOLD, TextDecoration.BOLD));
 
         if (plugin != null) {
-            var description = plugin.getDescription();
-            sender.sendMessage(line("Plugin", description.getFullName()));
-            sender.sendMessage(line("Version", description.getVersion()));
+            var metadata = plugin.getPluginMeta();
+            sender.sendMessage(line("Plugin", metadata.getDisplayName() + " v" + metadata.getVersion()));
+            sender.sendMessage(line("Version", metadata.getVersion()));
         }
 
         String environment = FulcrumEnvironment.getCurrent();
