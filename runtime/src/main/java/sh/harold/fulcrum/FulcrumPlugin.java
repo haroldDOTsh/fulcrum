@@ -30,12 +30,16 @@ import sh.harold.fulcrum.minigame.MinigameModule;
 import sh.harold.fulcrum.minigame.MinigameEngineFeature;
 import sh.harold.fulcrum.minigame.MinigameRegistration;
 import sh.harold.fulcrum.fundamentals.minigame.debug.DebugMinigameFeature;
+import sh.harold.fulcrum.runtime.threading.BukkitPaperRuntime;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
+import sh.harold.fulcrum.runtime.threading.ThreadPolicy;
 
 public final class FulcrumPlugin extends JavaPlugin {
     private ModuleManager moduleManager;
     private SlotFamilyService slotFamilyService;
     private DependencyContainer container;
     private ModuleVerificationManager verificationManager;
+    private PaperRuntime paperRuntime;
 
     public ModuleManager getModuleManager() {
         return moduleManager;
@@ -54,6 +58,12 @@ public final class FulcrumPlugin extends JavaPlugin {
         // Initialize dependency container
         container = new DependencyContainer();
         ServiceLocatorImpl serviceLocator = new ServiceLocatorImpl(container);
+        ThreadPolicy threadPolicy = getConfig().getBoolean("threading.fail-fast",
+            getConfig().getBoolean("development-mode", false))
+            ? ThreadPolicy.FAIL_FAST
+            : ThreadPolicy.REFUSE_AND_LOG;
+        paperRuntime = new BukkitPaperRuntime(this, threadPolicy);
+        container.register(PaperRuntime.class, paperRuntime);
 
         CommandRegistrar.hook(this);
 
@@ -125,6 +135,10 @@ public final class FulcrumPlugin extends JavaPlugin {
             moduleManager.disableAll();
         }
         FeatureManager.shutdownAll();
+        if (paperRuntime != null) {
+            paperRuntime.close();
+            paperRuntime = null;
+        }
         CommandRegistrar.reset();
         ServiceLocatorImpl.reset();
         FulcrumPlatformHolder.reset();

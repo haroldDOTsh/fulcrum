@@ -7,6 +7,7 @@ import sh.harold.fulcrum.api.module.ServiceLocator;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
+import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.util.logging.Logger;
 
@@ -15,6 +16,7 @@ public class DataAPIFeature implements PluginFeature {
     private Logger logger;
     private FulcrumConnectionAdapter connectionAdapter;
     private DataAPI dataAPI;
+    private PaperRuntime runtime;
     
     @Override
     public void initialize(JavaPlugin plugin, DependencyContainer container) {
@@ -23,13 +25,15 @@ public class DataAPIFeature implements PluginFeature {
         
         try {
             logger.info("Initializing Data API feature...");
+
+            runtime = container.get(PaperRuntime.class);
             
             // Create connection adapter
             connectionAdapter = new FulcrumConnectionAdapter(plugin);
             ConnectionAdapter adapter = connectionAdapter.createAdapter();
             
             // Create DataAPI instance
-            dataAPI = DataAPI.create(adapter);
+            dataAPI = DataAPI.create(adapter, runtime.asyncExecutor());
             
             // Register with both DependencyContainer and ServiceLocator
             container.register(DataAPI.class, dataAPI);
@@ -70,6 +74,11 @@ public class DataAPIFeature implements PluginFeature {
     @Override
     public int getPriority() {
         return 10; // Initialize early as other features may depend on it
+    }
+
+    @Override
+    public Class<?>[] getDependencies() {
+        return new Class<?>[] { PaperRuntime.class };
     }
     
     /**
