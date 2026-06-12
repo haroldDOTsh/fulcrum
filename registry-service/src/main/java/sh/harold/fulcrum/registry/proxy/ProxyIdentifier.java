@@ -27,11 +27,11 @@ public final class ProxyIdentifier implements Serializable, Comparable<ProxyIden
      * Format: proxy-{uuid}-{instance}-{timestamp}
      */
     private static final Pattern ID_PATTERN = Pattern.compile(
-        "^proxy-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})-([0-9]{2})-(\\d+)$",
+        "^proxy-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})-([0-9]{1,2})-(\\d+)$",
         Pattern.CASE_INSENSITIVE
     );
     
-    private static final String ID_FORMAT = "proxy-%s-%02d-%d";
+    private static final String ID_FORMAT = "proxy-%s-%d-%d";
     private static final String DEFAULT_VERSION = "1.0.0";
     
     private final UUID uuid;
@@ -170,27 +170,25 @@ public final class ProxyIdentifier implements Serializable, Comparable<ProxyIden
             return parse(legacyId);
         }
         
-        // Handle temp-proxy-{uuid} format
-        if (legacyId.startsWith("temp-proxy-")) {
-            String uuidPart = legacyId.substring("temp-proxy-".length());
-            try {
-                UUID uuid = UUID.fromString(uuidPart);
-                return new ProxyIdentifier(uuid, 0, Instant.now().toEpochMilli(), DEFAULT_VERSION);
-            } catch (Exception e) {
-                // Fall through to next attempt
-            }
-        }
-        
-        // Handle fulcrum-proxy-{number} format
-        if (legacyId.startsWith("fulcrum-proxy-")) {
-            String numberPart = legacyId.substring("fulcrum-proxy-".length());
+        String normalized = legacyId.trim().toLowerCase();
+        if (normalized.startsWith("temp-proxy-") || normalized.startsWith("fulcrum-proxy-")) {
+            String numberPart = normalized.startsWith("temp-proxy-")
+                ? legacyId.trim().substring("temp-proxy-".length())
+                : legacyId.trim().substring("fulcrum-proxy-".length());
+
             try {
                 int instanceId = Integer.parseInt(numberPart);
-                // Generate a deterministic UUID from the legacy ID
                 UUID uuid = UUID.nameUUIDFromBytes(legacyId.getBytes());
                 return new ProxyIdentifier(uuid, instanceId % 100, Instant.now().toEpochMilli(), DEFAULT_VERSION);
-            } catch (Exception e) {
-                // Fall through to default
+            } catch (NumberFormatException ignored) {
+                if (normalized.startsWith("temp-proxy-")) {
+                    try {
+                        UUID uuid = UUID.fromString(numberPart);
+                        return new ProxyIdentifier(uuid, 0, Instant.now().toEpochMilli(), DEFAULT_VERSION);
+                    } catch (Exception ignoredUuid) {
+                        // Fall through to default
+                    }
+                }
             }
         }
         
@@ -208,9 +206,9 @@ public final class ProxyIdentifier implements Serializable, Comparable<ProxyIden
     }
     
     private static void validateTimestamp(long timestamp) {
-        if (timestamp < 0) {
+        if (timestamp <= 0) {
             throw new IllegalArgumentException(
-                "Timestamp cannot be negative, got: " + timestamp
+                "Timestamp must be positive, got: " + timestamp
             );
         }
         // Sanity check: timestamp should not be in the far future (more than 1 year ahead)

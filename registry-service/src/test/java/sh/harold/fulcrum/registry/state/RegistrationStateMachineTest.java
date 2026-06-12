@@ -13,6 +13,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -225,7 +226,7 @@ public class RegistrationStateMachineTest {
     public void testRemoveListener() {
         AtomicBoolean listenerCalled = new AtomicBoolean(false);
         
-        var listener = (StateTransitionEvent event) -> listenerCalled.set(true);
+        Consumer<StateTransitionEvent> listener = event -> listenerCalled.set(true);
         stateMachine.addStateChangeListener(listener);
         stateMachine.removeStateChangeListener(listener);
         
