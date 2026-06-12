@@ -13,6 +13,8 @@ import sh.harold.fulcrum.api.data.storage.StorageBackend;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -26,11 +28,17 @@ public class MongoStorageBackend implements StorageBackend {
     private final MongoConnectionAdapter connectionAdapter;
     private final MongoDatabase database;
     private final MongoClient mongoClient;
+    private final Executor executor;
     
     public MongoStorageBackend(MongoConnectionAdapter connectionAdapter) {
+        this(connectionAdapter, ForkJoinPool.commonPool());
+    }
+
+    public MongoStorageBackend(MongoConnectionAdapter connectionAdapter, Executor executor) {
         this.connectionAdapter = connectionAdapter;
         this.database = connectionAdapter.getMongoDatabase();
         this.mongoClient = connectionAdapter.getMongoClient();
+        this.executor = executor != null ? executor : ForkJoinPool.commonPool();
     }
     
     @Override
@@ -45,7 +53,7 @@ public class MongoStorageBackend implements StorageBackend {
             }
             
             return new DocumentImpl(collection, id, data, this);
-        });
+        }, executor);
     }
     
     @Override
@@ -58,7 +66,7 @@ public class MongoStorageBackend implements StorageBackend {
             
             ReplaceOptions options = new ReplaceOptions().upsert(true);
             mongoCollection.replaceOne(Filters.eq(ID_FIELD, id), mongoDoc, options);
-        });
+        }, executor);
     }
     
     @Override
@@ -67,7 +75,7 @@ public class MongoStorageBackend implements StorageBackend {
             MongoCollection<Document> mongoCollection = database.getCollection(collection);
             DeleteResult result = mongoCollection.deleteOne(Filters.eq(ID_FIELD, id));
             return result.getDeletedCount() > 0;
-        });
+        }, executor);
     }
     
     @Override
@@ -112,7 +120,7 @@ public class MongoStorageBackend implements StorageBackend {
             }
             
             return results;
-        });
+        }, executor);
     }
     
     @Override
@@ -131,7 +139,7 @@ public class MongoStorageBackend implements StorageBackend {
             }
             
             return mongoCollection.countDocuments();
-        });
+        }, executor);
     }
     
     @Override
@@ -150,7 +158,7 @@ public class MongoStorageBackend implements StorageBackend {
             }
             
             return results;
-        });
+        }, executor);
     }
     
     /**
@@ -168,7 +176,7 @@ public class MongoStorageBackend implements StorageBackend {
             
             UpdateOptions options = new UpdateOptions().upsert(false);
             mongoCollection.updateOne(filter, update, options);
-        });
+        }, executor);
     }
     
     /**
@@ -185,7 +193,7 @@ public class MongoStorageBackend implements StorageBackend {
             
             UpdateOptions options = new UpdateOptions().upsert(false);
             mongoCollection.updateOne(filter, update, options);
-        });
+        }, executor);
     }
     
     /**
@@ -202,7 +210,7 @@ public class MongoStorageBackend implements StorageBackend {
             
             UpdateOptions options = new UpdateOptions().upsert(false);
             mongoCollection.updateOne(filter, update, options);
-        });
+        }, executor);
     }
     
     /**
@@ -219,7 +227,7 @@ public class MongoStorageBackend implements StorageBackend {
             
             UpdateOptions options = new UpdateOptions().upsert(false);
             mongoCollection.updateOne(filter, update, options);
-        });
+        }, executor);
     }
     
     /**
@@ -238,7 +246,7 @@ public class MongoStorageBackend implements StorageBackend {
                     throw new RuntimeException("Transaction failed", e);
                 }
             }
-        });
+        }, executor);
     }
     
     /**

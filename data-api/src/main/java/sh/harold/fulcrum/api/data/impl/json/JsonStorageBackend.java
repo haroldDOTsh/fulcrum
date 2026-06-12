@@ -33,7 +33,7 @@ public class JsonStorageBackend implements StorageBackend {
     
     private final Path basePath;
     private final Gson gson;
-    private final ExecutorService executor;
+    private final Executor executor;
     private final Map<String, ReadWriteLock> collectionLocks;
     private final LRUCache<String, Map<String, Object>> cache;
     private final int cacheSize;
@@ -47,13 +47,17 @@ public class JsonStorageBackend implements StorageBackend {
     }
     
     public JsonStorageBackend(Path basePath, int cacheSize, boolean enableCache) {
+        this(basePath, cacheSize, enableCache, ForkJoinPool.commonPool());
+    }
+
+    public JsonStorageBackend(Path basePath, int cacheSize, boolean enableCache, Executor executor) {
         this.basePath = basePath;
         this.cacheSize = cacheSize;
         this.enableCache = enableCache;
         this.gson = new GsonBuilder()
             .setPrettyPrinting()
             .create();
-        this.executor = ForkJoinPool.commonPool();
+        this.executor = executor != null ? executor : ForkJoinPool.commonPool();
         this.collectionLocks = new ConcurrentHashMap<>();
         this.cache = enableCache ? new LRUCache<>(cacheSize) : null;
         

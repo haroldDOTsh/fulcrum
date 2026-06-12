@@ -13,6 +13,8 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 
 /**
  * PostgreSQL implementation of StorageBackend.
@@ -25,9 +27,15 @@ public class PostgresStorageBackend implements StorageBackend {
     private final PostgresConnectionAdapter connectionAdapter;
     private final Gson gson = new Gson();
     private final Map<String, Boolean> tableExistence = new ConcurrentHashMap<>();
+    private final Executor executor;
     
     public PostgresStorageBackend(PostgresConnectionAdapter connectionAdapter) {
+        this(connectionAdapter, ForkJoinPool.commonPool());
+    }
+
+    public PostgresStorageBackend(PostgresConnectionAdapter connectionAdapter, Executor executor) {
         this.connectionAdapter = connectionAdapter;
+        this.executor = executor != null ? executor : ForkJoinPool.commonPool();
     }
     
     @Override
@@ -55,7 +63,7 @@ public class PostgresStorageBackend implements StorageBackend {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to get document: " + e.getMessage(), e);
             }
-        });
+        }, executor);
     }
     
     @Override
@@ -77,7 +85,7 @@ public class PostgresStorageBackend implements StorageBackend {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to save document: " + e.getMessage(), e);
             }
-        });
+        }, executor);
     }
     
     @Override
@@ -96,7 +104,7 @@ public class PostgresStorageBackend implements StorageBackend {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to delete document: " + e.getMessage(), e);
             }
-        });
+        }, executor);
     }
     
     @Override
@@ -155,7 +163,7 @@ public class PostgresStorageBackend implements StorageBackend {
             }
             
             return results;
-        });
+        }, executor);
     }
     
     @Override
@@ -190,7 +198,7 @@ public class PostgresStorageBackend implements StorageBackend {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to count documents: " + e.getMessage(), e);
             }
-        });
+        }, executor);
     }
     
     @Override
@@ -220,7 +228,7 @@ public class PostgresStorageBackend implements StorageBackend {
             }
             
             return results;
-        });
+        }, executor);
     }
     /**
      * Update a specific field in a document using JSONB operators.
@@ -244,7 +252,7 @@ public class PostgresStorageBackend implements StorageBackend {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to update field: " + e.getMessage(), e);
             }
-        });
+        }, executor);
     }
     
     /**
@@ -271,7 +279,7 @@ public class PostgresStorageBackend implements StorageBackend {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to increment field: " + e.getMessage(), e);
             }
-        });
+        }, executor);
     }
     
     /**

@@ -5,6 +5,7 @@ import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageBackend;
 import sh.harold.fulcrum.api.data.transaction.Transaction;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 
 /**
  * Main entry point for the Data API.
@@ -20,6 +21,10 @@ public interface DataAPI {
      */
     static DataAPI create(ConnectionAdapter adapter) {
         return DataAPIImpl.create(adapter);
+    }
+
+    static DataAPI create(ConnectionAdapter adapter, Executor executor) {
+        return DataAPIImpl.create(adapter, executor);
     }
     
     /**

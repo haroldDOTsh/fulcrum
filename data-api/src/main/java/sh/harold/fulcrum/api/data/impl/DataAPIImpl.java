@@ -8,11 +8,14 @@ import sh.harold.fulcrum.api.data.storage.StorageBackend;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 import sh.harold.fulcrum.api.data.impl.json.JsonStorageBackend;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoStorageBackend;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresStorageBackend;
 import sh.harold.fulcrum.api.data.transaction.Transaction;
 import sh.harold.fulcrum.api.data.transaction.TransactionImpl;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.Map;
 
 /**
@@ -24,9 +27,11 @@ public class DataAPIImpl implements DataAPI {
     private final ConnectionAdapter adapter;
     private final StorageBackend backend;
     private final Map<String, Collection> collectionCache;
+    private final Executor executor;
     
-    private DataAPIImpl(ConnectionAdapter adapter) {
+    private DataAPIImpl(ConnectionAdapter adapter, Executor executor) {
         this.adapter = adapter;
+        this.executor = executor != null ? executor : ForkJoinPool.commonPool();
         this.backend = createBackend(adapter.getStorageType());
         this.collectionCache = new ConcurrentHashMap<>();
     }
@@ -38,7 +43,11 @@ public class DataAPIImpl implements DataAPI {
      * @return A new DataAPI instance
      */
     public static DataAPI create(ConnectionAdapter adapter) {
-        return new DataAPIImpl(adapter);
+        return new DataAPIImpl(adapter, ForkJoinPool.commonPool());
+    }
+
+    public static DataAPI create(ConnectionAdapter adapter, Executor executor) {
+        return new DataAPIImpl(adapter, executor);
     }
     
     private StorageBackend createBackend(StorageType storageType) {
@@ -46,22 +55,28 @@ public class DataAPIImpl implements DataAPI {
             case MONGODB:
                 // MongoDB backend needs MongoConnectionAdapter
                 if (adapter instanceof sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter) {
-                    return new MongoStorageBackend((sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter) adapter);
+                    return new MongoStorageBackend((sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter) adapter, executor);
                 }
                 throw new IllegalStateException("MongoDB connection adapter not available");
             
             case JSON:
                 // JSON backend needs the storage path from adapter
                 if (adapter.getJsonStoragePath() != null) {
-                    return new JsonStorageBackend(adapter.getJsonStoragePath());
+                    return new JsonStorageBackend(adapter.getJsonStoragePath(), 1000, true, executor);
                 }
                 throw new IllegalStateException("JSON storage path not available");
             
             case IN_MEMORY:
-                return new InMemoryStorageBackend();
+                return new InMemoryStorageBackend(executor);
+
+            case POSTGRES:
+                if (adapter instanceof sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter postgresAdapter) {
+                    return new PostgresStorageBackend(postgresAdapter, executor);
+                }
+                throw new IllegalStateException("PostgreSQL connection adapter not available");
                 
             default:
-                return new InMemoryStorageBackend();
+                return new InMemoryStorageBackend(executor);
         }
     }
     
