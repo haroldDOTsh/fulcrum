@@ -1,6 +1,6 @@
 # Fulcrum
 
-Minecraft server framework with modular APIs for data persistence, messaging, menus, and more.
+Minecraft server framework with modular APIs for data persistence, inter-server messaging, Creative Library player UI, and more.
 
 ## Installation
 
@@ -45,22 +45,11 @@ messageBus.broadcast("event.start", eventData);
 messageBus.send("lobby-1", "player.transfer", playerData);
 ```
 
-### Menu API
-Inventory GUIs with pagination and scrollable viewports.
+### Creative Library Player UI
+Player-facing messages, menus, sounds, and scoreboards are provided by Creative Library.
 
 ```java
-menuService.createMenuBuilder()
-    .title("Shop")
-    .rows(6)
-    .addButton(buyButton, 2, 2)
-    .buildAsync(player);
-```
-
-### Message API
-Localized messages and scoreboards.
-
-```java
-Message.success("payment.complete", amount).send(player);
+Message.success("Payment complete: {amount}", Message.slot("amount", amount)).send(player);
 ```
 
 ### Rank API
@@ -81,8 +70,7 @@ rankService.setRank(playerId, Rank.VIP, expiration);
 
 - [Data Authority](data-api/README.md)
 - [Message Bus API](message-bus-api/README.md)
-- [Menu API](runtime/src/main/java/sh/harold/fulcrum/api/menu/README.md)
-- [Message API](runtime/src/main/java/sh/harold/fulcrum/api/message/README.md)
+- Creative Library provides player-facing messages, menus, sounds, and scoreboards
 - [Rank API](runtime/src/main/java/sh/harold/fulcrum/api/rank/README.md)
 - [Module API](runtime/src/main/java/sh/harold/fulcrum/api/module/README.md)
 
