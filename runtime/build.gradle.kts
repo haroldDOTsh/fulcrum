@@ -26,7 +26,6 @@ dependencies {
     paperweight.paperDevBundle("26.1.2.build.+")
 
     // Other runtime deps
-    implementation("org.mongodb:mongodb-driver-sync:4.11.1")
     implementation("org.postgresql:postgresql:42.7.4") // JDBC driver for world Postgres access
     implementation("org.yaml:snakeyaml:2.2")
     implementation("io.github.classgraph:classgraph:4.8.173")
@@ -94,8 +93,6 @@ tasks.named<ShadowJar>("shadowJar") {
         "com.fasterxml.jackson",
         "sh.harold.libraries.jackson"
     )      // From jackson-databind, jackson-core, jackson-annotations
-    relocate("com.mongodb", "sh.harold.libraries.mongodb")                // From mongodb-driver-sync
-    relocate("org.bson", "sh.harold.libraries.bson")                      // From bson + bson-record-codec
 
     // relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
     // relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")

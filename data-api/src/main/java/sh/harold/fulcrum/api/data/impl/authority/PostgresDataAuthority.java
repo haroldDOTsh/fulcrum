@@ -8,7 +8,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
@@ -19,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -26,22 +26,51 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 
 /**
- * PostgreSQL-backed command port for the authority write path.
+ * PostgreSQL-backed authority implementation for Fulcrum's durable data plane.
  */
-public final class PostgresAuthorityCommandPort implements DataAuthority.CommandPort {
+public final class PostgresDataAuthority implements DataAuthority.CommandPort,
+    DataAuthority.PlayerProfileReader,
+    DataAuthority.PlayerRankReader {
+
+    private static final List<String> REQUIRED_TABLES = List.of(
+        "authority_commands",
+        "player_profiles",
+        "player_sessions",
+        "player_rank_projection",
+        "player_rank_audit",
+        "match_records",
+        "match_participant_stats"
+    );
+
     private final PostgresConnectionAdapter connectionAdapter;
     private final Executor executor;
     private final Gson gson = new Gson();
-    private final Object schemaLock = new Object();
-    private volatile boolean schemaReady;
 
-    public PostgresAuthorityCommandPort(PostgresConnectionAdapter connectionAdapter) {
+    public PostgresDataAuthority(PostgresConnectionAdapter connectionAdapter) {
         this(connectionAdapter, ForkJoinPool.commonPool());
     }
 
-    public PostgresAuthorityCommandPort(PostgresConnectionAdapter connectionAdapter, Executor executor) {
+    public PostgresDataAuthority(PostgresConnectionAdapter connectionAdapter, Executor executor) {
         this.connectionAdapter = Objects.requireNonNull(connectionAdapter, "connectionAdapter");
         this.executor = executor != null ? executor : ForkJoinPool.commonPool();
+    }
+
+    public void validateSchema() {
+        try (Connection connection = connectionAdapter.getConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT to_regclass(?)")) {
+            for (String table : REQUIRED_TABLES) {
+                statement.setString(1, table);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next() || resultSet.getString(1) == null) {
+                        throw new IllegalStateException(
+                            "Missing required authority table '" + table + "'. Run data-api migrations before startup."
+                        );
+                    }
+                }
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to validate Postgres authority schema", exception);
+        }
     }
 
     @Override
@@ -49,12 +78,72 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
         return CompletableFuture.supplyAsync(() -> execute(command), executor);
     }
 
+    @Override
+    public CompletionStage<Optional<DataAuthority.PlayerProfileSnapshot>> findProfile(UUID playerId) {
+        Objects.requireNonNull(playerId, "playerId");
+        return CompletableFuture.supplyAsync(() -> {
+            try (Connection connection = connectionAdapter.getConnection();
+                 PreparedStatement statement = connection.prepareStatement("""
+                     SELECT player_id, username, normalized_username, online, current_server,
+                            current_proxy, total_playtime_ms, profile_data::text AS profile_data, revision
+                     FROM player_profiles
+                     WHERE player_id = ?
+                     """)) {
+                statement.setObject(1, playerId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new DataAuthority.PlayerProfileSnapshot(
+                        resultSet.getObject("player_id", UUID.class),
+                        resultSet.getString("username"),
+                        resultSet.getString("normalized_username"),
+                        resultSet.getBoolean("online"),
+                        resultSet.getString("current_server"),
+                        resultSet.getString("current_proxy"),
+                        resultSet.getLong("total_playtime_ms"),
+                        jsonMap(resultSet.getString("profile_data")),
+                        resultSet.getLong("revision")
+                    ));
+                }
+            } catch (SQLException exception) {
+                throw new IllegalStateException("Failed to read player profile " + playerId, exception);
+            }
+        }, executor);
+    }
+
+    @Override
+    public CompletionStage<Optional<DataAuthority.PlayerRankSnapshot>> findRanks(UUID playerId) {
+        Objects.requireNonNull(playerId, "playerId");
+        return CompletableFuture.supplyAsync(() -> {
+            try (Connection connection = connectionAdapter.getConnection();
+                 PreparedStatement statement = connection.prepareStatement("""
+                     SELECT player_id, primary_rank, ranks, revision
+                     FROM player_rank_projection
+                     WHERE player_id = ?
+                     """)) {
+                statement.setObject(1, playerId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new DataAuthority.PlayerRankSnapshot(
+                        resultSet.getObject("player_id", UUID.class),
+                        resultSet.getString("primary_rank"),
+                        arrayToStrings(resultSet.getArray("ranks")),
+                        resultSet.getLong("revision")
+                    ));
+                }
+            } catch (SQLException exception) {
+                throw new IllegalStateException("Failed to read player ranks " + playerId, exception);
+            }
+        }, executor);
+    }
+
     private DataAuthority.CommandResult execute(DataAuthority.CommandEnvelope command) {
         try (Connection connection = connectionAdapter.getConnection()) {
             connection.setAutoCommit(false);
             try {
-                ensureTablesOnce(connection);
-
                 DataAuthority.CommandResult existing = findExistingResult(connection, command.idempotencyKey());
                 if (existing != null) {
                     connection.commit();
@@ -113,7 +202,7 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
         String lastIp = string(payload, "lastIp", null);
         String profileJson = gson.toJson(payload);
 
-        String sql = """
+        try (PreparedStatement statement = connection.prepareStatement("""
             INSERT INTO player_profiles (
                 player_id, username, normalized_username, first_seen, last_seen, online,
                 current_server, current_proxy, last_ip, profile_data, revision, updated_at
@@ -129,9 +218,7 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
                 profile_data = player_profiles.profile_data || EXCLUDED.profile_data,
                 revision = player_profiles.revision + 1,
                 updated_at = EXCLUDED.updated_at
-            """;
-
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            """)) {
             statement.setObject(1, playerId);
             statement.setString(2, username);
             statement.setString(3, normalizedUsername);
@@ -219,7 +306,7 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
             ranks = List.of(primaryRank);
         }
 
-        String sql = """
+        try (PreparedStatement statement = connection.prepareStatement("""
             INSERT INTO player_rank_projection (player_id, primary_rank, ranks, revision, updated_at)
             VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
             ON CONFLICT (player_id) DO UPDATE SET
@@ -227,9 +314,7 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
                 ranks = EXCLUDED.ranks,
                 revision = player_rank_projection.revision + 1,
                 updated_at = CURRENT_TIMESTAMP
-            """;
-
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            """)) {
             statement.setObject(1, playerId);
             statement.setString(2, primaryRank);
             statement.setArray(3, connection.createArrayOf("text", ranks.toArray(String[]::new)));
@@ -394,7 +479,7 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
         }
 
         try (PreparedStatement statement = connection.prepareStatement("""
-            SELECT command_id, accepted, rejection_reason, result_message, result_payload, result_revision
+            SELECT command_id, accepted, rejection_reason, result_message, result_revision
             FROM authority_commands
             WHERE idempotency_key = ?
             """)) {
@@ -455,124 +540,6 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
         }
     }
 
-    private void ensureTablesOnce(Connection connection) throws SQLException {
-        if (schemaReady) {
-            return;
-        }
-        synchronized (schemaLock) {
-            if (!schemaReady) {
-                ensureTables(connection);
-                schemaReady = true;
-            }
-        }
-    }
-
-    private void ensureTables(Connection connection) throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("""
-                CREATE TABLE IF NOT EXISTS player_profiles (
-                    player_id UUID PRIMARY KEY,
-                    username VARCHAR(16) NOT NULL,
-                    normalized_username VARCHAR(16) NOT NULL,
-                    first_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    last_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    online BOOLEAN NOT NULL DEFAULT FALSE,
-                    current_server TEXT,
-                    current_proxy TEXT,
-                    total_playtime_ms BIGINT NOT NULL DEFAULT 0,
-                    last_ip TEXT,
-                    profile_data JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    revision BIGINT NOT NULL DEFAULT 0,
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """);
-            statement.execute("""
-                CREATE TABLE IF NOT EXISTS player_rank_projection (
-                    player_id UUID PRIMARY KEY,
-                    primary_rank TEXT NOT NULL,
-                    ranks TEXT[] NOT NULL,
-                    revision BIGINT NOT NULL DEFAULT 0,
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """);
-            statement.execute("""
-                CREATE TABLE IF NOT EXISTS player_rank_audit (
-                    audit_id UUID PRIMARY KEY,
-                    player_id UUID NOT NULL,
-                    rank TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    actor TEXT NOT NULL,
-                    reason TEXT,
-                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """);
-            statement.execute("""
-                CREATE TABLE IF NOT EXISTS authority_commands (
-                    command_id UUID PRIMARY KEY,
-                    command_type TEXT NOT NULL,
-                    actor TEXT NOT NULL,
-                    scope TEXT NOT NULL,
-                    idempotency_key TEXT NOT NULL UNIQUE,
-                    deadline_at TIMESTAMPTZ,
-                    fencing_token TEXT,
-                    expected_revision BIGINT NOT NULL DEFAULT 0,
-                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    accepted BOOLEAN NOT NULL,
-                    rejection_reason TEXT,
-                    result_message TEXT,
-                    result_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    result_revision BIGINT NOT NULL DEFAULT 0,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """);
-            statement.execute("""
-                ALTER TABLE authority_commands
-                ADD COLUMN IF NOT EXISTS result_revision BIGINT NOT NULL DEFAULT 0
-                """);
-            statement.execute("""
-                CREATE TABLE IF NOT EXISTS player_sessions (
-                    session_id UUID PRIMARY KEY,
-                    player_id UUID NOT NULL,
-                    proxy_id TEXT,
-                    server_id TEXT,
-                    state TEXT NOT NULL,
-                    started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    ended_at TIMESTAMPTZ,
-                    disconnect_reason TEXT,
-                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
-                )
-                """);
-            statement.execute("""
-                CREATE TABLE IF NOT EXISTS match_records (
-                    match_id UUID PRIMARY KEY,
-                    family_id TEXT NOT NULL,
-                    map_id TEXT,
-                    server_id TEXT,
-                    slot_id TEXT,
-                    state TEXT NOT NULL,
-                    started_at TIMESTAMPTZ,
-                    ended_at TIMESTAMPTZ,
-                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """);
-            statement.execute("""
-                CREATE TABLE IF NOT EXISTS match_participant_stats (
-                    match_id UUID NOT NULL REFERENCES match_records(match_id) ON DELETE CASCADE,
-                    player_id UUID NOT NULL,
-                    team_id TEXT,
-                    placement INTEGER,
-                    stats JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (match_id, player_id)
-                )
-                """);
-        }
-    }
-
     private UUID playerId(DataAuthority.CommandEnvelope command) {
         String value = string(command.payload(), "playerId", null);
         if (value == null || value.isBlank()) {
@@ -584,7 +551,7 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
         if (value == null || value.isBlank()) {
             return null;
         }
-        return UUID.fromString(value);
+        return uuid(value);
     }
 
     private UUID matchId(DataAuthority.CommandEnvelope command) {
@@ -612,6 +579,40 @@ public final class PostgresAuthorityCommandPort implements DataAuthority.Command
         String message
     ) {
         return new DataAuthority.CommandResult(command.commandId(), false, command.expectedRevision(), reason, message);
+    }
+
+    private Map<String, Object> jsonMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        Map<?, ?> parsed = gson.fromJson(json, Map.class);
+        if (parsed == null || parsed.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> result = new HashMap<>();
+        for (Map.Entry<?, ?> entry : parsed.entrySet()) {
+            if (entry.getKey() != null) {
+                result.put(entry.getKey().toString(), entry.getValue());
+            }
+        }
+        return result;
+    }
+
+    private static List<String> arrayToStrings(java.sql.Array array) throws SQLException {
+        if (array == null) {
+            return List.of();
+        }
+        Object raw = array.getArray();
+        if (!(raw instanceof Object[] values)) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>(values.length);
+        for (Object value : values) {
+            if (value != null) {
+                result.add(value.toString());
+            }
+        }
+        return result;
     }
 
     private static String string(Map<String, Object> payload, String key, String fallback) {

@@ -47,7 +47,7 @@ class ThreadBoundaryStaticTest {
 
     private List<String> managedPaperHotPaths() {
         return List.of(
-            "sh/harold/fulcrum/fundamentals/data/DataAPIFeature.java",
+            "sh/harold/fulcrum/fundamentals/data/DataAuthorityFeature.java",
             "sh/harold/fulcrum/fundamentals/playerdata/PlayerDataFeature.java",
             "sh/harold/fulcrum/fundamentals/rank/RankFeature.java",
             "sh/harold/fulcrum/fundamentals/messagebus/MessageBusFeature.java",

@@ -1,29 +1,7 @@
-# Database configuration for Fulcrum Data API - Velocity
-storage:
-  # Backend type: JSON, MONGODB, or POSTGRES
-  type: POSTGRES
-  
-# JSON file storage settings (if type is JSON)
-json:
-  # Directory where JSON files will be stored
-  data-path: "data"
-  # Cache settings
-  cache:
-    enabled: true
-    max-size: 1000
-    
-# MongoDB settings (if type is MONGODB)
-mongodb:
-  connection-string: "mongodb://localhost:27017"
-  database: "fulcrum_velocity"
-  # Optional authentication
-  username: ""
-  password: ""
-
-# PostgreSQL settings (if type is POSTGRES)
+# PostgreSQL is the only durable Fulcrum authority store.
 postgres:
   jdbc-url: "jdbc:postgresql://localhost:5432/fulcrum"
-  database: "fulcrum_velocity"
+  database: "fulcrum"
   username: "fulcrum_user"
   password: ""
   connection-pool:

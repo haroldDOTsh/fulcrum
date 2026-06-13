@@ -1,6 +1,9 @@
 package sh.harold.fulcrum.api.data.authority;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletionStage;
 
@@ -39,6 +42,18 @@ public final class DataAuthority {
 
     public interface CommandPort {
         CompletionStage<CommandResult> submit(CommandEnvelope command);
+    }
+
+    public interface PlayerProfileReader {
+        CompletionStage<Optional<PlayerProfileSnapshot>> findProfile(UUID playerId);
+
+        default CompletionStage<Boolean> profileExists(UUID playerId) {
+            return findProfile(playerId).thenApply(Optional::isPresent);
+        }
+    }
+
+    public interface PlayerRankReader {
+        CompletionStage<Optional<PlayerRankSnapshot>> findRanks(UUID playerId);
     }
 
     public record CommandEnvelope(
@@ -85,6 +100,42 @@ public final class DataAuthority {
             }
             rejectionReason = rejectionReason == null ? RejectionReason.NONE : rejectionReason;
             message = message == null ? "" : message;
+        }
+    }
+
+    public record PlayerProfileSnapshot(
+        UUID playerId,
+        String username,
+        String normalizedUsername,
+        boolean online,
+        String currentServer,
+        String currentProxy,
+        long totalPlaytimeMs,
+        Map<String, Object> profileData,
+        long revision
+    ) {
+        public PlayerProfileSnapshot {
+            if (playerId == null) {
+                throw new IllegalArgumentException("playerId is required");
+            }
+            username = username == null ? "unknown" : username;
+            normalizedUsername = normalizedUsername == null ? username.toLowerCase(Locale.ROOT) : normalizedUsername;
+            profileData = profileData == null ? Map.of() : Map.copyOf(profileData);
+        }
+    }
+
+    public record PlayerRankSnapshot(
+        UUID playerId,
+        String primaryRank,
+        List<String> ranks,
+        long revision
+    ) {
+        public PlayerRankSnapshot {
+            if (playerId == null) {
+                throw new IllegalArgumentException("playerId is required");
+            }
+            primaryRank = primaryRank == null || primaryRank.isBlank() ? "DEFAULT" : primaryRank;
+            ranks = ranks == null || ranks.isEmpty() ? List.of(primaryRank) : List.copyOf(ranks);
         }
     }
 }

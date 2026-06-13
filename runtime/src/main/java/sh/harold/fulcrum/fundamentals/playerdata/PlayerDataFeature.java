@@ -8,8 +8,6 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
-import sh.harold.fulcrum.api.data.DataAPI;
-import sh.harold.fulcrum.api.data.Document;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
@@ -18,18 +16,17 @@ import sh.harold.fulcrum.runtime.threading.PlayerSnapshot;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class PlayerDataFeature implements PluginFeature, Listener {
-    private static final String PLAYERS_COLLECTION = "players";
-    
     private JavaPlugin plugin;
     private Logger logger;
-    private DataAPI dataAPI;
     private DataAuthority.CommandPort commandPort;
+    private DataAuthority.PlayerProfileReader profileReader;
     private FileConfiguration config;
     private PaperRuntime runtime;
     private boolean trackIps;
@@ -42,12 +39,11 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         this.runtime = container.get(PaperRuntime.class);
         this.trackIps = config.getBoolean("player-data.track-ips", false);
         
-        // Get DataAPI from DependencyContainer
-        this.dataAPI = container.getOptional(DataAPI.class).orElse(null);
         this.commandPort = container.getOptional(DataAuthority.CommandPort.class).orElse(null);
+        this.profileReader = container.getOptional(DataAuthority.PlayerProfileReader.class).orElse(null);
         
-        if (dataAPI == null || commandPort == null) {
-            logger.severe("Data authority not available! PlayerDataFeature requires DataAPI and CommandPort.");
+        if (commandPort == null || profileReader == null) {
+            logger.severe("Data authority not available! PlayerDataFeature requires command and profile reader ports.");
             throw new RuntimeException("Data authority not available");
         }
         
@@ -122,29 +118,20 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         return payload;
     }
     
-    /**
-     * Gets a player document by UUID
-     * Checks for document existence to ensure compatibility with proxy
-     */
-    public CompletableFuture<Document> getPlayerData(UUID uuid) {
-        return dataAPI.collection(PLAYERS_COLLECTION)
-            .selectAsync(uuid.toString())
-            .thenApply(doc -> doc.exists() ? doc : null)
+    public CompletableFuture<Optional<DataAuthority.PlayerProfileSnapshot>> getPlayerProfile(UUID uuid) {
+        return profileReader.findProfile(uuid)
+            .toCompletableFuture()
             .exceptionally(e -> {
-                logger.log(Level.WARNING, "Failed to get player data for UUID " + uuid, e);
-                return null;
+                logger.log(Level.WARNING, "Failed to get player profile for UUID " + uuid, e);
+                return Optional.empty();
             });
     }
     
-    /**
-     * Check if a player document exists before creating
-     */
-    public CompletableFuture<Boolean> playerDataExists(UUID uuid) {
-        return dataAPI.collection(PLAYERS_COLLECTION)
-            .selectAsync(uuid.toString())
-            .thenApply(Document::exists)
+    public CompletableFuture<Boolean> playerProfileExists(UUID uuid) {
+        return profileReader.profileExists(uuid)
+            .toCompletableFuture()
             .exceptionally(e -> {
-                logger.log(Level.WARNING, "Failed to check player data existence for UUID " + uuid, e);
+                logger.log(Level.WARNING, "Failed to check player profile existence for UUID " + uuid, e);
                 return false;
             });
     }
@@ -156,11 +143,15 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     
     @Override
     public int getPriority() {
-        return 50; // After DataAPI (priority 10)
+        return 50; // After data authority (priority 10)
     }
     
     @Override
     public Class<?>[] getDependencies() {
-        return new Class<?>[] { DataAPI.class, DataAuthority.CommandPort.class, PaperRuntime.class };
+        return new Class<?>[] {
+            DataAuthority.CommandPort.class,
+            DataAuthority.PlayerProfileReader.class,
+            PaperRuntime.class
+        };
     }
 }

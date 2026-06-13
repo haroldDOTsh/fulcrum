@@ -4,9 +4,9 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.proxy.ConsoleCommandSource;
 import com.velocitypowered.api.proxy.Player;
 import org.slf4j.Logger;
-import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
-import java.util.UUID;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -24,16 +24,16 @@ public final class VelocityRankUtils {
      * 
      * @param player the player to check
      * @param requiredRank the minimum required rank
-     * @param dataAPI the DataAPI instance to query player data
+     * @param rankReader the authority rank reader
      * @param logger the logger for debugging
      * @return CompletableFuture with true if the player has the required rank or higher
      */
     public static CompletableFuture<Boolean> hasRankOrHigher(Player player, Rank requiredRank, 
-                                                            DataAPI dataAPI, Logger logger) {
+                                                            DataAuthority.PlayerRankReader rankReader, Logger logger) {
         logger.debug("Checking rank for player {} ({}), requires {}",
             player.getUsername(), player.getUniqueId(), requiredRank.name());
 
-        return getEffectiveRank(player, dataAPI, logger).thenApply(playerRank -> {
+        return getEffectiveRank(player, rankReader, logger).thenApply(playerRank -> {
             boolean hasPermission = playerRank.getPriority() >= requiredRank.getPriority();
 
             logger.debug("Player {} has rank {} (priority {}), needs {} (priority {}) -> {}",
@@ -46,38 +46,17 @@ public final class VelocityRankUtils {
     }
     
     /**
-     * Synchronously checks if a player has the specified rank or higher.
-     * This is a blocking call and should be used carefully.
-     * 
-     * @param player the player to check
-     * @param requiredRank the minimum required rank
-     * @param dataAPI the DataAPI instance
-     * @param logger the logger for debugging
-     * @return true if the player has the required rank or higher
-     */
-    public static boolean hasRankOrHigherSync(Player player, Rank requiredRank,
-                                             DataAPI dataAPI, Logger logger) {
-        try {
-            return hasRankOrHigher(player, requiredRank, dataAPI, logger).get();
-        } catch (Exception e) {
-            logger.error("Error in synchronous rank check for {}: {}", 
-                        player.getUsername(), e.getMessage());
-            return false;
-        }
-    }
-    
-    /**
      * Checks if a CommandSource has the specified rank or higher.
      * Console is always treated as having admin privileges.
      * 
      * @param source the command source to check
      * @param requiredRank the minimum required rank
-     * @param dataAPI the DataAPI instance
+     * @param rankReader the authority rank reader
      * @param logger the logger for debugging
      * @return CompletableFuture with true if the source has the required rank or higher
      */
     public static CompletableFuture<Boolean> hasRankOrHigher(CommandSource source, Rank requiredRank,
-                                                            DataAPI dataAPI, Logger logger) {
+                                                            DataAuthority.PlayerRankReader rankReader, Logger logger) {
         // Console always has admin privileges
         if (source instanceof ConsoleCommandSource) {
             logger.debug("Permission check for console - always allowed");
@@ -85,7 +64,7 @@ public final class VelocityRankUtils {
         }
         
         if (source instanceof Player) {
-            return hasRankOrHigher((Player) source, requiredRank, dataAPI, logger);
+            return hasRankOrHigher((Player) source, requiredRank, rankReader, logger);
         }
         
         // Unknown source type - deny by default
@@ -97,12 +76,13 @@ public final class VelocityRankUtils {
      * Checks if a player is admin (ADMIN rank).
      * 
      * @param player the player to check
-     * @param dataAPI the DataAPI instance
+     * @param rankReader the authority rank reader
      * @param logger the logger for debugging
      * @return CompletableFuture with true if the player is admin
      */
-    public static CompletableFuture<Boolean> isAdmin(Player player, DataAPI dataAPI, Logger logger) {
-        return hasRankOrHigher(player, Rank.ADMIN, dataAPI, logger);
+    public static CompletableFuture<Boolean> isAdmin(Player player, DataAuthority.PlayerRankReader rankReader,
+                                                     Logger logger) {
+        return hasRankOrHigher(player, Rank.ADMIN, rankReader, logger);
     }
     
     /**
@@ -110,17 +90,18 @@ public final class VelocityRankUtils {
      * Console is always treated as admin.
      * 
      * @param source the command source to check
-     * @param dataAPI the DataAPI instance
+     * @param rankReader the authority rank reader
      * @param logger the logger for debugging
      * @return CompletableFuture with true if the source is admin
      */
-    public static CompletableFuture<Boolean> isAdmin(CommandSource source, DataAPI dataAPI, Logger logger) {
+    public static CompletableFuture<Boolean> isAdmin(CommandSource source, DataAuthority.PlayerRankReader rankReader,
+                                                     Logger logger) {
         if (source instanceof ConsoleCommandSource) {
             return CompletableFuture.completedFuture(true);
         }
         
         if (source instanceof Player) {
-            return isAdmin((Player) source, dataAPI, logger);
+            return isAdmin((Player) source, rankReader, logger);
         }
         
         return CompletableFuture.completedFuture(false);
@@ -130,23 +111,22 @@ public final class VelocityRankUtils {
      * Gets the effective rank of a Player asynchronously.
      * 
      * @param player the player
-     * @param dataAPI the DataAPI instance
+     * @param rankReader the authority rank reader
      * @param logger the logger for debugging
      * @return CompletableFuture with the player's rank
      */
-    public static CompletableFuture<Rank> getEffectiveRank(Player player, DataAPI dataAPI, Logger logger) {
-        return dataAPI.collection("player_ranks")
-            .selectAsync(player.getUniqueId().toString())
-            .thenApply(playerDoc -> {
-                if (!playerDoc.exists()) {
-                    logger.debug("Player document not found for {}, returning DEFAULT", player.getUsername());
+    public static CompletableFuture<Rank> getEffectiveRank(Player player, DataAuthority.PlayerRankReader rankReader,
+                                                           Logger logger) {
+        return rankReader.findRanks(player.getUniqueId())
+            .thenApply(snapshot -> {
+                if (snapshot.isEmpty()) {
+                    logger.debug("Rank projection not found for {}, returning DEFAULT", player.getUsername());
                     return Rank.DEFAULT;
                 }
-                
-                String rankStr = playerDoc.get("primary_rank", "DEFAULT");
-                
+
+                String rankStr = snapshot.get().primaryRank();
                 try {
-                    return Rank.valueOf(rankStr.toUpperCase());
+                    return Rank.valueOf(rankStr.toUpperCase(Locale.ROOT));
                 } catch (IllegalArgumentException e) {
                     logger.warn("Invalid rank '{}' for player {}, returning DEFAULT", 
                                rankStr, player.getUsername());
@@ -156,7 +136,8 @@ public final class VelocityRankUtils {
             .exceptionally(e -> {
                 logger.error("Error getting rank for {}: {}", player.getUsername(), e.getMessage());
                 return Rank.DEFAULT;
-            });
+            })
+            .toCompletableFuture();
     }
     
     /**
@@ -164,17 +145,19 @@ public final class VelocityRankUtils {
      * Console is treated as ADMIN.
      * 
      * @param source the command source
-     * @param dataAPI the DataAPI instance
+     * @param rankReader the authority rank reader
      * @param logger the logger for debugging
      * @return CompletableFuture with the source's rank
      */
-    public static CompletableFuture<Rank> getEffectiveRank(CommandSource source, DataAPI dataAPI, Logger logger) {
+    public static CompletableFuture<Rank> getEffectiveRank(CommandSource source,
+                                                           DataAuthority.PlayerRankReader rankReader,
+                                                           Logger logger) {
         if (source instanceof ConsoleCommandSource) {
             return CompletableFuture.completedFuture(Rank.ADMIN);
         }
         
         if (source instanceof Player) {
-            return getEffectiveRank((Player) source, dataAPI, logger);
+            return getEffectiveRank((Player) source, rankReader, logger);
         }
         
         return CompletableFuture.completedFuture(Rank.DEFAULT);

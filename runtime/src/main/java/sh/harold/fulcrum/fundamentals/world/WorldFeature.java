@@ -13,8 +13,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresMigrationRunner;
-import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
-import sh.harold.fulcrum.api.data.storage.StorageType;
 import sh.harold.fulcrum.api.world.poi.POIRegistry;
 import sh.harold.fulcrum.fundamentals.world.commands.WorldCommand;
 import sh.harold.fulcrum.lifecycle.CommandRegistrar;
@@ -122,21 +120,17 @@ public class WorldFeature implements PluginFeature {
 
     private void resolveConnectionAdapter(DependencyContainer container) {
         ownsConnectionAdapter = false;
-        ConnectionAdapter adapter = null;
         if (container != null) {
-            adapter = container.getOptional(ConnectionAdapter.class).orElse(null);
+            connectionAdapter = container.getOptional(PostgresConnectionAdapter.class).orElse(null);
         }
-        if (adapter == null && ServiceLocatorImpl.getInstance() != null) {
-            adapter = ServiceLocatorImpl.getInstance().findService(ConnectionAdapter.class).orElse(null);
+        if (connectionAdapter == null && ServiceLocatorImpl.getInstance() != null) {
+            connectionAdapter = ServiceLocatorImpl.getInstance()
+                .findService(PostgresConnectionAdapter.class)
+                .orElse(null);
         }
 
-        if (adapter instanceof PostgresConnectionAdapter postgresAdapter) {
-            connectionAdapter = postgresAdapter;
+        if (connectionAdapter != null) {
             return;
-        }
-
-        if (adapter != null && adapter.getStorageType() == StorageType.POSTGRES) {
-            logger.warning("ConnectionAdapter reported POSTGRES but is not PostgresConnectionAdapter. Creating dedicated adapter.");
         }
 
         PostgresConnectionAdapter standalone = createStandalonePostgresAdapter();
@@ -170,7 +164,6 @@ public class WorldFeature implements PluginFeature {
                 username,
                 password,
                 database,
-                null,
                 postgresPoolProperties(yaml)
             );
             try (var connection = adapter.getConnection()) {

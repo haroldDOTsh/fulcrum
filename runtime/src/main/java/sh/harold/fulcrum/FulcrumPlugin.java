@@ -10,7 +10,7 @@ import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
 import sh.harold.fulcrum.api.environment.EnvironmentConfig;
 import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
-import sh.harold.fulcrum.fundamentals.data.DataAPIFeature;
+import sh.harold.fulcrum.fundamentals.data.DataAuthorityFeature;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
 import sh.harold.fulcrum.fundamentals.messagebus.MessageBusFeature;
@@ -76,9 +76,9 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new MessageFeature());
         FeatureManager.register(new MessageBusFeature());
         FeatureManager.register(new ServerLifecycleFeature());
-        FeatureManager.register(new DataAPIFeature()); // Register DataAPI before PlayerData
-        FeatureManager.register(new PlayerDataFeature()); // Depends on DataAPI
-        FeatureManager.register(new RankFeature()); // Register Rank system after DataAPI
+        FeatureManager.register(new DataAuthorityFeature()); // Register data authority before player/rank data
+        FeatureManager.register(new PlayerDataFeature()); // Depends on data authority
+        FeatureManager.register(new RankFeature()); // Register rank system after data authority
         FeatureManager.register(new ChatFormatFeature()); // Register Chat formatting after Rank
         FeatureManager.register(new ModuleFeature());
         FeatureManager.register(new GamemodeFeature());

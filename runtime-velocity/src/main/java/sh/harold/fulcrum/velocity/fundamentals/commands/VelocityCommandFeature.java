@@ -30,7 +30,7 @@ public class VelocityCommandFeature implements VelocityFeature {
     
     @Override
     public String[] getDependencies() {
-        return new String[] { "DataAPI" }; // Depend on DataAPI for rank checking
+        return new String[] { "DataAuthority" };
     }
     
     @Override

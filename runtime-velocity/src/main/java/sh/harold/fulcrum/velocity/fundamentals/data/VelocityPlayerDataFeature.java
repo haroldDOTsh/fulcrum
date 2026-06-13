@@ -164,11 +164,11 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     
     @Override
     public int getPriority() {
-        return 50; // After DataAPI (20)
+        return 50; // After DataAuthority (20)
     }
     
     @Override
     public String[] getDependencies() {
-        return new String[] { "DataAPI" };
+        return new String[] { "DataAuthority" };
     }
 }

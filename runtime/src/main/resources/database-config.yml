@@ -1,4 +1,4 @@
-# Unified configuration for data storage and messaging
+# Unified configuration for durable authority data and messaging
 
 # Redis configuration (used for message bus and caching)
 redis:
@@ -11,37 +11,14 @@ redis:
     min-idle: 1
     max-idle: 8
     max-total: 8
-    
-# Database configuration for Fulcrum Data API
-storage:
-  # Backend type: JSON, MONGODB, or POSTGRES
-  type: JSON
-  
-# JSON file storage settings (if type is JSON)
-json:
-  # Directory where JSON files will be stored
-  data-path: "data"
-  # Cache settings
-  cache:
-    enabled: true
-    max-size: 1000
-    
-# MongoDB settings (if type is MONGODB)
-mongodb:
-  connection-string: "mongodb://localhost:27017"
-  database: "fulcrum"
-  # Optional authentication
-  username: ""
-  password: ""
 
-# PostgreSQL settings (if type is POSTGRES)
-# REQUIRED for World Loading System - database is single source of truth
+# PostgreSQL is the only durable Fulcrum authority store.
 postgres:
   # JDBC URL for PostgreSQL connection
-  jdbc-url: "jdbc:postgresql://localhost:5432/mydb"
-  database: "mydb"
-  username: "admin"
-  password: "secret"
+  jdbc-url: "jdbc:postgresql://localhost:5432/fulcrum"
+  database: "fulcrum"
+  username: "fulcrum_user"
+  password: ""
   
   # HikariCP connection pool settings
   connection-pool:
@@ -51,22 +28,11 @@ postgres:
     idle-timeout: 300000       # 5 minutes
     max-lifetime: 1800000      # 30 minutes
     
-  # Cache settings (optional)
-  cache:
-    enabled: false
-    max-size: 1000
-    
   # Migration settings
   migrations:
     enabled: true
     auto-migrate: false  # Set to true to automatically run migrations on startup
     path: "migrations/"  # Path to SQL migration files
 
-# World System Database Schema
-# The following table is used:
-# - world_maps: Stores schematic binaries and map metadata
-#   - id (UUID): Primary key
-#   - world_name (String): Logical name used by the runtime (unique per map)
-#   - display_name (String): Optional label for menus
-#   - map_metadata (JSONB): Arbitrary map-level metadata (mapId, gameId, author, etc.)
-#   - schematic_data (BYTEA): Raw .schem payload with inline POI markers
+# World maps, player profiles, ranks, sessions, match logs, and authority commands
+# are all owned by PostgreSQL migrations under data-api/src/main/resources/migrations.

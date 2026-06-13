@@ -11,9 +11,6 @@ repositories {
 }
 
 dependencies {
-    // MongoDB Driver
-    implementation("org.mongodb:mongodb-driver-sync:4.11.1")
-    
     // PostgreSQL Driver
     implementation("org.postgresql:postgresql:42.7.1")
     
@@ -36,9 +33,7 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.7.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.7.0")
     
-    // Testcontainers for MongoDB Integration Tests
     testImplementation("org.testcontainers:testcontainers:1.19.3")
-    testImplementation("org.testcontainers:mongodb:1.19.3")
     testImplementation("org.testcontainers:postgresql:1.19.3")
     testImplementation("org.testcontainers:junit-jupiter:1.19.3")
     
