@@ -30,6 +30,9 @@ dependencies {
     
     // YAML configuration
     implementation("org.yaml:snakeyaml:2.0")
+
+    implementation("sh.harold.creative:message-core:v6")
+    implementation("sh.harold.creative:message-velocity:v6")
     
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.9")

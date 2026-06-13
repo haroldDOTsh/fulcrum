@@ -7,6 +7,15 @@ pluginManagement {
     }
 }
 
+val creativeLibraryPath = providers.gradleProperty("creativeLibraryPath")
+    .orElse(providers.environmentVariable("CREATIVE_LIBRARY_PATH"))
+    .orElse("C:/dev/library")
+    .get()
+val creativeLibraryDir = file(creativeLibraryPath)
+if (creativeLibraryDir.isDirectory) {
+    includeBuild(creativeLibraryDir)
+}
+
 include(
     "message-bus-api",
     "runtime",

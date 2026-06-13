@@ -29,6 +29,13 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.4") // JDBC driver for world Postgres access
     implementation("org.yaml:snakeyaml:2.2")
     implementation("io.github.classgraph:classgraph:4.8.173")
+
+    implementation("sh.harold.creative:message-core:v6")
+    implementation("sh.harold.creative:message-paper:v6")
+    implementation("sh.harold.creative:menu-core:v6")
+    implementation("sh.harold.creative:menu-paper:v6")
+    implementation("sh.harold.creative:sound-paper:v6")
+    implementation("sh.harold.creative:scoreboard-paper:v6")
     
     // Jackson dependencies (required for message bus serialization)
     implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
@@ -95,8 +102,6 @@ tasks.named<ShadowJar>("shadowJar") {
     )      // From jackson-databind, jackson-core, jackson-annotations
 
     // relocate("sh.harold.fulcrum.api.data", "sh.harold.internal.api.data")
-    // relocate("sh.harold.fulcrum.api.message", "sh.harold.internal.api.message")
-    // relocate("sh.harold.fulcrum.api.menu", "sh.harold.internal.api.menu")
     // relocate("sh.harold.fulcrum.api.rank", "sh.harold.internal.api.rank")
     // relocate("sh.harold.fulcrum.api.module", "sh.harold.internal.api.module")
 }

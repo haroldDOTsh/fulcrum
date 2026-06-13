@@ -6,6 +6,7 @@ import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.config.ServerLifecycleConfig;
 import sh.harold.fulcrum.velocity.fundamentals.commands.VelocityCommandFeature;
+import sh.harold.fulcrum.velocity.fundamentals.creative.VelocityCreativeMessageFeature;
 import sh.harold.fulcrum.velocity.fundamentals.data.VelocityDataAuthorityFeature;
 import sh.harold.fulcrum.velocity.fundamentals.data.VelocityPlayerDataFeature;
 import sh.harold.fulcrum.velocity.fundamentals.identity.VelocityIdentityFeature;
@@ -59,6 +60,7 @@ public class VelocityFeatureManager {
         });
         
         // Register features in dependency order
+        registerFeature(new VelocityCreativeMessageFeature());
         registerFeature(new VelocityIdentityFeature());
         registerFeature(new VelocityMessageBusFeature());
         registerFeature(new VelocityDataAuthorityFeature());

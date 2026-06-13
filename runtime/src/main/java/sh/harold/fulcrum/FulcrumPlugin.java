@@ -3,13 +3,11 @@ package sh.harold.fulcrum;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import sh.harold.fulcrum.api.chat.impl.ChatFormatFeature;
-import sh.harold.fulcrum.api.menu.impl.MenuFeature;
-import sh.harold.fulcrum.api.message.MessageFeature;
-import sh.harold.fulcrum.api.message.impl.scoreboard.ScoreboardFeature;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
 import sh.harold.fulcrum.api.module.FulcrumPlatformHolder;
 import sh.harold.fulcrum.api.environment.EnvironmentConfig;
 import sh.harold.fulcrum.api.environment.EnvironmentConfigParser;
+import sh.harold.fulcrum.fundamentals.creative.CreativeLibraryFeature;
 import sh.harold.fulcrum.fundamentals.data.DataAuthorityFeature;
 import sh.harold.fulcrum.fundamentals.gamemode.GamemodeFeature;
 import sh.harold.fulcrum.fundamentals.lifecycle.ServerLifecycleFeature;
@@ -73,7 +71,7 @@ public final class FulcrumPlugin extends JavaPlugin {
         container.register(SlotFamilyService.class, slotFamilyService);
 
         // Register features (order matters - dependencies first)
-        FeatureManager.register(new MessageFeature());
+        FeatureManager.register(new CreativeLibraryFeature());
         FeatureManager.register(new MessageBusFeature());
         FeatureManager.register(new ServerLifecycleFeature());
         FeatureManager.register(new DataAuthorityFeature()); // Register data authority before player/rank data
@@ -82,8 +80,6 @@ public final class FulcrumPlugin extends JavaPlugin {
         FeatureManager.register(new ChatFormatFeature()); // Register Chat formatting after Rank
         FeatureManager.register(new ModuleFeature());
         FeatureManager.register(new GamemodeFeature());
-        FeatureManager.register(new ScoreboardFeature());
-        FeatureManager.register(new MenuFeature());
         FeatureManager.register(new WorldFeature()); // World management with FAWE
         FeatureManager.register(new MinigameEngineFeature());
         FeatureManager.register(new DebugMinigameFeature());
