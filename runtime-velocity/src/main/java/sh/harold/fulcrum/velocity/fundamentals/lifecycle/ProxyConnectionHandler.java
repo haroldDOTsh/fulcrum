@@ -9,10 +9,9 @@ import com.velocitypowered.api.event.player.ServerPreConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import org.slf4j.Logger;
+import sh.harold.creative.library.message.Message;
 import sh.harold.fulcrum.velocity.api.ProxyIdentifier;
 import sh.harold.fulcrum.velocity.api.ServerIdentifier;
 
@@ -172,33 +171,16 @@ public class ProxyConnectionHandler {
                 logger.error("No servers available for player {} ({}) [Timestamp: {}, Proxy: {} (is permanent: {})]",
                     playerName, playerUuid, timestamp, currentProxyId, !currentProxyId.startsWith("temp-"));
                 
-                // Build the disconnection message
-                Component mainMessage = Component.text()
-                    .append(Component.text("A connection could not be made at this moment.", NamedTextColor.RED, TextDecoration.BOLD))
-                    .append(Component.newline())
-                    .append(Component.text("Try again momentarily!", NamedTextColor.YELLOW))
-                    .append(Component.newline())
-                    .append(Component.text("If this persists, contact a staff member", NamedTextColor.YELLOW))
-                    .build();
-                
-                Component traceInfo = Component.text()
-                    .append(Component.newline())
-                    .append(Component.newline())
-                    .append(Component.text("Connection Trace:", NamedTextColor.GRAY))
-                    .append(Component.newline())
-                    .append(Component.text("Timestamp: ", NamedTextColor.GRAY))
-                    .append(Component.text(timestamp, NamedTextColor.WHITE))
-                    .append(Component.newline())
-                    .append(Component.text("Proxy ID: ", NamedTextColor.GRAY))
-                    .append(Component.text(this.proxyId.getFormattedId(), NamedTextColor.WHITE))
-                    .build();
-                
-                Component fullMessage = Component.text()
-                    .append(mainMessage)
-                    .append(traceInfo)
-                    .build();
-                
-                event.getPlayer().disconnect(fullMessage);
+                event.getPlayer().disconnect(Message.block()
+                    .title("A connection could not be made at this moment.", NamedTextColor.RED)
+                    .line("Try again momentarily!")
+                    .line("If this persists, contact a staff member.")
+                    .blank()
+                    .line("Connection Trace:")
+                    .line("Timestamp: {timestamp}", Message.slot("timestamp", timestamp))
+                    .line("Proxy ID: {proxy}", Message.slot("proxy", this.proxyId.getFormattedId()))
+                    .build()
+                    .component());
                 event.setInitialServer(null);
             }
         });

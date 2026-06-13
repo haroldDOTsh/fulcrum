@@ -6,6 +6,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
 import org.slf4j.Logger;
+import sh.harold.creative.library.message.Message;
 import sh.harold.fulcrum.velocity.api.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
@@ -38,8 +39,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
 import com.velocitypowered.api.proxy.Player;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 
 /**
  * Velocity implementation of server lifecycle management.
@@ -1004,12 +1003,10 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                         Optional<RegisteredServer> lobbyServer = findAvailableLobbyServer();
                         if (lobbyServer.isPresent()) {
                             player.createConnectionRequest(lobbyServer.get()).fireAndForget();
-                            player.sendMessage(Component.text("You have been moved to another server due to maintenance.")
-                                .color(NamedTextColor.YELLOW));
+                            Message.info("You have been moved to another server due to maintenance.").send(player);
                         } else {
                             // No lobby available, disconnect the player
-                            player.disconnect(Component.text("The server you were on is no longer available.")
-                                .color(NamedTextColor.RED));
+                            player.disconnect(Message.error("The server you were on is no longer available.").component());
                         }
                     }
                     

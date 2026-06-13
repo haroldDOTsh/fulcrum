@@ -7,8 +7,8 @@ import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
-import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
+import sh.harold.creative.library.message.Message;
 import sh.harold.fulcrum.velocity.config.ConfigLoader;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeatureManager;
@@ -72,7 +72,10 @@ public class FulcrumVelocityPlugin {
             server.getScheduler()
                 .buildTask(this, () -> {
                     logger.error("Shutting down Velocity due to initialization failure");
-                    server.shutdown(Component.text("Critical initialization failure: " + e.getMessage()));
+                    server.shutdown(Message.error(
+                            "Critical initialization failure: {reason}",
+                            Message.slot("reason", e.getMessage())
+                    ).component());
                 })
                 .delay(java.time.Duration.ofSeconds(2))
                 .schedule();

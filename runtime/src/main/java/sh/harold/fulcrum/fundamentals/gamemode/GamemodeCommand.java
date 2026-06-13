@@ -7,7 +7,7 @@ import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSele
 import org.bukkit.GameMode;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import sh.harold.fulcrum.api.message.Message;
+import sh.harold.creative.library.message.Message;
 import sh.harold.fulcrum.api.rank.RankUtils;
 
 import static io.papermc.paper.command.brigadier.Commands.argument;
@@ -31,7 +31,7 @@ public final class GamemodeCommand {
                                     return changeGamemodeOthers(ctx.getSource(), resolver, mode);
                                 })))
                 .executes(ctx -> {
-                    Message.info("gamemode.usage").send(ctx.getSource().getSender());
+                    Message.info("Usage: /gm <gamemode> [target]").send(ctx.getSource().getSender());
                     return 0;
                 })
                 .build();
@@ -40,12 +40,12 @@ public final class GamemodeCommand {
     private int changeGamemodeSelf(CommandSourceStack source, GameMode mode) {
         CommandSender sender = source.getSender();
         if (!(sender instanceof Player player)) {
-            Message.info("gamemode.only-player").send(sender);
+            Message.error("Only players can change their own game mode.").send(sender);
             return 0;
         }
 
         player.setGameMode(mode);
-        Message.info("gamemode.changed.self", mode.name()).send(player);
+        Message.success("Set your game mode to {mode}.", Message.slot("mode", mode.name())).send(player);
         return 1;
     }
 
@@ -54,11 +54,15 @@ public final class GamemodeCommand {
 
         for (Player target : resolver.resolve(source)) {
             target.setGameMode(mode);
-            Message.info("gamemode.changed.target", mode.name(), target.getName()).send(target);
+            Message.info("Your game mode was set to {mode}.", Message.slot("mode", mode.name())).send(target);
             changed++;
         }
 
-        Message.info("gamemode.changed.count", mode.name(), changed).send(source.getSender());
+        Message.success(
+                "Set {count} player(s) to {mode}.",
+                Message.slot("count", changed),
+                Message.slot("mode", mode.name())
+        ).send(source.getSender());
         return changed;
     }
 }

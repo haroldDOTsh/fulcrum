@@ -18,9 +18,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
+import sh.harold.creative.library.message.Message;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
@@ -34,7 +33,6 @@ import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
-import net.kyori.adventure.text.format.TextColor;
 
 /**
  * Handles matchmaking requests, route commands, and acknowledgements on the Velocity proxy.
@@ -201,7 +199,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
             return;
         }
 
-        player.sendMessage(Component.text("Routing you to " + command.getSlotId() + "...", NamedTextColor.GRAY));
+        Message.info("Routing you to {slot}...", Message.slot("slot", command.getSlotId())).send(player);
 
         if (player.getCurrentServer()
             .map(current -> current.getServerInfo().getName().equalsIgnoreCase(command.getServerId()))
@@ -247,7 +245,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
             String reason = Optional.ofNullable(command.getMetadata())
                 .map(meta -> meta.getOrDefault("reason", "Disconnected by registry"))
                 .orElse("Disconnected by registry");
-            player.disconnect(Component.text(reason, TextColor.color(0xFF5555)));
+            player.disconnect(Message.error("{reason}", Message.slot("reason", reason)).component());
         });
     }
 
@@ -301,7 +299,7 @@ public class PlayerRoutingFeature implements VelocityFeature {
             @Override
             public void execute(Invocation invocation) {
                 if (invocation.arguments().length < 2) {
-                    invocation.source().sendMessage(Component.text("Usage: /route <player> <family>", NamedTextColor.RED));
+                    Message.error("Usage: /route <player> <family>").send(invocation.source());
                     return;
                 }
 
@@ -310,13 +308,16 @@ public class PlayerRoutingFeature implements VelocityFeature {
 
                 Optional<Player> playerOpt = proxy.getPlayer(targetName);
                 if (playerOpt.isEmpty()) {
-                    invocation.source().sendMessage(Component.text("Player not found: " + targetName, NamedTextColor.RED));
+                    Message.error("Player not found: {player}", Message.slot("player", targetName)).send(invocation.source());
                     return;
                 }
 
                 sendSlotRequest(playerOpt.get(), familyId, Map.of("source", "command"))
-                    .thenAccept(requestId -> invocation.source().sendMessage(Component.text(
-                        "Requested slot for " + targetName + " (family=" + familyId + ")", NamedTextColor.GREEN)));
+                    .thenAccept(requestId -> Message.success(
+                            "Requested slot for {player} (family={family}).",
+                            Message.slot("player", targetName),
+                            Message.slot("family", familyId)
+                    ).send(invocation.source()));
             }
         });
     }

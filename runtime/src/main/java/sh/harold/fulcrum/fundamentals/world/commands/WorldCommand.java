@@ -35,8 +35,8 @@ import org.bukkit.WorldType;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import sh.harold.creative.library.message.Message;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
-import sh.harold.fulcrum.api.message.Message;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.api.world.generator.VoidChunkGenerator;
@@ -273,18 +273,21 @@ public class WorldCommand {
 
     private int handleRefresh(CommandContext<CommandSourceStack> context) {
         CommandSender sender = context.getSource().getSender();
-        Message.info("world.refresh.start").send(sender);
+        Message.info("Refreshing world cache from the world map store...").send(sender);
         worldService.refreshCache().whenComplete((ignored, throwable) ->
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (throwable != null) {
                     Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null ? throwable.getCause() : throwable;
                     plugin.getLogger().log(Level.SEVERE, "Failed to refresh world cache", cause);
-                    Message.error("world.refresh.failed", cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName()).send(sender);
+                    Message.error(
+                            "Failed to refresh world cache: {reason}",
+                            Message.slot("reason", cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName())
+                    ).send(sender);
                     return;
                 }
                 int total = worldService.getAllWorlds().size();
                 plugin.getLogger().info("World cache refreshed via /world refresh (" + total + " worlds)");
-                Message.success("world.refresh.success", total).send(sender);
+                Message.success("World cache refreshed. Cached worlds: {total}.", Message.slot("total", total)).send(sender);
             })
         );
         return Command.SINGLE_SUCCESS;
@@ -482,7 +485,7 @@ public class WorldCommand {
     private int handleSave(CommandContext<CommandSourceStack> context, boolean hasDisplayName) {
         CommandSender sender = context.getSource().getSender();
         if (!(sender instanceof Player player)) {
-            Message.error("world.save.players_only").send(sender);
+            Message.error("Only players can save WorldEdit selections.").send(sender);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -501,7 +504,7 @@ public class WorldCommand {
 
         LocalSession session = WorldEdit.getInstance().getSessionManager().get(BukkitAdapter.adapt(player));
         if (session == null) {
-            Message.error("world.save.no_selection").send(player);
+            Message.error("No WorldEdit selection is active.").send(player);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -510,7 +513,7 @@ public class WorldCommand {
         try {
             region = session.getSelection(weWorld);
         } catch (IncompleteRegionException exception) {
-            Message.error("world.save.incomplete_selection").send(player);
+            Message.error("Your WorldEdit selection is incomplete.").send(player);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -525,7 +528,7 @@ public class WorldCommand {
             Operations.complete(copy);
         } catch (WorldEditException exception) {
             plugin.getLogger().log(Level.SEVERE, "Failed to copy selection for world save", exception);
-            Message.error("world.save.copy_failed").send(player);
+            Message.error("Failed to copy your WorldEdit selection.").send(player);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -537,7 +540,7 @@ public class WorldCommand {
             rawBytes = output.toByteArray();
         } catch (IOException exception) {
             plugin.getLogger().log(Level.SEVERE, "Failed to serialize clipboard for world save", exception);
-            Message.error("world.save.serialize_failed").send(player);
+            Message.error("Failed to serialize your WorldEdit selection.").send(player);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -546,12 +549,12 @@ public class WorldCommand {
             inspectionResult = new SchematicInspector(plugin.getLogger()).inspect(rawBytes, worldName);
         } catch (IOException exception) {
             plugin.getLogger().log(Level.SEVERE, "Failed to inspect schematic before save", exception);
-            Message.error("world.save.inspect_failed").send(player);
+            Message.error("Failed to inspect the saved schematic.").send(player);
             return Command.SINGLE_SUCCESS;
         }
 
         if (!inspectionResult.originDetected()) {
-            Message.error("world.save.missing_origin").send(player);
+            Message.error("The schematic origin could not be detected.").send(player);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -563,7 +566,7 @@ public class WorldCommand {
             sanitizedBytes = output.toByteArray();
         } catch (IOException exception) {
             plugin.getLogger().log(Level.SEVERE, "Failed to sanitize schematic before save", exception);
-            Message.error("world.save.serialize_failed").send(player);
+            Message.error("Failed to serialize your WorldEdit selection.").send(player);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -583,20 +586,42 @@ public class WorldCommand {
             ? "none"
             : pois.stream().map(this::formatPoiSummary).collect(Collectors.joining(", "));
 
-        Message.info("world.save.start", worldName).send(player);
+        Message.info("Saving world map {world}...", Message.slot("world", worldName)).send(player);
         worldService.saveWorldDefinition(serverId, worldName, safeDisplayName, metadata, sanitizedBytes)
             .whenComplete((result, throwable) ->
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     if (throwable != null) {
                         Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null ? throwable.getCause() : throwable;
                         plugin.getLogger().log(Level.SEVERE, "Failed to persist world map " + worldName, cause);
-                        Message.error("world.save.failed", worldName, cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName()).send(player);
+                        Message.error(
+                                "Failed to save world map {world}: {reason}",
+                                Message.slot("world", worldName),
+                                Message.slot("reason", cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName())
+                        ).send(player);
                         return;
                     }
-                    Message.success("world.save.success", worldName, mapId).send(player);
-                    Message.info("world.save.size", width, height, length).send(player);
-                    Message.info("world.save.pois", pois.size(), poiSummary).send(player);
-                    Message.info("world.save.metadata", gameId, author, safeDisplayName).send(player);
+                    Message.success(
+                            "Saved world map {world} for map id {map}.",
+                            Message.slot("world", worldName),
+                            Message.slot("map", mapId)
+                    ).send(player);
+                    Message.info(
+                            "Selection size: {width}x{height}x{length}.",
+                            Message.slot("width", width),
+                            Message.slot("height", height),
+                            Message.slot("length", length)
+                    ).send(player);
+                    Message.info(
+                            "POIs detected: {count} ({summary}).",
+                            Message.slot("count", pois.size()),
+                            Message.slot("summary", poiSummary)
+                    ).send(player);
+                    Message.info(
+                            "Metadata: game={game}, author={author}, display={display}.",
+                            Message.slot("game", gameId),
+                            Message.slot("author", author),
+                            Message.slot("display", safeDisplayName)
+                    ).send(player);
                     plugin.getLogger().info(String.format(Locale.ROOT,
                         "Saved world map %s (mapId=%s, server=%s, pois=%d)",
                         worldName, mapId, serverId, pois.size()));
