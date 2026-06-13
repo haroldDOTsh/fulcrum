@@ -8,6 +8,7 @@ External module system for extending Fulcrum.
 import sh.harold.fulcrum.api.module.FulcrumModule;
 import sh.harold.fulcrum.api.module.ModuleInfo;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
+import sh.harold.creative.library.message.paper.PaperMessageSender;
 
 @ModuleInfo(
     name = "MyModule",
@@ -21,10 +22,10 @@ public class MyModule implements FulcrumModule {
         platform.getLogger().info("MyModule enabled!");
         
         // Access services
-        MessageService messages = platform.getService(MessageService.class);
-        if (messages != null) {
-            // Use service
-        }
+        platform.findService(PaperMessageSender.class)
+            .ifPresent(messages -> {
+                // Use Creative Library player-facing messages
+            });
     }
     
     @Override
@@ -79,13 +80,9 @@ api-version: '26.1.2'
 ```java
 @Override
 public void onEnable(FulcrumPlatform platform) {
-    // Get service directly
-    MessageService messages = platform.getService(MessageService.class);
-    
-    // Or use Optional
-    platform.getOptionalService(DataService.class)
-        .ifPresent(dataService -> {
-            // Use data service
+    platform.findService(PaperMessageSender.class)
+        .ifPresent(messages -> {
+            // Use Creative Library player-facing messages
         });
 }
 ```
