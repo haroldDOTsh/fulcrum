@@ -3,14 +3,19 @@ package sh.harold.fulcrum.fundamentals.data;
 import sh.harold.fulcrum.api.data.impl.json.JsonConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresMigrationRunner;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
+import sh.harold.fulcrum.api.data.storage.ProductionStorageGuard;
 import sh.harold.fulcrum.api.data.storage.StorageType;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.logging.Logger;
 
 public class FulcrumConnectionAdapter {
@@ -63,6 +68,9 @@ public class FulcrumConnectionAdapter {
             storageType = StorageType.JSON;
         }
         
+        boolean developmentMode = plugin.getConfig().getBoolean("development-mode", false);
+        ProductionStorageGuard.requireProductionSafe(storageType, developmentMode, "Paper DataAPI");
+
         logger.info("Initializing data storage with backend: " + storageType);
         
         switch (storageType) {
@@ -115,11 +123,19 @@ public class FulcrumConnectionAdapter {
                     "username", postgresUsername
                 );
 
-                adapter = new PostgresConnectionAdapter(jdbcUrl, postgresUsername, postgresPassword, postgresDatabase);
+                adapter = new PostgresConnectionAdapter(
+                    jdbcUrl,
+                    postgresUsername,
+                    postgresPassword,
+                    postgresDatabase,
+                    null,
+                    postgresPoolProperties(config)
+                );
                 try (var connection = ((PostgresConnectionAdapter) adapter).getConnection()) {
                     if (connection.isValid(5)) {
                         logger.info("Connected to PostgreSQL database '" + postgresDatabase + "'");
                         logger.info("Using PostgreSQL storage backend: " + postgresDatabase);
+                        runPostgresMigrations(config, (PostgresConnectionAdapter) adapter);
                     } else {
                         logger.severe("PostgreSQL connection reported invalid for database '" + postgresDatabase + "'");
                         throw new RuntimeException("PostgreSQL connection validation failed");
@@ -138,6 +154,35 @@ public class FulcrumConnectionAdapter {
         }
         
         return adapter;
+    }
+
+    private Properties postgresPoolProperties(YamlConfiguration config) {
+        Properties properties = new Properties();
+        ConfigurationSection poolSection = config.getConfigurationSection("postgres.connection-pool");
+        if (poolSection == null) {
+            return properties;
+        }
+
+        for (String key : poolSection.getKeys(false)) {
+            properties.setProperty(key, String.valueOf(poolSection.get(key)));
+        }
+        return properties;
+    }
+
+    private void runPostgresMigrations(YamlConfiguration config, PostgresConnectionAdapter adapter) {
+        boolean migrationsEnabled = config.getBoolean("postgres.migrations.enabled", true);
+        boolean autoMigrate = config.getBoolean("postgres.migrations.auto-migrate", false);
+        if (!migrationsEnabled || !autoMigrate) {
+            logger.info("PostgreSQL migrations are not configured for automatic runtime execution");
+            return;
+        }
+
+        logger.info("Running PostgreSQL classpath migrations");
+        new PostgresMigrationRunner(adapter).runClasspathMigrations(List.of(
+            "migrations/001_create_minigame_tables.sql",
+            "migrations/002_create_authority_core_tables.sql"
+        ));
+        logger.info("PostgreSQL migrations completed");
     }
     
     public void shutdown() {

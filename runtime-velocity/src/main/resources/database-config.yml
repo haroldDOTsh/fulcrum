@@ -1,7 +1,7 @@
 # Database configuration for Fulcrum Data API - Velocity
 storage:
   # Backend type: JSON, MONGODB, or POSTGRES
-  type: JSON
+  type: POSTGRES
   
 # JSON file storage settings (if type is JSON)
 json:
@@ -26,6 +26,12 @@ postgres:
   database: "fulcrum_velocity"
   username: "fulcrum_user"
   password: ""
+  connection-pool:
+    maximum-pool-size: 4
+    minimum-idle: 1
+    connection-timeout: 5000
+    idle-timeout: 300000
+    max-lifetime: 1800000
 
 # Redis configuration for Message Bus
 redis:

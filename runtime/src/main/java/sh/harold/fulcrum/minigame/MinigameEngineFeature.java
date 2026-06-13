@@ -2,6 +2,8 @@ package sh.harold.fulcrum.minigame;
 
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
@@ -44,7 +46,19 @@ public class MinigameEngineFeature implements PluginFeature {
         if (orchestrator == null) {
             plugin.getLogger().warning("SimpleSlotOrchestrator unavailable; provisioning events will be deferred.");
         }
-        engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, runtime);
+        DataAuthority.CommandPort commandPort = container.getOptional(DataAuthority.CommandPort.class)
+            .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                ? ServiceLocatorImpl.getInstance().findService(DataAuthority.CommandPort.class).orElse(null)
+                : null);
+        ServerIdentifier serverIdentifier = container.getOptional(ServerIdentifier.class)
+            .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
+                ? ServiceLocatorImpl.getInstance().findService(ServerIdentifier.class).orElse(null)
+                : null);
+        if (commandPort == null) {
+            plugin.getLogger().warning("Data authority unavailable; minigame match logs will not be persisted.");
+        }
+        engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, runtime,
+            commandPort, serverIdentifier);
         if (orchestrator != null) {
             orchestrator.addProvisionListener(engine::handleProvisionedSlot);
         }

@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.minigame;
 
 import java.util.Collection;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,11 +16,14 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService;
 import sh.harold.fulcrum.minigame.environment.MinigameEnvironmentService.MatchEnvironment;
 import sh.harold.fulcrum.minigame.match.MinigameMatch;
+import sh.harold.fulcrum.minigame.match.RosterManager;
 import sh.harold.fulcrum.minigame.routing.PlayerRouteRegistry;
 import sh.harold.fulcrum.minigame.state.event.MinigameEvent;
 import sh.harold.fulcrum.runtime.threading.PaperRuntime;
@@ -34,10 +38,14 @@ public final class MinigameEngine {
     private final MinigameEnvironmentService environmentService;
     private final SimpleSlotOrchestrator slotOrchestrator;
     private final PaperRuntime runtime;
+    private final DataAuthority.CommandPort commandPort;
+    private final ServerIdentifier serverIdentifier;
     private final Set<String> provisioningSlots = ConcurrentHashMap.newKeySet();
     private final Map<String, MinigameRegistration> registrations = new ConcurrentHashMap<>();
     private final Map<UUID, MinigameMatch> activeMatches = new ConcurrentHashMap<>();
     private final Map<UUID, String> matchStates = new ConcurrentHashMap<>();
+    private final Map<UUID, String> matchFamilyIds = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> matchStartedAt = new ConcurrentHashMap<>();
     private final Map<UUID, String> matchSlotIds = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, String>> matchSlotMetadata = new ConcurrentHashMap<>();
     private final Map<String, UUID> slotMatches = new ConcurrentHashMap<>();
@@ -51,12 +59,16 @@ public final class MinigameEngine {
                           PlayerRouteRegistry routeRegistry,
                           MinigameEnvironmentService environmentService,
                           SimpleSlotOrchestrator slotOrchestrator,
-                          PaperRuntime runtime) {
+                          PaperRuntime runtime,
+                          DataAuthority.CommandPort commandPort,
+                          ServerIdentifier serverIdentifier) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.routeRegistry = routeRegistry;
         this.environmentService = environmentService;
         this.slotOrchestrator = slotOrchestrator;
         this.runtime = Objects.requireNonNull(runtime, "runtime");
+        this.commandPort = commandPort;
+        this.serverIdentifier = serverIdentifier;
     }
 
     public void registerRegistration(MinigameRegistration registration) {
@@ -90,10 +102,16 @@ public final class MinigameEngine {
         }
 
         MinigameMatch removedMatch = activeMatches.remove(matchId);
-        matchStates.remove(matchId);
+        String state = matchStates.remove(matchId);
+        String familyId = matchFamilyIds.remove(matchId);
+        Long startedAt = matchStartedAt.remove(matchId);
 
         String slotId = matchSlotIds.remove(matchId);
         Map<String, String> metadataSnapshot = matchSlotMetadata.remove(matchId);
+
+        if (removedMatch != null) {
+            recordMatchEnd(removedMatch, familyId, state, slotId, metadataSnapshot, startedAt);
+        }
 
         if (slotId != null) {
             slotMatches.remove(slotId);
@@ -177,6 +195,9 @@ public final class MinigameEngine {
             tickTask = null;
         }
         activeMatches.clear();
+        matchStates.clear();
+        matchFamilyIds.clear();
+        matchStartedAt.clear();
         provisioningSlots.clear();
         ticking.set(false);
     }
@@ -342,11 +363,14 @@ public final class MinigameEngine {
                                    Collection<Player> players) {
         Objects.requireNonNull(players, "players");
         UUID matchId = UUID.randomUUID();
+        long startedAt = System.currentTimeMillis();
         SlotContext slotContext = resolveSlotContext(players);
         MinigameMatch match = new MinigameMatch(plugin, matchId, blueprint, registration, players,
             stateId -> onStateChange(matchId, familyId, stateId));
         activeMatches.put(matchId, match);
         matchStates.put(matchId, blueprint.getStartStateId());
+        matchFamilyIds.put(matchId, familyId);
+        matchStartedAt.put(matchId, startedAt);
         if (slotContext != null) {
             match.getContext().setAttribute(MinigameAttributes.SLOT_ID, slotContext.slotId);
 
@@ -373,8 +397,103 @@ public final class MinigameEngine {
                 matchSlotMetadata.put(matchId, new ConcurrentHashMap<>(metadataSnapshot));
             }
         }
+        recordMatchStart(match, familyId, slotContext, startedAt);
         plugin.getLogger().info("Started minigame match " + matchId + " (family=" + familyId + ")");
         return matchId;
+    }
+
+    private void recordMatchStart(MinigameMatch match, String familyId, SlotContext slotContext, long startedAt) {
+        Map<String, Object> payload = baseMatchPayload(match, familyId, slotContext != null ? slotContext.slotId : null,
+            slotContext != null ? slotContext.metadata : null);
+        payload.put("state", "STARTED");
+        payload.put("startedAt", startedAt);
+        payload.put("participants", participantPayload(match));
+        submitMatchCommand(DataAuthority.CommandType.RECORD_MATCH_START, match.getMatchId(), payload);
+    }
+
+    private void recordMatchEnd(MinigameMatch match,
+                                String familyId,
+                                String state,
+                                String slotId,
+                                Map<String, String> metadata,
+                                Long startedAt) {
+        Map<String, Object> payload = baseMatchPayload(match, familyId, slotId, metadata);
+        payload.put("state", state == null || state.isBlank() ? "ENDED" : state);
+        if (startedAt != null) {
+            payload.put("startedAt", startedAt);
+        }
+        payload.put("endedAt", System.currentTimeMillis());
+        payload.put("participants", participantPayload(match));
+        submitMatchCommand(DataAuthority.CommandType.RECORD_MATCH_END, match.getMatchId(), payload);
+    }
+
+    private Map<String, Object> baseMatchPayload(MinigameMatch match,
+                                                 String familyId,
+                                                 String slotId,
+                                                 Map<String, String> metadata) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("matchId", match.getMatchId().toString());
+        payload.put("familyId", familyId == null || familyId.isBlank() ? "unknown" : familyId);
+        String serverId = serverIdentifier != null ? serverIdentifier.getServerId() : null;
+        if (serverId != null && !serverId.isBlank()) {
+            payload.put("serverId", serverId);
+        }
+        if (slotId != null && !slotId.isBlank()) {
+            payload.put("slotId", slotId);
+        }
+        if (metadata != null && !metadata.isEmpty()) {
+            payload.put("slotMetadata", new HashMap<>(metadata));
+            copyMetadata(payload, metadata, "mapId", "variant", "targetWorld");
+        }
+        return payload;
+    }
+
+    private List<Map<String, Object>> participantPayload(MinigameMatch match) {
+        List<Map<String, Object>> participants = new ArrayList<>();
+        for (RosterManager.Entry entry : match.getRoster().all()) {
+            Map<String, Object> data = new HashMap<>();
+            data.put("playerId", entry.getPlayerId().toString());
+            data.put("state", entry.getState().name());
+            data.put("stats", Map.of("respawnAllowed", entry.isRespawnAllowed()));
+            participants.add(data);
+        }
+        return participants;
+    }
+
+    private void submitMatchCommand(DataAuthority.CommandType type, UUID matchId, Map<String, Object> payload) {
+        if (commandPort == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        DataAuthority.CommandEnvelope command = new DataAuthority.CommandEnvelope(
+            UUID.randomUUID(),
+            type,
+            serverIdentifier != null ? serverIdentifier.getServerId() : "paper-runtime",
+            "match:" + matchId,
+            type.name() + ":" + matchId + ":" + payload.getOrDefault("startedAt", payload.getOrDefault("endedAt", now)),
+            now + 5000L,
+            "",
+            0L,
+            payload
+        );
+
+        commandPort.submit(command).whenComplete((result, error) -> {
+            if (error != null) {
+                plugin.getLogger().log(Level.WARNING, "Failed to record match " + type + " for " + matchId, error);
+            } else if (!result.accepted()) {
+                plugin.getLogger().warning("Match command " + type + " rejected for " + matchId + ": "
+                    + result.rejectionReason() + " " + result.message());
+            }
+        });
+    }
+
+    private static void copyMetadata(Map<String, Object> target, Map<String, String> source, String... keys) {
+        for (String key : keys) {
+            String value = source.get(key);
+            if (value != null && !value.isBlank()) {
+                target.put(key, value);
+            }
+        }
     }
 
     private SlotContext resolveSlotContext(Collection<Player> players) {

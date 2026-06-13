@@ -9,6 +9,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.Collection;
 import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.rank.commands.RankCommand;
@@ -32,7 +33,6 @@ import java.util.stream.Collectors;
 public class RankFeature implements PluginFeature, RankService, Listener {
     
     private static final String COLLECTION_NAME = "player_ranks";
-    private static final String FIELD_UUID = "uuid";
     private static final String FIELD_PRIMARY_RANK = "primary_rank";
     private static final String FIELD_RANKS = "ranks";
     
@@ -42,6 +42,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     private JavaPlugin plugin;
     private Logger logger;
     private DataAPI dataAPI;
+    private DataAuthority.CommandPort commandPort;
     private Collection ranksCollection;
     private DependencyContainer container;
     private PaperRuntime runtime;
@@ -55,6 +56,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         try {
             // Get DataAPI from container
             this.dataAPI = container.get(DataAPI.class);
+            this.commandPort = container.get(DataAuthority.CommandPort.class);
             this.runtime = container.get(PaperRuntime.class);
             if (dataAPI == null) {
                 logger.warning("DataAPI not available, rank persistence will not work!");
@@ -88,9 +90,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     public void shutdown() {
         logger.info("Shutting down rank system...");
         
-        // Save all cached data
-        saveAllCachedData();
-        
         // Clear caches
         rankCache.clear();
         primaryRankCache.clear();
@@ -110,7 +109,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     
     @Override
     public Class<?>[] getDependencies() {
-        return new Class<?>[] { DataAPI.class, PaperRuntime.class };
+        return new Class<?>[] { DataAPI.class, DataAuthority.CommandPort.class, PaperRuntime.class };
     }
     
     @EventHandler(priority = EventPriority.LOWEST)
@@ -135,13 +134,8 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         UUID playerId = event.getPlayer().getUniqueId();
-        
-        // Save player data if modified
-        savePlayerRanks(playerId).thenRun(() -> {
-            // Remove from cache after saving
-            rankCache.remove(playerId);
-            primaryRankCache.remove(playerId);
-        });
+        rankCache.remove(playerId);
+        primaryRankCache.remove(playerId);
     }
     
     @Override
@@ -191,7 +185,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         primaryRankCache.put(playerId, rank);
         rankCache.compute(playerId, (ignored, current) -> immutableWith(current, rank));
 
-        return savePlayerRanks(playerId)
+        return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId)
             .thenCompose(ignored -> updateCommands(playerId, "primary rank change"));
     }
     
@@ -205,7 +199,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             primaryRankCache.put(playerId, rank);
         }
 
-        return savePlayerRanks(playerId)
+        return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId)
             .thenCompose(ignored -> updateCommands(playerId, "rank addition"));
     }
     
@@ -223,7 +217,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             primaryRankCache.put(playerId, newPrimary);
         }
 
-        return savePlayerRanks(playerId)
+        return submitRankCommand(DataAuthority.CommandType.REVOKE_RANK, playerId)
             .thenCompose(ignored -> updateCommands(playerId, "rank removal"));
     }
     
@@ -258,7 +252,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         rankCache.put(playerId, immutableWith(null, Rank.DEFAULT));
         primaryRankCache.put(playerId, Rank.DEFAULT);
 
-        return savePlayerRanks(playerId)
+        return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId)
             .thenCompose(ignored -> updateCommands(playerId, "rank reset"));
     }
     
@@ -319,14 +313,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             });
     }
     
-    /**
-     * Saves player ranks to storage.
-     */
-    private CompletableFuture<Void> savePlayerRanks(UUID playerId) {
-        if (ranksCollection == null) {
-            return CompletableFuture.completedFuture(null);
-        }
-        
+    private CompletableFuture<Void> submitRankCommand(DataAuthority.CommandType commandType, UUID playerId) {
         Set<Rank> ranks = rankCache.get(playerId);
         Rank primary = primaryRankCache.get(playerId);
 
@@ -334,40 +321,37 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             return CompletableFuture.completedFuture(null);
         }
 
-        Map<String, Object> data = new HashMap<>();
-        data.put(FIELD_UUID, playerId.toString());
+        Set<Rank> safeRanks = ranks == null || ranks.isEmpty()
+            ? immutableWith(null, primary == null ? Rank.DEFAULT : primary)
+            : ranks;
+        Rank safePrimary = primary == null ? getEffectiveRankFromSet(safeRanks) : primary;
 
-        if (primary != null) {
-            data.put(FIELD_PRIMARY_RANK, primary.name());
-        }
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("playerId", playerId.toString());
+        payload.put("primaryRank", safePrimary.name());
+        payload.put("ranks", safeRanks.stream().map(Enum::name).collect(Collectors.toList()));
 
-        if (ranks != null && !ranks.isEmpty()) {
-            List<String> rankNames = ranks.stream()
-                .map(Enum::name)
-                .collect(Collectors.toList());
-            data.put(FIELD_RANKS, rankNames);
-        }
+        DataAuthority.CommandEnvelope command = new DataAuthority.CommandEnvelope(
+            UUID.randomUUID(),
+            commandType,
+            "rank-service",
+            "player:" + playerId,
+            commandType.name() + ":" + playerId + ":" + System.currentTimeMillis(),
+            System.currentTimeMillis() + 5000L,
+            "",
+            0L,
+            payload
+        );
 
-        return ranksCollection.createAsync(playerId.toString(), data)
-            .thenAccept(ignored -> { })
-            .exceptionally(e -> {
-                logger.log(Level.WARNING, "Failed to save ranks for " + playerId, e);
-                return null;
-            });
-    }
-    
-    /**
-     * Saves all cached data to storage.
-     */
-    private void saveAllCachedData() {
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-        
-        for (UUID playerId : rankCache.keySet()) {
-            futures.add(savePlayerRanks(playerId));
-        }
-        
-        // Wait for all saves to complete
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        return commandPort.submit(command).thenAccept(result -> {
+            if (!result.accepted()) {
+                throw new IllegalStateException("Rank command rejected for " + playerId + ": "
+                    + result.rejectionReason() + " " + result.message());
+            }
+        }).exceptionally(e -> {
+            logger.log(Level.WARNING, "Failed to submit rank command for " + playerId, e);
+            return null;
+        }).toCompletableFuture();
     }
 
     private CompletableFuture<Void> updateCommands(UUID playerId, String reason) {

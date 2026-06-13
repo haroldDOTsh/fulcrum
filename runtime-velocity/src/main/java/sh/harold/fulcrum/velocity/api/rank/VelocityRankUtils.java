@@ -5,8 +5,6 @@ import com.velocitypowered.api.proxy.ConsoleCommandSource;
 import com.velocitypowered.api.proxy.Player;
 import org.slf4j.Logger;
 import sh.harold.fulcrum.api.data.DataAPI;
-import sh.harold.fulcrum.api.data.Document;
-import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -32,46 +30,18 @@ public final class VelocityRankUtils {
      */
     public static CompletableFuture<Boolean> hasRankOrHigher(Player player, Rank requiredRank, 
                                                             DataAPI dataAPI, Logger logger) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                logger.debug("Checking rank for player {} ({}), requires {}", 
-                           player.getUsername(), player.getUniqueId(), requiredRank.name());
-                
-                // Get player document from DataAPI
-                Document playerDoc = dataAPI.collection("players")
-                    .document(player.getUniqueId().toString());
-                
-                if (!playerDoc.exists()) {
-                    logger.debug("Player document not found for {}, denying access", player.getUsername());
-                    return false;
-                }
-                
-                // Get the player's rank from the document
-                String rankStr = playerDoc.get("rank", "DEFAULT");
-                Rank playerRank;
-                
-                try {
-                    playerRank = Rank.valueOf(rankStr.toUpperCase());
-                } catch (IllegalArgumentException e) {
-                    logger.warn("Invalid rank '{}' for player {}, defaulting to DEFAULT", 
-                               rankStr, player.getUsername());
-                    playerRank = Rank.DEFAULT;
-                }
-                
-                boolean hasPermission = playerRank.getPriority() >= requiredRank.getPriority();
-                
-                logger.debug("Player {} has rank {} (priority {}), needs {} (priority {}) -> {}",
-                           player.getUsername(), playerRank.name(), playerRank.getPriority(),
-                           requiredRank.name(), requiredRank.getPriority(),
-                           hasPermission ? "ALLOWED" : "DENIED");
-                
-                return hasPermission;
-                
-            } catch (Exception e) {
-                logger.error("Error checking rank for {}: {}", player.getUsername(), e.getMessage());
-                e.printStackTrace();
-                return false;
-            }
+        logger.debug("Checking rank for player {} ({}), requires {}",
+            player.getUsername(), player.getUniqueId(), requiredRank.name());
+
+        return getEffectiveRank(player, dataAPI, logger).thenApply(playerRank -> {
+            boolean hasPermission = playerRank.getPriority() >= requiredRank.getPriority();
+
+            logger.debug("Player {} has rank {} (priority {}), needs {} (priority {}) -> {}",
+                player.getUsername(), playerRank.name(), playerRank.getPriority(),
+                requiredRank.name(), requiredRank.getPriority(),
+                hasPermission ? "ALLOWED" : "DENIED");
+
+            return hasPermission;
         });
     }
     
@@ -165,17 +135,15 @@ public final class VelocityRankUtils {
      * @return CompletableFuture with the player's rank
      */
     public static CompletableFuture<Rank> getEffectiveRank(Player player, DataAPI dataAPI, Logger logger) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                Document playerDoc = dataAPI.collection("players")
-                    .document(player.getUniqueId().toString());
-                
+        return dataAPI.collection("player_ranks")
+            .selectAsync(player.getUniqueId().toString())
+            .thenApply(playerDoc -> {
                 if (!playerDoc.exists()) {
                     logger.debug("Player document not found for {}, returning DEFAULT", player.getUsername());
                     return Rank.DEFAULT;
                 }
                 
-                String rankStr = playerDoc.get("rank", "DEFAULT");
+                String rankStr = playerDoc.get("primary_rank", "DEFAULT");
                 
                 try {
                     return Rank.valueOf(rankStr.toUpperCase());
@@ -184,11 +152,11 @@ public final class VelocityRankUtils {
                                rankStr, player.getUsername());
                     return Rank.DEFAULT;
                 }
-            } catch (Exception e) {
+            })
+            .exceptionally(e -> {
                 logger.error("Error getting rank for {}: {}", player.getUsername(), e.getMessage());
                 return Rank.DEFAULT;
-            }
-        });
+            });
     }
     
     /**

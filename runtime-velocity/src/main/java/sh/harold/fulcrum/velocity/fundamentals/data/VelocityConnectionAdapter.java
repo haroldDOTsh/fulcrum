@@ -4,6 +4,7 @@ import sh.harold.fulcrum.api.data.impl.json.JsonConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.mongodb.MongoConnectionAdapter;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
+import sh.harold.fulcrum.api.data.storage.ProductionStorageGuard;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 import org.yaml.snakeyaml.Yaml;
 import org.slf4j.Logger;
@@ -13,15 +14,22 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Properties;
 
 public class VelocityConnectionAdapter {
     private final Path dataDirectory;
     private final Logger logger;
+    private final boolean developmentMode;
     private ConnectionAdapter adapter;
     
     public VelocityConnectionAdapter(Path dataDirectory, Logger logger) {
+        this(dataDirectory, logger, false);
+    }
+
+    public VelocityConnectionAdapter(Path dataDirectory, Logger logger, boolean developmentMode) {
         this.dataDirectory = dataDirectory;
         this.logger = logger;
+        this.developmentMode = developmentMode;
     }
     
     public ConnectionAdapter createAdapter() {
@@ -55,6 +63,8 @@ public class VelocityConnectionAdapter {
             storageType = StorageType.JSON;
         }
         
+        ProductionStorageGuard.requireProductionSafe(storageType, developmentMode, "Velocity DataAPI");
+
         logger.info("Initializing data storage with backend: {}", storageType);
         
         switch (storageType) {
@@ -108,7 +118,14 @@ public class VelocityConnectionAdapter {
                 String postgresUsername = (String) postgresConfig.getOrDefault("username", "fulcrum_user");
                 String postgresPassword = (String) postgresConfig.getOrDefault("password", "");
                 
-                adapter = new PostgresConnectionAdapter(jdbcUrl, postgresUsername, postgresPassword, postgresDatabase);
+                adapter = new PostgresConnectionAdapter(
+                    jdbcUrl,
+                    postgresUsername,
+                    postgresPassword,
+                    postgresDatabase,
+                    null,
+                    postgresPoolProperties(postgresConfig)
+                );
                 logger.info("Using PostgreSQL storage backend: {}", postgresDatabase);
                 break;
                 
@@ -127,6 +144,13 @@ public class VelocityConnectionAdapter {
             logger.error("Failed to load database config, using defaults", e);
             return Map.of();
         }
+    }
+
+    private Properties postgresPoolProperties(Map<String, Object> postgresConfig) {
+        Properties properties = new Properties();
+        Map<String, Object> pool = (Map<String, Object>) postgresConfig.getOrDefault("connection-pool", Map.of());
+        pool.forEach((key, value) -> properties.setProperty(key, String.valueOf(value)));
+        return properties;
     }
     
     public void shutdown() {

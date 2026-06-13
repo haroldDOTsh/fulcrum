@@ -2,6 +2,10 @@ package sh.harold.fulcrum.fundamentals.data;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.DataAPI;
+import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.DataApiCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandPort;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.module.ServiceLocator;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
@@ -16,6 +20,7 @@ public class DataAPIFeature implements PluginFeature {
     private Logger logger;
     private FulcrumConnectionAdapter connectionAdapter;
     private DataAPI dataAPI;
+    private DataAuthority.CommandPort commandPort;
     private PaperRuntime runtime;
     
     @Override
@@ -34,15 +39,20 @@ public class DataAPIFeature implements PluginFeature {
             
             // Create DataAPI instance
             dataAPI = DataAPI.create(adapter, runtime.asyncExecutor());
+            commandPort = adapter instanceof PostgresConnectionAdapter postgresAdapter
+                ? new PostgresAuthorityCommandPort(postgresAdapter, runtime.asyncExecutor())
+                : new DataApiCommandPort(dataAPI);
             
             // Register with both DependencyContainer and ServiceLocator
             container.register(DataAPI.class, dataAPI);
             container.register(ConnectionAdapter.class, adapter);
+            container.register(DataAuthority.CommandPort.class, commandPort);
             
             // Also register via ServiceLocator if available
             if (ServiceLocatorImpl.getInstance() != null) {
                 ServiceLocatorImpl.getInstance().registerService(DataAPI.class, dataAPI);
                 ServiceLocatorImpl.getInstance().registerService(ConnectionAdapter.class, adapter);
+                ServiceLocatorImpl.getInstance().registerService(DataAuthority.CommandPort.class, commandPort);
             }
             
             logger.info("Data API initialized successfully");
@@ -66,6 +76,7 @@ public class DataAPIFeature implements PluginFeature {
         if (ServiceLocatorImpl.getInstance() != null) {
             ServiceLocatorImpl.getInstance().unregisterService(DataAPI.class);
             ServiceLocatorImpl.getInstance().unregisterService(ConnectionAdapter.class);
+            ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.CommandPort.class);
         }
         
         logger.info("Data API shut down successfully");

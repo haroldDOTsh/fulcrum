@@ -6,11 +6,13 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresMigrationRunner;
 import sh.harold.fulcrum.api.data.storage.ConnectionAdapter;
 import sh.harold.fulcrum.api.data.storage.StorageType;
 import sh.harold.fulcrum.api.world.poi.POIRegistry;
@@ -22,6 +24,8 @@ import sh.harold.fulcrum.lifecycle.ServiceLocatorImpl;
 import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.io.File;
+import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.logging.Logger;
@@ -161,7 +165,14 @@ public class WorldFeature implements PluginFeature {
             String username = yaml.getString("postgres.username", "fulcrum_user");
             String password = yaml.getString("postgres.password", "");
 
-            PostgresConnectionAdapter adapter = new PostgresConnectionAdapter(jdbcUrl, username, password, database);
+            PostgresConnectionAdapter adapter = new PostgresConnectionAdapter(
+                jdbcUrl,
+                username,
+                password,
+                database,
+                null,
+                postgresPoolProperties(yaml)
+            );
             try (var connection = adapter.getConnection()) {
                 if (!connection.isValid(5)) {
                     logger.severe("Standalone PostgreSQL connection reported invalid for database '" + database + "'.");
@@ -169,12 +180,39 @@ public class WorldFeature implements PluginFeature {
                     return null;
                 }
             }
+            runPostgresMigrations(yaml, adapter);
             logger.info("Standalone PostgreSQL adapter initialized for world service (database: " + database + ").");
             return adapter;
         } catch (Exception ex) {
             logger.warning("Failed to create standalone PostgreSQL adapter: " + ex.getMessage());
             return null;
         }
+    }
+
+    private Properties postgresPoolProperties(FileConfiguration yaml) {
+        Properties properties = new Properties();
+        ConfigurationSection poolSection = yaml.getConfigurationSection("postgres.connection-pool");
+        if (poolSection == null) {
+            return properties;
+        }
+
+        for (String key : poolSection.getKeys(false)) {
+            properties.setProperty(key, String.valueOf(poolSection.get(key)));
+        }
+        return properties;
+    }
+
+    private void runPostgresMigrations(FileConfiguration yaml, PostgresConnectionAdapter adapter) {
+        boolean migrationsEnabled = yaml.getBoolean("postgres.migrations.enabled", true);
+        boolean autoMigrate = yaml.getBoolean("postgres.migrations.auto-migrate", false);
+        if (!migrationsEnabled || !autoMigrate) {
+            return;
+        }
+
+        new PostgresMigrationRunner(adapter).runClasspathMigrations(List.of(
+            "migrations/001_create_minigame_tables.sql",
+            "migrations/002_create_authority_core_tables.sql"
+        ));
     }
 
     private void registerFallbackCommand(String message) {
