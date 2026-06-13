@@ -40,6 +40,7 @@ public class RegisteredServerData {
 
     private final Map<String, LogicalSlotRecord> slots = new ConcurrentHashMap<>();
     private final Map<String, Integer> slotFamilyCapacities = new ConcurrentHashMap<>();
+    private final Map<String, Integer> localFamilyReservations = new ConcurrentHashMap<>();
     
     public RegisteredServerData(String serverId, String tempId, String serverType, 
                                 String address, int port, int maxCapacity) {
@@ -134,10 +135,12 @@ public class RegisteredServerData {
         if (capacities != null) {
             capacities.forEach((family, cap) -> slotFamilyCapacities.put(family, Math.max(1, cap)));
         }
+        localFamilyReservations.keySet().retainAll(slotFamilyCapacities.keySet());
     }
 
     public void clearSlotFamilyCapacities() {
         slotFamilyCapacities.clear();
+        localFamilyReservations.clear();
     }
 
     public boolean supportsFamily(String familyId) {
@@ -145,23 +148,29 @@ public class RegisteredServerData {
     }
 
     public int getAvailableFamilySlots(String familyId) {
+        return Math.max(0, getFamilyCapacity(familyId) - localFamilyReservations.getOrDefault(familyId, 0));
+    }
+
+    public int getFamilyCapacity(String familyId) {
         return slotFamilyCapacities.getOrDefault(familyId, 0);
     }
 
     public boolean reserveFamilySlot(String familyId) {
         AtomicBoolean reserved = new AtomicBoolean(false);
-        slotFamilyCapacities.computeIfPresent(familyId, (key, value) -> {
-            if (value == null || value <= 0) {
-                return value;
+        localFamilyReservations.compute(familyId, (key, current) -> {
+            int capacity = getFamilyCapacity(familyId);
+            int reservedCount = current != null ? current : 0;
+            if (capacity <= 0 || reservedCount >= capacity) {
+                return current;
             }
             reserved.set(true);
-            return value - 1;
+            return reservedCount + 1;
         });
         return reserved.get();
     }
 
     public void releaseFamilySlot(String familyId) {
-        slotFamilyCapacities.computeIfPresent(familyId, (key, value) -> value + 1);
+        localFamilyReservations.computeIfPresent(familyId, (key, value) -> value <= 1 ? null : value - 1);
     }
 
     // Setters

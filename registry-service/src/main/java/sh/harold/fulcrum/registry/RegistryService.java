@@ -13,8 +13,13 @@ import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
+import sh.harold.fulcrum.registry.coordination.InMemoryRegistryCoordinationStore;
+import sh.harold.fulcrum.registry.coordination.RedisRegistryCoordinationStore;
+import sh.harold.fulcrum.registry.coordination.RegistryCoordinationStore;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
+import sh.harold.fulcrum.registry.persistence.PostgresRegistryNodeSnapshotStore;
+import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshotStore;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
 import sh.harold.fulcrum.registry.slot.SlotProvisionService;
@@ -22,6 +27,7 @@ import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 
 import java.io.InputStream;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -49,6 +55,8 @@ public class RegistryService {
     
     private MessageBus messageBus;
     private RegistryMessageBusAdapter messageBusAdapter;
+    private RegistryCoordinationStore coordinationStore;
+    private RegistryNodeSnapshotStore nodeSnapshotStore = RegistryNodeSnapshotStore.NOOP;
     private SlotProvisionService slotProvisionService;
     private PlayerRoutingService playerRoutingService;
     
@@ -118,6 +126,21 @@ public class RegistryService {
                 "port", System.getenv("REDIS_PORT") != null ? Integer.parseInt(System.getenv("REDIS_PORT")) : 6379,
                 "password", System.getenv("REDIS_PASSWORD") != null ? System.getenv("REDIS_PASSWORD") : ""
             ),
+            "postgres", Map.of(
+                "enabled", System.getenv("POSTGRES_ENABLED") != null
+                    ? Boolean.parseBoolean(System.getenv("POSTGRES_ENABLED"))
+                    : false,
+                "host", System.getenv("POSTGRES_HOST") != null ? System.getenv("POSTGRES_HOST") : "localhost",
+                "port", System.getenv("POSTGRES_PORT") != null ? Integer.parseInt(System.getenv("POSTGRES_PORT")) : 5432,
+                "database", System.getenv("POSTGRES_DATABASE") != null ? System.getenv("POSTGRES_DATABASE") : "fulcrum",
+                "username", System.getenv("POSTGRES_USERNAME") != null ? System.getenv("POSTGRES_USERNAME") : "fulcrum",
+                "password", System.getenv("POSTGRES_PASSWORD") != null ? System.getenv("POSTGRES_PASSWORD") : "",
+                "pool", Map.of(
+                    "maximum-pool-size", 2,
+                    "minimum-idle", 0,
+                    "connection-timeout", 5000
+                )
+            ),
             "registry", Map.of(
                 "heartbeat-timeout", 15,
                 "check-interval", 5,
@@ -155,26 +178,23 @@ public class RegistryService {
             boolean redisAvailable = MessageBusFactory.isRedisAvailable();
             
             if (!redisAvailable && connectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS) {
-                LOGGER.error("Redis requested but Lettuce library not available!");
-                LOGGER.error("This will cause the registry to use InMemoryMessageBus while other services use Redis!");
-                LOGGER.error("Services will NOT be able to communicate!");
+                throw new IllegalStateException("Redis message bus requested but Lettuce is not available");
             }
             
             messageBus = MessageBusFactory.create(messageBusAdapter);
-            slotProvisionService = new SlotProvisionService(serverRegistry, messageBus);
+            nodeSnapshotStore = createNodeSnapshotStore();
+            serverRegistry.setSnapshotStore(nodeSnapshotStore);
+            proxyRegistry.setSnapshotStore(nodeSnapshotStore);
+            coordinationStore = createCoordinationStore(connectionConfig);
+            slotProvisionService = new SlotProvisionService(serverRegistry, messageBus, coordinationStore);
             playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry);
             playerRoutingService.initialize();
             
             // Log which implementation was created
             String busClassName = messageBus.getClass().getSimpleName();
             
-            if ("InMemoryMessageBus".equals(busClassName) &&
-                connectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS) {
-                LOGGER.warn("========================================================");
-                LOGGER.warn("WARNING: Using InMemoryMessageBus instead of Redis!");
-                LOGGER.warn("This means the registry CANNOT communicate with other services!");
-                LOGGER.warn("Check that lettuce-core is in the classpath!");
-                LOGGER.warn("========================================================");
+            if ("InMemoryMessageBus".equals(busClassName)) {
+                LOGGER.warn("Using debug-only InMemoryMessageBus; this registry cannot coordinate a real cluster");
             }
             
             // Initialize RegistrationHandler with MessageBus
@@ -226,6 +246,9 @@ public class RegistryService {
         MessageBusConnectionConfig.Builder builder = MessageBusConnectionConfig.builder();
         
         if ("IN_MEMORY".equalsIgnoreCase(busType)) {
+            if (!debugMode) {
+                throw new IllegalStateException("In-memory registry message bus is only allowed when registry.debug=true");
+            }
             builder.type(MessageBusConnectionConfig.MessageBusType.IN_MEMORY);
         } else {
             builder.type(MessageBusConnectionConfig.MessageBusType.REDIS)
@@ -238,6 +261,85 @@ public class RegistryService {
         }
         
         return builder.build();
+    }
+
+    private RegistryCoordinationStore createCoordinationStore(MessageBusConnectionConfig connectionConfig) {
+        if (connectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.IN_MEMORY) {
+            LOGGER.warn("Using debug-only in-memory registry coordination store");
+            return new InMemoryRegistryCoordinationStore();
+        }
+
+        LOGGER.info("Using Redis registry coordination store at {}:{}",
+            connectionConfig.getHost(), connectionConfig.getPort());
+        return new RedisRegistryCoordinationStore(connectionConfig);
+    }
+
+    private RegistryNodeSnapshotStore createNodeSnapshotStore() {
+        Map<String, Object> postgresConfig = (Map<String, Object>) config.get("postgres");
+        if (postgresConfig == null || !booleanValue(postgresConfig.get("enabled"), false)) {
+            LOGGER.warn("PostgreSQL registry snapshots disabled; registry metadata will be Redis/live-memory only");
+            return RegistryNodeSnapshotStore.NOOP;
+        }
+
+        String jdbcUrl = stringValue(postgresConfig.get("jdbc-url"), null);
+        if (jdbcUrl == null || jdbcUrl.isBlank()) {
+            String host = stringValue(postgresConfig.get("host"), "localhost");
+            int port = intValue(postgresConfig.get("port"), 5432);
+            String database = stringValue(postgresConfig.get("database"), "fulcrum");
+            jdbcUrl = "jdbc:postgresql://" + host + ":" + port + "/" + database;
+        }
+
+        String databaseName = stringValue(postgresConfig.get("database"), "fulcrum");
+        Properties poolProperties = new Properties();
+        Object poolRaw = postgresConfig.get("pool");
+        if (poolRaw instanceof Map<?, ?> pool) {
+            copyPoolProperty(poolProperties, pool, "maximum-pool-size");
+            copyPoolProperty(poolProperties, pool, "minimum-idle");
+            copyPoolProperty(poolProperties, pool, "connection-timeout");
+            copyPoolProperty(poolProperties, pool, "idle-timeout");
+            copyPoolProperty(poolProperties, pool, "max-lifetime");
+            copyPoolProperty(poolProperties, pool, "leak-detection-threshold");
+        }
+
+        LOGGER.info("PostgreSQL registry snapshots enabled");
+        return new PostgresRegistryNodeSnapshotStore(
+            jdbcUrl,
+            stringValue(postgresConfig.get("username"), "fulcrum"),
+            stringValue(postgresConfig.get("password"), ""),
+            "registry-" + databaseName,
+            poolProperties
+        );
+    }
+
+    private static void copyPoolProperty(Properties target, Map<?, ?> source, String key) {
+        Object value = source.get(key);
+        if (value != null) {
+            target.setProperty(key, value.toString());
+        }
+    }
+
+    private static boolean booleanValue(Object value, boolean fallback) {
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value != null) {
+            return Boolean.parseBoolean(value.toString());
+        }
+        return fallback;
+    }
+
+    private static int intValue(Object value, int fallback) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value != null) {
+            return Integer.parseInt(value.toString());
+        }
+        return fallback;
+    }
+
+    private static String stringValue(Object value, String fallback) {
+        return value == null ? fallback : value.toString();
     }
     
     private void initializeConsole() {
@@ -415,6 +517,14 @@ public class RegistryService {
             
             if (playerRoutingService != null) {
                 playerRoutingService.shutdown();
+            }
+
+            if (coordinationStore != null) {
+                coordinationStore.close();
+            }
+
+            if (nodeSnapshotStore != null) {
+                nodeSnapshotStore.close();
             }
             
             // MessageBus shutdown is handled by the adapter

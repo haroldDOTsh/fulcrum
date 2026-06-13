@@ -28,6 +28,8 @@ dependencies {
     
     // Redis client (same as used in runtime)
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
+    implementation("org.postgresql:postgresql:42.7.4")
+    implementation("com.zaxxer:HikariCP:5.1.0")
     
     // Reactive Streams (required by Lettuce for reactive commands)
     implementation("io.projectreactor:reactor-core:3.6.0")

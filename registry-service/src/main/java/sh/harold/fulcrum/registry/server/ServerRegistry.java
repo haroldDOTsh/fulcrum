@@ -2,13 +2,16 @@ package sh.harold.fulcrum.registry.server;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
+import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshotStore;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -21,9 +24,14 @@ public class ServerRegistry {
     private final IdAllocator idAllocator;
     private final Map<String, RegisteredServerData> servers = new ConcurrentHashMap<>();
     private final Map<String, String> tempIdToPermId = new ConcurrentHashMap<>();
+    private RegistryNodeSnapshotStore snapshotStore = RegistryNodeSnapshotStore.NOOP;
     
     public ServerRegistry(IdAllocator idAllocator) {
         this.idAllocator = idAllocator;
+    }
+
+    public void setSnapshotStore(RegistryNodeSnapshotStore snapshotStore) {
+        this.snapshotStore = Objects.requireNonNullElse(snapshotStore, RegistryNodeSnapshotStore.NOOP);
     }
     
     /**
@@ -54,6 +62,7 @@ public class ServerRegistry {
                 
                 // Replace the server data
                 servers.put(requestId, updatedServer);
+                snapshot(updatedServer);
                 
                 LOGGER.info("Re-registered existing server {} (re-registration)", requestId);
                 return requestId; // Return the SAME ID
@@ -102,6 +111,7 @@ public class ServerRegistry {
         // Store server atomically
         servers.put(permanentId, serverData);
         tempIdToPermId.put(requestId, permanentId);
+        snapshot(serverData);
         
         LOGGER.info("Registered server {} -> {} (type: {}, role: {})",
             requestId, permanentId, request.getServerType(), serverData.getRole());
@@ -123,6 +133,7 @@ public class ServerRegistry {
 
             server.clearSlots();
             server.clearSlotFamilyCapacities();
+            markOffline(serverId);
             LOGGER.info("Deregistered server {} (type: {})", serverId, server.getServerType());
         }
     }
@@ -182,6 +193,7 @@ public class ServerRegistry {
                 server.setStatus(RegisteredServerData.Status.RUNNING);
                 LOGGER.info("Server {} is now RUNNING", serverId);
             }
+            snapshot(server);
         }
     }
     
@@ -194,6 +206,7 @@ public class ServerRegistry {
             RegisteredServerData.Status oldStatus = server.getStatus();
             RegisteredServerData.Status newStatus = RegisteredServerData.Status.valueOf(status);
             server.setStatus(newStatus);
+            snapshot(server);
             LOGGER.info("Server {} status changed: {} -> {}", serverId, oldStatus, newStatus);
         }
     }
@@ -208,10 +221,32 @@ public class ServerRegistry {
             return null;
         }
 
+        LogicalSlotRecord previous = server.getSlot(update.getSlotSuffix());
+        SlotLifecycleStatus previousStatus = previous != null ? previous.getStatus() : null;
+        String previousFamily = previous != null ? previous.getMetadata().get("family") : null;
+
         LogicalSlotRecord record = server.applySlotUpdate(update);
+        String familyId = record.getMetadata().getOrDefault("family", previousFamily);
+        if (familyId != null
+            && isTerminal(update.getStatus())
+            && !isTerminal(previousStatus)) {
+            server.releaseFamilySlot(familyId);
+        }
+        snapshot(server);
         LOGGER.debug("Updated slot {} for server {} -> status={} players={}/{}",
             record.getSlotId(), serverId, record.getStatus(), record.getOnlinePlayers(), record.getMaxPlayers());
         return record;
+    }
+
+    private static boolean isTerminal(SlotLifecycleStatus status) {
+        return status == SlotLifecycleStatus.COOLDOWN || status == SlotLifecycleStatus.FAULTED;
+    }
+
+    public void snapshotServer(String serverId) {
+        RegisteredServerData server = getServer(serverId);
+        if (server != null) {
+            snapshot(server);
+        }
     }
 
     /**
@@ -225,6 +260,7 @@ public class ServerRegistry {
         }
 
         server.updateSlotFamilyCapacities(capacities);
+        snapshot(server);
         LOGGER.debug("Updated family capacities for {} => {}", serverId, capacities);
     }
     
@@ -252,6 +288,23 @@ public class ServerRegistry {
         if (server != null) {
             server.setPlayerCount(playerCount);
             server.setTps(tps);
+            snapshot(server);
+        }
+    }
+
+    private void snapshot(RegisteredServerData server) {
+        try {
+            snapshotStore.snapshotServer(server);
+        } catch (Exception exception) {
+            LOGGER.warn("Failed to snapshot server {}", server.getServerId(), exception);
+        }
+    }
+
+    private void markOffline(String serverId) {
+        try {
+            snapshotStore.markOffline(serverId, "BACKEND", RegisteredServerData.Status.DEAD.name());
+        } catch (Exception exception) {
+            LOGGER.warn("Failed to mark server {} offline in snapshot store", serverId, exception);
         }
     }
     

@@ -67,6 +67,7 @@ public class PlayerRoutingService {
     private final ConcurrentMap<UUID, InFlightRoute> inFlightRoutes = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Integer> pendingOccupancy = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Boolean> provisioningFamilies = new ConcurrentHashMap<>();
+    private final Set<UUID> pendingRequestIds = ConcurrentHashMap.newKeySet();
 
     private final MessageHandler playerRequestHandler = this::handlePlayerRequest;
     private final MessageHandler slotStatusHandler = this::handleSlotStatus;
@@ -122,6 +123,11 @@ public class PlayerRoutingService {
         try {
             PlayerSlotRequest request = convert(envelope.getPayload(), PlayerSlotRequest.class);
             request.validate();
+
+            if (inFlightRoutes.containsKey(request.getRequestId()) || pendingRequestIds.contains(request.getRequestId())) {
+                LOGGER.debug("Ignoring duplicate player slot request {}", request.getRequestId());
+                return;
+            }
 
             RegisteredProxyData proxy = proxyRegistry.getProxy(request.getProxyId());
             if (proxy == null) {
@@ -212,6 +218,10 @@ public class PlayerRoutingService {
         if (context == null) {
             return;
         }
+        if (!pendingRequestIds.add(context.request.getRequestId())) {
+            LOGGER.debug("Ignoring duplicate queued player slot request {}", context.request.getRequestId());
+            return;
+        }
         context.markEnqueued();
         pendingQueues.compute(context.request.getFamilyId(), (family, queue) -> {
             Deque<PlayerRequestContext> effective = queue != null ? queue : new ConcurrentLinkedDeque<>();
@@ -278,6 +288,7 @@ public class PlayerRoutingService {
             if (context == null) {
                 break;
             }
+            pendingRequestIds.remove(context.request.getRequestId());
 
             if (context.hasExceededWait(MAX_QUEUE_WAIT)) {
                 sendDisconnectCommand(context.request, "queue-timeout");
@@ -323,15 +334,30 @@ public class PlayerRoutingService {
         metadata.putIfAbsent("family", request.getFamilyId());
         command.setMetadata(metadata);
 
-        messageBus.broadcast(ChannelConstants.getPlayerRouteChannel(request.getProxyId()), command);
-        messageBus.broadcast(ChannelConstants.getServerPlayerRouteChannel(slot.getServerId()), command);
-        LOGGER.info("Routing player {} to slot {} on server {}", request.getPlayerName(), slot.getSlotId(), slot.getServerId());
-
         adjustPendingOccupancy(slot.getSlotId(), 1);
         ScheduledFuture<?> timeout = scheduler.schedule(() -> handleRouteTimeout(context, slot),
             ROUTE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        InFlightRoute route = new InFlightRoute(context, slot.getSlotId(), timeout);
+        InFlightRoute existing = inFlightRoutes.putIfAbsent(request.getRequestId(), route);
+        if (existing != null) {
+            timeout.cancel(false);
+            adjustPendingOccupancy(slot.getSlotId(), -1);
+            LOGGER.debug("Ignoring duplicate route command for request {}", request.getRequestId());
+            return;
+        }
 
-        inFlightRoutes.put(request.getRequestId(), new InFlightRoute(context, slot.getSlotId(), timeout));
+        try {
+            messageBus.broadcast(ChannelConstants.getPlayerRouteChannel(request.getProxyId()), command);
+            messageBus.broadcast(ChannelConstants.getServerPlayerRouteChannel(slot.getServerId()), command);
+            LOGGER.info("Routing player {} to slot {} on server {}", request.getPlayerName(), slot.getSlotId(), slot.getServerId());
+        } catch (RuntimeException exception) {
+            if (inFlightRoutes.remove(request.getRequestId(), route)) {
+                timeout.cancel(false);
+                adjustPendingOccupancy(slot.getSlotId(), -1);
+            }
+            LOGGER.error("Failed to dispatch player route command {}", request.getRequestId(), exception);
+            retryRequest(context, "route-transient");
+        }
     }
 
     private void handleRouteTimeout(PlayerRequestContext context, LogicalSlotRecord slot) {

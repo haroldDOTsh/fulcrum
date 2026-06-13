@@ -10,6 +10,19 @@ redis:
   port: ${REDIS_PORT:6379}
   password: ${REDIS_PASSWORD:}
 
+# Optional durable registry metadata snapshots. Live heartbeats remain Redis-owned.
+postgres:
+  enabled: ${POSTGRES_ENABLED:false}
+  host: ${POSTGRES_HOST:localhost}
+  port: ${POSTGRES_PORT:5432}
+  database: ${POSTGRES_DATABASE:fulcrum}
+  username: ${POSTGRES_USERNAME:fulcrum}
+  password: ${POSTGRES_PASSWORD:}
+  pool:
+    maximum-pool-size: 2
+    minimum-idle: 0
+    connection-timeout: 5000
+
 # Registry settings
 registry:
   heartbeat-timeout: 15  # seconds before server timeout

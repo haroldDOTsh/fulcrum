@@ -152,6 +152,7 @@ public class HeartbeatMonitor {
             server.setStatus(RegisteredServerData.Status.AVAILABLE);
             
             if (oldStatus != RegisteredServerData.Status.AVAILABLE) {
+                serverRegistry.snapshotServer(permanentId);
                 LOGGER.info("Server {} status changed from {} to AVAILABLE (heartbeat received)",
                            permanentId, oldStatus);
                 
@@ -330,6 +331,7 @@ public class HeartbeatMonitor {
             
             if (oldStatus != newStatus) {
                 server.setStatus(newStatus);
+                serverRegistry.snapshotServer(serverId);
                 long secondsSinceHeartbeat = timeSinceHeartbeat / 1000;
                 
                 switch (newStatus) {

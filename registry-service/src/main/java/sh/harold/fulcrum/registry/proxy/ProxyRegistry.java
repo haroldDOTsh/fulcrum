@@ -3,6 +3,7 @@ package sh.harold.fulcrum.registry.proxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
+import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshotStore;
 import sh.harold.fulcrum.registry.state.RegistrationState;
 import sh.harold.fulcrum.registry.state.StateTransitionEvent;
 
@@ -37,6 +38,7 @@ public class ProxyRegistry {
         return t;
     });
     private boolean debugMode = false;
+    private RegistryNodeSnapshotStore snapshotStore = RegistryNodeSnapshotStore.NOOP;
     
     public ProxyRegistry(IdAllocator idAllocator) {
         this(idAllocator, false);
@@ -54,6 +56,10 @@ public class ProxyRegistry {
      */
     public void setDebugMode(boolean debugMode) {
         this.debugMode = debugMode;
+    }
+
+    public void setSnapshotStore(RegistryNodeSnapshotStore snapshotStore) {
+        this.snapshotStore = Objects.requireNonNullElse(snapshotStore, RegistryNodeSnapshotStore.NOOP);
     }
     
     /**
@@ -98,6 +104,7 @@ public class ProxyRegistry {
             unavailableProxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
             unavailableProxy.setLastHeartbeat(System.currentTimeMillis());
             proxies.put(proxyId, unavailableProxy);
+            snapshot(unavailableProxy);
             
             LOGGER.info("Reactivated previously unavailable proxy: {}",
                        proxyId.getFormattedId());
@@ -135,6 +142,7 @@ public class ProxyRegistry {
         LOGGER.info("Registered proxy: {} (address: {}:{}, state: {})",
                    proxyId.getFormattedId(), address, port,
                    proxyInfo.getRegistrationState());
+        snapshot(proxyInfo);
         
         return proxyId;
     }
@@ -188,6 +196,7 @@ public class ProxyRegistry {
                 // Note: address and port are final, can't update them
                 // If proxy reconnects with different address/port, it would need a new registration
                 proxies.put(existingId, unavailableProxy);
+                snapshot(unavailableProxy);
                 
                 LOGGER.info("Reactivated previously unavailable proxy: {} -> {} (original address: {}:{})",
                            tempId, existingId.getFormattedId(), unavailableProxy.getAddress(), unavailableProxy.getPort());
@@ -265,6 +274,7 @@ public class ProxyRegistry {
             
             LOGGER.info("Proxy {} marked as unavailable (ID reserved for reconnection, state: {})",
                        proxyId.getFormattedId(), removed.getRegistrationState());
+            snapshot(removed);
         }
     }
     
@@ -399,6 +409,7 @@ public class ProxyRegistry {
             
             // Immediately release the ID for reuse
             idAllocator.releaseProxyIdExplicit(proxyIdString, true);
+            markOffline(proxyId.getFormattedId(), "DEAD");
             
             LOGGER.info("Proxy {} removed immediately and ID released (graceful shutdown)", proxyIdString);
             return true;
@@ -414,6 +425,7 @@ public class ProxyRegistry {
             String addressPortKey = removed.getAddress() + ":" + removed.getPort();
             addressPortToProxyId.remove(addressPortKey);
             idAllocator.releaseProxyIdExplicit(proxyIdString, true);
+            markOffline(proxyId.getFormattedId(), "DEAD");
             
             LOGGER.info("Unavailable proxy {} removed immediately and ID released", proxyIdString);
             return true;
@@ -446,6 +458,7 @@ public class ProxyRegistry {
             
             // Explicitly release the ID only after extended timeout
             idAllocator.releaseProxyIdExplicit(proxyId.getFormattedId(), false);
+            markOffline(proxyId.getFormattedId(), "DEAD");
             
             LOGGER.info("Permanently removed proxy {} after timeout (ID now available for reuse, final state: {})",
                        proxyId.getFormattedId(), removed.getRegistrationState());
@@ -518,6 +531,7 @@ public class ProxyRegistry {
         if (proxy != null) {
             proxy.setLastHeartbeat(System.currentTimeMillis());
             proxy.setStatus(RegisteredProxyData.Status.AVAILABLE);
+            snapshot(proxy);
             if (debugMode) {
                 LOGGER.debug("Updated heartbeat for proxy: {}", proxyIdString);
             }
@@ -539,6 +553,7 @@ public class ProxyRegistry {
             RegisteredProxyData.Status oldStatus = proxy.getStatus();
             if (oldStatus != status) {
                 proxy.setStatus(status);
+                snapshot(proxy);
                 
                 // Update registration state based on status
                 if (status == RegisteredProxyData.Status.AVAILABLE) {
@@ -655,6 +670,22 @@ public class ProxyRegistry {
                 .toList()
                 .forEach(this::permanentlyRemoveProxy);
         }, 60, 60, TimeUnit.SECONDS); // Check every minute
+    }
+
+    private void snapshot(RegisteredProxyData proxy) {
+        try {
+            snapshotStore.snapshotProxy(proxy);
+        } catch (Exception exception) {
+            LOGGER.warn("Failed to snapshot proxy {}", proxy.getProxyIdString(), exception);
+        }
+    }
+
+    private void markOffline(String proxyId, String state) {
+        try {
+            snapshotStore.markOffline(proxyId, "PROXY", state);
+        } catch (Exception exception) {
+            LOGGER.warn("Failed to mark proxy {} offline in snapshot store", proxyId, exception);
+        }
     }
     
     /**
