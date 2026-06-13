@@ -92,7 +92,8 @@ if (RankUtils.isStaff(player)) {
 
 ## Implementation Details
 
-- Uses DataAPI for persistence
+- Writes rank changes through `DataAuthority.CommandPort`
+- Reads rank state from `DataAuthority.PlayerRankReader`
 - In-memory caching for performance
 - Async operations with CompletableFuture
 - Automatic expiration checking

@@ -22,13 +22,19 @@ implementation 'com.github.haroldDOTsh.fulcrum:runtime:VERSION'
 
 ## Modules
 
-### Data API
-Storage abstraction with MongoDB/JSON backends, transactions, and complex queries.
+### Data Authority
+PostgreSQL-backed durable command and projection ports for player, session, rank, and match data.
 
 ```java
-DataAPI dataAPI = DataAPI.create(adapter);
-Document player = dataAPI.player(uuid);
-player.set("stats.level", 10);
+commands.submit(new DataAuthority.CommandEnvelope(
+    UUID.randomUUID(),
+    DataAuthority.CommandType.GRANT_RANK,
+    "player:" + playerId,
+    Map.of("playerId", playerId.toString(), "primaryRank", "VIP"),
+    "rank-admin:" + actorId,
+    UUID.randomUUID().toString(),
+    Instant.now()
+));
 ```
 
 ### Message Bus API
@@ -69,11 +75,11 @@ rankService.setRank(playerId, Rank.VIP, expiration);
 - Java 25 for the Paper runtime; Java 17/21 for individual API and service modules as configured
 - Paper 26.1.2+
 - Optional: Redis for message bus
-- Optional: MongoDB for data storage
+- PostgreSQL for durable authority data
 
 ## Documentation
 
-- [Data API](data-api/README.md)
+- [Data Authority](data-api/README.md)
 - [Message Bus API](message-bus-api/README.md)
 - [Menu API](runtime/src/main/java/sh/harold/fulcrum/api/menu/README.md)
 - [Message API](runtime/src/main/java/sh/harold/fulcrum/api/message/README.md)

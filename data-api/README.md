@@ -1,136 +1,49 @@
-# Data API
+# Data Authority
 
-Storage abstraction layer supporting MongoDB, JSON files, and in-memory backends with transactions and complex queries.
+PostgreSQL-backed durable data authority for Fulcrum.
 
-## Setup
+This module is no longer a generic document database abstraction. Runtime code should not choose arbitrary collections, storage backends, or transaction wrappers. It submits domain commands through `DataAuthority.CommandPort` and reads supported projections through typed read ports.
 
-```java
-// JSON backend for development
-ConnectionAdapter adapter = new JsonConnectionAdapter(Path.of("./data"));
-DataAPI dataAPI = DataAPI.create(adapter);
+## Storage Contract
 
-// MongoDB for production
-ConnectionAdapter adapter = new MongoConnectionAdapter(
-    "mongodb://localhost:27017",
-    "database_name",
-    "username",
-    "password"
-);
-DataAPI dataAPI = DataAPI.create(adapter);
-```
+- PostgreSQL is the canonical durable store for player profiles, sessions, rank projection/audit, match records, and match participant stats.
+- Redis remains outside this module and should be used for ephemeral routing, leases, pub/sub, heartbeats, and short TTL state.
+- Local memory is only a process cache.
+- Message bus events are notifications and invalidations, not durable storage.
+- MongoDB and JSON file storage are not part of the runtime data path.
 
-## Basic Operations
+## Command Writes
 
 ```java
-// Player documents
-Document player = dataAPI.player(playerUuid);
-player.set("name", "Steve");
-player.set("stats.level", 10);
-player.set("stats.experience", 1500);
+DataAuthority.CommandPort commands = services.get(DataAuthority.CommandPort.class);
 
-// Get with defaults
-int level = player.get("stats.level", 1);
-double balance = player.get("economy.balance", 0.0);
-
-// Collections
-Collection guilds = dataAPI.guilds();
-Document guild = guilds.select("guild-id");
-guild.set("members", memberList);
+commands.submit(new DataAuthority.CommandEnvelope(
+    UUID.randomUUID(),
+    DataAuthority.CommandType.GRANT_RANK,
+    "player:" + playerId,
+    Map.of(
+        "playerId", playerId.toString(),
+        "primaryRank", "VIP",
+        "ranks", List.of("VIP")
+    ),
+    "rank-admin:" + actorId,
+    UUID.randomUUID().toString(),
+    Instant.now()
+));
 ```
 
-## Querying
+Commands are idempotent by key and are recorded in `authority_commands`.
+
+## Projection Reads
 
 ```java
-// Find high-level players
-List<Document> players = dataAPI.players()
-    .where("stats.level").greaterThan(20)
-    .and("online").equalTo(true)
-    .sort("stats.level", false)
-    .limit(10)
-    .execute();
+DataAuthority.PlayerRankReader ranks = services.get(DataAuthority.PlayerRankReader.class);
 
-// Complex conditions
-List<Document> results = dataAPI.from("items")
-    .where("type").in(Arrays.asList("WEAPON", "ARMOR"))
-    .and("rarity").equalTo("LEGENDARY")
-    .or("price").lessThan(1000)
-    .execute();
-
-// Aggregations
-double totalBalance = dataAPI.players()
-    .where("online").equalTo(true)
-    .sum("economy.balance");
-
-long onlineCount = dataAPI.players()
-    .where("online").equalTo(true)
-    .count();
+ranks.findRanks(playerId).thenAccept(snapshot -> {
+    snapshot.ifPresent(rankSnapshot -> {
+        List<String> assignedRanks = rankSnapshot.ranks();
+    });
+});
 ```
 
-## Transactions
-
-```java
-Transaction tx = dataAPI.transaction();
-try {
-    tx.begin();
-    
-    Document sender = tx.from("players").select(senderId);
-    Document receiver = tx.from("players").select(receiverId);
-    
-    double amount = 100.0;
-    sender.set("balance", sender.get("balance", 0.0) - amount);
-    receiver.set("balance", receiver.get("balance", 0.0) + amount);
-    
-    tx.commit();
-} catch (Exception e) {
-    tx.rollback();
-}
-```
-
-## Query API Reference
-
-### Comparison Operations
-- `equalTo(value)` - Exact match
-- `notEquals(value)` - Not equal
-- `greaterThan(value)` - Greater than
-- `lessThan(value)` - Less than
-- `in(list)` - Value in list
-- `contains(value)` - Contains value (strings/arrays)
-
-### String Operations
-- `startsWith(prefix)` - String prefix match
-- `endsWith(suffix)` - String suffix match
-- `matches(regex)` - Regex pattern match
-
-### Logical Operations
-- `and(path)` - AND condition
-- `or(path)` - OR condition
-- `not()` - Negate next condition
-- `orWhere(subQuery)` - Nested OR
-- `andWhere(subQuery)` - Nested AND
-
-### Collection Operations
-- `isEmpty()` - Check if empty
-- `isNotEmpty()` - Check if not empty
-- `size(n)` - Collection/string size
-
-### Results
-- `execute()` - Get all results
-- `first()` - Get first result
-- `count()` - Count results
-- `limit(n)` - Limit results
-- `skip(n)` - Skip results
-- `sort(field, asc)` - Sort results
-
-### Aggregations
-- `sum(path)` - Sum values
-- `avg(path)` - Average values
-- `min(path)` - Minimum value
-- `max(path)` - Maximum value
-
-## Transaction Isolation Levels
-
-- `READ_UNCOMMITTED` - Can read uncommitted changes
-- `READ_COMMITTED` - Only read committed changes
-- `REPEATABLE_READ` - Same query returns same results
-- `SERIALIZABLE` - Transactions execute serially
-
+Consumers should add narrow domain repositories or read ports when they need new data. Do not reintroduce generic document access as a public API.
