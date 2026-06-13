@@ -37,6 +37,10 @@ public class PostgresStorageBackend implements StorageBackend {
         this.connectionAdapter = connectionAdapter;
         this.executor = executor != null ? executor : ForkJoinPool.commonPool();
     }
+
+    public PostgresConnectionAdapter getConnectionAdapter() {
+        return connectionAdapter;
+    }
     
     @Override
     public CompletableFuture<Document> getDocument(String collection, String id) {

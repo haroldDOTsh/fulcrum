@@ -31,6 +31,8 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_world_maps_updated_at ON world_maps;
+
 CREATE TRIGGER update_world_maps_updated_at
     BEFORE UPDATE ON world_maps
     FOR EACH ROW

@@ -25,7 +25,10 @@ public interface Collection {
      * 
      * @param id The document ID
      * @return The document interface
+     * @deprecated Use {@link #selectAsync(String)} from runtime code. This method
+     * blocks and is retained only for tests, tools, and legacy cold paths.
      */
+    @Deprecated(since = "1.0.0")
     default Document select(String id) {
         return selectAsync(id).join();
     }
@@ -35,7 +38,10 @@ public interface Collection {
      * 
      * @param id The document ID
      * @return The document interface
+     * @deprecated Use {@link #selectAsync(String)} from runtime code. This method
+     * blocks and is retained only for tests, tools, and legacy cold paths.
      */
+    @Deprecated(since = "1.0.0")
     default Document document(String id) {
         return select(id);
     }
@@ -56,7 +62,10 @@ public interface Collection {
      * @param id The document ID
      * @param data The initial data for the document
      * @return The created document
+     * @deprecated Use {@link #createAsync(String, Map)} from runtime code. This
+     * method blocks and is retained only for tests, tools, and legacy cold paths.
      */
+    @Deprecated(since = "1.0.0")
     default Document create(String id, Map<String, Object> data) {
         return createAsync(id, data).join();
     }
@@ -75,7 +84,10 @@ public interface Collection {
      * 
      * @param id The document ID
      * @return true if the document was deleted, false otherwise
+     * @deprecated Use {@link #deleteAsync(String)} from runtime code. This method
+     * blocks and is retained only for tests, tools, and legacy cold paths.
      */
+    @Deprecated(since = "1.0.0")
     default boolean delete(String id) {
         return deleteAsync(id).join();
     }
@@ -107,7 +119,10 @@ public interface Collection {
      * Blocks until the asynchronous operation completes.
      * 
      * @return List of all documents
+     * @deprecated Use {@link #allAsync()} from runtime code. This method blocks
+     * and is retained only for tests, tools, and legacy cold paths.
      */
+    @Deprecated(since = "1.0.0")
     default List<Document> all() {
         return allAsync().join();
     }
@@ -124,7 +139,10 @@ public interface Collection {
      * Blocks until the asynchronous operation completes.
      * 
      * @return The document count
+     * @deprecated Use {@link #countAsync()} from runtime code. This method blocks
+     * and is retained only for tests, tools, and legacy cold paths.
      */
+    @Deprecated(since = "1.0.0")
     default long count() {
         return countAsync().join();
     }

@@ -10,7 +10,12 @@ import java.util.concurrent.Executor;
 /**
  * Main entry point for the Data API.
  * Provides fluent access to collections and documents.
+ *
+ * @deprecated Production Fulcrum authority should use domain command ports and
+ * snapshots from {@code sh.harold.fulcrum.api.data.authority}. This generic
+ * document API is retained for tests, tools, and legacy cold paths.
  */
+@Deprecated(since = "1.0.0")
 public interface DataAPI {
     
     /**

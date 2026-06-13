@@ -18,6 +18,9 @@ import java.util.concurrent.TimeUnit;
  * Manages MongoDB client connections and database access.
  */
 public class MongoConnectionAdapter implements ConnectionAdapter {
+
+    private static final int DEFAULT_MAX_POOL_SIZE = 8;
+    private static final int DEFAULT_MIN_POOL_SIZE = 0;
     
     private final MongoClient mongoClient;
     private final MongoDatabase database;
@@ -49,8 +52,8 @@ public class MongoConnectionAdapter implements ConnectionAdapter {
         MongoClientSettings settings = MongoClientSettings.builder()
                 .applyConnectionString(new ConnectionString(connectionString))
                 .applyToConnectionPoolSettings(builder -> 
-                    builder.maxSize(100)
-                           .minSize(10)
+                    builder.maxSize(DEFAULT_MAX_POOL_SIZE)
+                           .minSize(DEFAULT_MIN_POOL_SIZE)
                            .maxWaitTime(60, TimeUnit.SECONDS)
                            .maxConnectionLifeTime(30, TimeUnit.MINUTES)
                            .maxConnectionIdleTime(10, TimeUnit.MINUTES))

@@ -39,7 +39,10 @@ public interface Document {
      * @param path The path where to set the value
      * @param value The value to set
      * @return This document for chaining
+     * @deprecated Use {@link #setAsync(String, Object)} from runtime code. This
+     * method blocks and is retained only for tests, tools, and legacy cold paths.
      */
+    @Deprecated(since = "1.0.0")
     default Document set(String path, Object value) {
         return setAsync(path, value).join();
     }
