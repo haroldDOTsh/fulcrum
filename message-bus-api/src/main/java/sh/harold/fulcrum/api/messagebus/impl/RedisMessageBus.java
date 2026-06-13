@@ -3,12 +3,16 @@ package sh.harold.fulcrum.api.messagebus.impl;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.lettuce.core.KeyScanCursor;
+import io.lettuce.core.ScanArgs;
+import io.lettuce.core.ScanCursor;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
+import sh.harold.fulcrum.api.messagebus.MessageBusException;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusAdapter;
@@ -316,6 +320,7 @@ public class RedisMessageBus extends AbstractMessageBus {
             logger.fine("Broadcasted message type: " + type + " to channel: " + standardChannel);
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to broadcast message", e);
+            throw new MessageBusException("Failed to broadcast message type: " + type, e);
         }
     }
     
@@ -337,6 +342,7 @@ public class RedisMessageBus extends AbstractMessageBus {
             logger.fine("Sent message type: " + type + " to server: " + targetServerId);
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to send message to server: " + targetServerId, e);
+            throw new MessageBusException("Failed to send message type " + type + " to server: " + targetServerId, e);
         }
     }
     
@@ -595,15 +601,10 @@ public class RedisMessageBus extends AbstractMessageBus {
         try {
             RedisCommands<String, String> commands = redisConnection.sync();
             
-            // Use simpler approach - scan and delete keys with pattern
-            // This avoids the ScriptOutputType issue
             Set<String> keysToDelete = new HashSet<>();
             
-            // Scan for message cache keys
-            commands.keys(MESSAGE_CACHE_PREFIX + "*").forEach(keysToDelete::add);
-            
-            // Scan for message ID keys
-            commands.keys(MESSAGE_ID_PREFIX + "*").forEach(keysToDelete::add);
+            collectKeys(commands, MESSAGE_CACHE_PREFIX + "*", keysToDelete);
+            collectKeys(commands, MESSAGE_ID_PREFIX + "*", keysToDelete);
             
             // Delete in batches
             if (!keysToDelete.isEmpty()) {
@@ -617,6 +618,15 @@ public class RedisMessageBus extends AbstractMessageBus {
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to cleanup stale messages", e);
         }
+    }
+
+    private void collectKeys(RedisCommands<String, String> commands, String pattern, Set<String> keys) {
+        ScanCursor cursor = ScanCursor.INITIAL;
+        do {
+            KeyScanCursor<String> scan = commands.scan(cursor, ScanArgs.Builder.matches(pattern).limit(500));
+            keys.addAll(scan.getKeys());
+            cursor = scan;
+        } while (!cursor.isFinished());
     }
     
     /**

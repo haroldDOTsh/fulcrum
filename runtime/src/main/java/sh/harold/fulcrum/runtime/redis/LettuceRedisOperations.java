@@ -2,15 +2,18 @@ package sh.harold.fulcrum.runtime.redis;
 
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
+import io.lettuce.core.KeyScanCursor;
+import io.lettuce.core.ScanArgs;
+import io.lettuce.core.ScanCursor;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 
 import java.time.Duration;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 /**
  * Redis operations implementation using Lettuce client.
@@ -56,7 +59,8 @@ public class LettuceRedisOperations implements AutoCloseable {
             if (available) {
                 LOGGER.info("Lettuce Redis connection established successfully");
             } else {
-                LOGGER.warning("Lettuce Redis connection failed - operating in degraded mode");
+                close();
+                throw new IllegalStateException("Redis ping failed");
             }
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to initialize Lettuce Redis connection", e);
@@ -187,7 +191,14 @@ public class LettuceRedisOperations implements AutoCloseable {
         
         try {
             RedisCommands<String, String> commands = connection.sync();
-            return commands.keys(pattern).stream().collect(Collectors.toSet());
+            Set<String> keys = new HashSet<>();
+            ScanCursor cursor = ScanCursor.INITIAL;
+            do {
+                KeyScanCursor<String> scan = commands.scan(cursor, ScanArgs.Builder.matches(pattern).limit(500));
+                keys.addAll(scan.getKeys());
+                cursor = scan;
+            } while (!cursor.isFinished());
+            return keys;
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to get keys with pattern: " + pattern, e);
             return Collections.emptySet();

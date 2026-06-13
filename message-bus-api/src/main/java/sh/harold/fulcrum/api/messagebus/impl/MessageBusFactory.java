@@ -12,8 +12,8 @@ import java.util.logging.Logger;
  * Automatically selects the appropriate implementation based on the
  * connection configuration type.
  * 
- * This factory is completely stateless and provides fail-safe
- * fallback to in-memory implementation when Redis is unavailable.
+ * This factory is completely stateless. Redis failures are fatal when Redis is
+ * requested; callers must choose IN_MEMORY explicitly for development.
  */
 public class MessageBusFactory {
     
@@ -21,7 +21,8 @@ public class MessageBusFactory {
     
     /**
      * Creates a MessageBus instance based on the adapter's configuration.
-     * Will automatically fall back to in-memory if Redis is unavailable.
+     * Redis failures do not fall back to in-memory because that partitions
+     * multi-process Fulcrum deployments.
      *
      * @param adapter the message bus adapter providing platform-specific functionality
      * @return a configured MessageBus instance
@@ -58,7 +59,7 @@ public class MessageBusFactory {
     }
     
     /**
-     * Creates a Redis-based message bus instance with automatic fallback.
+     * Creates a Redis-based message bus instance.
      */
     private static MessageBus createRedisMessageBus(MessageBusAdapter adapter) {
         try {
@@ -70,21 +71,10 @@ public class MessageBusFactory {
         } catch (ClassNotFoundException e) {
             LOGGER.log(Level.SEVERE, 
                 "Redis support requested but Lettuce library not found. " +
-                "Please ensure io.lettuce:lettuce-core is in the classpath. " +
-                "Falling back to InMemoryMessageBus.", e);
-            
-            // Fallback to in-memory
-            LOGGER.warning("Falling back to InMemoryMessageBus due to missing Redis support");
-            return createInMemoryMessageBus(adapter);
+                "Please ensure io.lettuce:lettuce-core is in the classpath.", e);
+            throw new RuntimeException("Redis support requested but Lettuce is missing", e);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to create RedisMessageBus", e);
-            
-            // If Redis fails to initialize, fall back to in-memory
-            if (adapter.getConnectionConfig().getType() == MessageBusConnectionConfig.MessageBusType.REDIS) {
-                LOGGER.warning("Redis initialization failed, falling back to InMemoryMessageBus");
-                return createInMemoryMessageBus(adapter);
-            }
-            
             throw new RuntimeException("Failed to create RedisMessageBus", e);
         }
     }

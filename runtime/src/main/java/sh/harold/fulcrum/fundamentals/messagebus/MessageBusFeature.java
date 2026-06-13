@@ -120,16 +120,12 @@ public class MessageBusFeature implements PluginFeature {
             ConfigurationSection redisSection = yaml.getConfigurationSection("redis");
             
             if (redisSection == null) {
-                LOGGER.warning("No Redis configuration found in database-config.yml");
-                LOGGER.warning("Using in-memory message bus as fallback");
-                return MessageBusConnectionConfig.inMemory();
+                throw new IllegalStateException("No Redis configuration found in database-config.yml");
             }
             
             // Check if Redis is enabled
             if (!redisSection.getBoolean("enabled", true)) {
-                LOGGER.info("Redis is disabled in configuration");
-                LOGGER.info("Using in-memory message bus");
-                return MessageBusConnectionConfig.inMemory();
+                throw new IllegalStateException("Redis is disabled; production message bus requires Redis");
             }
             
             // Build Redis configuration
@@ -163,8 +159,7 @@ public class MessageBusFeature implements PluginFeature {
             
         } catch (Exception e) {
             LOGGER.severe("Failed to load configuration: " + e.getMessage());
-            LOGGER.warning("Falling back to in-memory message bus");
-            return MessageBusConnectionConfig.inMemory();
+            throw new IllegalStateException("Unable to load production Redis message bus configuration", e);
         }
     }
 }

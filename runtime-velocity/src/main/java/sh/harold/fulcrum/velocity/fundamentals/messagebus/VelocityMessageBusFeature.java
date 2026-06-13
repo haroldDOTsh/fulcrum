@@ -137,6 +137,11 @@ public class VelocityMessageBusFeature implements VelocityFeature {
     }
     
     private MessageBusConnectionConfig loadConfiguration() {
+        if (configLoader.get("development-mode", false)) {
+            logger.warn("Development mode enabled; using in-memory message bus");
+            return MessageBusConnectionConfig.inMemory();
+        }
+
         // Load Redis configuration from database-config.yml
         try {
             Path configPath = plugin.getDataDirectory().resolve("database-config.yml");
@@ -166,17 +171,13 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             Map<String, Object> redisSection = (Map<String, Object>) config.get("redis");
             
             if (redisSection == null) {
-                logger.warn("No Redis configuration found in database-config.yml");
-                logger.warn("Using in-memory message bus as fallback");
-                return MessageBusConnectionConfig.inMemory();
+                throw new IllegalStateException("No Redis configuration found in database-config.yml");
             }
             
             // Check if Redis is enabled
             Boolean enabled = (Boolean) redisSection.get("enabled");
             if (enabled != null && !enabled) {
-                logger.info("Redis is disabled in configuration");
-                logger.info("Using in-memory message bus");
-                return MessageBusConnectionConfig.inMemory();
+                throw new IllegalStateException("Redis is disabled; production message bus requires Redis");
             }
             
             // Build Redis configuration
@@ -198,8 +199,7 @@ public class VelocityMessageBusFeature implements VelocityFeature {
             
         } catch (Exception e) {
             logger.error("Failed to load configuration: {}", e.getMessage());
-            logger.warn("Falling back to in-memory message bus");
-            return MessageBusConnectionConfig.inMemory();
+            throw new IllegalStateException("Unable to load production Redis message bus configuration", e);
         }
     }
     
