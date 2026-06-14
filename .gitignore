@@ -139,6 +139,7 @@ test-output/
 
 # Documentation
 /docs/build/
+/refactor/
 
 # Backup files
 *.bak
