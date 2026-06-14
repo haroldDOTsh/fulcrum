@@ -14,8 +14,6 @@ import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 import sh.harold.fulcrum.runtime.threading.PlayerSnapshot;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -66,16 +64,22 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     }
 
     private void submitPlayerCommand(DataAuthority.CommandType commandType, PlayerSnapshot snapshot) {
-        DataAuthority.CommandEnvelope command = new DataAuthority.CommandEnvelope(
-            UUID.randomUUID(),
-            commandType,
-            "paper-runtime",
-            "player:" + snapshot.playerId(),
-            commandType.name() + ":" + snapshot.playerId() + ":" + snapshot.capturedAtMillis(),
-            snapshot.capturedAtMillis() + 5000L,
-            "",
-            0L,
-            playerPayload(commandType, snapshot)
+        DataAuthority.PlayerProfileCommand command = new DataAuthority.PlayerProfileCommand(
+            manifest(commandType, snapshot),
+            snapshot.playerId(),
+            snapshot.username(),
+            snapshot.capturedAtMillis(),
+            null,
+            null,
+            trackIps ? snapshot.ipAddress() : null,
+            snapshot.worldName(),
+            snapshot.compactLocation(),
+            snapshot.gameMode(),
+            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN ? snapshot.level() : null,
+            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN ? snapshot.exp() : null,
+            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN ? snapshot.health() : null,
+            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN ? snapshot.foodLevel() : null,
+            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGOUT ? "lastJoin" : null
         );
 
         commandPort.submit(command).whenComplete((result, error) -> {
@@ -90,32 +94,17 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         });
     }
 
-    private Map<String, Object> playerPayload(DataAuthority.CommandType commandType, PlayerSnapshot snapshot) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("playerId", snapshot.playerId().toString());
-        payload.put("username", snapshot.username());
-        payload.put("timestamp", snapshot.capturedAtMillis());
-        payload.put("online", snapshot.online());
-        payload.put("lastWorld", snapshot.worldName());
-        payload.put("lastLocation", snapshot.compactLocation());
-        payload.put("gamemode", snapshot.gameMode());
-
-        if (commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN) {
-            payload.put("level", snapshot.level());
-            payload.put("exp", snapshot.exp());
-            payload.put("health", snapshot.health());
-            payload.put("foodLevel", snapshot.foodLevel());
-        }
-
-        if (commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGOUT) {
-            payload.put("playtimeStartField", "lastJoin");
-        }
-
-        if (trackIps && snapshot.ipAddress() != null) {
-            payload.put("lastIp", snapshot.ipAddress());
-        }
-
-        return payload;
+    private DataAuthority.CommandManifest manifest(DataAuthority.CommandType commandType, PlayerSnapshot snapshot) {
+        return DataAuthority.CommandManifest.create(
+            UUID.randomUUID(),
+            commandType,
+            "paper-runtime",
+            "player:" + snapshot.playerId(),
+            commandType.name() + ":" + snapshot.playerId() + ":" + snapshot.capturedAtMillis(),
+            snapshot.capturedAtMillis() + 5000L,
+            "",
+            DataAuthority.ANY_REVISION
+        );
     }
     
     public CompletableFuture<Optional<DataAuthority.PlayerProfileSnapshot>> getPlayerProfile(UUID uuid) {
@@ -143,7 +132,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     
     @Override
     public int getPriority() {
-        return 50; // After data authority (priority 10)
+        return 50; // After data authority
     }
     
     @Override

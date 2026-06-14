@@ -46,17 +46,11 @@ public class MinigameEngineFeature implements PluginFeature {
         if (orchestrator == null) {
             plugin.getLogger().warning("SimpleSlotOrchestrator unavailable; provisioning events will be deferred.");
         }
-        DataAuthority.CommandPort commandPort = container.getOptional(DataAuthority.CommandPort.class)
-            .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
-                ? ServiceLocatorImpl.getInstance().findService(DataAuthority.CommandPort.class).orElse(null)
-                : null);
+        DataAuthority.CommandPort commandPort = container.get(DataAuthority.CommandPort.class);
         ServerIdentifier serverIdentifier = container.getOptional(ServerIdentifier.class)
             .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                 ? ServiceLocatorImpl.getInstance().findService(ServerIdentifier.class).orElse(null)
                 : null);
-        if (commandPort == null) {
-            plugin.getLogger().warning("Data authority unavailable; minigame match logs will not be persisted.");
-        }
         engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, runtime,
             commandPort, serverIdentifier);
         if (orchestrator != null) {
@@ -121,6 +115,6 @@ public class MinigameEngineFeature implements PluginFeature {
 
     @Override
     public Class<?>[] getDependencies() {
-        return new Class<?>[] { PaperRuntime.class };
+        return new Class<?>[] { PaperRuntime.class, DataAuthority.CommandPort.class };
     }
 }

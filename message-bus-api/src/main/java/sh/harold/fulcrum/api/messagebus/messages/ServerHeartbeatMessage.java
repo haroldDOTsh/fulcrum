@@ -24,6 +24,8 @@ public class ServerHeartbeatMessage implements BaseMessage, Serializable {
     private Set<String> availablePools; // For pool-specific servers
     private String status;            // Server status (AVAILABLE, FULL, EVACUATING, etc.)
     private long timestamp;
+    private RuntimeDataAuthorityAttestation dataAuthorityAttestation;
+    private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest;
     
     public ServerHeartbeatMessage() {
         this.availablePools = new HashSet<>();
@@ -115,6 +117,22 @@ public class ServerHeartbeatMessage implements BaseMessage, Serializable {
     
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public RuntimeDataAuthorityAttestation getDataAuthorityAttestation() {
+        return dataAuthorityAttestation;
+    }
+
+    public void setDataAuthorityAttestation(RuntimeDataAuthorityAttestation dataAuthorityAttestation) {
+        this.dataAuthorityAttestation = dataAuthorityAttestation;
+    }
+
+    public RuntimeAuthorityDeliveryManifest getAuthorityDeliveryManifest() {
+        return authorityDeliveryManifest;
+    }
+
+    public void setAuthorityDeliveryManifest(RuntimeAuthorityDeliveryManifest authorityDeliveryManifest) {
+        this.authorityDeliveryManifest = authorityDeliveryManifest;
     }
     
     /**

@@ -24,6 +24,20 @@ dependencies {
     testImplementation("org.slf4j:slf4j-simple:2.0.9")
 }
 
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
+tasks.compileJava {
+    options.release.set(17)
+}
+
+tasks.compileTestJava {
+    options.release.set(17)
+}
+
 tasks.test {
     useJUnitPlatform()
 }

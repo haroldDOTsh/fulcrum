@@ -165,6 +165,15 @@ public class PlayerRoutingService {
                 if (familyId == null) {
                     return;
                 }
+                RegisteredServerData server = serverRegistry.getServer(slot.getServerId());
+                if (!isRoutableServer(server)) {
+                    LOGGER.debug(
+                        "Ignoring available slot {} on non-routable server {}",
+                        slot.getSlotId(),
+                        slot.getServerId()
+                    );
+                    return;
+                }
                 dispatchQueuedPlayers(familyId, slot);
                 return;
             }
@@ -253,6 +262,9 @@ public class PlayerRoutingService {
         }
 
         for (RegisteredServerData server : serverRegistry.getAllServers()) {
+            if (!isRoutableServer(server)) {
+                continue;
+            }
             for (LogicalSlotRecord slot : server.getSlots()) {
                 if (SlotLifecycleStatus.AVAILABLE != slot.getStatus()) {
                     continue;
@@ -269,6 +281,12 @@ public class PlayerRoutingService {
             }
         }
         return Optional.empty();
+    }
+
+    private static boolean isRoutableServer(RegisteredServerData server) {
+        return server != null
+            && (server.getStatus() == RegisteredServerData.Status.RUNNING
+                || server.getStatus() == RegisteredServerData.Status.AVAILABLE);
     }
 
     private void dispatchQueuedPlayers(String familyId, LogicalSlotRecord slot) {

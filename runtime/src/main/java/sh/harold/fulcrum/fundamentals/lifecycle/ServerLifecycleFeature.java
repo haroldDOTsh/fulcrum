@@ -14,6 +14,8 @@ import sh.harold.fulcrum.api.messagebus.MessageHandler;
 import sh.harold.fulcrum.api.messagebus.messages.ProxyAnnouncementMessage;
 import sh.harold.fulcrum.api.messagebus.messages.ProxyDiscoveryRequest;
 import sh.harold.fulcrum.api.messagebus.messages.ProxyDiscoveryResponse;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeDataAuthorityAttestation;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationResponse;
 import sh.harold.fulcrum.api.messagebus.messages.ServerHeartbeatMessage;
@@ -374,6 +376,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         // Set server address and port - CRITICAL for proxies to connect
         request.setAddress(serverIdentifier.getAddress());
         request.setPort(serverIdentifier.getPort());
+        attachAuthorityMetadata(request);
         
         LOGGER.info("Sending registration request to Registry Service:");
         LOGGER.info("  Server ID: " + serverIdentifier.getServerId() +
@@ -603,6 +606,7 @@ public class ServerLifecycleFeature implements PluginFeature {
         
         // Set role from the environment
         heartbeat.setRole(serverIdentifier.getRole());
+        attachAuthorityMetadata(heartbeat);
         
         // Add pool information if this is a pool server
         if (environment != null && environment.contains("pool")) {
@@ -675,11 +679,34 @@ public class ServerLifecycleFeature implements PluginFeature {
                 maxCapacity
             );
             deregister.setRole(serverIdentifier.getRole());
+            attachAuthorityMetadata(deregister);
             
             messageBus.send(ChannelConstants.getProxyDirectChannel(proxyId), "server.deregistration", deregister);
         }
         
         LOGGER.info("Server lifecycle shutting down");
+    }
+
+    private void attachAuthorityMetadata(ServerRegistrationRequest request) {
+        request.setDataAuthorityAttestation(dataAuthorityAttestation());
+        request.setAuthorityDeliveryManifest(authorityDeliveryManifest());
+    }
+
+    private void attachAuthorityMetadata(ServerHeartbeatMessage heartbeat) {
+        heartbeat.setDataAuthorityAttestation(dataAuthorityAttestation());
+        heartbeat.setAuthorityDeliveryManifest(authorityDeliveryManifest());
+    }
+
+    private RuntimeDataAuthorityAttestation dataAuthorityAttestation() {
+        return container == null
+            ? null
+            : container.getOptional(RuntimeDataAuthorityAttestation.class).orElse(null);
+    }
+
+    private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest() {
+        return container == null
+            ? null
+            : container.getOptional(RuntimeAuthorityDeliveryManifest.class).orElse(null);
     }
     
     // Message handlers

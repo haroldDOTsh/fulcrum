@@ -1,9 +1,17 @@
 package sh.harold.fulcrum.api.data.authority;
 
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.CompletionStage;
 
@@ -14,6 +22,9 @@ import java.util.concurrent.CompletionStage;
  * snapshots or submit commands, not patch arbitrary shared documents.</p>
  */
 public final class DataAuthority {
+    public static final int COMMAND_SCHEMA_VERSION = 1;
+    public static final long ANY_REVISION = -1L;
+
     private DataAuthority() {
     }
 
@@ -36,16 +47,623 @@ public final class DataAuthority {
         EXPIRED_DEADLINE,
         INVALID_ACTOR,
         INVALID_SCOPE,
+        IDEMPOTENCY_CONFLICT,
         STORE_UNAVAILABLE,
         VALIDATION_FAILED
     }
 
+    public enum ReadQuoteStatus {
+        SATISFIED,
+        NOT_FOUND,
+        UNKNOWN_OR_STALE,
+        EXPIRED,
+        UNWATERMARKED,
+        SCOPE_MISMATCH,
+        REVISION_MISMATCH,
+        STALE_REVISION;
+
+        public boolean retryable() {
+            return switch (this) {
+                case UNKNOWN_OR_STALE, EXPIRED, STALE_REVISION -> true;
+                default -> false;
+            };
+        }
+
+        public String defaultMessage() {
+            return switch (this) {
+                case SATISFIED -> "snapshot satisfies read requirement";
+                case NOT_FOUND -> "snapshot was not found";
+                case UNKNOWN_OR_STALE -> "snapshot is unavailable before the required revision";
+                case EXPIRED -> "snapshot watermark is older than the required maximum age";
+                case UNWATERMARKED -> "snapshot is not authority-watermarked";
+                case SCOPE_MISMATCH -> "snapshot watermark scope does not match the requested aggregate";
+                case REVISION_MISMATCH -> "snapshot revision does not match the watermark revision";
+                case STALE_REVISION -> "snapshot is older than the required revision";
+            };
+        }
+    }
+
+    public enum ReadSourceTier {
+        UNKNOWN,
+        AUTHORITY,
+        CACHE
+    }
+
+    public record AuthorityBootIdentity(
+        String registryNodeId,
+        String authorityNodeId,
+        String startupReceiptFingerprint,
+        long receiptCreatedAtEpochMillis,
+        String principalSource,
+        String readContractFingerprint
+    ) {
+        private static final String UNKNOWN = "unknown";
+
+        public AuthorityBootIdentity {
+            registryNodeId = normalize(registryNodeId);
+            authorityNodeId = normalize(authorityNodeId);
+            startupReceiptFingerprint = normalize(startupReceiptFingerprint);
+            receiptCreatedAtEpochMillis = Math.max(0L, receiptCreatedAtEpochMillis);
+            principalSource = normalize(principalSource);
+            readContractFingerprint = normalize(readContractFingerprint);
+        }
+
+        public static AuthorityBootIdentity unknown() {
+            return new AuthorityBootIdentity(UNKNOWN, UNKNOWN, UNKNOWN, 0L, UNKNOWN, UNKNOWN);
+        }
+
+        public static AuthorityBootIdentity fromPayload(Map<?, ?> raw, AuthorityBootIdentity fallback) {
+            if (raw == null || raw.isEmpty()) {
+                return fallback == null ? unknown() : fallback;
+            }
+            return new AuthorityBootIdentity(
+                string(raw.get("registryNodeId")),
+                string(raw.get("authorityNodeId")),
+                string(raw.get("startupReceiptFingerprint")),
+                longValue(raw.get("receiptCreatedAtEpochMillis"), 0L),
+                string(raw.get("principalSource")),
+                string(raw.get("readContractFingerprint"))
+            );
+        }
+
+        public boolean known() {
+            return known(registryNodeId)
+                && known(authorityNodeId)
+                && known(startupReceiptFingerprint)
+                && known(readContractFingerprint);
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("registryNodeId", registryNodeId);
+            values.put("authorityNodeId", authorityNodeId);
+            values.put("startupReceiptFingerprint", startupReceiptFingerprint);
+            values.put("receiptCreatedAtEpochMillis", receiptCreatedAtEpochMillis);
+            values.put("principalSource", principalSource);
+            values.put("readContractFingerprint", readContractFingerprint);
+            values.put("known", known());
+            return Map.copyOf(values);
+        }
+
+        private static boolean known(String value) {
+            return value != null && !value.isBlank() && !UNKNOWN.equalsIgnoreCase(value);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? UNKNOWN : value.trim();
+        }
+
+        private static String string(Object value) {
+            return value == null ? null : value.toString();
+        }
+
+        private static long longValue(Object value, long fallback) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+    }
+
+    public record ReadRequirement(long minimumRevision, long maxAgeMillis) {
+        public ReadRequirement {
+            minimumRevision = Math.max(0L, minimumRevision);
+            maxAgeMillis = maxAgeMillis < 0L ? -1L : maxAgeMillis;
+        }
+
+        public static ReadRequirement eventual() {
+            return new ReadRequirement(0L, -1L);
+        }
+
+        public static ReadRequirement atLeast(long minimumRevision) {
+            return new ReadRequirement(minimumRevision, -1L);
+        }
+
+        public static ReadRequirement freshAtLeast(long minimumRevision, long maxAgeMillis) {
+            return new ReadRequirement(minimumRevision, maxAgeMillis);
+        }
+
+        public static ReadRequirement orEventual(ReadRequirement requirement) {
+            return requirement == null ? eventual() : requirement;
+        }
+
+        public boolean requiresRevision() {
+            return minimumRevision > 0L;
+        }
+
+        public boolean hasMaxAge() {
+            return maxAgeMillis >= 0L;
+        }
+    }
+
+    public record ReadProvenance(
+        ReadSourceTier sourceTier,
+        long cachedAtEpochMillis,
+        long observedAtEpochMillis,
+        long cacheAgeMillis,
+        long maxAgeMillis,
+        AuthorityBootIdentity authorityBoot
+    ) {
+        public ReadProvenance(
+            ReadSourceTier sourceTier,
+            long cachedAtEpochMillis,
+            long observedAtEpochMillis,
+            long cacheAgeMillis,
+            long maxAgeMillis
+        ) {
+            this(
+                sourceTier,
+                cachedAtEpochMillis,
+                observedAtEpochMillis,
+                cacheAgeMillis,
+                maxAgeMillis,
+                AuthorityBootIdentity.unknown()
+            );
+        }
+
+        public ReadProvenance {
+            sourceTier = sourceTier == null ? ReadSourceTier.UNKNOWN : sourceTier;
+            cachedAtEpochMillis = Math.max(0L, cachedAtEpochMillis);
+            observedAtEpochMillis = Math.max(0L, observedAtEpochMillis);
+            cacheAgeMillis = cacheAgeMillis < 0L ? -1L : cacheAgeMillis;
+            maxAgeMillis = maxAgeMillis < 0L ? -1L : maxAgeMillis;
+            authorityBoot = authorityBoot == null ? AuthorityBootIdentity.unknown() : authorityBoot;
+        }
+
+        public static ReadProvenance unknown() {
+            return new ReadProvenance(ReadSourceTier.UNKNOWN, 0L, 0L, -1L, -1L);
+        }
+
+        public static ReadProvenance authority() {
+            return authority(AuthorityBootIdentity.unknown());
+        }
+
+        public static ReadProvenance authority(AuthorityBootIdentity authorityBoot) {
+            return new ReadProvenance(ReadSourceTier.AUTHORITY, 0L, 0L, -1L, -1L, authorityBoot);
+        }
+
+        public static ReadProvenance cache(long cachedAtEpochMillis, long observedAtEpochMillis, long maxAgeMillis) {
+            return cache(AuthorityBootIdentity.unknown(), cachedAtEpochMillis, observedAtEpochMillis, maxAgeMillis);
+        }
+
+        public static ReadProvenance cache(
+            AuthorityBootIdentity authorityBoot,
+            long cachedAtEpochMillis,
+            long observedAtEpochMillis,
+            long maxAgeMillis
+        ) {
+            long cacheAgeMillis = Math.max(0L, observedAtEpochMillis - cachedAtEpochMillis);
+            return new ReadProvenance(
+                ReadSourceTier.CACHE,
+                cachedAtEpochMillis,
+                observedAtEpochMillis,
+                cacheAgeMillis,
+                maxAgeMillis,
+                authorityBoot
+            );
+        }
+
+        public static ReadProvenance fromPayload(Map<?, ?> raw, ReadProvenance fallback) {
+            if (raw == null || raw.isEmpty()) {
+                return fallback == null ? unknown() : fallback;
+            }
+            ReadProvenance effectiveFallback = fallback == null ? unknown() : fallback;
+            return new ReadProvenance(
+                sourceTier(raw.get("sourceTier")),
+                longValue(raw.get("cachedAtEpochMillis"), 0L),
+                longValue(raw.get("observedAtEpochMillis"), 0L),
+                longValue(raw.get("cacheAgeMillis"), -1L),
+                longValue(raw.get("maxAgeMillis"), -1L),
+                AuthorityBootIdentity.fromPayload(map(raw.get("authorityBoot")), effectiveFallback.authorityBoot())
+            );
+        }
+
+        public static ReadProvenance cacheFrom(
+            ReadProvenance upstream,
+            long cachedAtEpochMillis,
+            long observedAtEpochMillis,
+            long maxAgeMillis
+        ) {
+            AuthorityBootIdentity authorityBoot = upstream == null
+                ? AuthorityBootIdentity.unknown()
+                : upstream.authorityBoot();
+            return cache(authorityBoot, cachedAtEpochMillis, observedAtEpochMillis, maxAgeMillis);
+        }
+
+        public ReadProvenance withAuthorityBoot(AuthorityBootIdentity authorityBoot) {
+            AuthorityBootIdentity effectiveIdentity = authorityBoot == null
+                ? AuthorityBootIdentity.unknown()
+                : authorityBoot;
+            if (!effectiveIdentity.known() || effectiveIdentity.equals(this.authorityBoot)) {
+                return this;
+            }
+            return new ReadProvenance(
+                sourceTier,
+                cachedAtEpochMillis,
+                observedAtEpochMillis,
+                cacheAgeMillis,
+                maxAgeMillis,
+                effectiveIdentity
+            );
+        }
+
+        public boolean cached() {
+            return sourceTier == ReadSourceTier.CACHE;
+        }
+
+        public boolean expired() {
+            return cached() && maxAgeMillis >= 0L && cacheAgeMillis > maxAgeMillis;
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("sourceTier", sourceTier.name());
+            values.put("cachedAtEpochMillis", cachedAtEpochMillis);
+            values.put("observedAtEpochMillis", observedAtEpochMillis);
+            values.put("cacheAgeMillis", cacheAgeMillis);
+            values.put("maxAgeMillis", maxAgeMillis);
+            values.put("authorityBoot", authorityBoot.payload());
+            values.put("cached", cached());
+            values.put("expired", expired());
+            return Map.copyOf(values);
+        }
+
+        private static ReadSourceTier sourceTier(Object value) {
+            if (value == null || value.toString().isBlank()) {
+                return ReadSourceTier.UNKNOWN;
+            }
+            try {
+                return ReadSourceTier.valueOf(value.toString());
+            } catch (IllegalArgumentException ignored) {
+                return ReadSourceTier.UNKNOWN;
+            }
+        }
+
+        private static long longValue(Object value, long fallback) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+
+        private static Map<?, ?> map(Object value) {
+            return value instanceof Map<?, ?> map ? map : Map.of();
+        }
+    }
+
+    public record ProjectionDeliveryReceipt(
+        String sourceProvider,
+        String projectionName,
+        String aggregateScope,
+        String stateTopic,
+        UUID sourceEventId,
+        long deliveredRevision,
+        long deliveredAtEpochMillis,
+        String outputFingerprint,
+        String lineageFingerprint
+    ) {
+        private static final String UNKNOWN = "unknown";
+
+        public ProjectionDeliveryReceipt {
+            sourceProvider = normalize(sourceProvider);
+            projectionName = normalize(projectionName);
+            aggregateScope = normalize(aggregateScope);
+            stateTopic = normalize(stateTopic);
+            deliveredRevision = Math.max(0L, deliveredRevision);
+            deliveredAtEpochMillis = Math.max(0L, deliveredAtEpochMillis);
+            outputFingerprint = normalize(outputFingerprint);
+            lineageFingerprint = normalize(lineageFingerprint);
+        }
+
+        public static ProjectionDeliveryReceipt fromWatermark(
+            String projectionName,
+            SnapshotWatermark watermark
+        ) {
+            if (watermark == null || !watermark.watermarked()) {
+                return null;
+            }
+            return new ProjectionDeliveryReceipt(
+                watermark.sourceProvider(),
+                projectionName,
+                watermark.aggregateScope(),
+                watermark.stateTopic(),
+                watermark.sourceEventId(),
+                watermark.sourceRevision(),
+                watermark.eventCreatedEpochMillis(),
+                watermark.stateFingerprint(),
+                watermark.eventChainHash()
+            );
+        }
+
+        public static ProjectionDeliveryReceipt fromPayload(Map<?, ?> raw, ProjectionDeliveryReceipt fallback) {
+            if (raw == null || raw.isEmpty()) {
+                return fallback;
+            }
+            return new ProjectionDeliveryReceipt(
+                string(raw.get("sourceProvider")),
+                string(raw.get("projectionName")),
+                string(raw.get("aggregateScope")),
+                string(raw.get("stateTopic")),
+                uuid(raw.get("sourceEventId")),
+                longValue(raw.get("deliveredRevision"), 0L),
+                longValue(raw.get("deliveredAtEpochMillis"), 0L),
+                string(raw.get("outputFingerprint")),
+                string(raw.get("lineageFingerprint"))
+            );
+        }
+
+        public boolean delivered() {
+            return sourceEventId != null
+                && deliveredRevision > 0L
+                && known(outputFingerprint)
+                && known(lineageFingerprint);
+        }
+
+        public boolean satisfies(String expectedProjectionName, String expectedAggregateScope, long minimumRevision) {
+            return delivered()
+                && projectionName.equals(normalize(expectedProjectionName))
+                && aggregateScope.equals(normalize(expectedAggregateScope))
+                && deliveredRevision >= Math.max(0L, minimumRevision);
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("sourceProvider", sourceProvider);
+            values.put("projectionName", projectionName);
+            values.put("aggregateScope", aggregateScope);
+            values.put("stateTopic", stateTopic);
+            if (sourceEventId != null) {
+                values.put("sourceEventId", sourceEventId.toString());
+            }
+            values.put("deliveredRevision", deliveredRevision);
+            values.put("deliveredAtEpochMillis", deliveredAtEpochMillis);
+            values.put("outputFingerprint", outputFingerprint);
+            values.put("lineageFingerprint", lineageFingerprint);
+            values.put("delivered", delivered());
+            return Map.copyOf(values);
+        }
+
+        private static boolean known(String value) {
+            return value != null && !value.isBlank() && !UNKNOWN.equalsIgnoreCase(value);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? UNKNOWN : value;
+        }
+
+        private static String string(Object value) {
+            return value == null ? null : value.toString();
+        }
+
+        private static long longValue(Object value, long fallback) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+
+        private static UUID uuid(Object value) {
+            if (value instanceof UUID uuid) {
+                return uuid;
+            }
+            if (value == null || value.toString().isBlank()) {
+                return null;
+            }
+            return UUID.fromString(value.toString());
+        }
+    }
+
+    public record ReadQuote(
+        String aggregateScope,
+        String projectionFamily,
+        long requiredRevision,
+        long observedRevision,
+        ReadQuoteStatus status,
+        SnapshotWatermark watermark,
+        String message,
+        ReadProvenance provenance,
+        ProjectionDeliveryReceipt deliveryReceipt
+    ) {
+        public ReadQuote(
+            String aggregateScope,
+            String projectionFamily,
+            long requiredRevision,
+            long observedRevision,
+            ReadQuoteStatus status,
+            SnapshotWatermark watermark,
+            String message
+        ) {
+            this(
+                aggregateScope,
+                projectionFamily,
+                requiredRevision,
+                observedRevision,
+                status,
+                watermark,
+                message,
+                ReadProvenance.unknown()
+            );
+        }
+
+        public ReadQuote(
+            String aggregateScope,
+            String projectionFamily,
+            long requiredRevision,
+            long observedRevision,
+            ReadQuoteStatus status,
+            SnapshotWatermark watermark,
+            String message,
+            ReadProvenance provenance
+        ) {
+            this(
+                aggregateScope,
+                projectionFamily,
+                requiredRevision,
+                observedRevision,
+                status,
+                watermark,
+                message,
+                provenance,
+                null
+            );
+        }
+
+        public ReadQuote {
+            aggregateScope = normalize(aggregateScope);
+            projectionFamily = normalize(projectionFamily);
+            requiredRevision = Math.max(0L, requiredRevision);
+            observedRevision = Math.max(0L, observedRevision);
+            status = Objects.requireNonNull(status, "status");
+            message = message == null || message.isBlank() ? status.defaultMessage() : message;
+            provenance = provenance == null ? ReadProvenance.unknown() : provenance;
+        }
+
+        public boolean satisfied() {
+            return status == ReadQuoteStatus.SATISFIED;
+        }
+
+        public boolean retryable() {
+            return status.retryable();
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("aggregateScope", aggregateScope);
+            values.put("projectionFamily", projectionFamily);
+            values.put("requiredRevision", requiredRevision);
+            values.put("observedRevision", observedRevision);
+            values.put("status", status.name());
+            if (watermark != null) {
+                values.put("watermark", watermark.payload());
+            }
+            values.put("message", message);
+            values.put("provenance", provenance.payload());
+            if (deliveryReceipt != null) {
+                values.put("deliveryReceipt", deliveryReceipt.payload());
+            }
+            values.put("satisfied", satisfied());
+            values.put("retryable", retryable());
+            return Map.copyOf(values);
+        }
+
+        public static ReadQuote fromPayload(Map<?, ?> raw, ReadQuote fallback) {
+            if (raw == null || raw.isEmpty()) {
+                return fallback;
+            }
+            ReadQuote effectiveFallback = fallback == null
+                ? new ReadQuote(null, null, 0L, 0L, ReadQuoteStatus.UNKNOWN_OR_STALE, null, null)
+                : fallback;
+            return new ReadQuote(
+                string(raw.get("aggregateScope"), effectiveFallback.aggregateScope()),
+                string(raw.get("projectionFamily"), effectiveFallback.projectionFamily()),
+                longValue(raw.get("requiredRevision"), effectiveFallback.requiredRevision()),
+                longValue(raw.get("observedRevision"), effectiveFallback.observedRevision()),
+                status(raw.get("status"), effectiveFallback.status()),
+                SnapshotWatermark.fromPayload(map(raw.get("watermark")), effectiveFallback.watermark()),
+                string(raw.get("message"), effectiveFallback.message()),
+                ReadProvenance.fromPayload(map(raw.get("provenance")), effectiveFallback.provenance()),
+                ProjectionDeliveryReceipt.fromPayload(
+                    map(raw.get("deliveryReceipt")),
+                    effectiveFallback.deliveryReceipt()
+                )
+            );
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? "unknown" : value;
+        }
+
+        private static Map<?, ?> map(Object value) {
+            return value instanceof Map<?, ?> map ? map : Map.of();
+        }
+
+        private static String string(Object value, String fallback) {
+            return value == null || value.toString().isBlank() ? fallback : value.toString();
+        }
+
+        private static long longValue(Object value, long fallback) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+
+        private static ReadQuoteStatus status(Object value, ReadQuoteStatus fallback) {
+            if (value == null || value.toString().isBlank()) {
+                return fallback;
+            }
+            try {
+                return ReadQuoteStatus.valueOf(value.toString());
+            } catch (IllegalArgumentException ignored) {
+                return fallback;
+            }
+        }
+    }
+
+    public record QuotedRead<T>(Optional<T> snapshot, ReadQuote quote) {
+        public QuotedRead {
+            snapshot = snapshot == null ? Optional.empty() : snapshot;
+            quote = Objects.requireNonNull(quote, "quote");
+            if (quote.satisfied() != snapshot.isPresent()) {
+                throw new IllegalArgumentException("read quote status must match snapshot presence");
+            }
+        }
+
+        public static <T> QuotedRead<T> satisfied(T snapshot, ReadQuote quote) {
+            return new QuotedRead<>(Optional.of(Objects.requireNonNull(snapshot, "snapshot")), quote);
+        }
+
+        public static <T> QuotedRead<T> unsatisfied(ReadQuote quote) {
+            return new QuotedRead<>(Optional.empty(), quote);
+        }
+
+        public boolean satisfied() {
+            return quote.satisfied();
+        }
+    }
+
     public interface CommandPort {
-        CompletionStage<CommandResult> submit(CommandEnvelope command);
+        CompletionStage<CommandResult> submit(AuthorityCommand command);
     }
 
     public interface PlayerProfileReader {
         CompletionStage<Optional<PlayerProfileSnapshot>> findProfile(UUID playerId);
+
+        default CompletionStage<QuotedRead<PlayerProfileSnapshot>> quoteProfile(
+            UUID playerId,
+            ReadRequirement requirement
+        ) {
+            Objects.requireNonNull(playerId, "playerId");
+            ReadRequirement effectiveRequirement = ReadRequirement.orEventual(requirement);
+            return findProfile(playerId)
+                .thenApply(snapshot -> quoteProfileSnapshot(
+                    playerId,
+                    effectiveRequirement,
+                    snapshot,
+                    0L,
+                    System.currentTimeMillis()
+                ));
+        }
 
         default CompletionStage<Boolean> profileExists(UUID playerId) {
             return findProfile(playerId).thenApply(Optional::isPresent);
@@ -54,9 +672,243 @@ public final class DataAuthority {
 
     public interface PlayerRankReader {
         CompletionStage<Optional<PlayerRankSnapshot>> findRanks(UUID playerId);
+
+        default CompletionStage<QuotedRead<PlayerRankSnapshot>> quoteRanks(
+            UUID playerId,
+            ReadRequirement requirement
+        ) {
+            Objects.requireNonNull(playerId, "playerId");
+            ReadRequirement effectiveRequirement = ReadRequirement.orEventual(requirement);
+            return findRanks(playerId)
+                .thenApply(snapshot -> quoteRankSnapshot(
+                    playerId,
+                    effectiveRequirement,
+                    snapshot,
+                    0L,
+                    System.currentTimeMillis()
+                ));
+        }
     }
 
-    public record CommandEnvelope(
+    private static QuotedRead<PlayerProfileSnapshot> quoteProfileSnapshot(
+        UUID playerId,
+        ReadRequirement requirement,
+        Optional<PlayerProfileSnapshot> snapshot,
+        long revisionFloor,
+        long nowEpochMillis
+    ) {
+        String aggregateScope = "player:" + playerId;
+        ReadRequirement effectiveRequirement = ReadRequirement.orEventual(requirement);
+        long requiredRevision = Math.max(effectiveRequirement.minimumRevision(), Math.max(0L, revisionFloor));
+        Optional<PlayerProfileSnapshot> effectiveSnapshot = snapshot == null ? Optional.empty() : snapshot;
+        if (effectiveSnapshot.isEmpty()) {
+            ReadQuoteStatus status = requiredRevision > 0L
+                ? ReadQuoteStatus.UNKNOWN_OR_STALE
+                : ReadQuoteStatus.NOT_FOUND;
+            return QuotedRead.unsatisfied(new ReadQuote(
+                aggregateScope,
+                "player_profile",
+                requiredRevision,
+                0L,
+                status,
+                null,
+                null,
+                ReadProvenance.authority()
+            ));
+        }
+
+        PlayerProfileSnapshot profileSnapshot = effectiveSnapshot.get();
+        SnapshotWatermark snapshotWatermark = profileSnapshot.watermark();
+        long snapshotRevision = Math.max(0L, profileSnapshot.revision());
+        long observedRevision = snapshotWatermark == null
+            ? snapshotRevision
+            : Math.max(snapshotRevision, snapshotWatermark.sourceRevision());
+        ReadQuoteStatus status;
+        if (snapshotWatermark == null || !snapshotWatermark.watermarked()) {
+            status = ReadQuoteStatus.UNWATERMARKED;
+        } else if (!aggregateScope.equals(snapshotWatermark.aggregateScope())) {
+            status = ReadQuoteStatus.SCOPE_MISMATCH;
+        } else if (snapshotWatermark.sourceRevision() != snapshotRevision) {
+            status = ReadQuoteStatus.REVISION_MISMATCH;
+        } else if (snapshotRevision < requiredRevision || snapshotWatermark.sourceRevision() < requiredRevision) {
+            status = ReadQuoteStatus.STALE_REVISION;
+        } else if (effectiveRequirement.hasMaxAge()
+            && snapshotWatermark.staleAt(nowEpochMillis, effectiveRequirement.maxAgeMillis())) {
+            status = ReadQuoteStatus.EXPIRED;
+        } else {
+            status = ReadQuoteStatus.SATISFIED;
+        }
+
+        ReadQuote quote = new ReadQuote(
+            aggregateScope,
+            "player_profile",
+            requiredRevision,
+            observedRevision,
+            status,
+            snapshotWatermark,
+            null,
+            ReadProvenance.authority(),
+            ProjectionDeliveryReceipt.fromWatermark("player_profile", snapshotWatermark)
+        );
+        return status == ReadQuoteStatus.SATISFIED
+            ? QuotedRead.satisfied(profileSnapshot, quote)
+            : QuotedRead.unsatisfied(quote);
+    }
+
+    private static QuotedRead<PlayerRankSnapshot> quoteRankSnapshot(
+        UUID playerId,
+        ReadRequirement requirement,
+        Optional<PlayerRankSnapshot> snapshot,
+        long revisionFloor,
+        long nowEpochMillis
+    ) {
+        String aggregateScope = "rank:player:" + playerId;
+        ReadRequirement effectiveRequirement = ReadRequirement.orEventual(requirement);
+        long requiredRevision = Math.max(effectiveRequirement.minimumRevision(), Math.max(0L, revisionFloor));
+        Optional<PlayerRankSnapshot> effectiveSnapshot = snapshot == null ? Optional.empty() : snapshot;
+        if (effectiveSnapshot.isEmpty()) {
+            ReadQuoteStatus status = requiredRevision > 0L
+                ? ReadQuoteStatus.UNKNOWN_OR_STALE
+                : ReadQuoteStatus.NOT_FOUND;
+            return QuotedRead.unsatisfied(new ReadQuote(
+                aggregateScope,
+                "player_rank",
+                requiredRevision,
+                0L,
+                status,
+                null,
+                null,
+                ReadProvenance.authority()
+            ));
+        }
+
+        PlayerRankSnapshot rankSnapshot = effectiveSnapshot.get();
+        SnapshotWatermark snapshotWatermark = rankSnapshot.watermark();
+        long snapshotRevision = Math.max(0L, rankSnapshot.revision());
+        long observedRevision = snapshotWatermark == null
+            ? snapshotRevision
+            : Math.max(snapshotRevision, snapshotWatermark.sourceRevision());
+        ReadQuoteStatus status;
+        if (snapshotWatermark == null || !snapshotWatermark.watermarked()) {
+            status = ReadQuoteStatus.UNWATERMARKED;
+        } else if (!aggregateScope.equals(snapshotWatermark.aggregateScope())) {
+            status = ReadQuoteStatus.SCOPE_MISMATCH;
+        } else if (snapshotWatermark.sourceRevision() != snapshotRevision) {
+            status = ReadQuoteStatus.REVISION_MISMATCH;
+        } else if (snapshotRevision < requiredRevision || snapshotWatermark.sourceRevision() < requiredRevision) {
+            status = ReadQuoteStatus.STALE_REVISION;
+        } else if (effectiveRequirement.hasMaxAge()
+            && snapshotWatermark.staleAt(nowEpochMillis, effectiveRequirement.maxAgeMillis())) {
+            status = ReadQuoteStatus.EXPIRED;
+        } else {
+            status = ReadQuoteStatus.SATISFIED;
+        }
+
+        ReadQuote quote = new ReadQuote(
+            aggregateScope,
+            "player_rank",
+            requiredRevision,
+            observedRevision,
+            status,
+            snapshotWatermark,
+            null,
+            ReadProvenance.authority(),
+            ProjectionDeliveryReceipt.fromWatermark("player_rank", snapshotWatermark)
+        );
+        return status == ReadQuoteStatus.SATISFIED
+            ? QuotedRead.satisfied(rankSnapshot, quote)
+            : QuotedRead.unsatisfied(quote);
+    }
+
+    public sealed interface AuthorityCommand permits PlayerProfileCommand, PlayerSessionCommand,
+        PlayerRankCommand, MatchCommand {
+        CommandManifest manifest();
+
+        Map<String, Object> payload();
+
+        default UUID commandId() {
+            return manifest().commandId();
+        }
+
+        default CommandType type() {
+            return manifest().type();
+        }
+
+        default String actorId() {
+            return manifest().actorId();
+        }
+
+        default String scope() {
+            return manifest().scope();
+        }
+
+        default String idempotencyKey() {
+            return manifest().idempotencyKey();
+        }
+
+        default long deadlineEpochMillis() {
+            return manifest().deadlineEpochMillis();
+        }
+
+        default String fencingToken() {
+            return manifest().fencingToken();
+        }
+
+        default long expectedRevision() {
+            return manifest().expectedRevision();
+        }
+
+        default CommandProvenance provenance() {
+            return manifest().provenance();
+        }
+    }
+
+    public record CommandProvenance(
+        String originNode,
+        String authorityRoute,
+        String providerKind,
+        int contractVersion,
+        String verifiedPrincipal
+    ) {
+        private static final String UNKNOWN = "unknown";
+
+        public CommandProvenance {
+            originNode = normalize(originNode);
+            authorityRoute = normalize(authorityRoute);
+            providerKind = normalize(providerKind);
+            contractVersion = contractVersion <= 0 ? COMMAND_SCHEMA_VERSION : contractVersion;
+            verifiedPrincipal = normalize(verifiedPrincipal);
+        }
+
+        public CommandProvenance(
+            String originNode,
+            String authorityRoute,
+            String providerKind,
+            int contractVersion
+        ) {
+            this(originNode, authorityRoute, providerKind, contractVersion, UNKNOWN);
+        }
+
+        public static CommandProvenance unknown() {
+            return new CommandProvenance(UNKNOWN, UNKNOWN, UNKNOWN, COMMAND_SCHEMA_VERSION, UNKNOWN);
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("originNode", originNode);
+            values.put("authorityRoute", authorityRoute);
+            values.put("providerKind", providerKind);
+            values.put("contractVersion", contractVersion);
+            values.put("verifiedPrincipal", verifiedPrincipal);
+            return Map.copyOf(values);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? UNKNOWN : value;
+        }
+    }
+
+    public record CommandManifest(
         UUID commandId,
         CommandType type,
         String actorId,
@@ -65,9 +917,10 @@ public final class DataAuthority {
         long deadlineEpochMillis,
         String fencingToken,
         long expectedRevision,
-        Map<String, Object> payload
+        int schemaVersion,
+        CommandProvenance provenance
     ) {
-        public CommandEnvelope {
+        public CommandManifest {
             if (commandId == null) {
                 throw new IllegalArgumentException("commandId is required");
             }
@@ -83,7 +936,308 @@ public final class DataAuthority {
             if (idempotencyKey == null || idempotencyKey.isBlank()) {
                 throw new IllegalArgumentException("idempotencyKey is required");
             }
-            payload = payload == null ? Map.of() : Map.copyOf(payload);
+            fencingToken = fencingToken == null ? "" : fencingToken;
+            if (expectedRevision < ANY_REVISION) {
+                throw new IllegalArgumentException("expectedRevision is invalid");
+            }
+            if (schemaVersion <= 0) {
+                throw new IllegalArgumentException("schemaVersion is required");
+            }
+            provenance = provenance == null ? CommandProvenance.unknown() : provenance;
+        }
+
+        public CommandManifest(
+            UUID commandId,
+            CommandType type,
+            String actorId,
+            String scope,
+            String idempotencyKey,
+            long deadlineEpochMillis,
+            String fencingToken,
+            long expectedRevision,
+            int schemaVersion
+        ) {
+            this(
+                commandId,
+                type,
+                actorId,
+                scope,
+                idempotencyKey,
+                deadlineEpochMillis,
+                fencingToken,
+                expectedRevision,
+                schemaVersion,
+                CommandProvenance.unknown()
+            );
+        }
+
+        public static CommandManifest create(
+            UUID commandId,
+            CommandType type,
+            String actorId,
+            String scope,
+            String idempotencyKey,
+            long deadlineEpochMillis,
+            String fencingToken,
+            long expectedRevision
+        ) {
+            return new CommandManifest(
+                commandId,
+                type,
+                actorId,
+                scope,
+                idempotencyKey,
+                deadlineEpochMillis,
+                fencingToken,
+                expectedRevision,
+                COMMAND_SCHEMA_VERSION
+            );
+        }
+
+        public static CommandManifest create(
+            UUID commandId,
+            CommandType type,
+            String actorId,
+            String scope,
+            String idempotencyKey,
+            long deadlineEpochMillis,
+            String fencingToken,
+            long expectedRevision,
+            CommandProvenance provenance
+        ) {
+            return new CommandManifest(
+                commandId,
+                type,
+                actorId,
+                scope,
+                idempotencyKey,
+                deadlineEpochMillis,
+                fencingToken,
+                expectedRevision,
+                COMMAND_SCHEMA_VERSION,
+                provenance
+            );
+        }
+    }
+
+    public record PlayerProfileCommand(
+        CommandManifest manifest,
+        UUID playerId,
+        String username,
+        long timestampEpochMillis,
+        String currentServer,
+        String currentProxy,
+        String lastIp,
+        String lastWorld,
+        String lastLocation,
+        String gameMode,
+        Integer level,
+        Float exp,
+        Double health,
+        Integer foodLevel,
+        String playtimeStartField
+    ) implements AuthorityCommand {
+        public PlayerProfileCommand {
+            requireType(manifest, CommandType.RECORD_PLAYER_LOGIN, CommandType.RECORD_PLAYER_LOGOUT);
+            if (playerId == null) {
+                throw new IllegalArgumentException("playerId is required");
+            }
+            username = username == null ? "unknown" : username;
+        }
+
+        @Override
+        public Map<String, Object> payload() {
+            MapBuilder payload = new MapBuilder()
+                .put("playerId", playerId.toString())
+                .put("username", username)
+                .put("timestamp", timestampEpochMillis)
+                .put("online", type() == CommandType.RECORD_PLAYER_LOGIN)
+                .put("currentServer", currentServer)
+                .put("currentProxy", currentProxy)
+                .put("lastIp", lastIp)
+                .put("lastWorld", lastWorld)
+                .put("lastLocation", lastLocation)
+                .put("gamemode", gameMode)
+                .put("level", level)
+                .put("exp", exp)
+                .put("health", health)
+                .put("foodLevel", foodLevel)
+                .put("playtimeStartField", playtimeStartField);
+            return payload.build();
+        }
+    }
+
+    public record PlayerSessionCommand(
+        CommandManifest manifest,
+        UUID playerId,
+        String username,
+        UUID sessionId,
+        long timestampEpochMillis,
+        String currentServer,
+        String currentProxy,
+        String lastIp,
+        Integer protocolVersion,
+        String disconnectReason
+    ) implements AuthorityCommand {
+        public PlayerSessionCommand {
+            requireType(manifest, CommandType.START_SESSION, CommandType.RENEW_SESSION, CommandType.END_SESSION);
+            if (playerId == null) {
+                throw new IllegalArgumentException("playerId is required");
+            }
+            username = username == null ? "unknown" : username;
+        }
+
+        @Override
+        public Map<String, Object> payload() {
+            MapBuilder payload = new MapBuilder()
+                .put("playerId", playerId.toString())
+                .put("username", username)
+                .put("sessionId", sessionId == null ? null : sessionId.toString())
+                .put("timestamp", timestampEpochMillis)
+                .put("online", type() != CommandType.END_SESSION)
+                .put("currentServer", currentServer)
+                .put("currentProxy", currentProxy)
+                .put("lastIp", lastIp)
+                .put("protocolVersion", protocolVersion)
+                .put("disconnectReason", disconnectReason);
+            if (type() == CommandType.START_SESSION) {
+                payload.put("lastProxySession", timestampEpochMillis);
+            }
+            if (type() == CommandType.RENEW_SESSION) {
+                payload.put("lastServerSwitch", timestampEpochMillis);
+            }
+            if (type() == CommandType.END_SESSION) {
+                payload.put("playtimeStartField", "lastProxySession");
+                payload.put("clearCurrentServer", true);
+            }
+            return payload.build();
+        }
+    }
+
+    public record PlayerRankCommand(
+        CommandManifest manifest,
+        UUID playerId,
+        String primaryRank,
+        List<String> ranks
+    ) implements AuthorityCommand {
+        public PlayerRankCommand {
+            requireType(manifest, CommandType.GRANT_RANK, CommandType.REVOKE_RANK);
+            if (playerId == null) {
+                throw new IllegalArgumentException("playerId is required");
+            }
+            primaryRank = primaryRank == null || primaryRank.isBlank() ? "DEFAULT" : primaryRank;
+            ranks = ranks == null || ranks.isEmpty() ? List.of(primaryRank) : List.copyOf(ranks);
+        }
+
+        @Override
+        public Map<String, Object> payload() {
+            return new MapBuilder()
+                .put("playerId", playerId.toString())
+                .put("primaryRank", primaryRank)
+                .put("ranks", ranks)
+                .build();
+        }
+    }
+
+    public record MatchParticipant(
+        UUID playerId,
+        String teamId,
+        Integer placement,
+        String state,
+        Map<String, Object> stats
+    ) {
+        public MatchParticipant {
+            if (playerId == null) {
+                throw new IllegalArgumentException("playerId is required");
+            }
+            stats = stats == null ? Map.of() : Map.copyOf(stats);
+        }
+
+        Map<String, Object> payload() {
+            return new MapBuilder()
+                .put("playerId", playerId.toString())
+                .put("teamId", teamId)
+                .put("placement", placement)
+                .put("state", state)
+                .put("stats", stats)
+                .build();
+        }
+    }
+
+    public record MatchCommand(
+        CommandManifest manifest,
+        UUID matchId,
+        String familyId,
+        String mapId,
+        String serverId,
+        String slotId,
+        String state,
+        Long startedAtEpochMillis,
+        Long endedAtEpochMillis,
+        Map<String, Object> slotMetadata,
+        List<MatchParticipant> participants
+    ) implements AuthorityCommand {
+        public MatchCommand {
+            requireType(manifest, CommandType.RECORD_MATCH_START, CommandType.RECORD_MATCH_END);
+            if (matchId == null) {
+                throw new IllegalArgumentException("matchId is required");
+            }
+            familyId = familyId == null || familyId.isBlank() ? "unknown" : familyId;
+            state = state == null || state.isBlank()
+                ? (manifest.type() == CommandType.RECORD_MATCH_START ? "STARTED" : "ENDED")
+                : state;
+            slotMetadata = slotMetadata == null ? Map.of() : Map.copyOf(slotMetadata);
+            participants = participants == null ? List.of() : List.copyOf(participants);
+        }
+
+        @Override
+        public Map<String, Object> payload() {
+            MapBuilder payload = new MapBuilder()
+                .put("matchId", matchId.toString())
+                .put("familyId", familyId)
+                .put("mapId", mapId)
+                .put("serverId", serverId)
+                .put("slotId", slotId)
+                .put("state", state)
+                .put("startedAt", startedAtEpochMillis)
+                .put("endedAt", endedAtEpochMillis)
+                .put("slotMetadata", slotMetadata);
+            for (String key : List.of("variant", "targetWorld")) {
+                if (slotMetadata.containsKey(key)) {
+                    payload.put(key, slotMetadata.get(key));
+                }
+            }
+            payload.put("participants", participants.stream()
+                .map(MatchParticipant::payload)
+                .toList());
+            return payload.build();
+        }
+    }
+
+    private static void requireType(CommandManifest manifest, CommandType... allowed) {
+        if (manifest == null) {
+            throw new IllegalArgumentException("manifest is required");
+        }
+        for (CommandType type : allowed) {
+            if (manifest.type() == type) {
+                return;
+            }
+        }
+        throw new IllegalArgumentException("Command type " + manifest.type() + " is not valid here");
+    }
+
+    private static final class MapBuilder {
+        private final java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+
+        private MapBuilder put(String key, Object value) {
+            if (value != null) {
+                values.put(key, value);
+            }
+            return this;
+        }
+
+        private Map<String, Object> build() {
+            return Map.copyOf(values);
         }
     }
 
@@ -92,14 +1246,648 @@ public final class DataAuthority {
         boolean accepted,
         long revision,
         RejectionReason rejectionReason,
-        String message
+        String message,
+        CommandSettlement settlement,
+        CommandRefusalReceipt refusalReceipt
     ) {
+        public CommandResult(
+            UUID commandId,
+            boolean accepted,
+            long revision,
+            RejectionReason rejectionReason,
+            String message
+        ) {
+            this(commandId, accepted, revision, rejectionReason, message, null, null);
+        }
+
+        public CommandResult(
+            UUID commandId,
+            boolean accepted,
+            long revision,
+            RejectionReason rejectionReason,
+            String message,
+            CommandSettlement settlement
+        ) {
+            this(commandId, accepted, revision, rejectionReason, message, settlement, null);
+        }
+
         public CommandResult {
             if (commandId == null) {
                 throw new IllegalArgumentException("commandId is required");
             }
             rejectionReason = rejectionReason == null ? RejectionReason.NONE : rejectionReason;
             message = message == null ? "" : message;
+            settlement = settlement == null ? CommandSettlement.unsettled(revision) : settlement;
+            refusalReceipt = accepted ? null : refusalReceipt;
+        }
+
+        public CommandResult withSettlement(CommandSettlement settlement) {
+            return new CommandResult(
+                commandId,
+                accepted,
+                revision,
+                rejectionReason,
+                message,
+                settlement,
+                refusalReceipt
+            );
+        }
+
+        public CommandResult withRefusalReceipt(CommandRefusalReceipt refusalReceipt) {
+            return new CommandResult(
+                commandId,
+                accepted,
+                revision,
+                rejectionReason,
+                message,
+                settlement,
+                refusalReceipt
+            );
+        }
+    }
+
+    public record CommandRefusalReceipt(
+        String sourceProvider,
+        UUID commandId,
+        String commandType,
+        String aggregateScope,
+        String originNode,
+        String targetNode,
+        String authorityRoute,
+        RejectionReason rejectionReason,
+        long resultRevision,
+        String contractFingerprint,
+        String routeManifestFingerprint,
+        String payloadHash,
+        long refusedAtEpochMillis,
+        String receiptFingerprint
+    ) {
+        private static final String UNKNOWN = "unknown";
+
+        public CommandRefusalReceipt {
+            sourceProvider = normalize(sourceProvider);
+            if (commandId == null) {
+                throw new IllegalArgumentException("commandId is required");
+            }
+            commandType = normalize(commandType);
+            aggregateScope = normalize(aggregateScope);
+            originNode = normalize(originNode);
+            targetNode = normalize(targetNode);
+            authorityRoute = normalize(authorityRoute);
+            rejectionReason = rejectionReason == null ? RejectionReason.VALIDATION_FAILED : rejectionReason;
+            if (rejectionReason == RejectionReason.NONE) {
+                throw new IllegalArgumentException("refusal receipt rejectionReason must not be NONE");
+            }
+            resultRevision = Math.max(ANY_REVISION, resultRevision);
+            contractFingerprint = normalize(contractFingerprint);
+            routeManifestFingerprint = normalize(routeManifestFingerprint);
+            payloadHash = normalize(payloadHash);
+            refusedAtEpochMillis = Math.max(0L, refusedAtEpochMillis);
+
+            String expectedFingerprint = fingerprint(
+                sourceProvider,
+                commandId,
+                commandType,
+                aggregateScope,
+                originNode,
+                targetNode,
+                authorityRoute,
+                rejectionReason,
+                resultRevision,
+                contractFingerprint,
+                routeManifestFingerprint,
+                payloadHash,
+                refusedAtEpochMillis
+            );
+            receiptFingerprint = receiptFingerprint == null || receiptFingerprint.isBlank()
+                ? expectedFingerprint
+                : receiptFingerprint.trim().toLowerCase(Locale.ROOT);
+            if (!expectedFingerprint.equals(receiptFingerprint)) {
+                throw new IllegalArgumentException("refusal receipt fingerprint does not match payload");
+            }
+        }
+
+        public static CommandRefusalReceipt create(
+            String sourceProvider,
+            UUID commandId,
+            String commandType,
+            String aggregateScope,
+            String originNode,
+            String targetNode,
+            String authorityRoute,
+            RejectionReason rejectionReason,
+            long resultRevision,
+            String contractFingerprint,
+            String routeManifestFingerprint,
+            String payloadHash,
+            long refusedAtEpochMillis
+        ) {
+            return new CommandRefusalReceipt(
+                sourceProvider,
+                commandId,
+                commandType,
+                aggregateScope,
+                originNode,
+                targetNode,
+                authorityRoute,
+                rejectionReason,
+                resultRevision,
+                contractFingerprint,
+                routeManifestFingerprint,
+                payloadHash,
+                refusedAtEpochMillis,
+                null
+            );
+        }
+
+        public static CommandRefusalReceipt fromPayload(Map<?, ?> raw, CommandRefusalReceipt fallback) {
+            if (raw == null || raw.isEmpty()) {
+                return fallback;
+            }
+            return new CommandRefusalReceipt(
+                string(raw.get("sourceProvider")),
+                uuid(raw.get("commandId")),
+                string(raw.get("commandType")),
+                string(raw.get("aggregateScope")),
+                string(raw.get("originNode")),
+                string(raw.get("targetNode")),
+                string(raw.get("authorityRoute")),
+                rejectionReason(raw.get("rejectionReason")),
+                longValue(raw.get("resultRevision"), ANY_REVISION),
+                string(raw.get("contractFingerprint")),
+                string(raw.get("routeManifestFingerprint")),
+                string(raw.get("payloadHash")),
+                longValue(raw.get("refusedAtEpochMillis"), 0L),
+                string(raw.get("receiptFingerprint"))
+            );
+        }
+
+        public static String payloadHash(Map<?, ?> payload) {
+            return sha256(canonicalJson(payload == null ? Map.of() : payload));
+        }
+
+        public boolean refused() {
+            return rejectionReason != RejectionReason.NONE
+                && known(commandType)
+                && known(aggregateScope)
+                && known(originNode)
+                && known(targetNode)
+                && known(authorityRoute)
+                && known(contractFingerprint)
+                && known(routeManifestFingerprint)
+                && known(payloadHash)
+                && receiptFingerprint.matches("[0-9a-f]{64}");
+        }
+
+        public Map<String, Object> payload() {
+            LinkedHashMap<String, Object> values = new LinkedHashMap<>();
+            values.put("sourceProvider", sourceProvider);
+            values.put("commandId", commandId.toString());
+            values.put("commandType", commandType);
+            values.put("aggregateScope", aggregateScope);
+            values.put("originNode", originNode);
+            values.put("targetNode", targetNode);
+            values.put("authorityRoute", authorityRoute);
+            values.put("rejectionReason", rejectionReason.name());
+            values.put("resultRevision", resultRevision);
+            values.put("contractFingerprint", contractFingerprint);
+            values.put("routeManifestFingerprint", routeManifestFingerprint);
+            values.put("payloadHash", payloadHash);
+            values.put("refusedAtEpochMillis", refusedAtEpochMillis);
+            values.put("receiptFingerprint", receiptFingerprint);
+            values.put("refused", refused());
+            return Map.copyOf(values);
+        }
+
+        private static String fingerprint(
+            String sourceProvider,
+            UUID commandId,
+            String commandType,
+            String aggregateScope,
+            String originNode,
+            String targetNode,
+            String authorityRoute,
+            RejectionReason rejectionReason,
+            long resultRevision,
+            String contractFingerprint,
+            String routeManifestFingerprint,
+            String payloadHash,
+            long refusedAtEpochMillis
+        ) {
+            LinkedHashMap<String, Object> values = new LinkedHashMap<>();
+            values.put("sourceProvider", sourceProvider);
+            values.put("commandId", commandId.toString());
+            values.put("commandType", commandType);
+            values.put("aggregateScope", aggregateScope);
+            values.put("originNode", originNode);
+            values.put("targetNode", targetNode);
+            values.put("authorityRoute", authorityRoute);
+            values.put("rejectionReason", rejectionReason.name());
+            values.put("resultRevision", resultRevision);
+            values.put("contractFingerprint", contractFingerprint);
+            values.put("routeManifestFingerprint", routeManifestFingerprint);
+            values.put("payloadHash", payloadHash);
+            values.put("refusedAtEpochMillis", refusedAtEpochMillis);
+            return sha256(canonicalJson(values));
+        }
+
+        private static String canonicalJson(Object value) {
+            Object canonical = canonicalValue(value);
+            if (canonical instanceof Map<?, ?> map) {
+                StringBuilder builder = new StringBuilder("{");
+                boolean first = true;
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (!first) {
+                        builder.append(',');
+                    }
+                    first = false;
+                    builder.append(quote(entry.getKey().toString()))
+                        .append(':')
+                        .append(canonicalJson(entry.getValue()));
+                }
+                return builder.append('}').toString();
+            }
+            if (canonical instanceof Iterable<?> values) {
+                StringBuilder builder = new StringBuilder("[");
+                boolean first = true;
+                for (Object item : values) {
+                    if (!first) {
+                        builder.append(',');
+                    }
+                    first = false;
+                    builder.append(canonicalJson(item));
+                }
+                return builder.append(']').toString();
+            }
+            if (canonical == null) {
+                return "null";
+            }
+            if (canonical instanceof Boolean) {
+                return canonical.toString();
+            }
+            return quote(canonical.toString());
+        }
+
+        private static Object canonicalValue(Object value) {
+            if (value instanceof Map<?, ?> map) {
+                TreeMap<String, Object> sorted = new TreeMap<>();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (entry.getKey() != null) {
+                        sorted.put(entry.getKey().toString(), canonicalValue(entry.getValue()));
+                    }
+                }
+                return sorted;
+            }
+            if (value instanceof Iterable<?> values) {
+                ArrayList<Object> normalized = new ArrayList<>();
+                for (Object item : values) {
+                    normalized.add(canonicalValue(item));
+                }
+                return List.copyOf(normalized);
+            }
+            if (value instanceof Number number) {
+                return canonicalNumber(number);
+            }
+            if (value instanceof UUID uuid) {
+                return uuid.toString();
+            }
+            return value;
+        }
+
+        private static String canonicalNumber(Number number) {
+            if (number instanceof Byte || number instanceof Short
+                || number instanceof Integer || number instanceof Long) {
+                return BigDecimal.valueOf(number.longValue()).toPlainString();
+            }
+            return BigDecimal.valueOf(number.doubleValue()).stripTrailingZeros().toPlainString();
+        }
+
+        private static String quote(String value) {
+            StringBuilder builder = new StringBuilder("\"");
+            for (int index = 0; index < value.length(); index++) {
+                char character = value.charAt(index);
+                switch (character) {
+                    case '"' -> builder.append("\\\"");
+                    case '\\' -> builder.append("\\\\");
+                    case '\b' -> builder.append("\\b");
+                    case '\f' -> builder.append("\\f");
+                    case '\n' -> builder.append("\\n");
+                    case '\r' -> builder.append("\\r");
+                    case '\t' -> builder.append("\\t");
+                    default -> builder.append(character);
+                }
+            }
+            return builder.append('"').toString();
+        }
+
+        private static String sha256(String material) {
+            try {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                return HexFormat.of().formatHex(digest.digest(material.getBytes(StandardCharsets.UTF_8)));
+            } catch (Exception exception) {
+                throw new IllegalStateException("SHA-256 is unavailable", exception);
+            }
+        }
+
+        private static boolean known(String value) {
+            return value != null && !value.isBlank() && !UNKNOWN.equalsIgnoreCase(value);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? UNKNOWN : value.trim();
+        }
+
+        private static String string(Object value) {
+            return value == null ? null : value.toString();
+        }
+
+        private static long longValue(Object value, long fallback) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+
+        private static UUID uuid(Object value) {
+            if (value instanceof UUID uuid) {
+                return uuid;
+            }
+            if (value == null || value.toString().isBlank()) {
+                return null;
+            }
+            return UUID.fromString(value.toString());
+        }
+
+        private static RejectionReason rejectionReason(Object value) {
+            if (value == null || value.toString().isBlank()) {
+                return RejectionReason.VALIDATION_FAILED;
+            }
+            return RejectionReason.valueOf(value.toString());
+        }
+    }
+
+    public record CommandSettlement(
+        String sourceProvider,
+        String commandDomain,
+        String commandTopic,
+        String eventTopic,
+        String stateTopic,
+        String partitionKey,
+        String fencingToken,
+        String idempotencyKey,
+        long expectedRevision,
+        SnapshotWatermark watermark
+    ) {
+        private static final String UNKNOWN = "unknown";
+
+        public CommandSettlement {
+            sourceProvider = normalize(sourceProvider);
+            commandDomain = normalize(commandDomain);
+            commandTopic = normalize(commandTopic);
+            eventTopic = normalize(eventTopic);
+            stateTopic = normalize(stateTopic);
+            partitionKey = normalize(partitionKey);
+            fencingToken = normalize(fencingToken);
+            idempotencyKey = normalize(idempotencyKey);
+            expectedRevision = Math.max(ANY_REVISION, expectedRevision);
+            watermark = watermark == null ? SnapshotWatermark.unwatermarked(
+                UNKNOWN,
+                UNKNOWN,
+                UNKNOWN,
+                0L
+            ) : watermark;
+        }
+
+        public static CommandSettlement unsettled(long revision) {
+            return new CommandSettlement(
+                UNKNOWN,
+                UNKNOWN,
+                UNKNOWN,
+                UNKNOWN,
+                UNKNOWN,
+                UNKNOWN,
+                UNKNOWN,
+                UNKNOWN,
+                ANY_REVISION,
+                SnapshotWatermark.unwatermarked(UNKNOWN, UNKNOWN, UNKNOWN, revision)
+            );
+        }
+
+        public static CommandSettlement fromPayload(Map<?, ?> raw, CommandSettlement fallback) {
+            if (raw == null || raw.isEmpty()) {
+                return fallback;
+            }
+            CommandSettlement effectiveFallback = fallback == null ? unsettled(0L) : fallback;
+            SnapshotWatermark watermark = SnapshotWatermark.fromPayload(
+                map(raw.get("watermark")),
+                effectiveFallback.watermark()
+            );
+            return new CommandSettlement(
+                string(raw.get("sourceProvider")),
+                string(raw.get("commandDomain")),
+                string(raw.get("commandTopic")),
+                string(raw.get("eventTopic")),
+                string(raw.get("stateTopic")),
+                string(raw.get("partitionKey")),
+                string(raw.get("fencingToken")),
+                string(raw.get("idempotencyKey")),
+                longValue(raw.get("expectedRevision"), ANY_REVISION),
+                watermark
+            );
+        }
+
+        public boolean settled() {
+            return known(sourceProvider)
+                && known(commandDomain)
+                && known(commandTopic)
+                && known(eventTopic)
+                && known(stateTopic)
+                && known(partitionKey)
+                && watermark.watermarked();
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("sourceProvider", sourceProvider);
+            values.put("commandDomain", commandDomain);
+            values.put("commandTopic", commandTopic);
+            values.put("eventTopic", eventTopic);
+            values.put("stateTopic", stateTopic);
+            values.put("partitionKey", partitionKey);
+            values.put("fencingToken", fencingToken);
+            values.put("idempotencyKey", idempotencyKey);
+            values.put("expectedRevision", expectedRevision);
+            values.put("watermark", watermark.payload());
+            values.put("settled", settled());
+            return Map.copyOf(values);
+        }
+
+        private static Map<?, ?> map(Object value) {
+            return value instanceof Map<?, ?> map ? map : Map.of();
+        }
+
+        private static boolean known(String value) {
+            return value != null && !value.isBlank() && !UNKNOWN.equalsIgnoreCase(value);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? UNKNOWN : value;
+        }
+
+        private static String string(Object value) {
+            return value == null ? null : value.toString();
+        }
+
+        private static long longValue(Object value, long fallback) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+    }
+
+    public record SnapshotWatermark(
+        String sourceProvider,
+        String aggregateScope,
+        String aggregateType,
+        String aggregateId,
+        String commandDomain,
+        String stateTopic,
+        String partitionKey,
+        UUID sourceCommandId,
+        UUID sourceEventId,
+        long sourceRevision,
+        long eventCreatedEpochMillis,
+        String stateFingerprint,
+        String eventChainHash
+    ) {
+        private static final String UNKNOWN = "unknown";
+
+        public SnapshotWatermark {
+            sourceProvider = normalize(sourceProvider);
+            aggregateScope = normalize(aggregateScope);
+            aggregateType = normalize(aggregateType);
+            aggregateId = normalize(aggregateId);
+            commandDomain = normalize(commandDomain);
+            stateTopic = normalize(stateTopic);
+            partitionKey = normalize(partitionKey);
+            sourceRevision = Math.max(0L, sourceRevision);
+            eventCreatedEpochMillis = Math.max(0L, eventCreatedEpochMillis);
+            stateFingerprint = normalize(stateFingerprint);
+            eventChainHash = normalize(eventChainHash);
+        }
+
+        public static SnapshotWatermark unwatermarked(
+            String aggregateScope,
+            String aggregateType,
+            String aggregateId,
+            long sourceRevision
+        ) {
+            return new SnapshotWatermark(
+                UNKNOWN,
+                aggregateScope,
+                aggregateType,
+                aggregateId,
+                UNKNOWN,
+                UNKNOWN,
+                aggregateScope,
+                null,
+                null,
+                sourceRevision,
+                0L,
+                UNKNOWN,
+                UNKNOWN
+            );
+        }
+
+        public static SnapshotWatermark fromPayload(Map<?, ?> raw, SnapshotWatermark fallback) {
+            if (raw == null || raw.isEmpty()) {
+                return fallback;
+            }
+            return new SnapshotWatermark(
+                string(raw.get("sourceProvider")),
+                string(raw.get("aggregateScope")),
+                string(raw.get("aggregateType")),
+                string(raw.get("aggregateId")),
+                string(raw.get("commandDomain")),
+                string(raw.get("stateTopic")),
+                string(raw.get("partitionKey")),
+                uuid(raw.get("sourceCommandId")),
+                uuid(raw.get("sourceEventId")),
+                longValue(raw.get("sourceRevision"), 0L),
+                longValue(raw.get("eventCreatedEpochMillis"), 0L),
+                string(raw.get("stateFingerprint")),
+                string(raw.get("eventChainHash"))
+            );
+        }
+
+        public boolean watermarked() {
+            return sourceEventId != null
+                && sourceCommandId != null
+                && sourceRevision > 0L
+                && known(stateFingerprint)
+                && known(eventChainHash)
+                && known(stateTopic)
+                && known(partitionKey);
+        }
+
+        public boolean staleAt(long nowEpochMillis, long maxAgeMillis) {
+            return !watermarked()
+                || maxAgeMillis >= 0L
+                && eventCreatedEpochMillis > 0L
+                && eventCreatedEpochMillis + maxAgeMillis < nowEpochMillis;
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("sourceProvider", sourceProvider);
+            values.put("aggregateScope", aggregateScope);
+            values.put("aggregateType", aggregateType);
+            values.put("aggregateId", aggregateId);
+            values.put("commandDomain", commandDomain);
+            values.put("stateTopic", stateTopic);
+            values.put("partitionKey", partitionKey);
+            if (sourceCommandId != null) {
+                values.put("sourceCommandId", sourceCommandId.toString());
+            }
+            if (sourceEventId != null) {
+                values.put("sourceEventId", sourceEventId.toString());
+            }
+            values.put("sourceRevision", sourceRevision);
+            values.put("eventCreatedEpochMillis", eventCreatedEpochMillis);
+            values.put("stateFingerprint", stateFingerprint);
+            values.put("eventChainHash", eventChainHash);
+            values.put("watermarked", watermarked());
+            return Map.copyOf(values);
+        }
+
+        private static boolean known(String value) {
+            return value != null && !value.isBlank() && !UNKNOWN.equalsIgnoreCase(value);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? UNKNOWN : value;
+        }
+
+        private static String string(Object value) {
+            return value == null ? null : value.toString();
+        }
+
+        private static long longValue(Object value, long fallback) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+
+        private static UUID uuid(Object value) {
+            if (value instanceof UUID uuid) {
+                return uuid;
+            }
+            if (value == null || value.toString().isBlank()) {
+                return null;
+            }
+            return UUID.fromString(value.toString());
         }
     }
 
@@ -112,8 +1900,39 @@ public final class DataAuthority {
         String currentProxy,
         long totalPlaytimeMs,
         Map<String, Object> profileData,
-        long revision
+        long revision,
+        SnapshotWatermark watermark
     ) {
+        public PlayerProfileSnapshot(
+            UUID playerId,
+            String username,
+            String normalizedUsername,
+            boolean online,
+            String currentServer,
+            String currentProxy,
+            long totalPlaytimeMs,
+            Map<String, Object> profileData,
+            long revision
+        ) {
+            this(
+                playerId,
+                username,
+                normalizedUsername,
+                online,
+                currentServer,
+                currentProxy,
+                totalPlaytimeMs,
+                profileData,
+                revision,
+                SnapshotWatermark.unwatermarked(
+                    "player:" + playerId,
+                    "player_profile",
+                    playerId == null ? null : playerId.toString(),
+                    revision
+                )
+            );
+        }
+
         public PlayerProfileSnapshot {
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
@@ -121,6 +1940,9 @@ public final class DataAuthority {
             username = username == null ? "unknown" : username;
             normalizedUsername = normalizedUsername == null ? username.toLowerCase(Locale.ROOT) : normalizedUsername;
             profileData = profileData == null ? Map.of() : Map.copyOf(profileData);
+            watermark = watermark == null
+                ? SnapshotWatermark.unwatermarked("player:" + playerId, "player_profile", playerId.toString(), revision)
+                : watermark;
         }
     }
 
@@ -128,14 +1950,38 @@ public final class DataAuthority {
         UUID playerId,
         String primaryRank,
         List<String> ranks,
-        long revision
+        long revision,
+        SnapshotWatermark watermark
     ) {
+        public PlayerRankSnapshot(
+            UUID playerId,
+            String primaryRank,
+            List<String> ranks,
+            long revision
+        ) {
+            this(
+                playerId,
+                primaryRank,
+                ranks,
+                revision,
+                SnapshotWatermark.unwatermarked(
+                    "rank:player:" + playerId,
+                    "player_rank",
+                    playerId == null ? null : playerId.toString(),
+                    revision
+                )
+            );
+        }
+
         public PlayerRankSnapshot {
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
             }
             primaryRank = primaryRank == null || primaryRank.isBlank() ? "DEFAULT" : primaryRank;
             ranks = ranks == null || ranks.isEmpty() ? List.of(primaryRank) : List.copyOf(ranks);
+            watermark = watermark == null
+                ? SnapshotWatermark.unwatermarked("rank:player:" + playerId, "player_rank", playerId.toString(), revision)
+                : watermark;
         }
     }
 }

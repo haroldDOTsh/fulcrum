@@ -15,6 +15,7 @@ import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBusException;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.RequestHandler;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusAdapter;
 
 import java.time.Duration;
@@ -44,7 +45,7 @@ public class RedisMessageBus extends AbstractMessageBus {
     
     private final RedisConnectionManager connectionManager;
     private final ObjectMapper objectMapper;
-    private final Map<UUID, CompletableFuture<Object>> pendingRequests;
+    private final Map<UUID, PendingRequest> pendingRequests;
     private final ScheduledExecutorService scheduler;
     private volatile boolean running = true;
 
@@ -179,6 +180,15 @@ public class RedisMessageBus extends AbstractMessageBus {
     }
 
     @Override
+    public void subscribeRequest(String type, RequestHandler handler) {
+        super.subscribeRequest(type, handler);
+        subscribeToTypeChannel(type);
+
+        String channel = type.startsWith("fulcrum.") ? type : "fulcrum.custom." + type;
+        logger.info("Subscribed request handler for type '" + type + "' with channel '" + channel + "'");
+    }
+
+    @Override
     public synchronized void refreshServerIdentity() {
         if (!running || !adapter.isRunning()) {
             return;
@@ -234,30 +244,19 @@ public class RedisMessageBus extends AbstractMessageBus {
         
         try {
             MessageEnvelope envelope = deserializeEnvelope(message);
+
+            // Response envelopes must be validated against the pending request before any dedupe marker is written.
+            // A mismatched response with a reused correlation ID must not consume or poison the legitimate response.
+            if (channel.startsWith(ChannelConstants.RESPONSE_PREFIX)) {
+                handleResponse(envelope);
+                return;
+            }
             
             // CRITICAL FIX: Registration response messages should NEVER skip duplicate check
             // These come through type-based subscription channels and need to be handled
-            boolean isRegistrationResponse = envelope.getType() != null &&
-                                            (envelope.getType().contains("registration:response") ||
-                                             envelope.getType().contains("registration-response"));
-            
             // Skip duplicate check for registration responses and other type-based messages
-            if (!isRegistrationResponse) {
-                // Only check for duplicates on direct server-to-server messages
-                String currentServerId = adapter.getServerId();
-                boolean isDirectMessage =
-                    channel.equals(ChannelConstants.getServerDirectChannel(currentServerId)) ||
-                    channel.equals(ChannelConstants.getRequestChannel(currentServerId)) ||
-                    channel.equals(ChannelConstants.getResponseChannel(currentServerId));
-                
-                if (isDirectMessage && isDuplicateMessage(envelope)) {
-                    return;
-                }
-            }
-            
-            // Handle response messages (standardized format only)
-            if (channel.startsWith(ChannelConstants.RESPONSE_PREFIX)) {
-                handleResponse(envelope);
+            if (shouldCheckDuplicateBeforeHandling(channel, adapter.getServerId(), envelope)
+                && isDuplicateMessage(envelope)) {
                 return;
             }
             
@@ -272,6 +271,21 @@ public class RedisMessageBus extends AbstractMessageBus {
         } catch (Exception e) {
             logger.log(Level.WARNING, "Error handling incoming message on channel " + channel, e);
         }
+    }
+
+    static boolean shouldCheckDuplicateBeforeHandling(String channel, String currentServerId, MessageEnvelope envelope) {
+        if (channel.startsWith(ChannelConstants.RESPONSE_PREFIX) || isRegistrationResponse(envelope)) {
+            return false;
+        }
+
+        return channel.equals(ChannelConstants.getServerDirectChannel(currentServerId))
+            || channel.equals(ChannelConstants.getRequestChannel(currentServerId));
+    }
+
+    private static boolean isRegistrationResponse(MessageEnvelope envelope) {
+        return envelope.getType() != null &&
+            (envelope.getType().contains("registration:response") ||
+             envelope.getType().contains("registration-response"));
     }
     
     /**
@@ -351,14 +365,19 @@ public class RedisMessageBus extends AbstractMessageBus {
         UUID correlationId = UUID.randomUUID();
         CompletableFuture<Object> future = new CompletableFuture<>();
         
-        // Store pending request
-        pendingRequests.put(correlationId, future);
+        String requesterId = adapter.getServerId();
+
+        // Store pending request with the response identity we expect on the response channel.
+        pendingRequests.put(
+            correlationId,
+            new PendingRequest(future, targetServerId, requesterId, type + "_response")
+        );
         
         // Schedule timeout
         scheduler.schedule(() -> {
-            CompletableFuture<Object> pending = pendingRequests.remove(correlationId);
-            if (pending != null && !pending.isDone()) {
-                pending.completeExceptionally(new TimeoutException("Request timed out"));
+            PendingRequest pending = pendingRequests.remove(correlationId);
+            if (pending != null && !pending.future().isDone()) {
+                pending.future().completeExceptionally(new TimeoutException("Request timed out"));
             }
         }, timeout.toMillis(), TimeUnit.MILLISECONDS);
         
@@ -366,7 +385,7 @@ public class RedisMessageBus extends AbstractMessageBus {
             // Create request envelope with correlation ID
             MessageEnvelope envelope = new MessageEnvelope(
                 type,
-                adapter.getServerId(),
+                requesterId,
                 targetServerId,
                 correlationId,
                 System.currentTimeMillis(),
@@ -394,8 +413,8 @@ public class RedisMessageBus extends AbstractMessageBus {
         
         try {
             // Clean up pending requests
-            for (CompletableFuture<Object> future : pendingRequests.values()) {
-                future.completeExceptionally(new IllegalStateException("Message bus shutting down"));
+            for (PendingRequest pending : pendingRequests.values()) {
+                pending.future().completeExceptionally(new IllegalStateException("Message bus shutting down"));
             }
             pendingRequests.clear();
             
@@ -461,6 +480,25 @@ public class RedisMessageBus extends AbstractMessageBus {
     }
     
     private void handleRequest(MessageEnvelope envelope) {
+        List<RequestHandler> requestHandlers = getRequestHandlers(envelope.getType());
+        if (requestHandlers != null && !requestHandlers.isEmpty()) {
+            RequestHandler handler = requestHandlers.get(0);
+            try {
+                handler.handle(envelope).whenComplete((response, throwable) -> {
+                    if (throwable != null) {
+                        logger.log(Level.WARNING, "Error handling request of type: " + envelope.getType(), throwable);
+                        sendErrorResponse(envelope, throwable.getMessage());
+                    } else {
+                        sendSuccessResponse(envelope, response);
+                    }
+                });
+            } catch (Exception exception) {
+                logger.log(Level.WARNING, "Error handling request of type: " + envelope.getType(), exception);
+                sendErrorResponse(envelope, exception.getMessage());
+            }
+            return;
+        }
+
         List<MessageHandler> handlers = getHandlers(envelope.getType());
         if (handlers != null && !handlers.isEmpty()) {
             // Deserialize the payload to the appropriate type
@@ -483,35 +521,95 @@ public class RedisMessageBus extends AbstractMessageBus {
                     handler.handle(processedEnvelope);
                 } catch (Exception e) {
                     logger.log(Level.WARNING, "Error handling request of type: " + envelope.getType(), e);
-                    sendErrorResponse(envelope);
+                    sendErrorResponse(envelope, e.getMessage());
                 }
             }
         } else {
-            sendErrorResponse(envelope);
+            sendErrorResponse(envelope, "No handler found for request type: " + envelope.getType());
         }
     }
     
     private void handleResponse(MessageEnvelope envelope) {
         UUID correlationId = envelope.getCorrelationId();
         if (correlationId != null) {
-            CompletableFuture<Object> future = pendingRequests.remove(correlationId);
-            if (future != null) {
+            PendingRequest pending = pendingRequests.get(correlationId);
+            if (pending != null) {
+                ResponseValidation validation = validateResponseEnvelope(envelope, pending);
+                if (!validation.accepted()) {
+                    logger.warning("Ignored mismatched response for correlation ID " + correlationId + ": " + validation.reason());
+                    return;
+                }
+
+                if (!pendingRequests.remove(correlationId, pending)) {
+                    return;
+                }
+
                 try {
                     Object response = objectMapper.treeToValue(envelope.getPayload(), Object.class);
-                    future.complete(response);
+                    pending.future().complete(response);
                 } catch (Exception e) {
-                    future.completeExceptionally(e);
+                    pending.future().completeExceptionally(e);
                 }
             }
         }
     }
+
+    static ResponseValidation validateResponseEnvelope(MessageEnvelope envelope, PendingRequest pending) {
+        Objects.requireNonNull(envelope, "envelope");
+        Objects.requireNonNull(pending, "pending");
+
+        if (!Objects.equals(pending.expectedResponderId(), envelope.getSenderId())) {
+            return ResponseValidation.rejected(
+                "expected responder " + pending.expectedResponderId() + " but got " + envelope.getSenderId()
+            );
+        }
+        if (!Objects.equals(pending.requesterId(), envelope.getTargetId())) {
+            return ResponseValidation.rejected(
+                "expected target " + pending.requesterId() + " but got " + envelope.getTargetId()
+            );
+        }
+        if (!Objects.equals(pending.responseType(), envelope.getType())) {
+            return ResponseValidation.rejected(
+                "expected response type " + pending.responseType() + " but got " + envelope.getType()
+            );
+        }
+
+        return ResponseValidation.ok();
+    }
+
+    record PendingRequest(
+        CompletableFuture<Object> future,
+        String expectedResponderId,
+        String requesterId,
+        String responseType
+    ) {
+    }
+
+    record ResponseValidation(boolean accepted, String reason) {
+        static ResponseValidation ok() {
+            return new ResponseValidation(true, "accepted");
+        }
+
+        static ResponseValidation rejected(String reason) {
+            return new ResponseValidation(false, reason);
+        }
+    }
     
-    private void sendErrorResponse(MessageEnvelope requestEnvelope) {
+    private void sendSuccessResponse(MessageEnvelope requestEnvelope, Object responsePayload) {
+        sendResponse(requestEnvelope, responsePayload == null ? Map.of() : responsePayload);
+    }
+
+    private void sendErrorResponse(MessageEnvelope requestEnvelope, String message) {
+        Map<String, String> error = new HashMap<>();
+        error.put("error", message == null || message.isBlank()
+            ? "Request handler failed for type: " + requestEnvelope.getType()
+            : message);
+        sendResponse(requestEnvelope, error);
+    }
+
+    private void sendResponse(MessageEnvelope requestEnvelope, Object responsePayload) {
         if (requestEnvelope.getCorrelationId() != null && requestEnvelope.getSenderId() != null) {
             try {
-                Map<String, String> error = new HashMap<>();
-                error.put("error", "No handler found for request type: " + requestEnvelope.getType());
-                
                 MessageEnvelope response = new MessageEnvelope(
                     requestEnvelope.getType() + "_response",
                     adapter.getServerId(),
@@ -519,14 +617,14 @@ public class RedisMessageBus extends AbstractMessageBus {
                     requestEnvelope.getCorrelationId(),
                     System.currentTimeMillis(),
                     1,
-                    objectMapper.valueToTree(error)
+                    objectMapper.valueToTree(responsePayload)
                 );
                 
                 String serialized = serializeEnvelope(response);
                 String channel = ChannelConstants.getResponseChannel(requestEnvelope.getSenderId());
                 publish(channel, serialized);
             } catch (Exception e) {
-                logger.log(Level.WARNING, "Failed to send error response", e);
+                logger.log(Level.WARNING, "Failed to send response", e);
             }
         }
     }

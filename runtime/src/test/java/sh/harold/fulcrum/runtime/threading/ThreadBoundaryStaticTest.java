@@ -45,6 +45,36 @@ class ThreadBoundaryStaticTest {
         assertFalse(worldManager.contains(".join()"));
     }
 
+    @Test
+    void worldFeatureUsesRemoteWorldMapStore() throws IOException {
+        String worldFeature = readSource("sh/harold/fulcrum/fundamentals/world/WorldFeature.java");
+
+        assertTrue(worldFeature.contains("MessageBusWorldMapStoreClient"));
+        assertFalse(worldFeature.contains("PostgresConnectionAdapter"));
+        assertFalse(worldFeature.contains("createStandalonePostgresAdapter"));
+        assertFalse(worldFeature.contains("postgres.jdbc-url"));
+    }
+
+    @Test
+    void paperRankFeatureUsesQuotedAuthorityReads() throws IOException {
+        String rankFeature = readSource("sh/harold/fulcrum/fundamentals/rank/RankFeature.java");
+
+        assertTrue(rankFeature.contains("rankReader.quoteRanks"));
+        assertFalse(rankFeature.contains("rankReader.findRanks"));
+    }
+
+    @Test
+    void minigameMatchesRequireAuthorityCommandPort() throws IOException {
+        String minigameFeature = readSource("sh/harold/fulcrum/minigame/MinigameEngineFeature.java");
+        String minigameEngine = readSource("sh/harold/fulcrum/minigame/MinigameEngine.java");
+
+        assertTrue(minigameFeature.contains("container.get(DataAuthority.CommandPort.class)"));
+        assertTrue(minigameFeature.contains("DataAuthority.CommandPort.class"));
+        assertFalse(minigameFeature.contains("minigame match logs will not be persisted"));
+        assertTrue(minigameEngine.contains("DataAuthority.CommandType.RECORD_MATCH_START"));
+        assertTrue(minigameEngine.contains("DataAuthority.CommandType.RECORD_MATCH_END"));
+    }
+
     private List<String> managedPaperHotPaths() {
         return List.of(
             "sh/harold/fulcrum/fundamentals/data/DataAuthorityFeature.java",

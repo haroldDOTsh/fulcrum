@@ -19,6 +19,7 @@ import sh.harold.fulcrum.runtime.threading.PaperRuntime;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,6 +33,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
 
     private final Map<UUID, Set<Rank>> rankCache = new ConcurrentHashMap<>();
     private final Map<UUID, Rank> primaryRankCache = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> rankRevisionCache = new ConcurrentHashMap<>();
     
     private JavaPlugin plugin;
     private Logger logger;
@@ -78,6 +80,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         // Clear caches
         rankCache.clear();
         primaryRankCache.clear();
+        rankRevisionCache.clear();
         
         // Unregister service
         if (ServiceLocatorImpl.getInstance() != null) {
@@ -125,6 +128,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         UUID playerId = event.getPlayer().getUniqueId();
         rankCache.remove(playerId);
         primaryRankCache.remove(playerId);
+        rankRevisionCache.remove(playerId);
     }
     
     @Override
@@ -171,37 +175,39 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     
     @Override
     public CompletableFuture<Void> setPrimaryRank(UUID playerId, Rank rank) {
-        Set<Rank> newRanks = immutableWith(rankCache.get(playerId), rank);
-
-        return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, rank, newRanks)
-            .thenRun(() -> cacheRanks(playerId, rank, newRanks))
-            .thenCompose(ignored -> updateCommands(playerId, "primary rank change"));
+        return currentRankState(playerId).thenCompose(state -> {
+            Set<Rank> newRanks = immutableWith(state.ranks(), rank);
+            return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, rank, newRanks, state.revision())
+                .thenAccept(revision -> cacheRanks(playerId, rank, newRanks, revision))
+                .thenCompose(ignored -> updateCommands(playerId, "primary rank change"));
+        });
     }
     
     @Override
     public CompletableFuture<Void> addRank(UUID playerId, Rank rank) {
-        Set<Rank> newRanks = immutableWith(rankCache.get(playerId), rank);
+        return currentRankState(playerId).thenCompose(state -> {
+            Set<Rank> newRanks = immutableWith(state.ranks(), rank);
+            Rank currentPrimary = getEffectiveRankFromSet(state.ranks());
+            Rank newPrimary = currentPrimary == null || rank.getPriority() > currentPrimary.getPriority()
+                ? rank
+                : currentPrimary;
 
-        Rank currentPrimary = primaryRankCache.get(playerId);
-        Rank newPrimary = currentPrimary == null || rank.getPriority() > currentPrimary.getPriority()
-            ? rank
-            : currentPrimary;
-
-        return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, newPrimary, newRanks)
-            .thenRun(() -> cacheRanks(playerId, newPrimary, newRanks))
-            .thenCompose(ignored -> updateCommands(playerId, "rank addition"));
+            return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, newPrimary, newRanks, state.revision())
+                .thenAccept(revision -> cacheRanks(playerId, newPrimary, newRanks, revision))
+                .thenCompose(ignored -> updateCommands(playerId, "rank addition"));
+        });
     }
     
     @Override
     public CompletableFuture<Void> removeRank(UUID playerId, Rank rank) {
-        return getAllRanks(playerId).thenCompose(currentRanks -> {
-            Set<Rank> newRanks = immutableWithout(currentRanks, rank);
+        return currentRankState(playerId).thenCompose(state -> {
+            Set<Rank> newRanks = immutableWithout(state.ranks(), rank);
             if (newRanks == null) {
                 return CompletableFuture.completedFuture(null);
             }
             Rank newPrimary = getEffectiveRankFromSet(newRanks);
-            return submitRankCommand(DataAuthority.CommandType.REVOKE_RANK, playerId, newPrimary, newRanks)
-                .thenRun(() -> cacheRanks(playerId, newPrimary, newRanks))
+            return submitRankCommand(DataAuthority.CommandType.REVOKE_RANK, playerId, newPrimary, newRanks, state.revision())
+                .thenAccept(revision -> cacheRanks(playerId, newPrimary, newRanks, revision))
                 .thenCompose(ignored -> updateCommands(playerId, "rank removal"));
         });
     }
@@ -234,68 +240,98 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     
     @Override
     public CompletableFuture<Void> resetRanks(UUID playerId) {
-        Set<Rank> newRanks = immutableWith(null, Rank.DEFAULT);
-
-        return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, Rank.DEFAULT, newRanks)
-            .thenRun(() -> cacheRanks(playerId, Rank.DEFAULT, newRanks))
-            .thenCompose(ignored -> updateCommands(playerId, "rank reset"));
+        return currentRankState(playerId).thenCompose(state -> {
+            Set<Rank> newRanks = immutableWith(null, Rank.DEFAULT);
+            return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, Rank.DEFAULT, newRanks, state.revision())
+                .thenAccept(revision -> cacheRanks(playerId, Rank.DEFAULT, newRanks, revision))
+                .thenCompose(ignored -> updateCommands(playerId, "rank reset"));
+        });
     }
     
     /**
      * Loads player ranks from storage.
      */
     private CompletableFuture<Set<Rank>> loadPlayerRanks(UUID playerId) {
-        return rankReader.findRanks(playerId)
-            .thenApply(snapshot -> {
-                Set<Rank> ranks = snapshot
-                    .map(this::ranksFromSnapshot)
-                    .orElseGet(HashSet::new);
+        return loadRankState(playerId).thenApply(RankState::ranks);
+    }
+
+    private CompletableFuture<RankState> currentRankState(UUID playerId) {
+        Set<Rank> cachedRanks = rankCache.get(playerId);
+        Long cachedRevision = rankRevisionCache.get(playerId);
+        if (cachedRanks != null && cachedRevision != null) {
+            return CompletableFuture.completedFuture(new RankState(immutableCopy(cachedRanks), cachedRevision));
+        }
+        return loadRankState(playerId);
+    }
+
+    private CompletableFuture<RankState> loadRankState(UUID playerId) {
+        return rankReader.quoteRanks(playerId, DataAuthority.ReadRequirement.eventual())
+            .thenApply(read -> {
+                if (!read.satisfied()) {
+                    if (read.quote().status() == DataAuthority.ReadQuoteStatus.NOT_FOUND) {
+                        return new RankState(new HashSet<>(), 0L);
+                    }
+                    throw new IllegalStateException("Rank projection for " + playerId + " is not safe to use: "
+                        + read.quote().status() + " " + read.quote().message());
+                }
+                DataAuthority.PlayerRankSnapshot snapshot = read.snapshot().orElseThrow();
+                Set<Rank> ranks = ranksFromSnapshot(snapshot);
+                long revision = snapshot.revision();
                 if (!ranks.isEmpty()) {
                     Rank primary = getEffectiveRankFromSet(ranks);
-                    cacheRanks(playerId, primary, ranks);
+                    cacheRanks(playerId, primary, ranks, revision);
                 }
-                return ranks;
+                return new RankState(ranks, revision);
             })
             .exceptionally(e -> {
                 logger.log(Level.WARNING, "Failed to load ranks for " + playerId, e);
-                return new HashSet<Rank>();
+                throw new CompletionException(e);
             })
             .toCompletableFuture();
     }
     
-    private CompletableFuture<Void> submitRankCommand(
+    private CompletableFuture<Long> submitRankCommand(
         DataAuthority.CommandType commandType,
         UUID playerId,
         Rank primary,
-        Set<Rank> ranks
+        Set<Rank> ranks,
+        long expectedRevision
     ) {
         Set<Rank> safeRanks = ranks == null || ranks.isEmpty()
             ? immutableWith(null, primary == null ? Rank.DEFAULT : primary)
             : ranks;
         Rank safePrimary = primary == null ? getEffectiveRankFromSet(safeRanks) : primary;
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("playerId", playerId.toString());
-        payload.put("primaryRank", safePrimary.name());
-        payload.put("ranks", safeRanks.stream().map(Enum::name).collect(Collectors.toList()));
-
-        DataAuthority.CommandEnvelope command = new DataAuthority.CommandEnvelope(
-            UUID.randomUUID(),
-            commandType,
-            "rank-service",
-            "player:" + playerId,
-            commandType.name() + ":" + playerId + ":" + System.currentTimeMillis(),
-            System.currentTimeMillis() + 5000L,
-            "",
-            0L,
-            payload
+        long now = System.currentTimeMillis();
+        DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
+            DataAuthority.CommandManifest.create(
+                UUID.randomUUID(),
+                commandType,
+                "rank-service",
+                "rank:player:" + playerId,
+                commandType.name() + ":" + playerId + ":" + now,
+                now + 5000L,
+                "",
+                expectedRevision
+            ),
+            playerId,
+            safePrimary.name(),
+            safeRanks.stream().map(Enum::name).collect(Collectors.toList())
         );
 
-        return commandPort.submit(command).thenAccept(result -> {
+        return submitRankCommand(command, playerId);
+    }
+
+    private CompletableFuture<Long> submitRankCommand(
+        DataAuthority.PlayerRankCommand command,
+        UUID playerId
+    ) {
+        return commandPort.submit(command).thenApply(result -> {
             if (!result.accepted()) {
                 throw new IllegalStateException("Rank command rejected for " + playerId + ": "
                     + result.rejectionReason() + " " + result.message());
             }
+            return result.revision();
         }).toCompletableFuture();
     }
 
@@ -322,9 +358,10 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         }
     }
 
-    private void cacheRanks(UUID playerId, Rank primary, Set<Rank> ranks) {
+    private void cacheRanks(UUID playerId, Rank primary, Set<Rank> ranks, long revision) {
         rankCache.put(playerId, immutableCopy(ranks));
         primaryRankCache.put(playerId, primary == null ? getEffectiveRankFromSet(ranks) : primary);
+        rankRevisionCache.put(playerId, revision);
     }
 
     private CompletableFuture<Void> updateCommands(UUID playerId, String reason) {
@@ -398,4 +435,6 @@ public class RankFeature implements PluginFeature, RankService, Listener {
             .max(Comparator.comparingInt(Rank::getPriority))
             .orElse(Rank.DEFAULT);
     }
+
+    private record RankState(Set<Rank> ranks, long revision) {}
 }

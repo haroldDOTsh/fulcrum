@@ -3,6 +3,7 @@ package sh.harold.fulcrum.api.messagebus.impl;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.RequestHandler;
 import sh.harold.fulcrum.api.messagebus.BaseMessage;
 import sh.harold.fulcrum.api.messagebus.TypedMessageHandler;
 import sh.harold.fulcrum.api.messagebus.MessageTypeRegistry;
@@ -31,6 +32,7 @@ public abstract class AbstractMessageBus implements MessageBus {
     protected final MessageBusAdapter adapter;
     protected final Logger logger;
     protected final Map<String, List<MessageHandler>> subscriptions;
+    protected final Map<String, List<RequestHandler>> requestSubscriptions;
     protected final Map<String, List<TypedMessageHandler<?>>> typedSubscriptions;
     protected final Map<String, Class<?>> typeRegistry;
     protected final ObjectMapper objectMapper;
@@ -40,6 +42,7 @@ public abstract class AbstractMessageBus implements MessageBus {
         this.adapter = adapter;
         this.logger = adapter.getLogger();
         this.subscriptions = new ConcurrentHashMap<>();
+        this.requestSubscriptions = new ConcurrentHashMap<>();
         this.typedSubscriptions = new ConcurrentHashMap<>();
         this.typeRegistry = new ConcurrentHashMap<>();
         this.objectMapper = new ObjectMapper();
@@ -140,6 +143,24 @@ public abstract class AbstractMessageBus implements MessageBus {
         }
         logger.fine("Unsubscribed handler for type: " + type);
     }
+
+    @Override
+    public void subscribeRequest(String type, RequestHandler handler) {
+        requestSubscriptions.computeIfAbsent(type, ignored -> new CopyOnWriteArrayList<>()).add(handler);
+        logger.fine("Subscribed request handler for type: " + type);
+    }
+
+    @Override
+    public void unsubscribeRequest(String type, RequestHandler handler) {
+        List<RequestHandler> handlers = requestSubscriptions.get(type);
+        if (handlers != null) {
+            handlers.remove(handler);
+            if (handlers.isEmpty()) {
+                requestSubscriptions.remove(type);
+            }
+        }
+        logger.fine("Unsubscribed request handler for type: " + type);
+    }
     
     /**
      * Gets the handlers for a specific message type.
@@ -149,6 +170,10 @@ public abstract class AbstractMessageBus implements MessageBus {
      */
     protected List<MessageHandler> getHandlers(String type) {
         return subscriptions.get(type);
+    }
+
+    protected List<RequestHandler> getRequestHandlers(String type) {
+        return requestSubscriptions.get(type);
     }
     
     /**

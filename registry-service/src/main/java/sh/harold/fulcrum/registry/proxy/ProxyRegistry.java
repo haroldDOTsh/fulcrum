@@ -3,6 +3,7 @@ package sh.harold.fulcrum.registry.proxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
+import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshot;
 import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshotStore;
 import sh.harold.fulcrum.registry.state.RegistrationState;
 import sh.harold.fulcrum.registry.state.StateTransitionEvent;
@@ -58,8 +59,83 @@ public class ProxyRegistry {
         this.debugMode = debugMode;
     }
 
+    /**
+     * Set the durable node snapshot store.
+     *
+     * @param snapshotStore snapshot store to use.
+     */
     public void setSnapshotStore(RegistryNodeSnapshotStore snapshotStore) {
         this.snapshotStore = Objects.requireNonNullElse(snapshotStore, RegistryNodeSnapshotStore.NOOP);
+    }
+
+    /**
+     * Restore proxy reservations from durable snapshots.
+     *
+     * @param snapshots snapshots loaded from durable registry metadata.
+     * @return number of proxy reservations restored.
+     */
+    public synchronized int restoreSnapshots(Collection<RegistryNodeSnapshot> snapshots) {
+        int restored = 0;
+        if (snapshots == null) {
+            return restored;
+        }
+        for (RegistryNodeSnapshot snapshot : snapshots) {
+            if (restoreSnapshot(snapshot)) {
+                restored++;
+            }
+        }
+        return restored;
+    }
+
+    /**
+     * Restore one proxy reservation from a durable snapshot.
+     *
+     * @param snapshot snapshot loaded from durable registry metadata.
+     * @return true when the proxy reservation was restored.
+     */
+    public synchronized boolean restoreSnapshot(RegistryNodeSnapshot snapshot) {
+        if (snapshot == null || !snapshot.isProxy() || snapshot.nodeId() == null || snapshot.nodeId().isBlank()) {
+            return false;
+        }
+        if (!snapshot.permitsRestore()) {
+            LOGGER.warn(
+                "Skipping proxy snapshot {} from {} because attestation fingerprint does not match payload",
+                snapshot.nodeId(),
+                snapshot.snapshotSource()
+            );
+            return false;
+        }
+
+        ProxyIdentifier proxyId;
+        try {
+            proxyId = ProxyIdentifier.isValid(snapshot.nodeId())
+                ? ProxyIdentifier.parse(snapshot.nodeId())
+                : ProxyIdentifier.fromLegacy(snapshot.nodeId());
+        } catch (Exception exception) {
+            LOGGER.warn("Skipping invalid proxy snapshot id {}", snapshot.nodeId(), exception);
+            return false;
+        }
+
+        if (proxies.containsKey(proxyId) || unavailableProxies.containsKey(proxyId)) {
+            return false;
+        }
+
+        RegisteredProxyData proxy = new RegisteredProxyData(proxyId, snapshot.address(), snapshot.port(), stateMachineExecutor);
+        proxy.transitionTo(RegistrationState.REGISTERING, "Restored from registry snapshot");
+        proxy.transitionTo(RegistrationState.REGISTERED, "Restored from registry snapshot");
+        proxy.transitionTo(RegistrationState.DISCONNECTED, "Awaiting fresh heartbeat after registry restore");
+        proxy.setStatus(restoredProxyStatus(snapshot.state()));
+        proxy.setLastHeartbeat(snapshot.updatedAt().toEpochMilli());
+
+        unavailableProxies.put(proxyId, proxy);
+        unavailableTimestamps.put(proxyId, snapshot.updatedAt().toEpochMilli());
+        tempIdToPermId.put(snapshot.nodeId(), proxyId);
+        registrationTimestamps.put(proxyId, snapshot.registeredAt().toEpochMilli());
+        addressPortToProxyId.put(snapshot.address() + ":" + snapshot.port(), proxyId);
+
+        LOGGER.info("Restored proxy snapshot {} as {}; awaiting fresh registration",
+            proxyId.getFormattedId(), proxy.getStatus());
+        return true;
     }
     
     /**
@@ -686,6 +762,13 @@ public class ProxyRegistry {
         } catch (Exception exception) {
             LOGGER.warn("Failed to mark proxy {} offline in snapshot store", proxyId, exception);
         }
+    }
+
+    private static RegisteredProxyData.Status restoredProxyStatus(String state) {
+        if (RegisteredProxyData.Status.DEAD.name().equalsIgnoreCase(state)) {
+            return RegisteredProxyData.Status.DEAD;
+        }
+        return RegisteredProxyData.Status.UNAVAILABLE;
     }
     
     /**

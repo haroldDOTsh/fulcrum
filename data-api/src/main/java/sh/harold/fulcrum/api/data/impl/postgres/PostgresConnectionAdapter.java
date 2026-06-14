@@ -145,6 +145,25 @@ public class PostgresConnectionAdapter {
     public HikariDataSource getDataSource() {
         return dataSource;
     }
+
+    /**
+     * Describe the effective pool settings used by this adapter.
+     *
+     * @param ownerRole The service role that owns this pool
+     * @param moduleSource The module that creates this pool
+     * @param allowedRuntimeBoundary The runtime boundary allowed to hold this pool
+     * @return A connection-budget declaration for the live pool
+     */
+    public PostgresConnectionBudget.Declaration poolDeclaration(String ownerRole,
+                                                               String moduleSource,
+                                                               String allowedRuntimeBoundary) {
+        return PostgresConnectionBudget.fromHikariConfig(
+            ownerRole,
+            moduleSource,
+            allowedRuntimeBoundary,
+            dataSource
+        );
+    }
     
     /**
      * Get the database name.

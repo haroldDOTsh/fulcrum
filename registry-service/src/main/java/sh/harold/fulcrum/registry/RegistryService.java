@@ -4,12 +4,36 @@ import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
+import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandScopeGuard;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityFencingCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipalCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.CachedAuthorityCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCustodyPreflight;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandIngressLog;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandRefusalLog;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityPartitionEpochStore;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityStateRestoreDrill;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresDataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresLoggedAuthorityCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityEventDispatchResult;
+import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityEventDispatchTarget;
+import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityEventEnvelope;
+import sh.harold.fulcrum.api.data.impl.authority.events.PostgresAuthorityEventDispatcher;
+import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusDataAuthorityProvider;
+import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusWorldMapStoreProvider;
+import sh.harold.fulcrum.api.data.impl.postgres.FulcrumDataMigrations;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionBudget;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.impl.postgres.PostgresMigrationRunner;
+import sh.harold.fulcrum.api.data.impl.world.PostgresWorldMapStore;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
 import sh.harold.fulcrum.registry.adapter.RegistryMessageBusAdapter;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
+import sh.harold.fulcrum.registry.authority.RedisAuthorityCommandResultCache;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
@@ -19,6 +43,7 @@ import sh.harold.fulcrum.registry.coordination.RegistryCoordinationStore;
 import sh.harold.fulcrum.registry.handler.RegistrationHandler;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.persistence.PostgresRegistryNodeSnapshotStore;
+import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshot;
 import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshotStore;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
 import sh.harold.fulcrum.registry.server.ServerRegistry;
@@ -26,11 +51,19 @@ import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -55,7 +88,22 @@ public class RegistryService {
     
     private MessageBus messageBus;
     private RegistryMessageBusAdapter messageBusAdapter;
+    private MessageBusConnectionConfig messageBusConnectionConfig;
+    private PostgresConnectionAdapter authorityPostgres;
+    private PostgresLoggedAuthorityCommandPort authorityCommandPort;
+    private PostgresAuthorityCommandIngressLog authorityCommandIngressLog;
+    private PostgresAuthorityCommandRefusalLog authorityCommandRefusalLog;
+    private PostgresAuthorityStateRestoreDrill authorityStateRestoreDrill;
+    private CachedAuthorityCommandPort.CommandResultCache authorityCommandResultCache;
+    private MessageBusDataAuthorityProvider dataAuthorityProvider;
+    private MessageBusWorldMapStoreProvider worldMapStoreProvider;
+    private PostgresAuthorityEventDispatcher authorityEventDispatcher;
+    private ScheduledFuture<?> authorityEventDispatcherTask;
     private RegistryCoordinationStore coordinationStore;
+    private PostgresConnectionBudget.Report postgresConnectionBudget = PostgresConnectionBudget.empty(0);
+    private AuthorityStartupState authorityStartupState = AuthorityStartupState.disabled("not-started");
+    private DispatcherStartupState authorityDispatcherStartupState = DispatcherStartupState.disabled("not-started");
+    private RegistryStartupReceipt startupReceipt;
     private RegistryNodeSnapshotStore nodeSnapshotStore = RegistryNodeSnapshotStore.NOOP;
     private SlotProvisionService slotProvisionService;
     private PlayerRoutingService playerRoutingService;
@@ -120,6 +168,13 @@ public class RegistryService {
     }
     
     private Map<String, Object> createDefaultConfig() {
+        boolean postgresEnabled = System.getenv("POSTGRES_ENABLED") != null
+            ? Boolean.parseBoolean(System.getenv("POSTGRES_ENABLED"))
+            : false;
+        boolean authorityEnabled = System.getenv("AUTHORITY_ENABLED") != null
+            ? Boolean.parseBoolean(System.getenv("AUTHORITY_ENABLED"))
+            : postgresEnabled;
+
         return Map.of(
             "redis", Map.of(
                 "host", System.getenv("REDIS_HOST") != null ? System.getenv("REDIS_HOST") : "localhost",
@@ -127,9 +182,7 @@ public class RegistryService {
                 "password", System.getenv("REDIS_PASSWORD") != null ? System.getenv("REDIS_PASSWORD") : ""
             ),
             "postgres", Map.of(
-                "enabled", System.getenv("POSTGRES_ENABLED") != null
-                    ? Boolean.parseBoolean(System.getenv("POSTGRES_ENABLED"))
-                    : false,
+                "enabled", postgresEnabled,
                 "host", System.getenv("POSTGRES_HOST") != null ? System.getenv("POSTGRES_HOST") : "localhost",
                 "port", System.getenv("POSTGRES_PORT") != null ? Integer.parseInt(System.getenv("POSTGRES_PORT")) : 5432,
                 "database", System.getenv("POSTGRES_DATABASE") != null ? System.getenv("POSTGRES_DATABASE") : "fulcrum",
@@ -139,6 +192,43 @@ public class RegistryService {
                     "maximum-pool-size", 2,
                     "minimum-idle", 0,
                     "connection-timeout", 5000
+                ),
+                "connection-budget", Map.of(
+                    "max-total-pool-size", System.getenv("POSTGRES_CONNECTION_BUDGET_MAX_TOTAL") != null
+                        ? Integer.parseInt(System.getenv("POSTGRES_CONNECTION_BUDGET_MAX_TOTAL"))
+                        : 8,
+                    "enforce", System.getenv("POSTGRES_CONNECTION_BUDGET_ENFORCE") != null
+                        ? Boolean.parseBoolean(System.getenv("POSTGRES_CONNECTION_BUDGET_ENFORCE"))
+                        : false
+                )
+            ),
+            "authority", Map.of(
+                "enabled", authorityEnabled,
+                "migrations", Map.of(
+                    "enabled", true,
+                    "auto-migrate", false
+                ),
+                "event-dispatcher", Map.of(
+                    "enabled", System.getenv("AUTHORITY_EVENT_DISPATCHER_ENABLED") != null
+                        ? Boolean.parseBoolean(System.getenv("AUTHORITY_EVENT_DISPATCHER_ENABLED"))
+                        : true,
+                    "interval-ms", System.getenv("AUTHORITY_EVENT_DISPATCHER_INTERVAL_MS") != null
+                        ? Long.parseLong(System.getenv("AUTHORITY_EVENT_DISPATCHER_INTERVAL_MS"))
+                        : 1000L,
+                    "batch-size", System.getenv("AUTHORITY_EVENT_DISPATCHER_BATCH_SIZE") != null
+                        ? Integer.parseInt(System.getenv("AUTHORITY_EVENT_DISPATCHER_BATCH_SIZE"))
+                        : 50,
+                    "retry-delay-ms", System.getenv("AUTHORITY_EVENT_DISPATCHER_RETRY_DELAY_MS") != null
+                        ? Long.parseLong(System.getenv("AUTHORITY_EVENT_DISPATCHER_RETRY_DELAY_MS"))
+                        : 5000L
+                ),
+                "idempotency-cache", Map.of(
+                    "enabled", System.getenv("AUTHORITY_IDEMPOTENCY_CACHE_ENABLED") != null
+                        ? Boolean.parseBoolean(System.getenv("AUTHORITY_IDEMPOTENCY_CACHE_ENABLED"))
+                        : true,
+                    "ttl-seconds", System.getenv("AUTHORITY_IDEMPOTENCY_CACHE_TTL_SECONDS") != null
+                        ? Long.parseLong(System.getenv("AUTHORITY_IDEMPOTENCY_CACHE_TTL_SECONDS"))
+                        : 86_400L
                 )
             ),
             "registry", Map.of(
@@ -170,21 +260,36 @@ public class RegistryService {
         try {
             // Create MessageBus configuration from application.yml
             MessageBusConnectionConfig connectionConfig = createMessageBusConfig();
-            
+            messageBusConnectionConfig = connectionConfig;
+
             // Create MessageBus adapter and factory
             messageBusAdapter = new RegistryMessageBusAdapter(connectionConfig, scheduler);
-            
+
             // Check Redis availability before creating MessageBus
             boolean redisAvailable = MessageBusFactory.isRedisAvailable();
-            
+
             if (!redisAvailable && connectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS) {
                 throw new IllegalStateException("Redis message bus requested but Lettuce is not available");
             }
-            
+
             messageBus = MessageBusFactory.create(messageBusAdapter);
+            postgresConnectionBudget = buildPostgresConnectionBudget(config);
+            logPostgresConnectionBudget(postgresConnectionBudget);
+            dataAuthorityProvider = createDataAuthorityProvider();
             nodeSnapshotStore = createNodeSnapshotStore();
             serverRegistry.setSnapshotStore(nodeSnapshotStore);
             proxyRegistry.setSnapshotStore(nodeSnapshotStore);
+            RegistrySnapshotRestoreReport snapshotRestoreReport = rehydrateRegistrySnapshots();
+            startupReceipt = createStartupReceipt(
+                Instant.now(),
+                messageBusAdapter.getServerId(),
+                connectionConfig.getType().name(),
+                snapshotRestoreReport,
+                postgresConnectionBudget,
+                authorityStartupState,
+                authorityDispatcherStartupState
+            );
+            LOGGER.info("Registry startup receipt: {}", startupReceipt.summary());
             coordinationStore = createCoordinationStore(connectionConfig);
             slotProvisionService = new SlotProvisionService(serverRegistry, messageBus, coordinationStore);
             playerRoutingService = new PlayerRoutingService(messageBus, slotProvisionService, serverRegistry, proxyRegistry);
@@ -274,6 +379,92 @@ public class RegistryService {
         return new RedisRegistryCoordinationStore(connectionConfig);
     }
 
+    private void logPostgresConnectionBudget(PostgresConnectionBudget.Report report) {
+        if (report.declarations().isEmpty()) {
+            return;
+        }
+        if (report.accepted()) {
+            LOGGER.info("PostgreSQL connection budget docket: {}", report.summary());
+            return;
+        }
+        if (postgresConnectionBudgetEnforced(config)) {
+            report.requireAccepted();
+        }
+        LOGGER.warn("PostgreSQL connection budget docket exceeds advisory ceiling: {}", report.summary());
+    }
+
+    private void requireDeclaredPostgresPool(PostgresConnectionBudget.Declaration declaration) {
+        if (!postgresConnectionBudget.declares(declaration)) {
+            throw new IllegalStateException(
+                "Postgres pool has no matching connection-budget declaration: " + declaration.summary()
+            );
+        }
+    }
+
+    static PostgresConnectionBudget.Report buildPostgresConnectionBudget(Map<String, Object> config) {
+        Map<String, Object> postgresConfig = config == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) config.getOrDefault("postgres", Map.of()));
+        int maxTotalPoolSize = postgresConnectionBudgetMaxTotal(postgresConfig);
+        if (!booleanValue(postgresConfig.get("enabled"), false)) {
+            return PostgresConnectionBudget.empty(maxTotalPoolSize);
+        }
+
+        Map<String, Object> authorityConfig = config == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) config.getOrDefault("authority", Map.of()));
+        String databaseName = stringValue(postgresConfig.get("database"), "fulcrum");
+        Properties poolProperties = postgresPoolProperties(postgresConfig);
+        List<PostgresConnectionBudget.Declaration> declarations = new ArrayList<>();
+
+        if (authorityEnabled(authorityConfig, true)) {
+            declarations.add(PostgresConnectionBudget.fromPoolProperties(
+                "registry-service:central-authority",
+                "registry-service",
+                PostgresConnectionBudget.REGISTRY_SERVICE_BOUNDARY,
+                "FulcrumPostgresPool-authority-" + databaseName,
+                poolProperties,
+                4,
+                1,
+                5000L
+            ));
+        }
+
+        declarations.add(PostgresConnectionBudget.fromPoolProperties(
+            "registry-service:node-snapshots",
+            "registry-service",
+            PostgresConnectionBudget.REGISTRY_SERVICE_BOUNDARY,
+            "registry-" + databaseName,
+            poolProperties,
+            2,
+            0,
+            5000L
+        ));
+
+        return PostgresConnectionBudget.inspect(declarations, maxTotalPoolSize);
+    }
+
+    private static int postgresConnectionBudgetMaxTotal(Map<String, Object> postgresConfig) {
+        Map<String, Object> budgetConfig = postgresConnectionBudgetConfig(postgresConfig);
+        return intValue(budgetConfig.get("max-total-pool-size"), 8);
+    }
+
+    private static boolean postgresConnectionBudgetEnforced(Map<String, Object> config) {
+        Map<String, Object> postgresConfig = config == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) config.getOrDefault("postgres", Map.of()));
+        Map<String, Object> budgetConfig = postgresConnectionBudgetConfig(postgresConfig);
+        return booleanValue(budgetConfig.get("enforce"), false);
+    }
+
+    private static Map<String, Object> postgresConnectionBudgetConfig(Map<String, Object> postgresConfig) {
+        if (postgresConfig == null) {
+            return Map.of();
+        }
+        Object budgetRaw = postgresConfig.get("connection-budget");
+        return budgetRaw instanceof Map<?, ?> budget ? copyStringMap(budget) : Map.of();
+    }
+
     private RegistryNodeSnapshotStore createNodeSnapshotStore() {
         Map<String, Object> postgresConfig = (Map<String, Object>) config.get("postgres");
         if (postgresConfig == null || !booleanValue(postgresConfig.get("enabled"), false)) {
@@ -290,6 +481,690 @@ public class RegistryService {
         }
 
         String databaseName = stringValue(postgresConfig.get("database"), "fulcrum");
+        Properties poolProperties = postgresPoolProperties(postgresConfig);
+
+        LOGGER.info("PostgreSQL registry snapshots enabled");
+        PostgresRegistryNodeSnapshotStore store = new PostgresRegistryNodeSnapshotStore(
+            jdbcUrl,
+            stringValue(postgresConfig.get("username"), "fulcrum"),
+            stringValue(postgresConfig.get("password"), ""),
+            "registry-" + databaseName,
+            poolProperties
+        );
+        requireDeclaredPostgresPool(store.poolDeclaration());
+        return store;
+    }
+
+    private RegistrySnapshotRestoreReport rehydrateRegistrySnapshots() {
+        try {
+            RegistrySnapshotRestoreReport report =
+                restoreRegistrySnapshots(nodeSnapshotStore, serverRegistry, proxyRegistry);
+            if (report.loadedSnapshots() > 0) {
+                LOGGER.info(
+                    "Registry snapshot restore proof: loaded={}, attested={}, invalidAttestations={}, "
+                        + "restoredBackends={}, backendReadbacks={}, restoredProxyReservations={}, "
+                        + "proxyReservationReadbacks={}, sources={}",
+                    report.loadedSnapshots(),
+                    report.validAttestedSnapshots(),
+                    report.invalidAttestations(),
+                    report.restoredBackends(),
+                    report.backendReadbacks(),
+                    report.restoredProxyReservations(),
+                    report.proxyReservationReadbacks(),
+                    report.snapshotSources()
+                );
+                if (!report.readbackClean()) {
+                    LOGGER.warn(
+                        "Registry snapshot restore readback mismatch: restoredBackends={}, backendReadbacks={}, "
+                            + "restoredProxyReservations={}, proxyReservationReadbacks={}",
+                        report.restoredBackends(),
+                        report.backendReadbacks(),
+                        report.restoredProxyReservations(),
+                        report.proxyReservationReadbacks()
+                    );
+                }
+            }
+            return report;
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to rehydrate registry snapshots", exception);
+        }
+    }
+
+    static RegistrySnapshotRestoreReport restoreRegistrySnapshots(
+        RegistryNodeSnapshotStore nodeSnapshotStore,
+        ServerRegistry serverRegistry,
+        ProxyRegistry proxyRegistry
+    ) {
+        List<RegistryNodeSnapshot> loaded = nodeSnapshotStore.loadSnapshots();
+        List<RegistryNodeSnapshot> snapshots = loaded == null ? List.of() : List.copyOf(loaded);
+        int validAttestedSnapshots = 0;
+        int invalidAttestations = 0;
+        TreeSet<String> snapshotSources = new TreeSet<>();
+        for (RegistryNodeSnapshot snapshot : snapshots) {
+            if (snapshot == null) {
+                continue;
+            }
+            snapshotSources.add(snapshot.snapshotSource());
+            if (snapshot.hasValidAttestation()) {
+                validAttestedSnapshots++;
+            } else {
+                invalidAttestations++;
+            }
+        }
+
+        int restoredBackends = serverRegistry.restoreSnapshots(snapshots);
+        int restoredProxyReservations = proxyRegistry.restoreSnapshots(snapshots);
+        int backendReadbacks = 0;
+        int proxyReservationReadbacks = 0;
+        for (RegistryNodeSnapshot snapshot : snapshots) {
+            if (snapshot == null || !snapshot.permitsRestore()) {
+                continue;
+            }
+            if (snapshot.isBackend() && serverRegistry.getServer(snapshot.nodeId()) != null) {
+                backendReadbacks++;
+            } else if (snapshot.isProxy() && proxyReadbackMatches(proxyRegistry, snapshot)) {
+                proxyReservationReadbacks++;
+            }
+        }
+
+        return new RegistrySnapshotRestoreReport(
+            snapshots.size(),
+            validAttestedSnapshots,
+            invalidAttestations,
+            restoredBackends,
+            restoredProxyReservations,
+            backendReadbacks,
+            proxyReservationReadbacks,
+            new ArrayList<>(snapshotSources),
+            nodeSnapshotStore.schemaEvidence()
+        );
+    }
+
+    private static boolean proxyReadbackMatches(ProxyRegistry proxyRegistry, RegistryNodeSnapshot snapshot) {
+        String permanentId = proxyRegistry.getPermanentId(snapshot.nodeId());
+        String addressId = proxyRegistry.getProxyIdByAddress(snapshot.address(), snapshot.port());
+        return permanentId != null && permanentId.equals(addressId);
+    }
+
+    record RegistrySnapshotRestoreReport(
+        int loadedSnapshots,
+        int validAttestedSnapshots,
+        int invalidAttestations,
+        int restoredBackends,
+        int restoredProxyReservations,
+        int backendReadbacks,
+        int proxyReservationReadbacks,
+        List<String> snapshotSources,
+        RegistryNodeSnapshotStore.SnapshotSchemaEvidence schemaEvidence
+    ) {
+        RegistrySnapshotRestoreReport {
+            snapshotSources = snapshotSources == null ? List.of() : List.copyOf(snapshotSources);
+            schemaEvidence = schemaEvidence == null
+                ? RegistryNodeSnapshotStore.SnapshotSchemaEvidence.disabled("missing")
+                : schemaEvidence;
+        }
+
+        boolean readbackClean() {
+            return restoredBackends == backendReadbacks
+                && restoredProxyReservations == proxyReservationReadbacks;
+        }
+    }
+
+    static RegistryStartupReceipt createStartupReceipt(
+        Instant createdAt,
+        String registryNodeId,
+        String messageBusType,
+        RegistrySnapshotRestoreReport snapshotRestore,
+        PostgresConnectionBudget.Report postgresConnectionBudget,
+        AuthorityStartupState authority,
+        DispatcherStartupState dispatcher
+    ) {
+        return RegistryStartupReceipt.create(
+            createdAt,
+            registryNodeId,
+            messageBusType,
+            snapshotRestore,
+            postgresConnectionBudget,
+            authority,
+            dispatcher
+        );
+    }
+
+    record RegistryStartupReceipt(
+        Instant createdAt,
+        String registryNodeId,
+        String messageBusType,
+        RegistrySnapshotRestoreReport snapshotRestore,
+        PostgresConnectionBudget.Report postgresConnectionBudget,
+        AuthorityStartupState authority,
+        DispatcherStartupState dispatcher,
+        String fingerprint
+    ) {
+        RegistryStartupReceipt {
+            createdAt = createdAt == null ? Instant.EPOCH : createdAt;
+            registryNodeId = requireReceiptText(registryNodeId, "registryNodeId");
+            messageBusType = requireReceiptText(messageBusType, "messageBusType");
+            if (snapshotRestore == null) {
+                throw new IllegalArgumentException("snapshotRestore is required");
+            }
+            if (postgresConnectionBudget == null) {
+                throw new IllegalArgumentException("postgresConnectionBudget is required");
+            }
+            authority = authority == null ? AuthorityStartupState.disabled("missing") : authority;
+            dispatcher = dispatcher == null ? DispatcherStartupState.disabled("missing") : dispatcher;
+            fingerprint = requireReceiptText(fingerprint, "fingerprint");
+        }
+
+        static RegistryStartupReceipt create(
+            Instant createdAt,
+            String registryNodeId,
+            String messageBusType,
+            RegistrySnapshotRestoreReport snapshotRestore,
+            PostgresConnectionBudget.Report postgresConnectionBudget,
+            AuthorityStartupState authority,
+            DispatcherStartupState dispatcher
+        ) {
+            AuthorityStartupState safeAuthority = authority == null
+                ? AuthorityStartupState.disabled("missing")
+                : authority;
+            DispatcherStartupState safeDispatcher = dispatcher == null
+                ? DispatcherStartupState.disabled("missing")
+                : dispatcher;
+            return new RegistryStartupReceipt(
+                createdAt,
+                registryNodeId,
+                messageBusType,
+                snapshotRestore,
+                postgresConnectionBudget,
+                safeAuthority,
+                safeDispatcher,
+                receiptFingerprint(
+                    registryNodeId,
+                    messageBusType,
+                    snapshotRestore,
+                    postgresConnectionBudget,
+                    safeAuthority,
+                    safeDispatcher
+                )
+            );
+        }
+
+        String summary() {
+            return "fingerprint=" + fingerprint
+                + ", registryNodeId=" + registryNodeId
+                + ", messageBusType=" + messageBusType
+                + ", snapshotRestore={loaded=" + snapshotRestore.loadedSnapshots()
+                + ", readbackClean=" + snapshotRestore.readbackClean()
+                + ", restoredBackends=" + snapshotRestore.restoredBackends()
+                + ", backendReadbacks=" + snapshotRestore.backendReadbacks()
+                + ", restoredProxyReservations=" + snapshotRestore.restoredProxyReservations()
+                + ", proxyReservationReadbacks=" + snapshotRestore.proxyReservationReadbacks()
+                + ", sources=" + snapshotRestore.snapshotSources()
+                + ", schema=" + snapshotRestore.schemaEvidence().summary() + "}"
+                + ", postgresConnectionBudget={fingerprint=" + postgresConnectionBudget.fingerprint()
+                + ", accepted=" + postgresConnectionBudget.accepted()
+                + ", totalDeclaredMaxPoolSize=" + postgresConnectionBudget.totalDeclaredMaxPoolSize()
+                + ", maxTotalPoolSize=" + postgresConnectionBudget.maxTotalPoolSize() + "}"
+                + ", authority=" + authority.summary()
+                + ", dispatcher=" + dispatcher.summary();
+        }
+    }
+
+    record AuthorityStartupState(
+        boolean enabled,
+        String ownerNode,
+        String principalSource,
+        boolean preflightPassed,
+        String commandContractFingerprint,
+        String readContractFingerprint,
+        String custodyFingerprint,
+        List<String> checkNames,
+        String disabledReason
+    ) {
+        AuthorityStartupState {
+            checkNames = checkNames == null ? List.of() : List.copyOf(checkNames);
+            disabledReason = disabledReason == null ? "" : disabledReason.trim();
+        }
+
+        static AuthorityStartupState from(DataAuthorityCustodyPreflight.Report report) {
+            if (report == null) {
+                return disabled("missing-preflight");
+            }
+            return new AuthorityStartupState(
+                true,
+                report.ownerNode(),
+                report.principalSource(),
+                report.passed(),
+                report.commandContractFingerprint(),
+                report.readContractFingerprint(),
+                report.custodyFingerprint(),
+                report.checks().stream()
+                    .map(DataAuthorityCustodyPreflight.CheckResult::name)
+                    .sorted()
+                    .toList(),
+                ""
+            );
+        }
+
+        static AuthorityStartupState disabled(String reason) {
+            return new AuthorityStartupState(
+                false,
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                List.of(),
+                reason
+            );
+        }
+
+        String summary() {
+            if (!enabled) {
+                return "{enabled=false, disabledReason=" + disabledReason + "}";
+            }
+            return "{enabled=true"
+                + ", ownerNode=" + ownerNode
+                + ", principalSource=" + principalSource
+                + ", preflightPassed=" + preflightPassed
+                + ", commandContractFingerprint=" + shortReceiptFingerprint(commandContractFingerprint)
+                + ", readContractFingerprint=" + shortReceiptFingerprint(readContractFingerprint)
+                + ", custodyFingerprint=" + custodyFingerprint
+                + ", checks=" + checkNames + "}";
+        }
+    }
+
+    record DispatcherStartupState(
+        boolean enabled,
+        boolean schemaValidated,
+        boolean scheduled,
+        String consumerName,
+        int batchSize,
+        long intervalMs,
+        long retryDelayMs,
+        String disabledReason
+    ) {
+        DispatcherStartupState {
+            consumerName = consumerName == null ? "" : consumerName.trim();
+            disabledReason = disabledReason == null ? "" : disabledReason.trim();
+        }
+
+        static DispatcherStartupState enabled(String consumerName, int batchSize, long intervalMs, long retryDelayMs) {
+            return new DispatcherStartupState(
+                true,
+                true,
+                true,
+                consumerName,
+                batchSize,
+                intervalMs,
+                retryDelayMs,
+                ""
+            );
+        }
+
+        static DispatcherStartupState disabled(String reason) {
+            return new DispatcherStartupState(
+                false,
+                false,
+                false,
+                null,
+                0,
+                0L,
+                0L,
+                reason
+            );
+        }
+
+        String summary() {
+            if (!enabled) {
+                return "{enabled=false, disabledReason=" + disabledReason + "}";
+            }
+            return "{enabled=true"
+                + ", schemaValidated=" + schemaValidated
+                + ", scheduled=" + scheduled
+                + ", consumerName=" + consumerName
+                + ", batchSize=" + batchSize
+                + ", intervalMs=" + intervalMs
+                + ", retryDelayMs=" + retryDelayMs + "}";
+        }
+    }
+
+    private static String receiptFingerprint(
+        String registryNodeId,
+        String messageBusType,
+        RegistrySnapshotRestoreReport snapshotRestore,
+        PostgresConnectionBudget.Report postgresConnectionBudget,
+        AuthorityStartupState authority,
+        DispatcherStartupState dispatcher
+    ) {
+        StringBuilder material = new StringBuilder()
+            .append("registryNodeId=").append(receiptString(registryNodeId)).append('\n')
+            .append("messageBusType=").append(receiptString(messageBusType)).append('\n')
+            .append("snapshot.loadedSnapshots=").append(snapshotRestore.loadedSnapshots()).append('\n')
+            .append("snapshot.validAttestedSnapshots=").append(snapshotRestore.validAttestedSnapshots()).append('\n')
+            .append("snapshot.invalidAttestations=").append(snapshotRestore.invalidAttestations()).append('\n')
+            .append("snapshot.restoredBackends=").append(snapshotRestore.restoredBackends()).append('\n')
+            .append("snapshot.restoredProxyReservations=").append(snapshotRestore.restoredProxyReservations()).append('\n')
+            .append("snapshot.backendReadbacks=").append(snapshotRestore.backendReadbacks()).append('\n')
+            .append("snapshot.proxyReservationReadbacks=").append(snapshotRestore.proxyReservationReadbacks()).append('\n')
+            .append("snapshot.sources=").append(snapshotRestore.snapshotSources()).append('\n')
+            .append("snapshot.schema.enabled=").append(snapshotRestore.schemaEvidence().enabled()).append('\n')
+            .append("snapshot.schema.contractVersion=")
+            .append(snapshotRestore.schemaEvidence().contractVersion()).append('\n')
+            .append("snapshot.schema.contractFingerprint=")
+            .append(receiptString(snapshotRestore.schemaEvidence().contractFingerprint())).append('\n')
+            .append("snapshot.schema.tableName=")
+            .append(receiptString(snapshotRestore.schemaEvidence().tableName())).append('\n')
+            .append("snapshot.schema.ddlOwner=")
+            .append(receiptString(snapshotRestore.schemaEvidence().ddlOwner())).append('\n')
+            .append("snapshot.schema.dataOwner=")
+            .append(receiptString(snapshotRestore.schemaEvidence().dataOwner())).append('\n')
+            .append("snapshot.schema.createdBy=")
+            .append(receiptString(snapshotRestore.schemaEvidence().createdBy())).append('\n')
+            .append("snapshot.schema.schemaMigrationVersion=")
+            .append(receiptString(snapshotRestore.schemaEvidence().schemaMigrationVersion())).append('\n')
+            .append("snapshot.schema.schemaMigrationResource=")
+            .append(receiptString(snapshotRestore.schemaEvidence().schemaMigrationResource())).append('\n')
+            .append("snapshot.schema.schemaMigrationReceipt=")
+            .append(receiptString(snapshotRestore.schemaEvidence().schemaMigrationReceipt())).append('\n')
+            .append("snapshot.schema.disabledReason=")
+            .append(receiptString(snapshotRestore.schemaEvidence().disabledReason())).append('\n')
+            .append("budget.fingerprint=").append(postgresConnectionBudget.fingerprint()).append('\n')
+            .append("budget.accepted=").append(postgresConnectionBudget.accepted()).append('\n')
+            .append("budget.totalDeclaredMaxPoolSize=")
+            .append(postgresConnectionBudget.totalDeclaredMaxPoolSize()).append('\n')
+            .append("budget.maxTotalPoolSize=").append(postgresConnectionBudget.maxTotalPoolSize()).append('\n')
+            .append("authority.enabled=").append(authority.enabled()).append('\n')
+            .append("authority.ownerNode=").append(receiptString(authority.ownerNode())).append('\n')
+            .append("authority.principalSource=").append(receiptString(authority.principalSource())).append('\n')
+            .append("authority.preflightPassed=").append(authority.preflightPassed()).append('\n')
+            .append("authority.commandContractFingerprint=")
+            .append(receiptString(authority.commandContractFingerprint())).append('\n')
+            .append("authority.readContractFingerprint=")
+            .append(receiptString(authority.readContractFingerprint())).append('\n')
+            .append("authority.custodyFingerprint=")
+            .append(receiptString(authority.custodyFingerprint())).append('\n')
+            .append("authority.checkNames=").append(authority.checkNames()).append('\n')
+            .append("authority.disabledReason=").append(receiptString(authority.disabledReason())).append('\n')
+            .append("dispatcher.enabled=").append(dispatcher.enabled()).append('\n')
+            .append("dispatcher.schemaValidated=").append(dispatcher.schemaValidated()).append('\n')
+            .append("dispatcher.scheduled=").append(dispatcher.scheduled()).append('\n')
+            .append("dispatcher.consumerName=").append(receiptString(dispatcher.consumerName())).append('\n')
+            .append("dispatcher.batchSize=").append(dispatcher.batchSize()).append('\n')
+            .append("dispatcher.intervalMs=").append(dispatcher.intervalMs()).append('\n')
+            .append("dispatcher.retryDelayMs=").append(dispatcher.retryDelayMs()).append('\n')
+            .append("dispatcher.disabledReason=").append(receiptString(dispatcher.disabledReason())).append('\n');
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return toHex(digest.digest(material.toString().getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to fingerprint registry startup receipt", exception);
+        }
+    }
+
+    private static String toHex(byte[] bytes) {
+        char[] chars = new char[bytes.length * 2];
+        char[] alphabet = "0123456789abcdef".toCharArray();
+        for (int index = 0; index < bytes.length; index++) {
+            int value = bytes[index] & 0xFF;
+            chars[index * 2] = alphabet[value >>> 4];
+            chars[index * 2 + 1] = alphabet[value & 0x0F];
+        }
+        return new String(chars);
+    }
+
+    private static String shortReceiptFingerprint(String value) {
+        if (value == null || value.isBlank()) {
+            return "<missing>";
+        }
+        return value.length() <= 12 ? value : value.substring(0, 12);
+    }
+
+    private static String requireReceiptText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " is required");
+        }
+        return value.trim();
+    }
+
+    private static String receiptString(String value) {
+        return value == null ? "" : value;
+    }
+
+    private MessageBusDataAuthorityProvider createDataAuthorityProvider() {
+        Map<String, Object> postgresConfig = (Map<String, Object>) config.get("postgres");
+        Map<String, Object> authorityConfig = (Map<String, Object>) config.get("authority");
+        boolean postgresEnabled = postgresConfig != null && booleanValue(postgresConfig.get("enabled"), false);
+        boolean authorityEnabled = authorityEnabled(authorityConfig, postgresEnabled);
+
+        if (!authorityEnabled) {
+            LOGGER.info("Central data authority disabled");
+            authorityStartupState = AuthorityStartupState.disabled("authority-disabled");
+            authorityDispatcherStartupState = DispatcherStartupState.disabled("authority-disabled");
+            authorityStateRestoreDrill = null;
+            return null;
+        }
+        if (postgresConfig == null || !postgresEnabled) {
+            throw new IllegalStateException("Central data authority requires postgres.enabled=true");
+        }
+
+        String databaseName = stringValue(postgresConfig.get("database"), "fulcrum");
+        authorityPostgres = new PostgresConnectionAdapter(
+            jdbcUrl(postgresConfig),
+            stringValue(postgresConfig.get("username"), "fulcrum"),
+            stringValue(postgresConfig.get("password"), ""),
+            "authority-" + databaseName,
+            postgresPoolProperties(postgresConfig)
+        );
+        requireDeclaredPostgresPool(authorityPostgres.poolDeclaration(
+            "registry-service:central-authority",
+            "registry-service",
+            PostgresConnectionBudget.REGISTRY_SERVICE_BOUNDARY
+        ));
+        runAuthorityMigrations(authorityConfig, authorityPostgres);
+
+        PostgresDataAuthority dataAuthority = new PostgresDataAuthority(authorityPostgres, scheduler);
+        PostgresAuthorityPartitionEpochStore epochStore = new PostgresAuthorityPartitionEpochStore(authorityPostgres);
+        authorityCommandPort = new PostgresLoggedAuthorityCommandPort(
+            authorityPostgres,
+            createAuthorityCommandDelegate(authorityConfig, dataAuthority, epochStore)
+        );
+        authorityCommandIngressLog = new PostgresAuthorityCommandIngressLog(authorityPostgres);
+        authorityCommandRefusalLog = new PostgresAuthorityCommandRefusalLog(authorityPostgres);
+        authorityStateRestoreDrill = new PostgresAuthorityStateRestoreDrill(authorityPostgres);
+
+        DataAuthorityCustodyPreflight.Report custodyPreflight = DataAuthorityCustodyPreflight.require(
+            messageBusAdapter.getServerId(),
+            "message-bus-provider",
+            List.of(
+                DataAuthorityCustodyPreflight.check("postgres-data-authority-schema", dataAuthority::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-command-log-schema", authorityCommandPort::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-command-ingress-schema",
+                    authorityCommandIngressLog::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-command-refusal-schema",
+                    authorityCommandRefusalLog::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-partition-epoch-schema", epochStore::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-state-restore-schema",
+                    authorityStateRestoreDrill::validateSchema)
+            )
+        );
+        LOGGER.info("Central data authority custody preflight passed: {}", custodyPreflight.summary());
+        authorityStartupState = AuthorityStartupState.from(custodyPreflight);
+
+        MessageBusDataAuthorityProvider provider = new MessageBusDataAuthorityProvider(
+            messageBus,
+            authorityCommandPort,
+            dataAuthority,
+            dataAuthority,
+            this::authorityBootIdentity,
+            refusal -> authorityCommandRefusalLog.recordMessageBusRefusal(
+                refusal.originNode(),
+                refusal.targetNode(),
+                refusal.wire(),
+                refusal.result()
+            )
+        );
+        provider.start();
+        LOGGER.info("Central data authority listening on message bus as {}", messageBusAdapter.getServerId());
+
+        worldMapStoreProvider = new MessageBusWorldMapStoreProvider(
+            messageBus,
+            new PostgresWorldMapStore(authorityPostgres, scheduler)
+        );
+        worldMapStoreProvider.start();
+        LOGGER.info("Central world map store listening on message bus as {}", messageBusAdapter.getServerId());
+        authorityDispatcherStartupState = startAuthorityEventDispatcher(authorityConfig);
+        return provider;
+    }
+
+    private DataAuthority.AuthorityBootIdentity authorityBootIdentity() {
+        RegistryStartupReceipt receipt = startupReceipt;
+        if (receipt == null) {
+            return DataAuthority.AuthorityBootIdentity.unknown();
+        }
+        AuthorityStartupState authority = receipt.authority();
+        return new DataAuthority.AuthorityBootIdentity(
+            receipt.registryNodeId(),
+            authority.ownerNode(),
+            receipt.fingerprint(),
+            receipt.createdAt().toEpochMilli(),
+            authority.principalSource(),
+            authority.readContractFingerprint()
+        );
+    }
+
+    private DataAuthority.CommandPort createAuthorityCommandDelegate(
+        Map<String, Object> authorityConfig,
+        DataAuthority.CommandPort delegate,
+        AuthorityFencingCommandPort.PartitionEpochStore epochStore
+    ) {
+        DataAuthority.CommandPort fencedDelegate = new AuthorityFencingCommandPort(
+            createAuthorityCommandCache(authorityConfig, delegate),
+            epochStore,
+            messageBusAdapter.getServerId()
+        );
+        return new AuthorityPrincipalCommandPort(new AuthorityCommandScopeGuard(fencedDelegate));
+    }
+
+    private DataAuthority.CommandPort createAuthorityCommandCache(
+        Map<String, Object> authorityConfig,
+        DataAuthority.CommandPort delegate
+    ) {
+        Map<String, Object> cacheConfig = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("idempotency-cache", Map.of()));
+        boolean redisMessageBus = messageBusConnectionConfig != null
+            && messageBusConnectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS;
+        boolean enabled = booleanValue(cacheConfig.get("enabled"), redisMessageBus);
+        if (!enabled) {
+            LOGGER.info("Central authority Redis idempotency result cache disabled");
+            return delegate;
+        }
+        if (!redisMessageBus) {
+            LOGGER.warn("Central authority idempotency result cache requires Redis message bus; using durable Postgres path only");
+            return delegate;
+        }
+
+        long ttlSeconds = longValue(cacheConfig.get("ttl-seconds"), 86_400L);
+        authorityCommandResultCache = new RedisAuthorityCommandResultCache(
+            messageBusConnectionConfig,
+            Duration.ofSeconds(ttlSeconds)
+        );
+        LOGGER.info("Central authority Redis idempotency result cache enabled (ttl={}s)", ttlSeconds);
+        return new CachedAuthorityCommandPort(delegate, authorityCommandResultCache);
+    }
+
+    private DispatcherStartupState startAuthorityEventDispatcher(Map<String, Object> authorityConfig) {
+        Map<String, Object> dispatcherConfig = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("event-dispatcher", Map.of()));
+        if (!booleanValue(dispatcherConfig.get("enabled"), true)) {
+            LOGGER.info("Central authority event dispatcher disabled");
+            return DispatcherStartupState.disabled("config-disabled");
+        }
+
+        int batchSize = intValue(dispatcherConfig.get("batch-size"), 50);
+        long intervalMs = longValue(dispatcherConfig.get("interval-ms"), 1000L);
+        long retryDelayMs = longValue(dispatcherConfig.get("retry-delay-ms"), 5000L);
+        authorityEventDispatcher = new PostgresAuthorityEventDispatcher(
+            authorityPostgres,
+            List.of(new ShadowAuthorityEventDispatchTarget()),
+            new PostgresAuthorityEventDispatcher.Options(batchSize, Duration.ofMillis(retryDelayMs))
+        );
+        authorityEventDispatcher.validateSchema();
+        authorityEventDispatcherTask = scheduler.scheduleWithFixedDelay(
+            this::dispatchAuthorityEvents,
+            intervalMs,
+            intervalMs,
+            TimeUnit.MILLISECONDS
+        );
+        LOGGER.info(
+            "Central authority event dispatcher enabled (consumer=registry-shadow-drain, batchSize={}, interval={}ms)",
+            batchSize,
+            intervalMs
+        );
+        return DispatcherStartupState.enabled("registry-shadow-drain", batchSize, intervalMs, retryDelayMs);
+    }
+
+    private void dispatchAuthorityEvents() {
+        try {
+            PostgresAuthorityEventDispatcher.DispatchCycleResult result = authorityEventDispatcher.dispatchOnce();
+            if (result.hasWork()) {
+                LOGGER.debug(
+                    "Authority event dispatch cycle: targets={}, attempted={}, delivered={}, retries={}, quarantined={}, blocked={}",
+                    result.targetCount(),
+                    result.attempted(),
+                    result.delivered(),
+                    result.retries(),
+                    result.quarantined(),
+                    result.blocked()
+                );
+            }
+        } catch (Exception exception) {
+            LOGGER.warn("Authority event dispatch cycle failed", exception);
+        }
+    }
+
+    private void runAuthorityMigrations(Map<String, Object> authorityConfig, PostgresConnectionAdapter adapter) {
+        Map<String, Object> migrations = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("migrations", Map.of()));
+        boolean enabled = booleanValue(migrations.get("enabled"), true);
+        boolean autoMigrate = booleanValue(migrations.get("auto-migrate"), false);
+        if (!enabled || !autoMigrate) {
+            LOGGER.info("Central data authority migrations are not configured for automatic registry execution");
+            return;
+        }
+
+        LOGGER.info("Running central data authority classpath migrations");
+        new PostgresMigrationRunner(adapter).runClasspathMigrations(FulcrumDataMigrations.all());
+        LOGGER.info("Central data authority migrations completed");
+    }
+
+    private static boolean authorityEnabled(Map<String, Object> authorityConfig, boolean postgresEnabled) {
+        if (authorityConfig == null || !authorityConfig.containsKey("enabled")) {
+            return postgresEnabled;
+        }
+        Object enabled = authorityConfig.get("enabled");
+        if (enabled == null || enabled.toString().isBlank()) {
+            return postgresEnabled;
+        }
+        return booleanValue(enabled, postgresEnabled);
+    }
+
+    private static String jdbcUrl(Map<String, Object> postgresConfig) {
+        String jdbcUrl = stringValue(postgresConfig.get("jdbc-url"), null);
+        if (jdbcUrl != null && !jdbcUrl.isBlank()) {
+            return jdbcUrl;
+        }
+        String host = stringValue(postgresConfig.get("host"), "localhost");
+        int port = intValue(postgresConfig.get("port"), 5432);
+        String database = stringValue(postgresConfig.get("database"), "fulcrum");
+        return "jdbc:postgresql://" + host + ":" + port + "/" + database;
+    }
+
+    private static Properties postgresPoolProperties(Map<String, Object> postgresConfig) {
         Properties poolProperties = new Properties();
         Object poolRaw = postgresConfig.get("pool");
         if (poolRaw instanceof Map<?, ?> pool) {
@@ -300,15 +1175,20 @@ public class RegistryService {
             copyPoolProperty(poolProperties, pool, "max-lifetime");
             copyPoolProperty(poolProperties, pool, "leak-detection-threshold");
         }
+        return poolProperties;
+    }
 
-        LOGGER.info("PostgreSQL registry snapshots enabled");
-        return new PostgresRegistryNodeSnapshotStore(
-            jdbcUrl,
-            stringValue(postgresConfig.get("username"), "fulcrum"),
-            stringValue(postgresConfig.get("password"), ""),
-            "registry-" + databaseName,
-            poolProperties
-        );
+    private static Map<String, Object> copyStringMap(Map<?, ?> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (key != null) {
+                values.put(key.toString(), value);
+            }
+        });
+        return values;
     }
 
     private static void copyPoolProperty(Properties target, Map<?, ?> source, String key) {
@@ -338,6 +1218,16 @@ public class RegistryService {
         return fallback;
     }
 
+    private static long longValue(Object value, long fallback) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value != null) {
+            return Long.parseLong(value.toString());
+        }
+        return fallback;
+    }
+
     private static String stringValue(Object value, String fallback) {
         return value == null ? fallback : value.toString();
     }
@@ -356,6 +1246,12 @@ public class RegistryService {
         commandRegistry.register("debug", new DebugCommand(this));
         commandRegistry.register("reload", new ReloadCommand(this));
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
+        if (authorityCommandIngressLog != null && authorityCommandPort != null) {
+            commandRegistry.register("authoritycommands", new AuthorityCommandIngressCommand(this));
+        }
+        if (authorityStateRestoreDrill != null) {
+            commandRegistry.register("authorityrestore", new AuthorityStateRestoreCommand(this));
+        }
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
         }
@@ -461,12 +1357,78 @@ public class RegistryService {
     public SlotProvisionService getSlotProvisionService() {
         return slotProvisionService;
     }
+
+    /**
+     * Get the central authority command ingress log, when authority mode is enabled.
+     */
+    public PostgresAuthorityCommandIngressLog getAuthorityCommandIngressLog() {
+        return authorityCommandIngressLog;
+    }
+
+    /**
+     * Get the central authority command port, when authority mode is enabled.
+     */
+    public DataAuthority.CommandPort getAuthorityCommandPort() {
+        return authorityCommandPort;
+    }
+
+    /**
+     * Get the central authority state restore drill helper, when authority mode is enabled.
+     */
+    public PostgresAuthorityStateRestoreDrill getAuthorityStateRestoreDrill() {
+        return authorityStateRestoreDrill;
+    }
     
     /**
      * Get the current status of the registry service
      */
     public String getStatus() {
         return "RUNNING";
+    }
+
+    /**
+     * Return operator-facing Data Authority startup and dispatcher evidence.
+     */
+    public List<String> getAuthorityStatusLines() {
+        return authorityStatusLines(startupReceipt, authorityStartupState, authorityDispatcherStartupState);
+    }
+
+    static List<String> authorityStatusLines(
+        RegistryStartupReceipt receipt,
+        AuthorityStartupState fallbackAuthority,
+        DispatcherStartupState fallbackDispatcher
+    ) {
+        AuthorityStartupState authority = receipt == null ? fallbackAuthority : receipt.authority();
+        DispatcherStartupState dispatcher = receipt == null ? fallbackDispatcher : receipt.dispatcher();
+        authority = authority == null ? AuthorityStartupState.disabled("missing") : authority;
+        dispatcher = dispatcher == null ? DispatcherStartupState.disabled("missing") : dispatcher;
+        List<String> lines = new ArrayList<>();
+        lines.add("Startup Receipt: " + (receipt == null ? "unavailable" : shortReceiptFingerprint(receipt.fingerprint())));
+        if (!authority.enabled()) {
+            lines.add("Enabled: false");
+            lines.add("Disabled Reason: " + receiptString(authority.disabledReason()));
+        } else {
+            lines.add("Enabled: true");
+            lines.add("Owner Node: " + receiptString(authority.ownerNode()));
+            lines.add("Principal Source: " + receiptString(authority.principalSource()));
+            lines.add("Preflight Passed: " + authority.preflightPassed());
+            lines.add("Command Contract: " + shortReceiptFingerprint(authority.commandContractFingerprint()));
+            lines.add("Read Contract: " + shortReceiptFingerprint(authority.readContractFingerprint()));
+            lines.add("Custody Fingerprint: " + shortReceiptFingerprint(authority.custodyFingerprint()));
+            lines.add("Checks: " + authority.checkNames());
+        }
+        if (!dispatcher.enabled()) {
+            lines.add("Dispatcher: disabled (" + receiptString(dispatcher.disabledReason()) + ")");
+        } else {
+            lines.add("Dispatcher: enabled, consumer=" + dispatcher.consumerName()
+                + ", batchSize=" + dispatcher.batchSize()
+                + ", intervalMs=" + dispatcher.intervalMs());
+        }
+        return List.copyOf(lines);
+    }
+
+    RegistryStartupReceipt getStartupReceipt() {
+        return startupReceipt;
     }
     
     /**
@@ -526,9 +1488,29 @@ public class RegistryService {
             if (nodeSnapshotStore != null) {
                 nodeSnapshotStore.close();
             }
-            
+
+            if (worldMapStoreProvider != null) {
+                worldMapStoreProvider.close();
+            }
+
+            if (authorityEventDispatcherTask != null) {
+                authorityEventDispatcherTask.cancel(false);
+            }
+
+            if (dataAuthorityProvider != null) {
+                dataAuthorityProvider.close();
+            }
+
+            if (authorityCommandResultCache != null) {
+                authorityCommandResultCache.close();
+            }
+
+            if (authorityPostgres != null) {
+                authorityPostgres.close();
+            }
+
             // MessageBus shutdown is handled by the adapter
-            
+
             // Shutdown adapter
             if (messageBusAdapter != null) {
                 messageBusAdapter.shutdown();
@@ -549,6 +1531,18 @@ public class RegistryService {
             LOGGER.info("Registry Service shut down successfully");
         } catch (Exception e) {
             LOGGER.error("Error during shutdown", e);
+        }
+    }
+
+    private static final class ShadowAuthorityEventDispatchTarget implements AuthorityEventDispatchTarget {
+        @Override
+        public String consumerName() {
+            return "registry-shadow-drain";
+        }
+
+        @Override
+        public AuthorityEventDispatchResult dispatch(AuthorityEventEnvelope event) {
+            return AuthorityEventDispatchResult.success();
         }
     }
     

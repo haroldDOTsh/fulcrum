@@ -9,7 +9,7 @@ import com.sk89q.worldedit.extent.clipboard.io.ClipboardWriter;
 import com.sk89q.worldedit.extent.clipboard.Clipboard;
 import com.sk89q.worldedit.math.BlockVector3;
 import org.bukkit.plugin.Plugin;
-import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
+import sh.harold.fulcrum.api.data.world.WorldMapStore;
 import sh.harold.fulcrum.fundamentals.world.model.LoadedWorld;
 import sh.harold.fulcrum.fundamentals.world.model.PoiDefinition;
 import sh.harold.fulcrum.fundamentals.world.schematic.SchematicInspector;
@@ -18,12 +18,6 @@ import sh.harold.fulcrum.fundamentals.world.schematic.SchematicInspector.Inspect
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
-import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -42,12 +36,12 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Service for hydrating world schematics and metadata from PostgreSQL and caching them locally.
+ * Service for hydrating world schematics and metadata from the authority-owned world map store.
  */
 public class WorldService {
 
     private final Plugin plugin;
-    private final PostgresConnectionAdapter connectionAdapter;
+    private final WorldMapStore worldMapStore;
     private final Logger logger;
     private final File cacheDirectory;
     private final SchematicInspector inspector;
@@ -56,13 +50,13 @@ public class WorldService {
     private final Map<String, LoadedWorld> cacheByName = new ConcurrentHashMap<>();
     private final Map<String, LoadedWorld> cacheByMapId = new ConcurrentHashMap<>();
 
-    public WorldService(Plugin plugin, PostgresConnectionAdapter connectionAdapter) {
-        this(plugin, connectionAdapter, ForkJoinPool.commonPool());
+    public WorldService(Plugin plugin, WorldMapStore worldMapStore) {
+        this(plugin, worldMapStore, ForkJoinPool.commonPool());
     }
 
-    public WorldService(Plugin plugin, PostgresConnectionAdapter connectionAdapter, Executor asyncExecutor) {
+    public WorldService(Plugin plugin, WorldMapStore worldMapStore, Executor asyncExecutor) {
         this.plugin = plugin;
-        this.connectionAdapter = connectionAdapter;
+        this.worldMapStore = worldMapStore;
         this.logger = plugin.getLogger();
         this.cacheDirectory = new File(plugin.getDataFolder(), "world-cache");
         this.inspector = new SchematicInspector(logger);
@@ -80,7 +74,9 @@ public class WorldService {
     }
 
     public CompletableFuture<Void> refreshCache() {
-        return CompletableFuture.runAsync(this::loadWorlds, asyncExecutor);
+        return worldMapStore.loadWorlds()
+            .thenAcceptAsync(this::loadWorlds, asyncExecutor)
+            .toCompletableFuture();
     }
 
     public void shutdown() {
@@ -134,102 +130,60 @@ public class WorldService {
 
         JsonObject safeMetadata = metadata != null ? metadata : new JsonObject();
         String metadataJson = safeMetadata.toString();
-        String sql = "INSERT INTO world_maps (world_name, display_name, map_metadata, schematic_data) "
-            + "VALUES (?, ?, ?::jsonb, ?) "
-            + "ON CONFLICT (world_name) DO UPDATE "
-            + "SET display_name = EXCLUDED.display_name, "
-            + "map_metadata = EXCLUDED.map_metadata, "
-            + "schematic_data = EXCLUDED.schematic_data, "
-            + "updated_at = CURRENT_TIMESTAMP "
-            + "RETURNING id, updated_at;";
-
-        return CompletableFuture.supplyAsync(() -> {
-            try (Connection connection = connectionAdapter.getConnection();
-                 PreparedStatement statement = connection.prepareStatement(sql)) {
-
-                statement.setString(1, worldName);
-                if (displayName == null || displayName.isBlank()) {
-                    statement.setNull(2, Types.VARCHAR);
-                } else {
-                    statement.setString(2, displayName);
-                }
-                statement.setString(3, metadataJson);
-                statement.setBytes(4, schematicBytes);
-
-                try (ResultSet resultSet = statement.executeQuery()) {
-                    if (resultSet.next()) {
-                        UUID id = resultSet.getObject("id", UUID.class);
-                        Timestamp updated = resultSet.getTimestamp("updated_at");
-                        Instant updatedAt = updated != null ? updated.toInstant() : Instant.now();
-                        logger.info("Persisted world map definition " + worldName + " (id=" + id + ")");
-                        return new MapSaveResult(id, updatedAt);
-                    }
-                }
-
-                throw new SQLException("Insert returned no rows for world map " + worldName);
-            } catch (SQLException e) {
-                throw new CompletionException("Failed to persist world map " + worldName, e);
-            }
-        }, asyncExecutor);
+        return worldMapStore.saveWorldDefinition(serverId, worldName, displayName, metadataJson, schematicBytes)
+            .thenApply(result -> {
+                logger.info("Persisted world map definition " + worldName + " (id=" + result.id() + ")");
+                return new MapSaveResult(result.id(), result.updatedAt());
+            })
+            .toCompletableFuture();
     }
 
-    private void loadWorlds() {
+    private void loadWorlds(List<WorldMapStore.WorldMapRecord> records) {
         Map<UUID, LoadedWorld> byId = new HashMap<>();
         Map<String, LoadedWorld> byName = new HashMap<>();
         Map<String, LoadedWorld> byMapId = new HashMap<>();
 
-        String sql = "SELECT id, world_name, display_name, map_metadata, schematic_data, updated_at FROM world_maps";
+        for (WorldMapStore.WorldMapRecord record : records != null ? records : List.<WorldMapStore.WorldMapRecord>of()) {
+            UUID id = record.id();
+            String worldName = record.worldName();
+            String displayName = record.displayName();
+            JsonObject metadata = readMetadata(record.metadataJson());
+            byte[] schematicBytes = record.schematicBytes();
+            Instant updatedAt = record.updatedAt();
 
-        try (Connection connection = connectionAdapter.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql);
-             ResultSet resultSet = statement.executeQuery()) {
-
-            while (resultSet.next()) {
-                UUID id = resultSet.getObject("id", UUID.class);
-                String worldName = resultSet.getString("world_name");
-                String displayName = resultSet.getString("display_name");
-                JsonObject metadata = readMetadata(resultSet.getString("map_metadata"));
-                byte[] schematicBytes = resultSet.getBytes("schematic_data");
-                Timestamp updated = resultSet.getTimestamp("updated_at");
-
-                if (schematicBytes == null || schematicBytes.length == 0) {
-                    logger.warning("Skipping world " + worldName + " - schematic_data column empty");
-                    continue;
-                }
-
-                String mapId = metadata.has("mapId") ? metadata.get("mapId").getAsString() : id.toString();
-                File schemFile = new File(cacheDirectory, mapId + ".schem");
-
-                try {
-                    InspectionResult result = inspector.inspect(schematicBytes, worldName != null ? worldName : mapId);
-                    writeClipboard(schemFile, result.clipboard());
-                    Instant updatedAt = updated != null ? updated.toInstant() : Instant.now();
-                    schemFile.setLastModified(updatedAt.toEpochMilli());
-
-                    List<PoiDefinition> parsedPois = parsePois(metadata);
-                    List<PoiDefinition> pois = parsedPois != null ? parsedPois : result.pois();
-                    LoadedWorld loadedWorld = new LoadedWorld(
-                        id,
-                        worldName,
-                        displayName,
-                        metadata,
-                        schemFile,
-                        List.copyOf(pois),
-                        updatedAt
-                    );
-
-                    byId.put(id, loadedWorld);
-                    if (worldName != null) {
-                        byName.put(worldName.toLowerCase(Locale.ROOT), loadedWorld);
-                    }
-                    byMapId.put(mapId.toLowerCase(Locale.ROOT), loadedWorld);
-                } catch (IOException exception) {
-                    logger.log(Level.SEVERE, "Failed to cache schematic for world " + worldName, exception);
-                }
+            if (schematicBytes == null || schematicBytes.length == 0) {
+                logger.warning("Skipping world " + worldName + " - schematic_data column empty");
+                continue;
             }
-        } catch (SQLException exception) {
-            logger.log(Level.SEVERE, "Failed to load world map definitions", exception);
-            return;
+
+            String mapId = metadata.has("mapId") ? metadata.get("mapId").getAsString() : id.toString();
+            File schemFile = new File(cacheDirectory, mapId + ".schem");
+
+            try {
+                InspectionResult result = inspector.inspect(schematicBytes, worldName != null ? worldName : mapId);
+                writeClipboard(schemFile, result.clipboard());
+                schemFile.setLastModified(updatedAt.toEpochMilli());
+
+                List<PoiDefinition> parsedPois = parsePois(metadata);
+                List<PoiDefinition> pois = parsedPois != null ? parsedPois : result.pois();
+                LoadedWorld loadedWorld = new LoadedWorld(
+                    id,
+                    worldName,
+                    displayName,
+                    metadata,
+                    schemFile,
+                    List.copyOf(pois),
+                    updatedAt
+                );
+
+                byId.put(id, loadedWorld);
+                if (worldName != null) {
+                    byName.put(worldName.toLowerCase(Locale.ROOT), loadedWorld);
+                }
+                byMapId.put(mapId.toLowerCase(Locale.ROOT), loadedWorld);
+            } catch (IOException exception) {
+                logger.log(Level.SEVERE, "Failed to cache schematic for world " + worldName, exception);
+            }
         }
 
         cacheById.clear();

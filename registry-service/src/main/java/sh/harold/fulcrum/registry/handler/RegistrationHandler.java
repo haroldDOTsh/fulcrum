@@ -8,10 +8,13 @@ import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeDataAuthorityAttestation;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRemovalNotification;
 import sh.harold.fulcrum.api.messagebus.messages.ServerRegistrationRequest;
 import sh.harold.fulcrum.api.messagebus.messages.SlotFamilyAdvertisementMessage;
 import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
+import sh.harold.fulcrum.registry.authority.AuthorityDeliveryManifestValidator;
 import sh.harold.fulcrum.registry.heartbeat.HeartbeatMonitor;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -348,6 +351,8 @@ public class RegistrationHandler {
             request.setAddress(apiRequest.getAddress());
             request.setPort(apiRequest.getPort());
             request.setMaxCapacity(apiRequest.getMaxCapacity());
+            request.setDataAuthorityAttestation(apiRequest.getDataAuthorityAttestation());
+            request.setAuthorityDeliveryManifest(apiRequest.getAuthorityDeliveryManifest());
             
             processRegistrationRequest(request);
             
@@ -407,6 +412,19 @@ public class RegistrationHandler {
                 if (debugMode) {
                     LOGGER.debug("Registration for {} already in progress, skipping duplicate", tempId);
                 }
+                return;
+            }
+
+            logDataAuthorityAttestation("registration", tempId, request.getDataAuthorityAttestation());
+            logAuthorityDeliveryManifest("registration", tempId, request.getAuthorityDeliveryManifest());
+            String manifestRejection = AuthorityDeliveryManifestValidator.rejection(request.getAuthorityDeliveryManifest());
+            if (manifestRejection != null) {
+                LOGGER.warn(
+                    "Rejecting registration for {} because authority delivery manifest failed admission: {}",
+                    tempId,
+                    manifestRejection
+                );
+                sendRegistrationFailure(request, manifestRejection);
                 return;
             }
             
@@ -504,6 +522,22 @@ public class RegistrationHandler {
             
             // Process heartbeat through monitor (handles both servers and proxies)
             heartbeatMonitor.processHeartbeat(serverId, playerCount, tps);
+            serverRegistry.updateDataAuthorityAttestation(
+                serverId,
+                dataAuthorityAttestation(heartbeat.get("dataAuthorityAttestation"))
+            );
+            RuntimeAuthorityDeliveryManifest deliveryManifest =
+                authorityDeliveryManifest(heartbeat.get("authorityDeliveryManifest"));
+            String manifestRejection = AuthorityDeliveryManifestValidator.rejection(deliveryManifest);
+            if (manifestRejection == null) {
+                serverRegistry.updateAuthorityDeliveryManifest(serverId, deliveryManifest);
+            } else {
+                LOGGER.warn(
+                    "Ignoring heartbeat authority delivery manifest for {} because it failed admission: {}",
+                    serverId,
+                    manifestRejection
+                );
+            }
             
             if (debugMode) {
                 LOGGER.debug("[HEARTBEAT] Received from {} - Players: {}, TPS: {:.1f}",
@@ -513,6 +547,64 @@ public class RegistrationHandler {
         } catch (Exception e) {
             LOGGER.error("Failed to handle server heartbeat", e);
         }
+    }
+
+    private RuntimeDataAuthorityAttestation dataAuthorityAttestation(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof RuntimeDataAuthorityAttestation attestation) {
+            return attestation;
+        }
+        RuntimeDataAuthorityAttestation attestation =
+            objectMapper.convertValue(value, RuntimeDataAuthorityAttestation.class);
+        return attestation.getAttestationFingerprint() == null ? null : attestation;
+    }
+
+    private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof RuntimeAuthorityDeliveryManifest manifest) {
+            return manifest;
+        }
+        RuntimeAuthorityDeliveryManifest manifest =
+            objectMapper.convertValue(value, RuntimeAuthorityDeliveryManifest.class);
+        return manifest.getManifestFingerprint() == null ? null : manifest;
+    }
+
+    private void logDataAuthorityAttestation(
+        String source,
+        String nodeId,
+        RuntimeDataAuthorityAttestation attestation
+    ) {
+        if (attestation == null) {
+            LOGGER.debug("No Data Authority attestation supplied by {} {}", source, nodeId);
+            return;
+        }
+        LOGGER.info(
+            "Received Data Authority attestation via {} from {}: {}",
+            source,
+            nodeId,
+            attestation.summary()
+        );
+    }
+
+    private void logAuthorityDeliveryManifest(
+        String source,
+        String nodeId,
+        RuntimeAuthorityDeliveryManifest manifest
+    ) {
+        if (manifest == null) {
+            LOGGER.debug("No Data Authority delivery manifest supplied by {} {}", source, nodeId);
+            return;
+        }
+        LOGGER.info(
+            "Received Data Authority delivery manifest via {} from {}: {}",
+            source,
+            nodeId,
+            manifest.summary()
+        );
     }
     
     private void handleProxyRegistration(RegistrationRequest request) {
@@ -680,6 +772,34 @@ public class RegistrationHandler {
     
     private void sendRegistrationResponse(RegistrationRequest request) {
         sendRegistrationResponse(request, null);
+    }
+
+    private void sendRegistrationFailure(RegistrationRequest request, String message) {
+        if ("proxy".equals(request.getRole()) || "proxy".equals(request.getServerType())) {
+            sendProxyRegistrationResponse(request.getTempId(), null, false, message);
+        } else {
+            sendServerRegistrationFailure(request, message);
+        }
+        pendingRequests.remove(request.getTempId());
+    }
+
+    private void sendServerRegistrationFailure(RegistrationRequest request, String message) {
+        try {
+            Map<String, Object> response = new HashMap<>();
+            response.put("tempId", request.getTempId());
+            response.put("assignedServerId", null);
+            response.put("success", false);
+            response.put("message", message);
+            response.put("proxyId", "registry");
+            response.put("serverType", request.getServerType());
+            response.put("address", request.getAddress());
+            response.put("port", request.getPort());
+
+            messageBus.broadcast(ChannelConstants.SERVER_REGISTRATION_RESPONSE, response);
+            messageBus.broadcast(ChannelConstants.getServerRegistrationResponseChannel(request.getTempId()), response);
+        } catch (Exception e) {
+            LOGGER.error("Failed to send failed registration response for tempId: {}", request.getTempId(), e);
+        }
     }
     
     private void sendRegistrationResponse(RegistrationRequest request, String permanentId) {

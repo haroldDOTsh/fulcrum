@@ -1,4 +1,4 @@
-# Unified configuration for durable authority data and messaging
+# Game-node configuration for messaging and remote authority access.
 
 # Redis configuration (used for message bus and caching)
 redis:
@@ -12,27 +12,9 @@ redis:
     max-idle: 8
     max-total: 8
 
-# PostgreSQL is the only durable Fulcrum authority store.
-postgres:
-  # JDBC URL for PostgreSQL connection
-  jdbc-url: "jdbc:postgresql://localhost:5432/fulcrum"
-  database: "fulcrum"
-  username: "fulcrum_user"
-  password: ""
-  
-  # HikariCP connection pool settings
-  connection-pool:
-    maximum-pool-size: 4
-    minimum-idle: 1
-    connection-timeout: 5000   # 5 seconds
-    idle-timeout: 300000       # 5 minutes
-    max-lifetime: 1800000      # 30 minutes
-    
-  # Migration settings
-  migrations:
-    enabled: true
-    auto-migrate: false  # Set to true to automatically run migrations on startup
-    path: "migrations/"  # Path to SQL migration files
-
-# World maps, player profiles, ranks, sessions, match logs, and authority commands
-# are all owned by PostgreSQL migrations under data-api/src/main/resources/migrations.
+# Game nodes submit authority commands to the registry-hosted authority by default.
+authority:
+  mode: "remote"
+  server-id: "registry-service"
+  request-timeout-ms: 5000
+  snapshot-cache-max-age-ms: 1000

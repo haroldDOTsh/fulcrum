@@ -1,6 +1,9 @@
 package sh.harold.fulcrum.registry.messages;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeDataAuthorityAttestation;
+
 import java.util.Map;
 
 /**
@@ -15,6 +18,8 @@ public class RegistrationRequest {
     private String address;
     private int port;
     private int maxCapacity;
+    private RuntimeDataAuthorityAttestation dataAuthorityAttestation;
+    private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest;
     private Map<String, Object> metadata;
     
     // Getters and setters
@@ -64,6 +69,22 @@ public class RegistrationRequest {
     
     public void setMaxCapacity(int maxCapacity) {
         this.maxCapacity = maxCapacity;
+    }
+
+    public RuntimeDataAuthorityAttestation getDataAuthorityAttestation() {
+        return dataAuthorityAttestation;
+    }
+
+    public void setDataAuthorityAttestation(RuntimeDataAuthorityAttestation dataAuthorityAttestation) {
+        this.dataAuthorityAttestation = dataAuthorityAttestation;
+    }
+
+    public RuntimeAuthorityDeliveryManifest getAuthorityDeliveryManifest() {
+        return authorityDeliveryManifest;
+    }
+
+    public void setAuthorityDeliveryManifest(RuntimeAuthorityDeliveryManifest authorityDeliveryManifest) {
+        this.authorityDeliveryManifest = authorityDeliveryManifest;
     }
     
     public Map<String, Object> getMetadata() {

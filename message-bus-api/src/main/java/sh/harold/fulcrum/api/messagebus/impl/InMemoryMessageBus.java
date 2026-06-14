@@ -3,6 +3,7 @@ package sh.harold.fulcrum.api.messagebus.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import sh.harold.fulcrum.api.messagebus.MessageEnvelope;
 import sh.harold.fulcrum.api.messagebus.MessageHandler;
+import sh.harold.fulcrum.api.messagebus.RequestHandler;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusAdapter;
 
 import java.time.Duration;
@@ -62,14 +63,27 @@ public class InMemoryMessageBus extends AbstractMessageBus {
             return future;
         }
         
-        // For local requests, just return a completed future with null
-        // Real request-response handling would require more infrastructure
-        return CompletableFuture.completedFuture(null);
+        MessageEnvelope envelope = createEnvelope(type, targetServerId, payload);
+        List<RequestHandler> handlers = getRequestHandlers(type);
+        if (handlers == null || handlers.isEmpty()) {
+            CompletableFuture<Object> future = new CompletableFuture<>();
+            future.completeExceptionally(new IllegalStateException("No request handler for type: " + type));
+            return future;
+        }
+
+        try {
+            return handlers.get(0).handle(envelope).toCompletableFuture();
+        } catch (Exception exception) {
+            CompletableFuture<Object> future = new CompletableFuture<>();
+            future.completeExceptionally(exception);
+            return future;
+        }
     }
     
     @Override
     public void shutdown() {
         subscriptions.clear();
+        requestSubscriptions.clear();
         adapter.onMessageBusShutdown();
         logger.info("InMemoryMessageBus shut down");
     }

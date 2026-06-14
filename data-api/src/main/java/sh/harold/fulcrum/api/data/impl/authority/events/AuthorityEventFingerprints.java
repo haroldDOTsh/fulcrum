@@ -1,0 +1,73 @@
+package sh.harold.fulcrum.api.data.impl.authority.events;
+
+import com.google.gson.Gson;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
+
+final class AuthorityEventFingerprints {
+    private static final Gson GSON = new Gson();
+
+    private AuthorityEventFingerprints() {
+    }
+
+    static String inputFingerprint(AuthorityEventEnvelope event) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("eventId", event.eventId().toString());
+        values.put("commandId", event.commandId().toString());
+        values.put("aggregateScope", event.aggregateScope());
+        values.put("aggregateType", event.aggregateType());
+        values.put("aggregateId", event.aggregateId());
+        values.put("revision", event.revision());
+        values.put("eventType", event.eventType());
+        values.put("createdAt", event.createdAt().toString());
+        values.put("payload", event.payload());
+        values.put("provenance", event.provenance());
+        return sha256(GSON.toJson(canonicalValue(values)));
+    }
+
+    static String outputFingerprint(AuthorityEventDispatchResult result, String inputFingerprint) {
+        if (result.outputFingerprint() != null && !result.outputFingerprint().isBlank()) {
+            return result.outputFingerprint();
+        }
+        return sha256("projection-output:" + result.projectionVersion() + ":" + inputFingerprint);
+    }
+
+    static String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception exception) {
+            return Integer.toHexString(Objects.hash(value));
+        }
+    }
+
+    private static Object canonicalValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sorted = new TreeMap<>();
+            map.forEach((key, child) -> {
+                if (key != null) {
+                    sorted.put(key.toString(), canonicalValue(child));
+                }
+            });
+            return sorted;
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> values = new ArrayList<>();
+            for (Object child : collection) {
+                values.add(canonicalValue(child));
+            }
+            return values;
+        }
+        return value;
+    }
+}

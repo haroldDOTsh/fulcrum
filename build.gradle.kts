@@ -33,6 +33,9 @@ subprojects {
 
     tasks.withType<Test> {
         useJUnitPlatform()
+        System.getProperties().stringPropertyNames()
+            .filter { it.startsWith("fulcrum.test.postgres.") }
+            .forEach { systemProperty(it, System.getProperty(it)) }
     }
 
     // Only configure publishing for API modules, not player-core

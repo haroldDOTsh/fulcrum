@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Objects;
 
 public final class PostgresMigrationRunner {
+    private static final char UTF8_BOM = '\uFEFF';
     private static final String MIGRATION_TABLE = "fulcrum_schema_migrations";
 
     private final PostgresConnectionAdapter connectionAdapter;
@@ -97,7 +98,8 @@ public final class PostgresMigrationRunner {
             if (stream == null) {
                 throw new IllegalArgumentException("Migration resource not found: " + resourcePath);
             }
-            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            String sql = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            return sql.isEmpty() || sql.charAt(0) != UTF8_BOM ? sql : sql.substring(1);
         }
     }
 

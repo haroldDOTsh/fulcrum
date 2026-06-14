@@ -158,7 +158,7 @@ public class WorldCommand {
         sender.sendMessage(line("/world info <name>", "Show metadata for a world"));
         sender.sendMessage(line("/world pois <name>", "List POIs extracted from the schematic"));
         sender.sendMessage(line("/world status", "Display cache statistics"));
-        sender.sendMessage(line("/world refresh", "Reload the local cache from PostgreSQL"));
+        sender.sendMessage(line("/world refresh", "Reload the local cache from the world map store"));
         sender.sendMessage(line("/world save <mapId> <gameId> <author> [display]", "Persist your WorldEdit selection"));
         sender.sendMessage(Component.text("Alias: /worlds mirrors /world.", NamedTextColor.DARK_GRAY));
         return Command.SINGLE_SUCCESS;
@@ -176,7 +176,7 @@ public class WorldCommand {
             .collect(Collectors.toList());
 
         if (worlds.isEmpty()) {
-            sender.sendMessage(Component.text("No maps cached from PostgreSQL", NamedTextColor.YELLOW));
+            sender.sendMessage(Component.text("No maps cached from the world map store", NamedTextColor.YELLOW));
             return Command.SINGLE_SUCCESS;
         }
 

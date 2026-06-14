@@ -18,6 +18,8 @@ public class ServerRegistrationRequest implements BaseMessage {
     private String address;       // Server IP address
     private int port;            // Server port
     private String role;          // From environment file (e.g., "game", "lobby", "auth")
+    private RuntimeDataAuthorityAttestation dataAuthorityAttestation;
+    private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest;
     
     public ServerRegistrationRequest() {
         // Default constructor for serialization
@@ -76,6 +78,22 @@ public class ServerRegistrationRequest implements BaseMessage {
     
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public RuntimeDataAuthorityAttestation getDataAuthorityAttestation() {
+        return dataAuthorityAttestation;
+    }
+
+    public void setDataAuthorityAttestation(RuntimeDataAuthorityAttestation dataAuthorityAttestation) {
+        this.dataAuthorityAttestation = dataAuthorityAttestation;
+    }
+
+    public RuntimeAuthorityDeliveryManifest getAuthorityDeliveryManifest() {
+        return authorityDeliveryManifest;
+    }
+
+    public void setAuthorityDeliveryManifest(RuntimeAuthorityDeliveryManifest authorityDeliveryManifest) {
+        this.authorityDeliveryManifest = authorityDeliveryManifest;
     }
     
     @Override

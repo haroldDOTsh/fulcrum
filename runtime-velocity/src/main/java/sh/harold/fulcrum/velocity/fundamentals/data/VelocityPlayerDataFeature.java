@@ -13,10 +13,8 @@ import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 import org.slf4j.Logger;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class VelocityPlayerDataFeature implements VelocityFeature {
@@ -57,38 +55,38 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     @Subscribe
     public void onPlayerJoin(PostLoginEvent event) {
         Player player = event.getPlayer();
-        
-        // Run async to avoid blocking
-        CompletableFuture.runAsync(() -> submitPlayerCommand(player, DataAuthority.CommandType.START_SESSION, true));
+
+        submitPlayerCommand(player, DataAuthority.CommandType.START_SESSION);
     }
     
     @Subscribe
     public void onPlayerDisconnect(DisconnectEvent event) {
         Player player = event.getPlayer();
-        
-        // Run async to avoid blocking
-        CompletableFuture.runAsync(() -> submitPlayerCommand(player, DataAuthority.CommandType.END_SESSION, false));
+
+        submitPlayerCommand(player, DataAuthority.CommandType.END_SESSION);
     }
     
     @Subscribe
     public void onServerSwitch(ServerPostConnectEvent event) {
         Player player = event.getPlayer();
-        
-        CompletableFuture.runAsync(() -> submitPlayerCommand(player, DataAuthority.CommandType.RENEW_SESSION, true));
+
+        submitPlayerCommand(player, DataAuthority.CommandType.RENEW_SESSION);
     }
 
-    private void submitPlayerCommand(Player player, DataAuthority.CommandType commandType, boolean online) {
+    private void submitPlayerCommand(Player player, DataAuthority.CommandType commandType) {
         long now = System.currentTimeMillis();
-        DataAuthority.CommandEnvelope command = new DataAuthority.CommandEnvelope(
-            UUID.randomUUID(),
-            commandType,
-            "velocity-proxy",
-            "player:" + player.getUniqueId(),
-            commandType.name() + ":" + player.getUniqueId() + ":" + now,
-            now + 5000L,
-            "",
-            0L,
-            playerPayload(player, commandType, online, now)
+        UUID sessionId = sessionId(player, commandType);
+        DataAuthority.PlayerSessionCommand command = new DataAuthority.PlayerSessionCommand(
+            manifest(player, commandType, now),
+            player.getUniqueId(),
+            player.getUsername(),
+            sessionId,
+            now,
+            currentServer(player),
+            proxyId,
+            player.getRemoteAddress() != null ? player.getRemoteAddress().getAddress().getHostAddress() : null,
+            player.getProtocolVersion().getProtocol(),
+            null
         );
 
         commandPort.submit(command).whenComplete((result, error) -> {
@@ -103,54 +101,35 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         });
     }
 
-    private Map<String, Object> playerPayload(
-        Player player,
-        DataAuthority.CommandType commandType,
-        boolean online,
-        long now
-    ) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("playerId", player.getUniqueId().toString());
-        payload.put("username", player.getUsername());
-        payload.put("timestamp", now);
-        payload.put("online", online);
-        payload.put("protocolVersion", player.getProtocolVersion().getProtocol());
-        payload.put("currentProxy", proxyId);
-
-        UUID sessionId;
+    private UUID sessionId(Player player, DataAuthority.CommandType commandType) {
         if (commandType == DataAuthority.CommandType.START_SESSION) {
-            sessionId = UUID.randomUUID();
+            UUID sessionId = UUID.randomUUID();
             activeSessions.put(player.getUniqueId(), sessionId);
-        } else if (commandType == DataAuthority.CommandType.END_SESSION) {
-            sessionId = activeSessions.remove(player.getUniqueId());
-        } else {
-            sessionId = activeSessions.get(player.getUniqueId());
+            return sessionId;
         }
-        if (sessionId != null) {
-            payload.put("sessionId", sessionId.toString());
-        }
-
-        if (player.getRemoteAddress() != null) {
-            payload.put("lastIp", player.getRemoteAddress().getAddress().getHostAddress());
-        }
-
-        player.getCurrentServer().ifPresent(server ->
-            payload.put("currentServer", server.getServerInfo().getName()));
-
-        if (commandType == DataAuthority.CommandType.START_SESSION) {
-            payload.put("lastProxySession", now);
-        }
-
-        if (commandType == DataAuthority.CommandType.RENEW_SESSION) {
-            payload.put("lastServerSwitch", now);
-        }
-
         if (commandType == DataAuthority.CommandType.END_SESSION) {
-            payload.put("playtimeStartField", "lastProxySession");
-            payload.put("clearCurrentServer", true);
+            return activeSessions.remove(player.getUniqueId());
         }
+        return activeSessions.get(player.getUniqueId());
+    }
 
-        return payload;
+    private String currentServer(Player player) {
+        return player.getCurrentServer()
+            .map(server -> server.getServerInfo().getName())
+            .orElse(null);
+    }
+
+    private DataAuthority.CommandManifest manifest(Player player, DataAuthority.CommandType commandType, long now) {
+        return DataAuthority.CommandManifest.create(
+            UUID.randomUUID(),
+            commandType,
+            "velocity-proxy",
+            "player:" + player.getUniqueId(),
+            commandType.name() + ":" + player.getUniqueId() + ":" + now,
+            now + 5000L,
+            "",
+            DataAuthority.ANY_REVISION
+        );
     }
     
     @Override

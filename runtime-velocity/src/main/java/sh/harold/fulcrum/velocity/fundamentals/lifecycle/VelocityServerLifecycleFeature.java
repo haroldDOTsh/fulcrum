@@ -182,6 +182,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             request.setRole("proxy");
             request.setAddress(proxy.getBoundAddress().getHostString());
             request.setPort(proxy.getBoundAddress().getPort());
+            attachAuthorityMetadata(request);
             
             // Use the standardized channel for registration
             messageBus.broadcast(ChannelConstants.REGISTRY_REGISTRATION_REQUEST, request);
@@ -829,6 +830,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
                 heartbeat.setTimestamp(System.currentTimeMillis());
                 heartbeat.setTps(20.0); // Proxies don't have TPS but send default
                 heartbeat.setRole("proxy");
+                attachAuthorityMetadata(heartbeat);
                 
                 // Send heartbeat via MessageBus - use standardized channel
                 messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, heartbeat);
@@ -946,6 +948,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             shutdownHeartbeat.setMaxCapacity(0);
             shutdownHeartbeat.setTps(20.0);  // tps (not applicable for proxy, using default)
             shutdownHeartbeat.setTimestamp(System.currentTimeMillis());
+            attachAuthorityMetadata(shutdownHeartbeat);
             
             messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, shutdownHeartbeat);
             logger.info("Sent proxy shutdown signal via server:heartbeat channel");
@@ -980,6 +983,28 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
         }
         
         logger.info("VelocityServerLifecycleFeature shutdown complete");
+    }
+
+    private void attachAuthorityMetadata(ServerRegistrationRequest request) {
+        request.setDataAuthorityAttestation(dataAuthorityAttestation());
+        request.setAuthorityDeliveryManifest(authorityDeliveryManifest());
+    }
+
+    private void attachAuthorityMetadata(ServerHeartbeatMessage heartbeat) {
+        heartbeat.setDataAuthorityAttestation(dataAuthorityAttestation());
+        heartbeat.setAuthorityDeliveryManifest(authorityDeliveryManifest());
+    }
+
+    private RuntimeDataAuthorityAttestation dataAuthorityAttestation() {
+        return serviceLocator == null
+            ? null
+            : serviceLocator.getService(RuntimeDataAuthorityAttestation.class).orElse(null);
+    }
+
+    private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest() {
+        return serviceLocator == null
+            ? null
+            : serviceLocator.getService(RuntimeAuthorityDeliveryManifest.class).orElse(null);
     }
     
     private void handleServerRemoval(ServerRemovalNotification notification) {
@@ -1146,6 +1171,7 @@ public class VelocityServerLifecycleFeature implements VelocityFeature {
             testHeartbeat.setTimestamp(System.currentTimeMillis());
             testHeartbeat.setTps(20.0);
             testHeartbeat.setRole("proxy");
+            attachAuthorityMetadata(testHeartbeat);
             
             logger.info("[TEST HEARTBEAT] Sending test heartbeat with ID: {}", assignedProxyId);
             messageBus.broadcast(ChannelConstants.SERVER_HEARTBEAT, testHeartbeat);

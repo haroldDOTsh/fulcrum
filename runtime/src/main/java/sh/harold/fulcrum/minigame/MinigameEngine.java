@@ -465,16 +465,27 @@ public final class MinigameEngine {
             return;
         }
         long now = System.currentTimeMillis();
-        DataAuthority.CommandEnvelope command = new DataAuthority.CommandEnvelope(
-            UUID.randomUUID(),
-            type,
-            serverIdentifier != null ? serverIdentifier.getServerId() : "paper-runtime",
-            "match:" + matchId,
-            type.name() + ":" + matchId + ":" + payload.getOrDefault("startedAt", payload.getOrDefault("endedAt", now)),
-            now + 5000L,
-            "",
-            0L,
-            payload
+        DataAuthority.MatchCommand command = new DataAuthority.MatchCommand(
+            DataAuthority.CommandManifest.create(
+                UUID.randomUUID(),
+                type,
+                serverIdentifier != null ? serverIdentifier.getServerId() : "paper-runtime",
+                "match:" + matchId,
+                type.name() + ":" + matchId + ":" + payload.getOrDefault("startedAt", payload.getOrDefault("endedAt", now)),
+                now + 5000L,
+                "",
+                DataAuthority.ANY_REVISION
+            ),
+            matchId,
+            objectString(payload.get("familyId")),
+            objectString(payload.get("mapId")),
+            objectString(payload.get("serverId")),
+            objectString(payload.get("slotId")),
+            objectString(payload.get("state")),
+            longObject(payload.get("startedAt")),
+            longObject(payload.get("endedAt")),
+            slotMetadata(payload.get("slotMetadata")),
+            participants(payload.get("participants"))
         );
 
         commandPort.submit(command).whenComplete((result, error) -> {
@@ -494,6 +505,94 @@ public final class MinigameEngine {
                 target.put(key, value);
             }
         }
+    }
+
+    private static List<DataAuthority.MatchParticipant> participants(Object rawParticipants) {
+        if (!(rawParticipants instanceof Iterable<?> rawValues)) {
+            return List.of();
+        }
+        List<DataAuthority.MatchParticipant> participants = new ArrayList<>();
+        for (Object raw : rawValues) {
+            if (!(raw instanceof Map<?, ?> values)) {
+                continue;
+            }
+            Object rawPlayerId = values.get("playerId");
+            if (rawPlayerId == null) {
+                continue;
+            }
+            UUID playerId;
+            try {
+                playerId = UUID.fromString(rawPlayerId.toString());
+            } catch (IllegalArgumentException ignored) {
+                continue;
+            }
+
+            Map<String, Object> stats = Map.of();
+            Object rawStats = values.get("stats");
+            if (rawStats instanceof Map<?, ?> rawStatsMap) {
+                Map<String, Object> copied = new HashMap<>();
+                rawStatsMap.forEach((key, value) -> {
+                    if (key != null && value != null) {
+                        copied.put(key.toString(), value);
+                    }
+                });
+                stats = copied;
+            }
+
+            participants.add(new DataAuthority.MatchParticipant(
+                playerId,
+                objectString(values.get("teamId")),
+                integer(values.get("placement")),
+                objectString(values.get("state")),
+                stats
+            ));
+        }
+        return participants;
+    }
+
+    private static Map<String, Object> slotMetadata(Object rawMetadata) {
+        if (!(rawMetadata instanceof Map<?, ?> values)) {
+            return Map.of();
+        }
+        Map<String, Object> metadata = new HashMap<>();
+        values.forEach((key, value) -> {
+            if (key != null && value != null) {
+                metadata.put(key.toString(), value);
+            }
+        });
+        return metadata;
+    }
+
+    private static Long longObject(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value != null) {
+            try {
+                return Long.parseLong(value.toString());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static Integer integer(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value != null) {
+            try {
+                return Integer.parseInt(value.toString());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static String objectString(Object value) {
+        return value == null ? null : value.toString();
     }
 
     private SlotContext resolveSlotContext(Collection<Player> players) {

@@ -2,10 +2,14 @@ package sh.harold.fulcrum.registry.server;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeDataAuthorityAttestation;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
+import sh.harold.fulcrum.registry.authority.AuthorityDeliveryManifestValidator;
 import sh.harold.fulcrum.registry.messages.RegistrationRequest;
+import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshot;
 import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshotStore;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 
@@ -30,8 +34,98 @@ public class ServerRegistry {
         this.idAllocator = idAllocator;
     }
 
+    /**
+     * Set the durable node snapshot store.
+     *
+     * @param snapshotStore snapshot store to use.
+     */
     public void setSnapshotStore(RegistryNodeSnapshotStore snapshotStore) {
         this.snapshotStore = Objects.requireNonNullElse(snapshotStore, RegistryNodeSnapshotStore.NOOP);
+    }
+
+    /**
+     * Restore backend reservations from durable snapshots.
+     *
+     * @param snapshots snapshots loaded from durable registry metadata.
+     * @return number of active backend reservations restored.
+     */
+    public synchronized int restoreSnapshots(Collection<RegistryNodeSnapshot> snapshots) {
+        int restored = 0;
+        if (snapshots == null) {
+            return restored;
+        }
+        for (RegistryNodeSnapshot snapshot : snapshots) {
+            if (restoreSnapshot(snapshot)) {
+                restored++;
+            }
+        }
+        return restored;
+    }
+
+    /**
+     * Restore one backend reservation from a durable snapshot.
+     *
+     * @param snapshot snapshot loaded from durable registry metadata.
+     * @return true when the backend reservation was restored.
+     */
+    public synchronized boolean restoreSnapshot(RegistryNodeSnapshot snapshot) {
+        if (snapshot == null || !snapshot.isBackend() || snapshot.nodeId() == null || snapshot.nodeId().isBlank()) {
+            return false;
+        }
+        if (!snapshot.permitsRestore()) {
+            LOGGER.warn(
+                "Skipping backend snapshot {} from {} because attestation fingerprint does not match payload",
+                snapshot.nodeId(),
+                snapshot.snapshotSource()
+            );
+            return false;
+        }
+
+        idAllocator.observeServerId(snapshot.nodeId());
+        if (isTerminalSnapshotState(snapshot.state()) || servers.containsKey(snapshot.nodeId())) {
+            return false;
+        }
+
+        Map<String, Object> metadata = snapshot.metadata();
+        String tempId = stringValue(metadata.get("tempId"), "restored-" + snapshot.nodeId());
+        String serverType = stringValue(metadata.get("serverType"), deriveServerType(snapshot.nodeId()));
+        RegisteredServerData server = new RegisteredServerData(
+            snapshot.nodeId(),
+            tempId,
+            serverType,
+            snapshot.address(),
+            snapshot.port(),
+            snapshot.capacity()
+        );
+        server.setRole(snapshot.role() == null || snapshot.role().isBlank() ? "default" : snapshot.role());
+        server.setStatus(RegisteredServerData.Status.UNAVAILABLE);
+        server.setLastHeartbeat(snapshot.updatedAt().toEpochMilli());
+        server.setPlayerCount(intValue(metadata.get("playerCount"), 0));
+        server.setTps(doubleValue(metadata.get("tps"), 20.0));
+        server.setMemoryUsage(doubleValue(metadata.get("memoryUsage"), 0.0));
+        server.setCpuUsage(doubleValue(metadata.get("cpuUsage"), 0.0));
+        server.setDataAuthorityAttestation(dataAuthorityAttestation(metadata.get("dataAuthorityAttestation")));
+        RuntimeAuthorityDeliveryManifest manifest =
+            authorityDeliveryManifest(metadata.get("authorityDeliveryManifest"));
+        if (manifest != null) {
+            String manifestRejection = AuthorityDeliveryManifestValidator.rejection(manifest);
+            if (manifestRejection == null) {
+                server.setAuthorityDeliveryManifest(manifest);
+            } else {
+                LOGGER.warn(
+                    "Dropping restored Data Authority delivery manifest for {} because it failed admission: {}",
+                    snapshot.nodeId(),
+                    manifestRejection
+                );
+            }
+        }
+        server.updateSlotFamilyCapacities(intMap(metadata.get("slotFamilies")));
+        restoreSlots(server, metadata.get("slots"));
+
+        servers.put(server.getServerId(), server);
+        tempIdToPermId.put(server.getTempId(), server.getServerId());
+        LOGGER.info("Restored backend snapshot {} as UNAVAILABLE; awaiting fresh heartbeat", server.getServerId());
+        return true;
     }
     
     /**
@@ -59,6 +153,16 @@ public class ServerRegistry {
                 updatedServer.setRole(request.getRole() != null ? request.getRole() : "default");
                 updatedServer.setLastHeartbeat(System.currentTimeMillis());
                 updatedServer.setStatus(RegisteredServerData.Status.STARTING);
+                updatedServer.setDataAuthorityAttestation(
+                    request.getDataAuthorityAttestation() != null
+                        ? request.getDataAuthorityAttestation()
+                        : existingServer.getDataAuthorityAttestation()
+                );
+                updatedServer.setAuthorityDeliveryManifest(
+                    request.getAuthorityDeliveryManifest() != null
+                        ? request.getAuthorityDeliveryManifest()
+                        : existingServer.getAuthorityDeliveryManifest()
+                );
                 
                 // Replace the server data
                 servers.put(requestId, updatedServer);
@@ -76,6 +180,7 @@ public class ServerRegistry {
         if (existingId != null) {
             // Verify the server still exists
             if (servers.containsKey(existingId)) {
+                updateDataAuthorityAttestation(existingId, request.getDataAuthorityAttestation());
                 LOGGER.debug("Server {} already registered with ID {}", requestId, existingId);
                 return existingId;
             } else {
@@ -107,6 +212,8 @@ public class ServerRegistry {
         serverData.setRole(request.getRole() != null ? request.getRole() : "default");
         serverData.setLastHeartbeat(System.currentTimeMillis());
         serverData.setStatus(RegisteredServerData.Status.STARTING);
+        serverData.setDataAuthorityAttestation(request.getDataAuthorityAttestation());
+        serverData.setAuthorityDeliveryManifest(request.getAuthorityDeliveryManifest());
         
         // Store server atomically
         servers.put(permanentId, serverData);
@@ -292,6 +399,49 @@ public class ServerRegistry {
         }
     }
 
+    public void updateDataAuthorityAttestation(
+        String serverId,
+        RuntimeDataAuthorityAttestation dataAuthorityAttestation
+    ) {
+        if (serverId == null || serverId.isBlank() || dataAuthorityAttestation == null) {
+            return;
+        }
+        RegisteredServerData server = servers.get(serverId);
+        if (server != null && !sameAttestation(server.getDataAuthorityAttestation(), dataAuthorityAttestation)) {
+            server.setDataAuthorityAttestation(dataAuthorityAttestation);
+            snapshot(server);
+            LOGGER.info(
+                "Updated Data Authority attestation for {} (nodeKind={}, attestationFingerprint={})",
+                serverId,
+                dataAuthorityAttestation.getNodeKind(),
+                dataAuthorityAttestation.getAttestationFingerprint()
+            );
+        }
+    }
+
+    public void updateAuthorityDeliveryManifest(
+        String serverId,
+        RuntimeAuthorityDeliveryManifest authorityDeliveryManifest
+    ) {
+        if (serverId == null || serverId.isBlank() || authorityDeliveryManifest == null) {
+            return;
+        }
+        RegisteredServerData server = servers.get(serverId);
+        if (server != null && !sameAuthorityDeliveryManifest(
+            server.getAuthorityDeliveryManifest(),
+            authorityDeliveryManifest
+        )) {
+            server.setAuthorityDeliveryManifest(authorityDeliveryManifest);
+            snapshot(server);
+            LOGGER.info(
+                "Updated Data Authority delivery manifest for {} (nodeKind={}, manifestFingerprint={})",
+                serverId,
+                authorityDeliveryManifest.getNodeKind(),
+                authorityDeliveryManifest.getManifestFingerprint()
+            );
+        }
+    }
+
     private void snapshot(RegisteredServerData server) {
         try {
             snapshotStore.snapshotServer(server);
@@ -306,6 +456,218 @@ public class ServerRegistry {
         } catch (Exception exception) {
             LOGGER.warn("Failed to mark server {} offline in snapshot store", serverId, exception);
         }
+    }
+
+    private void restoreSlots(RegisteredServerData server, Object rawSlots) {
+        if (!(rawSlots instanceof Iterable<?> slots)) {
+            return;
+        }
+
+        for (Object rawSlot : slots) {
+            Map<String, Object> slotData = objectMap(rawSlot);
+            String slotId = stringValue(slotData.get("slotId"), null);
+            String slotSuffix = stringValue(slotData.get("slotSuffix"), null);
+            if (slotId == null || slotSuffix == null) {
+                continue;
+            }
+
+            LogicalSlotRecord slot = new LogicalSlotRecord(slotId, slotSuffix, server.getServerId());
+            slot.setGameType(stringValue(slotData.get("gameType"), null));
+            slot.setStatus(slotStatus(slotData.get("status")));
+            slot.setMaxPlayers(intValue(slotData.get("maxPlayers"), 0));
+            slot.setOnlinePlayers(intValue(slotData.get("onlinePlayers"), 0));
+            slot.setLastUpdated(server.getLastHeartbeat());
+            slot.replaceMetadata(stringMap(slotData.get("metadata")));
+            markRestoredSlotNonRoutable(slot);
+            server.restoreSlot(slot);
+        }
+    }
+
+    private static void markRestoredSlotNonRoutable(LogicalSlotRecord slot) {
+        if (slot.getStatus() != SlotLifecycleStatus.AVAILABLE) {
+            return;
+        }
+
+        Map<String, String> metadata = new java.util.LinkedHashMap<>(slot.getMetadata());
+        metadata.put("restoredStatus", SlotLifecycleStatus.AVAILABLE.name());
+        metadata.put("restoreRequiresFreshSlotStatus", "true");
+        slot.setStatus(SlotLifecycleStatus.PROVISIONING);
+        slot.replaceMetadata(metadata);
+    }
+
+    private static boolean isTerminalSnapshotState(String state) {
+        return RegisteredServerData.Status.DEAD.name().equalsIgnoreCase(state)
+            || RegisteredServerData.Status.STOPPING.name().equalsIgnoreCase(state);
+    }
+
+    private static SlotLifecycleStatus slotStatus(Object value) {
+        if (value != null) {
+            try {
+                return SlotLifecycleStatus.valueOf(value.toString());
+            } catch (IllegalArgumentException ignored) {
+                // Restore invalid historical slot states as non-routable.
+            }
+        }
+        return SlotLifecycleStatus.PROVISIONING;
+    }
+
+    private static String deriveServerType(String nodeId) {
+        if (nodeId == null || nodeId.isBlank()) {
+            return "unknown";
+        }
+        int index = 0;
+        while (index < nodeId.length() && !Character.isDigit(nodeId.charAt(index))) {
+            index++;
+        }
+        return index == 0 ? "unknown" : nodeId.substring(0, index);
+    }
+
+    private static String stringValue(Object value, String fallback) {
+        return value == null || value.toString().isBlank() ? fallback : value.toString();
+    }
+
+    private static int intValue(Object value, int fallback) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return value == null ? fallback : Integer.parseInt(value.toString());
+    }
+
+    private static double doubleValue(Object value, double fallback) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        return value == null ? fallback : Double.parseDouble(value.toString());
+    }
+
+    private static boolean booleanValue(Object value, boolean fallback) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return value == null ? fallback : Boolean.parseBoolean(value.toString());
+    }
+
+    private static RuntimeDataAuthorityAttestation dataAuthorityAttestation(Object value) {
+        if (value instanceof RuntimeDataAuthorityAttestation attestation) {
+            return attestation;
+        }
+        Map<String, Object> raw = objectMap(value);
+        if (raw.isEmpty()) {
+            return null;
+        }
+
+        RuntimeDataAuthorityAttestation attestation = new RuntimeDataAuthorityAttestation();
+        attestation.setNodeKind(stringValue(raw.get("nodeKind"), null));
+        attestation.setManifestVersion(intValue(raw.get("manifestVersion"), 0));
+        attestation.setPassed(booleanValue(raw.get("passed"), false));
+        attestation.setRuntimeDataMode(stringValue(raw.get("runtimeDataMode"), null));
+        attestation.setCacheMode(stringValue(raw.get("cacheMode"), null));
+        attestation.setCommandSchemaVersion(intValue(raw.get("commandSchemaVersion"), 0));
+        attestation.setCommandContractFingerprint(stringValue(raw.get("commandContractFingerprint"), null));
+        attestation.setReadSchemaVersion(intValue(raw.get("readSchemaVersion"), 0));
+        attestation.setReadContractFingerprint(stringValue(raw.get("readContractFingerprint"), null));
+        attestation.setConfigFingerprint(stringValue(raw.get("configFingerprint"), null));
+        attestation.setClasspathFingerprint(stringValue(raw.get("classpathFingerprint"), null));
+        attestation.setAttestationFingerprint(stringValue(raw.get("attestationFingerprint"), null));
+        return attestation.getAttestationFingerprint() == null ? null : attestation;
+    }
+
+    private static RuntimeAuthorityDeliveryManifest authorityDeliveryManifest(Object value) {
+        if (value instanceof RuntimeAuthorityDeliveryManifest manifest) {
+            return manifest;
+        }
+        Map<String, Object> raw = objectMap(value);
+        if (raw.isEmpty()) {
+            return null;
+        }
+
+        RuntimeAuthorityDeliveryManifest manifest = new RuntimeAuthorityDeliveryManifest();
+        manifest.setNodeKind(stringValue(raw.get("nodeKind"), null));
+        manifest.setManifestVersion(intValue(raw.get("manifestVersion"), 0));
+        manifest.setAuthorityServerId(stringValue(raw.get("authorityServerId"), null));
+        manifest.setRuntimeDataMode(stringValue(raw.get("runtimeDataMode"), null));
+        manifest.setCacheMode(stringValue(raw.get("cacheMode"), null));
+        manifest.setStartupAttestationFingerprint(stringValue(raw.get("startupAttestationFingerprint"), null));
+        manifest.setCommandSchemaVersion(intValue(raw.get("commandSchemaVersion"), 0));
+        manifest.setCommandContractFingerprint(stringValue(raw.get("commandContractFingerprint"), null));
+        manifest.setCommandRouteManifestFingerprint(stringValue(raw.get("commandRouteManifestFingerprint"), null));
+        manifest.setReadSchemaVersion(intValue(raw.get("readSchemaVersion"), 0));
+        manifest.setReadContractFingerprint(stringValue(raw.get("readContractFingerprint"), null));
+        manifest.setCommandDomainsByType(stringMap(raw.get("commandDomainsByType")));
+        manifest.setCommandDeliveryModesByType(stringMap(raw.get("commandDeliveryModesByType")));
+        manifest.setCommandPartitionKeyVectorsByType(stringMap(raw.get("commandPartitionKeyVectorsByType")));
+        manifest.setCommandLogStoresByType(stringMap(raw.get("commandLogStoresByType")));
+        manifest.setCommandHotProjectionStoresByType(stringMap(raw.get("commandHotProjectionStoresByType")));
+        manifest.setCommandHistoryStoresByType(stringMap(raw.get("commandHistoryStoresByType")));
+        manifest.setCommandCacheStoresByType(stringMap(raw.get("commandCacheStoresByType")));
+        manifest.setReadProjectionFamiliesByType(stringMap(raw.get("readProjectionFamiliesByType")));
+        manifest.setReadServingStoresByType(stringMap(raw.get("readServingStoresByType")));
+        manifest.setReadCacheStoresByType(stringMap(raw.get("readCacheStoresByType")));
+        manifest.setManifestFingerprint(stringValue(raw.get("manifestFingerprint"), null));
+        return manifest.getManifestFingerprint() == null ? null : manifest;
+    }
+
+    private static boolean sameAttestation(
+        RuntimeDataAuthorityAttestation current,
+        RuntimeDataAuthorityAttestation candidate
+    ) {
+        if (current == candidate) {
+            return true;
+        }
+        if (current == null || candidate == null) {
+            return false;
+        }
+        return Objects.equals(current.getAttestationFingerprint(), candidate.getAttestationFingerprint());
+    }
+
+    private static boolean sameAuthorityDeliveryManifest(
+        RuntimeAuthorityDeliveryManifest current,
+        RuntimeAuthorityDeliveryManifest candidate
+    ) {
+        if (current == candidate) {
+            return true;
+        }
+        if (current == null || candidate == null) {
+            return false;
+        }
+        return Objects.equals(current.getManifestFingerprint(), candidate.getManifestFingerprint());
+    }
+
+    private static Map<String, Integer> intMap(Object value) {
+        Map<String, Object> raw = objectMap(value);
+        if (raw.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> result = new java.util.LinkedHashMap<>();
+        raw.forEach((key, mapValue) -> result.put(key, intValue(mapValue, 0)));
+        return result;
+    }
+
+    private static Map<String, String> stringMap(Object value) {
+        Map<String, Object> raw = objectMap(value);
+        if (raw.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        raw.forEach((key, mapValue) -> {
+            if (mapValue != null) {
+                result.put(key, mapValue.toString());
+            }
+        });
+        return result;
+    }
+
+    private static Map<String, Object> objectMap(Object value) {
+        if (!(value instanceof Map<?, ?> raw) || raw.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        raw.forEach((key, mapValue) -> {
+            if (key != null) {
+                result.put(key.toString(), mapValue);
+            }
+        });
+        return result;
     }
     
     /**

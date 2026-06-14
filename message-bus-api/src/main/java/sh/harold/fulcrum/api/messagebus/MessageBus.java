@@ -54,6 +54,26 @@ public interface MessageBus {
     void unsubscribe(String type, MessageHandler handler);
 
     /**
+     * Subscribes a request handler to messages of a specific type.
+     *
+     * @param type the request type to subscribe to
+     * @param handler the handler that returns the response payload
+     */
+    default void subscribeRequest(String type, RequestHandler handler) {
+        throw new UnsupportedOperationException("Request handlers are not supported by this message bus");
+    }
+
+    /**
+     * Unsubscribes a request handler from messages of a specific type.
+     *
+     * @param type the request type to unsubscribe from
+     * @param handler the handler to remove
+     */
+    default void unsubscribeRequest(String type, RequestHandler handler) {
+        throw new UnsupportedOperationException("Request handlers are not supported by this message bus");
+    }
+
+    /**
      * Refresh the transport's notion of this server's identifier.
      * Implementations should resubscribe to any identity-based channels
      * when the runtime receives a new permanent server ID.

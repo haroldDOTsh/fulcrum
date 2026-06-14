@@ -25,6 +25,7 @@ repositories {
 dependencies {
     // Internal dependencies - using the existing message bus API
     implementation(project(":message-bus-api"))
+    implementation(project(":data-api"))
     
     // Redis client (same as used in runtime)
     implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
@@ -63,6 +64,9 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
     testImplementation("org.mockito:mockito-core:5.7.0")
     testImplementation("org.assertj:assertj-core:3.24.2")
+    testImplementation("org.testcontainers:testcontainers:1.19.3")
+    testImplementation("org.testcontainers:postgresql:1.19.3")
+    testImplementation("org.testcontainers:junit-jupiter:1.19.3")
 }
 
 tasks.test {

@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
+import sh.harold.fulcrum.api.messagebus.messages.RuntimeDataAuthorityAttestation;
 import sh.harold.fulcrum.api.messagebus.messages.SlotStatusUpdateMessage;
 import sh.harold.fulcrum.registry.slot.LogicalSlotRecord;
 
@@ -37,6 +39,8 @@ public class RegisteredServerData {
     private double tps = 20.0;
     private double memoryUsage = 0.0;
     private double cpuUsage = 0.0;
+    private RuntimeDataAuthorityAttestation dataAuthorityAttestation;
+    private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest;
 
     private final Map<String, LogicalSlotRecord> slots = new ConcurrentHashMap<>();
     private final Map<String, Integer> slotFamilyCapacities = new ConcurrentHashMap<>();
@@ -107,6 +111,14 @@ public class RegisteredServerData {
         return cpuUsage;
     }
 
+    public RuntimeDataAuthorityAttestation getDataAuthorityAttestation() {
+        return dataAuthorityAttestation;
+    }
+
+    public RuntimeAuthorityDeliveryManifest getAuthorityDeliveryManifest() {
+        return authorityDeliveryManifest;
+    }
+
     public Collection<LogicalSlotRecord> getSlots() {
         return Collections.unmodifiableCollection(slots.values());
     }
@@ -120,6 +132,17 @@ public class RegisteredServerData {
             new LogicalSlotRecord(update.getSlotId(), suffix, serverId));
         slot.applyUpdate(update);
         return slot;
+    }
+
+    /**
+     * Restore a logical slot loaded from durable registry metadata.
+     *
+     * @param slot slot to restore.
+     */
+    public void restoreSlot(LogicalSlotRecord slot) {
+        if (slot != null && serverId.equals(slot.getServerId())) {
+            slots.put(slot.getSlotSuffix(), slot);
+        }
     }
 
     public void clearSlots() {
@@ -201,6 +224,14 @@ public class RegisteredServerData {
     
     public void setCpuUsage(double cpuUsage) {
         this.cpuUsage = cpuUsage;
+    }
+
+    public void setDataAuthorityAttestation(RuntimeDataAuthorityAttestation dataAuthorityAttestation) {
+        this.dataAuthorityAttestation = dataAuthorityAttestation;
+    }
+
+    public void setAuthorityDeliveryManifest(RuntimeAuthorityDeliveryManifest authorityDeliveryManifest) {
+        this.authorityDeliveryManifest = authorityDeliveryManifest;
     }
     
     /**

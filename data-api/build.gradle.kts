@@ -11,6 +11,8 @@ repositories {
 }
 
 dependencies {
+    implementation(project(":message-bus-api"))
+
     // PostgreSQL Driver
     implementation("org.postgresql:postgresql:42.7.1")
     
@@ -19,6 +21,7 @@ dependencies {
     
     // JSON Processing
     implementation("com.google.code.gson:gson:2.10.1")
+    compileOnly("com.fasterxml.jackson.core:jackson-databind:2.17.0")
     
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.9")
@@ -28,6 +31,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
     testImplementation("org.junit.jupiter:junit-jupiter-params:5.10.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
     
     // Mocking
     testImplementation("org.mockito:mockito-core:5.7.0")

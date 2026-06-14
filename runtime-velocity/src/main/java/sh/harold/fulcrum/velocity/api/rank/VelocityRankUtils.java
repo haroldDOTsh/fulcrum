@@ -42,6 +42,14 @@ public final class VelocityRankUtils {
                 hasPermission ? "ALLOWED" : "DENIED");
 
             return hasPermission;
+        }).exceptionally(e -> {
+            logger.warn(
+                "Rank check for player {} ({}) failed closed: {}",
+                player.getUsername(),
+                player.getUniqueId(),
+                e.getMessage()
+            );
+            return false;
         });
     }
     
@@ -117,14 +125,24 @@ public final class VelocityRankUtils {
      */
     public static CompletableFuture<Rank> getEffectiveRank(Player player, DataAuthority.PlayerRankReader rankReader,
                                                            Logger logger) {
-        return rankReader.findRanks(player.getUniqueId())
-            .thenApply(snapshot -> {
-                if (snapshot.isEmpty()) {
+        return rankReader.quoteRanks(player.getUniqueId(), DataAuthority.ReadRequirement.eventual())
+            .thenApply(read -> {
+                if (!read.satisfied()) {
+                    if (read.quote().status() == DataAuthority.ReadQuoteStatus.NOT_FOUND) {
+                        logger.debug("Rank projection not found for {}, returning DEFAULT", player.getUsername());
+                        return Rank.DEFAULT;
+                    }
+                    throw new IllegalStateException("Rank projection for " + player.getUsername()
+                        + " is not safe to use: " + read.quote().status() + " " + read.quote().message());
+                }
+
+                DataAuthority.PlayerRankSnapshot snapshot = read.snapshot().orElseThrow();
+                String rankStr = snapshot.primaryRank();
+                if (rankStr == null || rankStr.isBlank()) {
                     logger.debug("Rank projection not found for {}, returning DEFAULT", player.getUsername());
                     return Rank.DEFAULT;
                 }
 
-                String rankStr = snapshot.get().primaryRank();
                 try {
                     return Rank.valueOf(rankStr.toUpperCase(Locale.ROOT));
                 } catch (IllegalArgumentException e) {
@@ -135,7 +153,7 @@ public final class VelocityRankUtils {
             })
             .exceptionally(e -> {
                 logger.error("Error getting rank for {}: {}", player.getUsername(), e.getMessage());
-                return Rank.DEFAULT;
+                throw new java.util.concurrent.CompletionException(e);
             })
             .toCompletableFuture();
     }

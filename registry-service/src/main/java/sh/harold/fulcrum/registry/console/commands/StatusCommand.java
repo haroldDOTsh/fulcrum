@@ -42,6 +42,13 @@ public class StatusCommand implements CommandHandler {
             (debugMode ? TableFormatter.color("ENABLED", TableFormatter.YELLOW)
                       : "DISABLED"));
         System.out.println();
+
+        // Data Authority status
+        System.out.println(TableFormatter.color("Data Authority:", TableFormatter.YELLOW));
+        for (String line : registryService.getAuthorityStatusLines()) {
+            System.out.println("  " + line);
+        }
+        System.out.println();
         
         // Proxy statistics
         int totalProxies = registryService.getProxyRegistry().getProxyCount();

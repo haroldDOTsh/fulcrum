@@ -93,6 +93,29 @@ public class IdAllocator {
         }
         return serverId;
     }
+
+    /**
+     * Reserve a server ID that already exists in durable registry state.
+     *
+     * @param serverId previously assigned base backend server ID.
+     */
+    public synchronized void observeServerId(String serverId) {
+        Matcher matcher = SERVER_ID_PATTERN.matcher(serverId);
+        if (!matcher.matches() || !matcher.group(3).isEmpty()) {
+            return;
+        }
+
+        String type = matcher.group(1);
+        int number = Integer.parseInt(matcher.group(2));
+        availableNumbers.computeIfAbsent(type, ignored -> new TreeSet<>()).remove(number);
+        nextNumbers.compute(type, (ignored, current) -> {
+            if (current == null) {
+                return new AtomicInteger(number + 1);
+            }
+            current.updateAndGet(existing -> Math.max(existing, number + 1));
+            return current;
+        });
+    }
     
     /**
      * Allocate a pool slot ID (e.g., mini1A, mini1B)

@@ -26,14 +26,21 @@ implementation 'com.github.haroldDOTsh.fulcrum:runtime:VERSION'
 PostgreSQL-backed durable command and projection ports for player, session, rank, and match data.
 
 ```java
-commands.submit(new DataAuthority.CommandEnvelope(
-    UUID.randomUUID(),
-    DataAuthority.CommandType.GRANT_RANK,
-    "player:" + playerId,
-    Map.of("playerId", playerId.toString(), "primaryRank", "VIP"),
-    "rank-admin:" + actorId,
-    UUID.randomUUID().toString(),
-    Instant.now()
+long now = System.currentTimeMillis();
+commands.submit(new DataAuthority.PlayerRankCommand(
+    DataAuthority.CommandManifest.create(
+        UUID.randomUUID(),
+        DataAuthority.CommandType.GRANT_RANK,
+        "rank-admin:" + actorId,
+        "player:" + playerId,
+        "rank-grant:" + playerId + ":" + now,
+        now + 5000L,
+        "",
+        currentRankRevision
+    ),
+    playerId,
+    "VIP",
+    List.of("VIP")
 ));
 ```
 

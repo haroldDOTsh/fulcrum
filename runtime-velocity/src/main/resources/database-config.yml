@@ -1,15 +1,9 @@
-# PostgreSQL is the only durable Fulcrum authority store.
-postgres:
-  jdbc-url: "jdbc:postgresql://localhost:5432/fulcrum"
-  database: "fulcrum"
-  username: "fulcrum_user"
-  password: ""
-  connection-pool:
-    maximum-pool-size: 4
-    minimum-idle: 1
-    connection-timeout: 5000
-    idle-timeout: 300000
-    max-lifetime: 1800000
+# Game nodes submit authority commands to the registry-hosted authority by default.
+authority:
+  mode: "remote"
+  server-id: "registry-service"
+  request-timeout-ms: 5000
+  snapshot-cache-max-age-ms: 1000
 
 # Redis configuration for Message Bus
 redis:
