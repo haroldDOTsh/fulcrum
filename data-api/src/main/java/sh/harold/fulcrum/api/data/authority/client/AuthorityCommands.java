@@ -111,7 +111,7 @@ public final class AuthorityCommands {
             );
         }
 
-        private DataAuthority.PlayerProfileCommand profileCommand(
+        private DataAuthority.AuthorityCommand profileCommand(
             String declarationId,
             String username,
             long timestampEpochMillis,
@@ -226,7 +226,7 @@ public final class AuthorityCommands {
             );
         }
 
-        private DataAuthority.PlayerSessionCommand sessionCommand(
+        private DataAuthority.AuthorityCommand sessionCommand(
             String declarationId,
             String username,
             UUID sessionId,
@@ -298,7 +298,7 @@ public final class AuthorityCommands {
             );
         }
 
-        private DataAuthority.PlayerRankCommand rankCommand(
+        private DataAuthority.AuthorityCommand rankCommand(
             String declarationId,
             String primaryRank,
             List<String> ranks,
@@ -383,7 +383,7 @@ public final class AuthorityCommands {
             );
         }
 
-        private DataAuthority.MatchCommand matchCommand(
+        private DataAuthority.AuthorityCommand matchCommand(
             String declarationId,
             String familyId,
             String mapId,
