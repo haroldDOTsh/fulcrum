@@ -20,6 +20,28 @@ class DataAuthorityTest {
     }
 
     @Test
+    void authorityCommandCanBeImplementedByDeclaredRecords() {
+        record DeclaredCommand(DataAuthority.CommandManifest manifest) implements DataAuthority.AuthorityCommand {
+        }
+
+        UUID commandId = UUID.randomUUID();
+        DataAuthority.AuthorityCommand command = new DeclaredCommand(DataAuthority.CommandManifest.create(
+            commandId,
+            DataAuthority.CommandType.GRANT_RANK,
+            "rank-service",
+            "rank:player:" + UUID.randomUUID(),
+            commandId.toString(),
+            System.currentTimeMillis() + 1000,
+            "12",
+            4L
+        ));
+
+        assertThat(DataAuthority.AuthorityCommand.class.isSealed()).isFalse();
+        assertThat(command.commandId()).isEqualTo(commandId);
+        assertThat(command.expectedRevision()).isEqualTo(4L);
+    }
+
+    @Test
     void typedRankCommandExposesTypedFields() {
         UUID commandId = UUID.randomUUID();
         UUID playerId = UUID.randomUUID();

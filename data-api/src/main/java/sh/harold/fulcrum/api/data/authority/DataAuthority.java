@@ -1001,8 +1001,7 @@ public final class DataAuthority {
             : QuotedRead.unsatisfied(quote);
     }
 
-    public sealed interface AuthorityCommand permits PlayerProfileCommand, PlayerSessionCommand,
-        PlayerRankCommand, MatchCommand {
+    public interface AuthorityCommand {
         CommandManifest manifest();
 
         default UUID commandId() {
