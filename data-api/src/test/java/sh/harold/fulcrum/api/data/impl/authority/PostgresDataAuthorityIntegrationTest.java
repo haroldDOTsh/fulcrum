@@ -426,8 +426,8 @@ class PostgresDataAuthorityIntegrationTest {
         PostgresAuthorityPartitionEpochStore epochStore = new PostgresAuthorityPartitionEpochStore(adapter);
         epochStore.validateSchema();
         UUID playerId = UUID.randomUUID();
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:" + playerId
         );
         AuthorityWriteCustody custody = AuthorityWriteCustody.fromRoute(route);
@@ -510,8 +510,8 @@ class PostgresDataAuthorityIntegrationTest {
     void writerClaimReceiptRejectsSupersededOwnerBeforeNextWrite() {
         PostgresAuthorityPartitionEpochStore epochStore = new PostgresAuthorityPartitionEpochStore(adapter);
         UUID playerId = UUID.randomUUID();
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:" + playerId
         );
         AuthorityWriteCustody custody = AuthorityWriteCustody.fromRoute(route);
@@ -1319,7 +1319,7 @@ class PostgresDataAuthorityIntegrationTest {
                         "writerLane", "terminalOutcome");
                 assertThat(rows.getString("guard_evidence_fingerprint")).matches("[0-9a-f]{64}");
                 AuthorityCommandLane expectedLane = AuthorityCommandLane.fromRoute(
-                    AuthorityCommandRoute.from(DataAuthority.CommandType.GRANT_RANK, "rank:player:" + playerId),
+                    AuthorityCommandRoute.fromDeclarationId("GRANT_RANK", "rank:player:" + playerId),
                     AuthorityCommandLane.DEFAULT_LANE_COUNT
                 );
                 assertThat(rows.getInt("writer_lane_count")).isEqualTo(expectedLane.laneCount());
@@ -1433,7 +1433,7 @@ class PostgresDataAuthorityIntegrationTest {
         wire.put("schemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
         wire.put("contractFingerprint", DataAuthorityCommandContracts.fingerprint());
         wire.put("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
-        wire.put("route", AuthorityCommandRoute.from(DataAuthority.CommandType.GRANT_RANK,
+        wire.put("route", AuthorityCommandRoute.fromDeclarationId("GRANT_RANK",
             "rank:player:" + scopedPlayerId).payload());
         wire.put("payload", Map.of(
             "playerId", payloadPlayerId.toString(),

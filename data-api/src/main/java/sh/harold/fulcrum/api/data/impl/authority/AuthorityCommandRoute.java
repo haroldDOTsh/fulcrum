@@ -42,11 +42,6 @@ record AuthorityCommandRoute(
         return fromDeclarationId(contract.declarationId(), command.scope());
     }
 
-    static AuthorityCommandRoute from(DataAuthority.CommandType type, String scope) {
-        DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contract(type);
-        return fromDeclarationId(contract.declarationId(), scope);
-    }
-
     static AuthorityCommandRoute fromDeclarationId(String declarationId, String scope) {
         return AuthorityDomainDeclarations.route(declarationId, scope);
     }

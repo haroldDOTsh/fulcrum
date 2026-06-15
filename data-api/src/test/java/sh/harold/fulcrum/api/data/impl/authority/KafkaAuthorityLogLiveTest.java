@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
-import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
 import java.time.Duration;
 import java.util.List;
@@ -38,8 +37,8 @@ class KafkaAuthorityLogLiveTest {
                 validateTopologyEventually(log);
 
                 UUID playerId = UUID.randomUUID();
-                AuthorityCommandRoute route = AuthorityCommandRoute.from(
-                    DataAuthority.CommandType.GRANT_RANK,
+                AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+                    "GRANT_RANK",
                     "rank:player:" + playerId
                 );
 

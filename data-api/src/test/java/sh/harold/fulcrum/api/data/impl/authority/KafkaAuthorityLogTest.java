@@ -37,8 +37,8 @@ class KafkaAuthorityLogTest {
             AuthorityLogTopology.policiesByTopic(),
             Duration.ofSeconds(1)
         );
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:" + UUID.randomUUID()
         );
 

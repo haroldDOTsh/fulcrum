@@ -138,8 +138,8 @@ class AuthorityStateProjectionWorkerTest {
         UUID playerId = UUID.randomUUID();
         String partitionKey = "rank:player:" + playerId;
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            sh.harold.fulcrum.api.data.authority.DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             partitionKey
         );
         log.append(route, AuthorityLogTopicKind.STATE, statePayload(playerId, partitionKey, 1L));

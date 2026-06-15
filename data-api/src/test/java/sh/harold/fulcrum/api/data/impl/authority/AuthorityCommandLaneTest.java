@@ -1,7 +1,6 @@
 package sh.harold.fulcrum.api.data.impl.authority;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
 import java.util.UUID;
 
@@ -11,8 +10,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AuthorityCommandLaneTest {
     @Test
     void assignsSameAggregateToSameLane() {
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:00000000-0000-0000-0000-000000000001"
         );
 
@@ -30,8 +29,8 @@ class AuthorityCommandLaneTest {
 
     @Test
     void keepsLaneStableForKnownRoute() {
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "RECORD_PLAYER_LOGIN",
             "player:00000000-0000-0000-0000-000000000002"
         );
 
@@ -70,12 +69,12 @@ class AuthorityCommandLaneTest {
     @Test
     void rankLegacyPlayerScopeUsesNormalizedPartitionForLane() {
         UUID playerId = UUID.randomUUID();
-        AuthorityCommandRoute canonical = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute canonical = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:" + playerId
         );
-        AuthorityCommandRoute legacy = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.REVOKE_RANK,
+        AuthorityCommandRoute legacy = AuthorityCommandRoute.fromDeclarationId(
+            "REVOKE_RANK",
             "player:" + playerId
         );
 
@@ -85,8 +84,8 @@ class AuthorityCommandLaneTest {
 
     @Test
     void rejectsInvalidLaneCount() {
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.RECORD_MATCH_START,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "RECORD_MATCH_START",
             "match:00000000-0000-0000-0000-000000000004"
         );
 

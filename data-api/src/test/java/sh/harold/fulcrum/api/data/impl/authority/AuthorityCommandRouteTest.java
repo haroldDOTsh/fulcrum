@@ -56,18 +56,12 @@ class AuthorityCommandRouteTest {
         assertThat(methodSlice(
             source,
             "static AuthorityCommandRoute fromCommand",
-            "static AuthorityCommandRoute from(DataAuthority.CommandType type"
+            "static AuthorityCommandRoute fromDeclarationId"
         ))
             .contains("DataAuthorityCommandContracts.contract(command.type())")
             .contains("fromDeclarationId(contract.declarationId(), command.scope())")
             .doesNotContain("from(command.type(), command.scope())");
-        assertThat(methodSlice(
-            source,
-            "static AuthorityCommandRoute from(DataAuthority.CommandType type",
-            "static AuthorityCommandRoute fromDeclarationId"
-        ))
-            .contains("DataAuthorityCommandContracts.contract(type)")
-            .contains("fromDeclarationId(contract.declarationId(), scope)");
+        assertThat(source).doesNotContain("static AuthorityCommandRoute from(DataAuthority.CommandType type");
     }
 
     @Test

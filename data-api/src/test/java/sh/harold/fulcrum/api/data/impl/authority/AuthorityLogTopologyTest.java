@@ -1,7 +1,6 @@
 package sh.harold.fulcrum.api.data.impl.authority;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -52,8 +51,8 @@ class AuthorityLogTopologyTest {
     @Test
     void appendsUseAggregateKeyAndCustodyPartition() {
         UUID playerId = UUID.randomUUID();
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:" + playerId
         );
         AuthorityWriteCustody custody = AuthorityWriteCustody.fromRoute(route);
@@ -76,12 +75,12 @@ class AuthorityLogTopologyTest {
     void compactedStateTopicKeepsLatestRecordPerAggregateKey() {
         UUID firstPlayerId = UUID.randomUUID();
         UUID secondPlayerId = UUID.randomUUID();
-        AuthorityCommandRoute firstRoute = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute firstRoute = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:" + firstPlayerId
         );
-        AuthorityCommandRoute secondRoute = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute secondRoute = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:" + secondPlayerId
         );
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();

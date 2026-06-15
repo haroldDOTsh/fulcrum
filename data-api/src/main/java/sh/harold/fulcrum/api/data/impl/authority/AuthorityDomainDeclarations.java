@@ -56,10 +56,6 @@ final class AuthorityDomainDeclarations {
         return route(command, command.aggregateScopePrefix() + "{aggregateId}");
     }
 
-    static AuthorityCommandRoute route(DataAuthority.CommandType type, String scope) {
-        return route(command(type), scope);
-    }
-
     static AuthorityCommandRoute route(String declarationId, String scope) {
         return route(command(declarationId), scope);
     }
