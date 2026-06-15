@@ -245,24 +245,15 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         }
 
         Map<?, ?> payload = commandPayload(event);
-        boolean online = switch (eventType) {
-            case "RECORD_PLAYER_LOGIN" -> true;
-            case "RECORD_PLAYER_LOGOUT" -> false;
-            default -> throw new IllegalArgumentException("Unsupported profile event type " + eventType);
-        };
+        requireProfileEvent(eventType);
         String username = boundedUsername(string(payload.get("username"), current == null ? UNKNOWN : current.username()));
         String normalizedUsername = username.toLowerCase(Locale.ROOT);
-        String currentServer = online ? string(payload.get("currentServer"), null) : null;
-        String currentProxy = online ? string(payload.get("currentProxy"), null) : null;
         long totalPlaytimeMs = current == null ? 0L : current.totalPlaytimeMs();
         Map<String, Object> profileData = mergeProfileData(current, payload);
         return profilePayload(
             playerId,
             username,
             normalizedUsername,
-            online,
-            currentServer,
-            currentProxy,
             totalPlaytimeMs,
             profileData,
             event.revision()
@@ -524,11 +515,11 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
             playerId,
             username,
             string(payload.get("normalizedUsername"), username.toLowerCase(Locale.ROOT)),
-            booleanValue(payload.get("online")),
-            string(payload.get("currentServer"), null),
-            string(payload.get("currentProxy"), null),
+            false,
+            null,
+            null,
             longValue(payload.get("totalPlaytimeMs"), 0L),
-            stringObjectMap(payload.get("profileData")),
+            profileData(payload.get("profileData")),
             longValue(payload.get("revision"), row.getLong("revision")),
             watermark(row)
         );
@@ -594,9 +585,6 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         UUID playerId,
         String username,
         String normalizedUsername,
-        boolean online,
-        String currentServer,
-        String currentProxy,
         long totalPlaytimeMs,
         Map<String, Object> profileData,
         long revision
@@ -605,9 +593,6 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         values.put("playerId", playerId.toString());
         values.put("username", username);
         values.put("normalizedUsername", normalizedUsername);
-        values.put("online", online);
-        values.put("currentServer", currentServer);
-        values.put("currentProxy", currentProxy);
         values.put("totalPlaytimeMs", totalPlaytimeMs);
         values.put("profileData", profileData == null ? Map.of() : profileData);
         values.put("revision", revision);
@@ -619,9 +604,6 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
             snapshot.playerId(),
             snapshot.username(),
             snapshot.normalizedUsername(),
-            snapshot.online(),
-            snapshot.currentServer(),
-            snapshot.currentProxy(),
             snapshot.totalPlaytimeMs(),
             snapshot.profileData(),
             snapshot.revision()
@@ -713,14 +695,42 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
     ) {
         Map<String, Object> merged = new LinkedHashMap<>();
         if (current != null) {
-            merged.putAll(current.profileData());
+            current.profileData().forEach((key, value) -> {
+                if (!profilePresenceKey(key)) {
+                    merged.put(key, value);
+                }
+            });
         }
         payload.forEach((key, value) -> {
-            if (key != null && value != null) {
+            if (key != null && value != null && !profilePresenceKey(key.toString())) {
                 merged.put(key.toString(), value);
             }
         });
         return Map.copyOf(merged);
+    }
+
+    private static void requireProfileEvent(String eventType) {
+        if (!PROFILE_EVENT_TYPES.contains(eventType)) {
+            throw new IllegalArgumentException("Unsupported profile event type " + eventType);
+        }
+    }
+
+    private static boolean profilePresenceKey(String key) {
+        return "online".equals(key) || "currentServer".equals(key) || "currentProxy".equals(key);
+    }
+
+    private static Map<String, Object> profileData(Object value) {
+        Map<String, Object> raw = stringObjectMap(value);
+        if (raw.isEmpty()) {
+            return raw;
+        }
+        Map<String, Object> filtered = new LinkedHashMap<>();
+        raw.forEach((key, field) -> {
+            if (!profilePresenceKey(key)) {
+                filtered.put(key, field);
+            }
+        });
+        return Map.copyOf(filtered);
     }
 
     private UUID playerId(AuthorityStateRecord record) {

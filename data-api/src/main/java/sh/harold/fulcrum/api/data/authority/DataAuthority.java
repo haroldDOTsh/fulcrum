@@ -1314,6 +1314,9 @@ public final class DataAuthority {
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
             }
+            if (currentServer != null || currentProxy != null) {
+                throw new IllegalArgumentException("profile commands must not carry presence routing fields");
+            }
             username = username == null ? "unknown" : username;
         }
 

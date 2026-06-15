@@ -73,9 +73,6 @@ public final class AuthoritySnapshotCacheCodec {
         payload.put("playerId", snapshot.playerId().toString());
         payload.put("username", snapshot.username());
         payload.put("normalizedUsername", snapshot.normalizedUsername());
-        payload.put("online", snapshot.online());
-        payload.put("currentServer", snapshot.currentServer());
-        payload.put("currentProxy", snapshot.currentProxy());
         payload.put("totalPlaytimeMs", snapshot.totalPlaytimeMs());
         payload.put("profileData", snapshot.profileData());
         payload.put("revision", snapshot.revision());
@@ -161,11 +158,11 @@ public final class AuthoritySnapshotCacheCodec {
             playerId,
             username,
             string(payload.get("normalizedUsername"), username.toLowerCase(Locale.ROOT)),
-            booleanValue(payload.get("online")),
-            string(payload.get("currentServer"), null),
-            string(payload.get("currentProxy"), null),
+            false,
+            null,
+            null,
             longValue(payload.get("totalPlaytimeMs"), 0L),
-            stringObjectMap(payload.get("profileData")),
+            profileData(payload.get("profileData")),
             longValue(first(payload.get("revision"), safeFields.get("revision")), 0L),
             watermark(safeFields)
         ));
@@ -427,5 +424,23 @@ public final class AuthoritySnapshotCacheCodec {
             }
         });
         return Map.copyOf(result);
+    }
+
+    private static Map<String, Object> profileData(Object value) {
+        Map<String, Object> raw = stringObjectMap(value);
+        if (raw.isEmpty()) {
+            return raw;
+        }
+        Map<String, Object> filtered = new LinkedHashMap<>();
+        raw.forEach((key, child) -> {
+            if (!profilePresenceKey(key)) {
+                filtered.put(key, child);
+            }
+        });
+        return Map.copyOf(filtered);
+    }
+
+    private static boolean profilePresenceKey(String key) {
+        return "online".equals(key) || "currentServer".equals(key) || "currentProxy".equals(key);
     }
 }

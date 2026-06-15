@@ -116,9 +116,8 @@ final class AuthorityDomainDeclarations {
             "player_profile",
             Set.of("playerId", "username", "timestamp"),
             Set.of(
-                "playerId", "subjectId", "username", "timestamp", "online", "currentServer", "currentProxy",
-                "lastIp", "lastWorld", "lastLocation", "gamemode", "level", "exp", "health",
-                "foodLevel", "playtimeStartField"
+                "playerId", "subjectId", "username", "timestamp", "lastIp", "lastWorld", "lastLocation",
+                "gamemode", "level", "exp", "health", "foodLevel", "playtimeStartField"
             ),
             AuthorityCommandPayloads::profilePayload,
             AuthorityCommandPayloads::profileCommand

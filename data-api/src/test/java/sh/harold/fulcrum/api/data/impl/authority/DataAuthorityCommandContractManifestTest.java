@@ -77,6 +77,35 @@ class DataAuthorityCommandContractManifestTest {
     }
 
     @Test
+    void profileContractsDoNotExposePresenceFields() {
+        java.util.Set<String> presenceFields = java.util.Set.of("online", "currentServer", "currentProxy");
+
+        for (String declarationId : List.of("RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT")) {
+            assertThat(CONTRACTS.get(declarationId).allowedPayloadFields())
+                .as(declarationId + " profile payload fields")
+                .doesNotContainAnyElementsOf(presenceFields);
+            assertThat(AuthorityCommandPayloads.payload(sampleCommand(declarationId)))
+                .as(declarationId + " serialized profile payload")
+                .doesNotContainKeys("online", "currentServer", "currentProxy");
+        }
+        assertThat(CONTRACTS.get("START_SESSION").allowedPayloadFields())
+            .as("session owns live presence fields")
+            .containsAll(presenceFields);
+    }
+
+    @Test
+    void profilePayloadDecoderRejectsPresenceFields() {
+        DataAuthority.AuthorityCommand command = sampleCommand("RECORD_PLAYER_LOGIN");
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(AuthorityCommandPayloads.payload(command));
+        payload.put("currentServer", "lobby");
+
+        assertThatThrownBy(() -> AuthorityDomainDeclarations.command("RECORD_PLAYER_LOGIN")
+            .payloadDecoder()
+            .apply(command.manifest(), payload))
+            .hasMessageContaining("profile payload must not carry presence field currentServer");
+    }
+
+    @Test
     void contractManifestClassifiesSyncAndAsyncCommands() {
         assertThat(CONTRACTS.get("RECORD_PLAYER_LOGIN").deliveryMode())
             .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.ASYNC_DURABLE);
@@ -334,8 +363,8 @@ class DataAuthorityCommandContractManifestTest {
                 playerId,
                 "ContractUser",
                 now,
-                "lobby-1",
-                "proxy-1",
+                null,
+                null,
                 "127.0.0.1",
                 "world",
                 "0,64,0",

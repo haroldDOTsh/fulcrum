@@ -25,9 +25,6 @@ final class AuthorityCommandPayloads {
             .put("subjectId", profile.subject().subjectId().toString())
             .put("username", profile.username())
             .put("timestamp", profile.timestampEpochMillis())
-            .put("online", "RECORD_PLAYER_LOGIN".equals(profile.declarationId()))
-            .put("currentServer", profile.currentServer())
-            .put("currentProxy", profile.currentProxy())
             .put("lastIp", profile.lastIp())
             .put("lastWorld", profile.lastWorld())
             .put("lastLocation", profile.lastLocation())
@@ -44,6 +41,7 @@ final class AuthorityCommandPayloads {
         DataAuthority.CommandManifest manifest,
         Map<String, Object> payload
     ) {
+        rejectProfilePresencePayload(payload);
         return new DataAuthority.PlayerProfileCommand(
             manifest,
             uuid(payload.get("playerId")),
@@ -61,6 +59,14 @@ final class AuthorityCommandPayloads {
             nullableInt(payload.get("foodLevel")),
             string(payload.get("playtimeStartField"))
         );
+    }
+
+    private static void rejectProfilePresencePayload(Map<String, Object> payload) {
+        for (String key : List.of("online", "currentServer", "currentProxy")) {
+            if (payload.containsKey(key)) {
+                throw new IllegalArgumentException("profile payload must not carry presence field " + key);
+            }
+        }
     }
 
     static Map<String, Object> sessionPayload(DataAuthority.AuthorityCommand command) {

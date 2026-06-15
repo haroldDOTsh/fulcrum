@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthorityCommandsTest {
     @Test
@@ -62,6 +63,17 @@ class AuthorityCommandsTest {
         assertThat(logout.scope()).isEqualTo("player:" + playerId);
         assertThat(logout.declarationId()).isEqualTo("RECORD_PLAYER_LOGOUT");
         assertThat(logout.playtimeStartField()).isEqualTo("lastJoin");
+    }
+
+    @Test
+    void playerProfileCommandsRejectPresenceRoutingFields() {
+        UUID playerId = UUID.fromString("22222222-2222-2222-2222-222222222222");
+
+        assertThatThrownBy(() -> AuthorityCommands.actor("paper-runtime")
+            .player(playerId)
+            .recordLogin("Richa", 2_000L, "lobby", "proxy-a", null, null, null, null,
+                null, null, null, null))
+            .hasMessageContaining("presence routing");
     }
 
     @Test

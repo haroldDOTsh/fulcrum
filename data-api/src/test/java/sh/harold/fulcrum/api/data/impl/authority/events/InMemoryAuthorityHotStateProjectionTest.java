@@ -330,9 +330,11 @@ class InMemoryAuthorityHotStateProjectionTest {
         assertThat(read.satisfied()).isTrue();
         assertThat(read.snapshot()).hasValueSatisfying(snapshot -> {
             assertThat(snapshot.username()).isEqualTo("Richa");
-            assertThat(snapshot.online()).isTrue();
-            assertThat(snapshot.currentServer()).isEqualTo("lobby");
+            assertThat(snapshot.online()).isFalse();
+            assertThat(snapshot.currentServer()).isNull();
+            assertThat(snapshot.currentProxy()).isNull();
             assertThat(snapshot.profileData()).containsEntry("lastWorld", "spawn");
+            assertThat(snapshot.profileData()).doesNotContainKeys("online", "currentServer", "currentProxy");
             assertThat(snapshot.watermark().commandDomain()).isEqualTo("player");
             assertThat(snapshot.watermark().stateTopic()).isEqualTo("state.player");
             assertThat(snapshot.watermark().sourcePartition()).isEqualTo(record.sourcePartition());

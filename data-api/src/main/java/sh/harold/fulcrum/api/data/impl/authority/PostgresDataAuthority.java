@@ -236,7 +236,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                         null,
                         null,
                         resultSet.getLong("total_playtime_ms"),
-                        jsonMap(resultSet.getString("profile_data")),
+                        profileDataMap(resultSet.getString("profile_data")),
                         revision,
                         snapshotWatermark(
                             resultSet,
@@ -322,7 +322,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                             null,
                             null,
                             resultSet.getLong("total_playtime_ms"),
-                            jsonMap(resultSet.getString("profile_data")),
+                            profileDataMap(resultSet.getString("profile_data")),
                             profileRevision,
                             watermark
                         ));
@@ -1644,6 +1644,24 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         return result;
     }
 
+    private Map<String, Object> profileDataMap(String json) {
+        Map<String, Object> profileData = jsonMap(json);
+        if (profileData.isEmpty()) {
+            return profileData;
+        }
+        Map<String, Object> filtered = new LinkedHashMap<>();
+        profileData.forEach((key, value) -> {
+            if (!profilePresenceKey(key)) {
+                filtered.put(key, value);
+            }
+        });
+        return Map.copyOf(filtered);
+    }
+
+    private static boolean profilePresenceKey(String key) {
+        return "online".equals(key) || "currentServer".equals(key) || "currentProxy".equals(key);
+    }
+
     private static List<String> arrayToStrings(java.sql.Array array) throws SQLException {
         if (array == null) {
             return List.of();
@@ -1883,14 +1901,10 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" -> {
                 UUID playerId = playerId(command);
                 String username = string(payload, "username", "unknown");
-                boolean online = "RECORD_PLAYER_LOGIN".equals(command.declarationId());
                 Map<String, Object> state = new LinkedHashMap<>();
                 state.put("playerId", playerId == null ? null : playerId.toString());
                 state.put("username", username);
                 state.put("normalizedUsername", username.toLowerCase(Locale.ROOT));
-                state.put("online", online);
-                state.put("currentServer", online ? string(payload, "currentServer", null) : null);
-                state.put("currentProxy", online ? string(payload, "currentProxy", null) : null);
                 state.put("totalPlaytimeMs", 0L);
                 state.put("profileData", payload);
                 state.put("revision", result.revision());
@@ -1961,11 +1975,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 state.put("playerId", resultSet.getObject("player_id", UUID.class).toString());
                 state.put("username", resultSet.getString("username"));
                 state.put("normalizedUsername", resultSet.getString("normalized_username"));
-                state.put("online", false);
-                state.put("currentServer", null);
-                state.put("currentProxy", null);
                 state.put("totalPlaytimeMs", resultSet.getLong("total_playtime_ms"));
-                state.put("profileData", jsonMap(resultSet.getString("profile_data")));
+                state.put("profileData", profileDataMap(resultSet.getString("profile_data")));
                 state.put("revision", resultSet.getLong("revision"));
                 return state;
             }
