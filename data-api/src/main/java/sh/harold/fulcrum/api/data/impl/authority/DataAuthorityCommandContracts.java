@@ -94,42 +94,6 @@ public final class DataAuthorityCommandContracts {
         return COMMAND_TOPICS;
     }
 
-    public static Map<String, Object> routePayload(DataAuthority.AuthorityCommand command) {
-        Objects.requireNonNull(command, "command");
-        validate(command);
-        CommandContract contract = contract(command.type());
-        return AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope()).payload();
-    }
-
-    public static void validateRouteManifest(
-        DataAuthority.CommandType type,
-        String scope,
-        Map<?, ?> rawRoute,
-        String receivedRouteManifestFingerprint
-    ) {
-        String actualFingerprint = receivedRouteManifestFingerprint == null
-            ? ""
-            : receivedRouteManifestFingerprint;
-        if (!ROUTE_MANIFEST_FINGERPRINT.equals(actualFingerprint)) {
-            throw new IllegalArgumentException(
-                "Authority command route manifest fingerprint mismatch: expected "
-                    + shortFingerprint(ROUTE_MANIFEST_FINGERPRINT)
-                    + " but received " + shortFingerprint(actualFingerprint)
-            );
-        }
-        if (rawRoute == null || rawRoute.isEmpty()) {
-            throw new IllegalArgumentException("Command " + type + " route manifest is required");
-        }
-        requireRouteField(type, rawRoute, "domain");
-        requireRouteField(type, rawRoute, "commandTopic");
-        requireRouteField(type, rawRoute, "responseTopic");
-        requireRouteField(type, rawRoute, "eventTopic");
-        requireRouteField(type, rawRoute, "stateTopic");
-        requireRouteField(type, rawRoute, "partitionKey");
-        CommandContract contract = contract(type);
-        validateRoute(type, scope, AuthorityCommandRoute.fromPayload(rawRoute, contract.declarationId(), scope));
-    }
-
     public static void validate(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
         CommandContract contract = contract(command.type());
@@ -526,20 +490,6 @@ public final class DataAuthorityCommandContracts {
                     .commandTopic());
             });
         return Set.copyOf(values);
-    }
-
-    private static void requireRouteField(DataAuthority.CommandType type, Map<?, ?> rawRoute, String field) {
-        Object value = rawRoute.get(field);
-        if (value == null || value.toString().isBlank()) {
-            throw new IllegalArgumentException("Command " + type + " route manifest is missing " + field);
-        }
-    }
-
-    private static String shortFingerprint(String fingerprint) {
-        if (fingerprint == null || fingerprint.isBlank()) {
-            return "missing";
-        }
-        return fingerprint.length() <= 12 ? fingerprint : fingerprint.substring(0, 12);
     }
 
     public enum CommandDeliveryMode {
