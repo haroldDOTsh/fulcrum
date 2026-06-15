@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 final class AuthorityDomainDeclarations {
@@ -117,7 +119,9 @@ final class AuthorityDomainDeclarations {
                 "playerId", "username", "timestamp", "online", "currentServer", "currentProxy",
                 "lastIp", "lastWorld", "lastLocation", "gamemode", "level", "exp", "health",
                 "foodLevel", "playtimeStartField"
-            )
+            ),
+            AuthorityCommandPayloads::profilePayload,
+            AuthorityCommandPayloads::profileCommand
         );
     }
 
@@ -137,7 +141,9 @@ final class AuthorityDomainDeclarations {
                 "playerId", "username", "sessionId", "timestamp", "online", "currentServer",
                 "currentProxy", "lastIp", "protocolVersion", "disconnectReason",
                 "lastProxySession", "lastServerSwitch", "playtimeStartField", "clearCurrentServer"
-            )
+            ),
+            AuthorityCommandPayloads::sessionPayload,
+            AuthorityCommandPayloads::sessionCommand
         );
     }
 
@@ -153,7 +159,9 @@ final class AuthorityDomainDeclarations {
             "playerId",
             "player_rank",
             Set.of("playerId", "primaryRank", "ranks"),
-            Set.of("playerId", "primaryRank", "ranks")
+            Set.of("playerId", "primaryRank", "ranks"),
+            AuthorityCommandPayloads::rankPayload,
+            AuthorityCommandPayloads::rankCommand
         );
     }
 
@@ -172,7 +180,9 @@ final class AuthorityDomainDeclarations {
             Set.of(
                 "matchId", "familyId", "mapId", "serverId", "slotId", "state",
                 "startedAt", "endedAt", "slotMetadata", "variant", "targetWorld", "participants"
-            )
+            ),
+            AuthorityCommandPayloads::matchPayload,
+            AuthorityCommandPayloads::matchCommand
         );
     }
 
@@ -253,7 +263,9 @@ final class AuthorityDomainDeclarations {
         String aggregateIdField,
         String projectionFamily,
         Set<String> requiredPayloadFields,
-        Set<String> allowedPayloadFields
+        Set<String> allowedPayloadFields,
+        Function<DataAuthority.AuthorityCommand, Map<String, Object>> payloadEncoder,
+        BiFunction<DataAuthority.CommandManifest, Map<String, Object>, DataAuthority.AuthorityCommand> payloadDecoder
     ) {
         CommandDeclaration {
             declarationId = requireText(declarationId, "declarationId");
@@ -273,6 +285,39 @@ final class AuthorityDomainDeclarations {
             if (!allowedPayloadFields.containsAll(requiredPayloadFields)) {
                 throw new IllegalArgumentException(declarationId + " required fields must be allowed fields");
             }
+            payloadEncoder = Objects.requireNonNull(payloadEncoder, "payloadEncoder");
+            payloadDecoder = Objects.requireNonNull(payloadDecoder, "payloadDecoder");
+        }
+
+        Map<String, Object> payload(DataAuthority.AuthorityCommand command) {
+            if (!commandClass.isInstance(command)) {
+                throw new IllegalArgumentException(
+                    "Command " + declarationId + " must be " + commandClass.getSimpleName()
+                );
+            }
+            return payloadEncoder.apply(command);
+        }
+
+        DataAuthority.AuthorityCommand toCommand(
+            DataAuthority.CommandManifest manifest,
+            Map<String, Object> payload
+        ) {
+            Objects.requireNonNull(manifest, "manifest");
+            if (!declarationId.equals(manifest.declarationId())) {
+                throw new IllegalArgumentException(
+                    "Command manifest declares " + manifest.declarationId() + " not " + declarationId
+                );
+            }
+            DataAuthority.AuthorityCommand command = payloadDecoder.apply(
+                manifest,
+                payload == null ? Map.of() : Map.copyOf(payload)
+            );
+            if (!commandClass.isInstance(command)) {
+                throw new IllegalStateException(
+                    "Command decoder for " + declarationId + " produced " + command.getClass().getName()
+                );
+            }
+            return command;
         }
 
     }

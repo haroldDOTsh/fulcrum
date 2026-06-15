@@ -2,9 +2,7 @@ package sh.harold.fulcrum.api.data.impl.authority;
 
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -119,57 +117,8 @@ record AuthorityCommandFrame(
             schemaVersion,
             provenance
         );
-        DataAuthority.AuthorityCommand command = switch (commandDeclarationId) {
-            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" -> new DataAuthority.PlayerProfileCommand(
-                manifest,
-                uuid(payload.get("playerId")),
-                string(payload.get("username")),
-                longValue(payload.get("timestamp"), System.currentTimeMillis()),
-                string(payload.get("currentServer")),
-                string(payload.get("currentProxy")),
-                string(payload.get("lastIp")),
-                string(payload.get("lastWorld")),
-                string(payload.get("lastLocation")),
-                string(payload.get("gamemode")),
-                nullableInt(payload.get("level")),
-                nullableFloat(payload.get("exp")),
-                nullableDouble(payload.get("health")),
-                nullableInt(payload.get("foodLevel")),
-                string(payload.get("playtimeStartField"))
-            );
-            case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> new DataAuthority.PlayerSessionCommand(
-                manifest,
-                uuid(payload.get("playerId")),
-                string(payload.get("username")),
-                nullableUuid(payload.get("sessionId")),
-                longValue(payload.get("timestamp"), System.currentTimeMillis()),
-                string(payload.get("currentServer")),
-                string(payload.get("currentProxy")),
-                string(payload.get("lastIp")),
-                nullableInt(payload.get("protocolVersion")),
-                string(payload.get("disconnectReason"))
-            );
-            case "GRANT_RANK", "REVOKE_RANK" -> new DataAuthority.PlayerRankCommand(
-                manifest,
-                uuid(payload.get("playerId")),
-                string(payload.get("primaryRank")),
-                stringList(payload.get("ranks"))
-            );
-            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> new DataAuthority.MatchCommand(
-                manifest,
-                uuid(payload.get("matchId")),
-                string(payload.get("familyId")),
-                string(payload.get("mapId")),
-                string(payload.get("serverId")),
-                string(payload.get("slotId")),
-                string(payload.get("state")),
-                nullableLong(payload.get("startedAt")),
-                nullableLong(payload.get("endedAt")),
-                stringObjectMap(mapValue(payload.get("slotMetadata"))),
-                participants(payload.get("participants"))
-            );
-            default -> throw new IllegalArgumentException("Unsupported authority command declaration: " + commandDeclarationId);
-        };
+        DataAuthority.AuthorityCommand command =
+            AuthorityDomainDeclarations.command(commandDeclarationId).toCommand(manifest, payload);
         DataAuthorityCommandContracts.validate(command);
         return command;
     }
@@ -184,56 +133,8 @@ record AuthorityCommandFrame(
         );
     }
 
-    private static List<DataAuthority.MatchParticipant> participants(Object rawParticipants) {
-        if (!(rawParticipants instanceof Iterable<?> rawValues)) {
-            return List.of();
-        }
-        List<DataAuthority.MatchParticipant> participants = new ArrayList<>();
-        for (Object raw : rawValues) {
-            Map<String, Object> values = stringObjectMap(mapValue(raw));
-            Object rawPlayerId = values.get("playerId");
-            if (rawPlayerId == null) {
-                continue;
-            }
-            participants.add(new DataAuthority.MatchParticipant(
-                uuid(rawPlayerId),
-                string(values.get("teamId")),
-                nullableInt(values.get("placement")),
-                string(values.get("state")),
-                stringObjectMap(mapValue(values.get("stats")))
-            ));
-        }
-        return participants;
-    }
-
     private static Map<?, ?> mapValue(Object value) {
         return value instanceof Map<?, ?> map ? map : Map.of();
-    }
-
-    private static Map<String, Object> stringObjectMap(Map<?, ?> raw) {
-        if (raw == null || raw.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        raw.forEach((key, value) -> {
-            if (key != null) {
-                result.put(key.toString(), value);
-            }
-        });
-        return result;
-    }
-
-    private static List<String> stringList(Object value) {
-        if (!(value instanceof Iterable<?> values)) {
-            return List.of();
-        }
-        List<String> result = new ArrayList<>();
-        for (Object item : values) {
-            if (item != null) {
-                result.add(item.toString());
-            }
-        }
-        return result;
     }
 
     private static UUID uuid(Object value) {
@@ -246,10 +147,6 @@ record AuthorityCommandFrame(
         return UUID.fromString(value.toString());
     }
 
-    private static UUID nullableUuid(Object value) {
-        return value == null || value.toString().isBlank() ? null : uuid(value);
-    }
-
     private static long longValue(Object value, long fallback) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -257,33 +154,11 @@ record AuthorityCommandFrame(
         return value == null ? fallback : Long.parseLong(value.toString());
     }
 
-    private static Long nullableLong(Object value) {
-        return value == null ? null : longValue(value, 0L);
-    }
-
     private static int intValue(Object value, int fallback) {
         if (value instanceof Number number) {
             return number.intValue();
         }
         return value == null ? fallback : Integer.parseInt(value.toString());
-    }
-
-    private static Integer nullableInt(Object value) {
-        return value == null ? null : intValue(value, 0);
-    }
-
-    private static Float nullableFloat(Object value) {
-        if (value instanceof Number number) {
-            return number.floatValue();
-        }
-        return value == null ? null : Float.parseFloat(value.toString());
-    }
-
-    private static Double nullableDouble(Object value) {
-        if (value instanceof Number number) {
-            return number.doubleValue();
-        }
-        return value == null ? null : Double.parseDouble(value.toString());
     }
 
     private static String string(Object value) {
