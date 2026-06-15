@@ -37,9 +37,38 @@ authority:
     interval-ms: ${AUTHORITY_EVENT_DISPATCHER_INTERVAL_MS:1000}
     batch-size: ${AUTHORITY_EVENT_DISPATCHER_BATCH_SIZE:50}
     retry-delay-ms: ${AUTHORITY_EVENT_DISPATCHER_RETRY_DELAY_MS:5000}
+  state-projection-worker:
+    enabled: ${AUTHORITY_STATE_PROJECTION_WORKER_ENABLED:true}
+    interval-ms: ${AUTHORITY_STATE_PROJECTION_WORKER_INTERVAL_MS:1000}
+    max-records-per-partition: ${AUTHORITY_STATE_PROJECTION_WORKER_MAX_RECORDS:64}
   idempotency-cache:
     enabled: ${AUTHORITY_IDEMPOTENCY_CACHE_ENABLED:true}
     ttl-seconds: ${AUTHORITY_IDEMPOTENCY_CACHE_TTL_SECONDS:86400}
+  snapshot-cache:
+    enabled: ${AUTHORITY_SNAPSHOT_CACHE_ENABLED:true}
+    ttl-seconds: ${AUTHORITY_SNAPSHOT_CACHE_TTL_SECONDS:300}
+  command-worker:
+    enabled: ${AUTHORITY_COMMAND_WORKER_ENABLED:true}
+    interval-ms: ${AUTHORITY_COMMAND_WORKER_INTERVAL_MS:100}
+    max-records-per-partition: ${AUTHORITY_COMMAND_WORKER_MAX_RECORDS:64}
+    poll-timeout-ms: ${AUTHORITY_COMMAND_WORKER_POLL_TIMEOUT_MS:250}
+    request-timeout-ms: ${AUTHORITY_COMMAND_CLIENT_TIMEOUT_MS:5000}
+  # target requires Kafka command log + Cassandra hot state + Postgres history + Valkey cache.
+  # compatibility/in-memory substrates are test fixtures only and must not pass registry startup.
+  substrate:
+    mode: ${AUTHORITY_SUBSTRATE_MODE:target}
+    command-log: ${AUTHORITY_COMMAND_LOG_SUBSTRATE:kafka}
+    hot-state: ${AUTHORITY_HOT_STATE_SUBSTRATE:cassandra}
+    history: ${AUTHORITY_HISTORY_SUBSTRATE:postgresql}
+    cache: ${AUTHORITY_CACHE_SUBSTRATE:valkey}
+    kafka:
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+      client-id: ${AUTHORITY_KAFKA_CLIENT_ID:fulcrum-authority-log}
+    cassandra:
+      contact-points: ${CASSANDRA_CONTACT_POINTS:localhost:9042}
+      local-datacenter: ${CASSANDRA_LOCAL_DATACENTER:datacenter1}
+      keyspace: ${AUTHORITY_CASSANDRA_KEYSPACE:fulcrum_authority}
+      auto-apply-schema: ${AUTHORITY_CASSANDRA_AUTO_APPLY_SCHEMA:false}
 
 # Registry settings
 registry:

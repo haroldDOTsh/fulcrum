@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
@@ -149,11 +150,23 @@ class RegistrationHandlerAuthorityDeliveryManifestTest {
             DataAuthority.COMMAND_SCHEMA_VERSION,
             DataAuthorityCommandContracts.fingerprint(),
             DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityDomainTopology.fingerprint(),
+            authorityServicesByDomain(),
+            authorityConsumerGroupsByDomain(),
+            authorityPrincipalsByDomain(),
             DataAuthorityReadContracts.schemaVersion(),
             DataAuthorityReadContracts.fingerprint(),
             commandDomainsByType(),
             commandDeliveryModesByType(),
             DataAuthorityCommandContracts.routePartitionKeyVectors(),
+            commandAuthorityServicesByType(),
+            commandConsumerGroupsByType(),
+            commandAuthorityPrincipalsByType(),
+            commandPartitionCountsByType(),
+            DataAuthorityCommandContracts.commandTopicsByType(),
+            DataAuthorityCommandContracts.responseTopicsByType(),
+            DataAuthorityCommandContracts.eventTopicsByType(),
+            DataAuthorityCommandContracts.stateTopicsByType(),
             commandLogStoresByType(),
             commandHotProjectionStoresByType(),
             commandHistoryStoresByType(),
@@ -170,6 +183,34 @@ class RegistrationHandlerAuthorityDeliveryManifestTest {
 
     private static Map<String, String> commandDeliveryModesByType() {
         return commandMetadataByType(contract -> contract.deliveryMode().name());
+    }
+
+    private static Map<String, String> authorityServicesByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityService);
+    }
+
+    private static Map<String, String> authorityConsumerGroupsByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::consumerGroup);
+    }
+
+    private static Map<String, String> authorityPrincipalsByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+    }
+
+    private static Map<String, String> commandAuthorityServicesByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::authorityService);
+    }
+
+    private static Map<String, String> commandConsumerGroupsByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::consumerGroup);
+    }
+
+    private static Map<String, String> commandAuthorityPrincipalsByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+    }
+
+    private static Map<String, String> commandPartitionCountsByType() {
+        return commandTopologyMetadataByType(topology -> Integer.toString(topology.partitionCount()));
     }
 
     private static Map<String, String> commandLogStoresByType() {
@@ -207,6 +248,29 @@ class RegistrationHandlerAuthorityDeliveryManifestTest {
         DataAuthorityCommandContracts.all().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> values.put(entry.getKey().name(), extractor.apply(entry.getValue())));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, String> commandTopologyMetadataByType(
+        Function<AuthorityDomainTopology.DomainTopology, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        DataAuthorityCommandContracts.all().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> values.put(
+                entry.getKey().name(),
+                extractor.apply(AuthorityDomainTopology.domain(entry.getValue().domain()))
+            ));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, String> domainTopologyMetadata(
+        Function<AuthorityDomainTopology.DomainTopology, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        AuthorityDomainTopology.all().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
         return Map.copyOf(values);
     }
 

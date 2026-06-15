@@ -1,25 +1,44 @@
 package sh.harold.fulcrum.registry;
 
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
 import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandConsumerCursorStore;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandScopeGuard;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityFencingCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityLog;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogCommandWorker;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogCommandWorkerLoop;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogDataAuthorityClient;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipalCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionCursorStore;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionWorker;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionWorkerLoop;
 import sh.harold.fulcrum.api.data.impl.authority.CachedAuthorityCommandPort;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCustodyPreflight;
+import sh.harold.fulcrum.api.data.impl.authority.InMemoryAuthorityLog;
+import sh.harold.fulcrum.api.data.impl.authority.KafkaAuthorityCommandWorker;
+import sh.harold.fulcrum.api.data.impl.authority.KafkaAuthorityLog;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandConsumerCursorStore;
 import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandIngressLog;
 import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandRefusalLog;
 import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityPartitionEpochStore;
+import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityStateProjectionCursorStore;
 import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityStateRestoreDrill;
 import sh.harold.fulcrum.api.data.impl.authority.PostgresDataAuthority;
 import sh.harold.fulcrum.api.data.impl.authority.PostgresLoggedAuthorityCommandPort;
-import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityEventDispatchResult;
 import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityEventDispatchTarget;
-import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityEventEnvelope;
+import sh.harold.fulcrum.api.data.impl.authority.events.CassandraAuthorityHotStateProjection;
+import sh.harold.fulcrum.api.data.impl.authority.events.CassandraAuthorityHotStateSchema;
+import sh.harold.fulcrum.api.data.impl.authority.events.FanoutAuthorityStateRestoreTarget;
+import sh.harold.fulcrum.api.data.impl.authority.events.InMemoryAuthorityHotStateProjection;
 import sh.harold.fulcrum.api.data.impl.authority.events.PostgresAuthorityEventDispatcher;
+import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityStateRestoreTarget;
 import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusDataAuthorityProvider;
 import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusWorldMapStoreProvider;
 import sh.harold.fulcrum.api.data.impl.postgres.FulcrumDataMigrations;
@@ -33,7 +52,10 @@ import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
 import sh.harold.fulcrum.registry.adapter.RegistryMessageBusAdapter;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
-import sh.harold.fulcrum.registry.authority.RedisAuthorityCommandResultCache;
+import sh.harold.fulcrum.registry.authority.AuthorityRuntimeAdmission;
+import sh.harold.fulcrum.registry.authority.AuthoritySubstratePreflight;
+import sh.harold.fulcrum.registry.authority.ValkeyAuthorityCommandResultCache;
+import sh.harold.fulcrum.registry.authority.ValkeyAuthoritySnapshotCacheProjection;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
@@ -51,6 +73,7 @@ import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 
 import java.io.InputStream;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -90,7 +113,14 @@ public class RegistryService {
     private RegistryMessageBusAdapter messageBusAdapter;
     private MessageBusConnectionConfig messageBusConnectionConfig;
     private PostgresConnectionAdapter authorityPostgres;
-    private PostgresLoggedAuthorityCommandPort authorityCommandPort;
+    private DataAuthority.CommandPort authorityCommandPort;
+    private PostgresLoggedAuthorityCommandPort postgresAuthorityCommandJournal;
+    private AuthorityLogCommandPort authorityLogCommandPort;
+    private final List<ScheduledFuture<?>> authorityCommandWorkerTasks = new ArrayList<>();
+    private final List<AutoCloseable> authorityCommandWorkerResources = new ArrayList<>();
+    private final List<ScheduledFuture<?>> authorityStateProjectionWorkerTasks = new ArrayList<>();
+    private final List<AutoCloseable> authorityStateProjectionWorkerResources = new ArrayList<>();
+    private AutoCloseable authorityLogResource;
     private PostgresAuthorityCommandIngressLog authorityCommandIngressLog;
     private PostgresAuthorityCommandRefusalLog authorityCommandRefusalLog;
     private PostgresAuthorityStateRestoreDrill authorityStateRestoreDrill;
@@ -98,6 +128,12 @@ public class RegistryService {
     private MessageBusDataAuthorityProvider dataAuthorityProvider;
     private MessageBusWorldMapStoreProvider worldMapStoreProvider;
     private PostgresAuthorityEventDispatcher authorityEventDispatcher;
+    private AuthorityEventDispatchTarget authorityHotStateProjection;
+    private AuthorityStateRestoreTarget authorityStateRestoreTarget;
+    private ValkeyAuthoritySnapshotCacheProjection authoritySnapshotCacheProjection;
+    private DataAuthority.PlayerProfileReader authorityProfileReader;
+    private DataAuthority.PlayerRankReader authorityRankReader;
+    private AutoCloseable authorityHotStateResource;
     private ScheduledFuture<?> authorityEventDispatcherTask;
     private RegistryCoordinationStore coordinationStore;
     private PostgresConnectionBudget.Report postgresConnectionBudget = PostgresConnectionBudget.empty(0);
@@ -229,6 +265,70 @@ public class RegistryService {
                     "ttl-seconds", System.getenv("AUTHORITY_IDEMPOTENCY_CACHE_TTL_SECONDS") != null
                         ? Long.parseLong(System.getenv("AUTHORITY_IDEMPOTENCY_CACHE_TTL_SECONDS"))
                         : 86_400L
+                ),
+                "snapshot-cache", Map.of(
+                    "enabled", System.getenv("AUTHORITY_SNAPSHOT_CACHE_ENABLED") != null
+                        ? Boolean.parseBoolean(System.getenv("AUTHORITY_SNAPSHOT_CACHE_ENABLED"))
+                        : true,
+                    "ttl-seconds", System.getenv("AUTHORITY_SNAPSHOT_CACHE_TTL_SECONDS") != null
+                        ? Long.parseLong(System.getenv("AUTHORITY_SNAPSHOT_CACHE_TTL_SECONDS"))
+                        : 300L
+                ),
+                "command-worker", Map.of(
+                    "enabled", System.getenv("AUTHORITY_COMMAND_WORKER_ENABLED") != null
+                        ? Boolean.parseBoolean(System.getenv("AUTHORITY_COMMAND_WORKER_ENABLED"))
+                        : true,
+                    "interval-ms", System.getenv("AUTHORITY_COMMAND_WORKER_INTERVAL_MS") != null
+                        ? Long.parseLong(System.getenv("AUTHORITY_COMMAND_WORKER_INTERVAL_MS"))
+                        : 100L,
+                    "max-records-per-partition", System.getenv("AUTHORITY_COMMAND_WORKER_MAX_RECORDS") != null
+                        ? Integer.parseInt(System.getenv("AUTHORITY_COMMAND_WORKER_MAX_RECORDS"))
+                        : 64,
+                    "poll-timeout-ms", System.getenv("AUTHORITY_COMMAND_WORKER_POLL_TIMEOUT_MS") != null
+                        ? Long.parseLong(System.getenv("AUTHORITY_COMMAND_WORKER_POLL_TIMEOUT_MS"))
+                        : 250L,
+                    "request-timeout-ms", System.getenv("AUTHORITY_COMMAND_CLIENT_TIMEOUT_MS") != null
+                        ? Long.parseLong(System.getenv("AUTHORITY_COMMAND_CLIENT_TIMEOUT_MS"))
+                        : 5_000L
+                ),
+                "substrate", Map.of(
+                    "mode", System.getenv("AUTHORITY_SUBSTRATE_MODE") != null
+                        ? System.getenv("AUTHORITY_SUBSTRATE_MODE")
+                        : "target",
+                    "command-log", System.getenv("AUTHORITY_COMMAND_LOG_SUBSTRATE") != null
+                        ? System.getenv("AUTHORITY_COMMAND_LOG_SUBSTRATE")
+                        : "kafka",
+                    "hot-state", System.getenv("AUTHORITY_HOT_STATE_SUBSTRATE") != null
+                        ? System.getenv("AUTHORITY_HOT_STATE_SUBSTRATE")
+                        : "cassandra",
+                    "history", System.getenv("AUTHORITY_HISTORY_SUBSTRATE") != null
+                        ? System.getenv("AUTHORITY_HISTORY_SUBSTRATE")
+                        : "postgresql",
+                    "cache", System.getenv("AUTHORITY_CACHE_SUBSTRATE") != null
+                        ? System.getenv("AUTHORITY_CACHE_SUBSTRATE")
+                        : "valkey",
+                    "kafka", Map.of(
+                        "bootstrap-servers", System.getenv("KAFKA_BOOTSTRAP_SERVERS") != null
+                            ? System.getenv("KAFKA_BOOTSTRAP_SERVERS")
+                            : "localhost:9092",
+                        "client-id", System.getenv("AUTHORITY_KAFKA_CLIENT_ID") != null
+                            ? System.getenv("AUTHORITY_KAFKA_CLIENT_ID")
+                            : "fulcrum-authority-log"
+                    ),
+                    "cassandra", Map.of(
+                        "contact-points", System.getenv("CASSANDRA_CONTACT_POINTS") != null
+                            ? System.getenv("CASSANDRA_CONTACT_POINTS")
+                            : "localhost:9042",
+                        "local-datacenter", System.getenv("CASSANDRA_LOCAL_DATACENTER") != null
+                            ? System.getenv("CASSANDRA_LOCAL_DATACENTER")
+                            : "datacenter1",
+                        "keyspace", System.getenv("AUTHORITY_CASSANDRA_KEYSPACE") != null
+                            ? System.getenv("AUTHORITY_CASSANDRA_KEYSPACE")
+                            : "fulcrum_authority",
+                        "auto-apply-schema", System.getenv("AUTHORITY_CASSANDRA_AUTO_APPLY_SCHEMA") != null
+                            ? Boolean.parseBoolean(System.getenv("AUTHORITY_CASSANDRA_AUTO_APPLY_SCHEMA"))
+                            : false
+                    )
                 )
             ),
             "registry", Map.of(
@@ -718,18 +818,47 @@ public class RegistryService {
         String commandContractFingerprint,
         String readContractFingerprint,
         String custodyFingerprint,
+        String substrateMode,
+        boolean substrateTargetComplete,
+        String substrateCommandLog,
+        String substrateHotState,
+        String substrateHistory,
+        String substrateCache,
+        List<String> substrateLimitations,
         List<String> checkNames,
         String disabledReason
     ) {
         AuthorityStartupState {
+            substrateMode = substrateMode == null || substrateMode.isBlank() ? "unknown" : substrateMode.trim();
+            substrateCommandLog = substrateCommandLog == null || substrateCommandLog.isBlank()
+                ? "unknown"
+                : substrateCommandLog.trim();
+            substrateHotState = substrateHotState == null || substrateHotState.isBlank()
+                ? "unknown"
+                : substrateHotState.trim();
+            substrateHistory = substrateHistory == null || substrateHistory.isBlank()
+                ? "unknown"
+                : substrateHistory.trim();
+            substrateCache = substrateCache == null || substrateCache.isBlank() ? "unknown" : substrateCache.trim();
+            substrateLimitations = substrateLimitations == null ? List.of() : List.copyOf(substrateLimitations);
             checkNames = checkNames == null ? List.of() : List.copyOf(checkNames);
             disabledReason = disabledReason == null ? "" : disabledReason.trim();
         }
 
         static AuthorityStartupState from(DataAuthorityCustodyPreflight.Report report) {
+            return from(report, null);
+        }
+
+        static AuthorityStartupState from(
+            DataAuthorityCustodyPreflight.Report report,
+            AuthoritySubstratePreflight.Report substrate
+        ) {
             if (report == null) {
                 return disabled("missing-preflight");
             }
+            AuthoritySubstratePreflight.Report safeSubstrate = substrate == null
+                ? AuthoritySubstratePreflight.inspect(Map.of())
+                : substrate;
             return new AuthorityStartupState(
                 true,
                 report.ownerNode(),
@@ -738,6 +867,13 @@ public class RegistryService {
                 report.commandContractFingerprint(),
                 report.readContractFingerprint(),
                 report.custodyFingerprint(),
+                safeSubstrate.mode(),
+                safeSubstrate.targetComplete(),
+                safeSubstrate.commandLog(),
+                safeSubstrate.hotState(),
+                safeSubstrate.history(),
+                safeSubstrate.cache(),
+                safeSubstrate.limitations(),
                 report.checks().stream()
                     .map(DataAuthorityCustodyPreflight.CheckResult::name)
                     .sorted()
@@ -755,6 +891,13 @@ public class RegistryService {
                 null,
                 null,
                 null,
+                "unknown",
+                false,
+                "unknown",
+                "unknown",
+                "unknown",
+                "unknown",
+                List.of(),
                 List.of(),
                 reason
             );
@@ -771,6 +914,13 @@ public class RegistryService {
                 + ", commandContractFingerprint=" + shortReceiptFingerprint(commandContractFingerprint)
                 + ", readContractFingerprint=" + shortReceiptFingerprint(readContractFingerprint)
                 + ", custodyFingerprint=" + custodyFingerprint
+                + ", substrate={mode=" + substrateMode
+                + ", targetComplete=" + substrateTargetComplete
+                + ", commandLog=" + substrateCommandLog
+                + ", hotState=" + substrateHotState
+                + ", history=" + substrateHistory
+                + ", cache=" + substrateCache
+                + ", limitations=" + substrateLimitations + "}"
                 + ", checks=" + checkNames + "}";
         }
     }
@@ -885,6 +1035,17 @@ public class RegistryService {
             .append(receiptString(authority.readContractFingerprint())).append('\n')
             .append("authority.custodyFingerprint=")
             .append(receiptString(authority.custodyFingerprint())).append('\n')
+            .append("authority.substrateMode=").append(receiptString(authority.substrateMode())).append('\n')
+            .append("authority.substrateTargetComplete=").append(authority.substrateTargetComplete()).append('\n')
+            .append("authority.substrateCommandLog=")
+            .append(receiptString(authority.substrateCommandLog())).append('\n')
+            .append("authority.substrateHotState=")
+            .append(receiptString(authority.substrateHotState())).append('\n')
+            .append("authority.substrateHistory=")
+            .append(receiptString(authority.substrateHistory())).append('\n')
+            .append("authority.substrateCache=")
+            .append(receiptString(authority.substrateCache())).append('\n')
+            .append("authority.substrateLimitations=").append(authority.substrateLimitations()).append('\n')
             .append("authority.checkNames=").append(authority.checkNames()).append('\n')
             .append("authority.disabledReason=").append(receiptString(authority.disabledReason())).append('\n')
             .append("dispatcher.enabled=").append(dispatcher.enabled()).append('\n')
@@ -932,6 +1093,137 @@ public class RegistryService {
         return value == null ? "" : value;
     }
 
+    private record AuthorityHotStateBinding(
+        String substrate,
+        AuthorityEventDispatchTarget dispatchTarget,
+        AuthorityStateRestoreTarget restoreTarget,
+        DataAuthority.PlayerProfileReader profileReader,
+        DataAuthority.PlayerRankReader rankReader,
+        AutoCloseable resource
+    ) {
+    }
+
+    private record AuthorityCommandLogRuntime(
+        AuthorityLog log,
+        DataAuthority.CommandPort commandPort,
+        AuthorityLogCommandPort validationPort,
+        List<AuthorityCommandWorkerRuntime> workers
+    ) {
+    }
+
+    private interface AuthorityCommandWorkerRuntime extends AutoCloseable {
+        String domain();
+
+        String workerType();
+
+        int pollOnce();
+
+        @Override
+        default void close() throws Exception {
+        }
+    }
+
+    private record PartitionLoopAuthorityCommandWorkerRuntime(
+        AuthorityLogCommandWorkerLoop loop
+    ) implements AuthorityCommandWorkerRuntime {
+        private PartitionLoopAuthorityCommandWorkerRuntime {
+            if (loop == null) {
+                throw new IllegalArgumentException("loop is required");
+            }
+        }
+
+        @Override
+        public String domain() {
+            return loop.domain();
+        }
+
+        @Override
+        public String workerType() {
+            return "partition-loop";
+        }
+
+        @Override
+        public int pollOnce() {
+            return loop.pollOnce().toCompletableFuture().join().processedCount();
+        }
+    }
+
+    private record KafkaAuthorityCommandWorkerRuntime(
+        KafkaAuthorityCommandWorker worker,
+        Duration pollTimeout
+    ) implements AuthorityCommandWorkerRuntime {
+        private KafkaAuthorityCommandWorkerRuntime {
+            if (worker == null) {
+                throw new IllegalArgumentException("worker is required");
+            }
+            pollTimeout = pollTimeout == null ? Duration.ofMillis(250L) : pollTimeout;
+        }
+
+        @Override
+        public String domain() {
+            return worker.domain();
+        }
+
+        @Override
+        public String workerType() {
+            return "kafka-consumer-group";
+        }
+
+        @Override
+        public int pollOnce() {
+            return worker.pollOnce(pollTimeout).processedCount();
+        }
+
+        @Override
+        public void close() {
+            worker.close();
+        }
+    }
+
+    private interface AuthorityStateProjectionRuntime extends AutoCloseable {
+        String projectionName();
+
+        String domain();
+
+        String workerType();
+
+        AuthorityStateProjectionWorkerLoop.PollResult pollOnce();
+
+        @Override
+        default void close() throws Exception {
+        }
+    }
+
+    private record PartitionLoopAuthorityStateProjectionRuntime(
+        AuthorityStateProjectionWorkerLoop loop
+    ) implements AuthorityStateProjectionRuntime {
+        private PartitionLoopAuthorityStateProjectionRuntime {
+            if (loop == null) {
+                throw new IllegalArgumentException("loop is required");
+            }
+        }
+
+        @Override
+        public String projectionName() {
+            return loop.projectionName();
+        }
+
+        @Override
+        public String domain() {
+            return loop.domain();
+        }
+
+        @Override
+        public String workerType() {
+            return "state-partition-loop";
+        }
+
+        @Override
+        public AuthorityStateProjectionWorkerLoop.PollResult pollOnce() {
+            return loop.pollOnce();
+        }
+    }
+
     private MessageBusDataAuthorityProvider createDataAuthorityProvider() {
         Map<String, Object> postgresConfig = (Map<String, Object>) config.get("postgres");
         Map<String, Object> authorityConfig = (Map<String, Object>) config.get("authority");
@@ -950,6 +1242,15 @@ public class RegistryService {
         }
 
         String databaseName = stringValue(postgresConfig.get("database"), "fulcrum");
+        AuthoritySubstratePreflight.Report substratePreflight =
+            AuthoritySubstratePreflight.inspect(authorityConfig, authorityActualSubstrate(authorityConfig));
+        AuthorityRuntimeAdmission.Report runtimeAdmission =
+            AuthorityRuntimeAdmission.inspect(authorityConfig);
+        if (!substratePreflight.targetComplete()) {
+            LOGGER.warn("Central data authority running on compatibility substrate: {} ({})",
+                substratePreflight.summary(),
+                String.join("; ", substratePreflight.limitations()));
+        }
         authorityPostgres = new PostgresConnectionAdapter(
             jdbcUrl(postgresConfig),
             stringValue(postgresConfig.get("username"), "fulcrum"),
@@ -964,12 +1265,32 @@ public class RegistryService {
         ));
         runAuthorityMigrations(authorityConfig, authorityPostgres);
 
-        PostgresDataAuthority dataAuthority = new PostgresDataAuthority(authorityPostgres, scheduler);
+        PostgresDataAuthority dataAuthority = PostgresDataAuthority.claimBacked(authorityPostgres, scheduler);
+        AuthorityHotStateBinding hotState = createAuthorityHotStateProjection(authorityConfig);
+        authorityHotStateProjection = hotState.dispatchTarget();
+        authorityStateRestoreTarget = hotState.restoreTarget();
+        authorityProfileReader = hotState.profileReader();
+        authorityRankReader = hotState.rankReader();
+        authorityHotStateResource = hotState.resource();
         PostgresAuthorityPartitionEpochStore epochStore = new PostgresAuthorityPartitionEpochStore(authorityPostgres);
-        authorityCommandPort = new PostgresLoggedAuthorityCommandPort(
+        PostgresAuthorityCommandConsumerCursorStore cursorStore =
+            new PostgresAuthorityCommandConsumerCursorStore(authorityPostgres);
+        cursorStore.validateSchema();
+        PostgresAuthorityStateProjectionCursorStore stateProjectionCursorStore =
+            new PostgresAuthorityStateProjectionCursorStore(authorityPostgres);
+        stateProjectionCursorStore.validateSchema();
+        postgresAuthorityCommandJournal = new PostgresLoggedAuthorityCommandPort(
             authorityPostgres,
-            createAuthorityCommandDelegate(authorityConfig, dataAuthority, epochStore)
+            createAuthorityCommandDelegate(authorityConfig, dataAuthority)
         );
+        AuthorityCommandLogRuntime commandLogRuntime = createAuthorityCommandLogRuntime(
+            authorityConfig,
+            postgresAuthorityCommandJournal,
+            epochStore,
+            cursorStore
+        );
+        authorityLogCommandPort = commandLogRuntime.validationPort();
+        authorityCommandPort = commandLogRuntime.commandPort();
         authorityCommandIngressLog = new PostgresAuthorityCommandIngressLog(authorityPostgres);
         authorityCommandRefusalLog = new PostgresAuthorityCommandRefusalLog(authorityPostgres);
         authorityStateRestoreDrill = new PostgresAuthorityStateRestoreDrill(authorityPostgres);
@@ -979,24 +1300,37 @@ public class RegistryService {
             "message-bus-provider",
             List.of(
                 DataAuthorityCustodyPreflight.check("postgres-data-authority-schema", dataAuthority::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-command-log-schema", authorityCommandPort::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-substrate-declaration",
+                    substratePreflight::requireAccepted),
+                DataAuthorityCustodyPreflight.check("authority-runtime-admission",
+                    runtimeAdmission::requireAccepted),
+                DataAuthorityCustodyPreflight.check("authority-log-topology", authorityLogCommandPort::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-command-log-schema",
+                    postgresAuthorityCommandJournal::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-state-projection-cursor-schema",
+                    stateProjectionCursorStore::validateSchema),
                 DataAuthorityCustodyPreflight.check("authority-command-ingress-schema",
                     authorityCommandIngressLog::validateSchema),
                 DataAuthorityCustodyPreflight.check("authority-command-refusal-schema",
                     authorityCommandRefusalLog::validateSchema),
                 DataAuthorityCustodyPreflight.check("authority-partition-epoch-schema", epochStore::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-state-restore-schema",
-                    authorityStateRestoreDrill::validateSchema)
+            DataAuthorityCustodyPreflight.check("authority-state-restore-schema",
+                    authorityStateRestoreDrill::validateSchema),
+                DataAuthorityCustodyPreflight.check("authority-hot-state-schema",
+                    this::validateAuthorityHotStateProjection),
+                DataAuthorityCustodyPreflight.check("authority-snapshot-cache",
+                    this::validateAuthoritySnapshotCacheProjection)
             )
         );
         LOGGER.info("Central data authority custody preflight passed: {}", custodyPreflight.summary());
-        authorityStartupState = AuthorityStartupState.from(custodyPreflight);
+        authorityStartupState = AuthorityStartupState.from(custodyPreflight, substratePreflight);
+        startAuthorityCommandWorkers(commandLogRuntime.workers(), authorityConfig);
 
         MessageBusDataAuthorityProvider provider = new MessageBusDataAuthorityProvider(
             messageBus,
             authorityCommandPort,
-            dataAuthority,
-            dataAuthority,
+            authorityProfileReader,
+            authorityRankReader,
             this::authorityBootIdentity,
             refusal -> authorityCommandRefusalLog.recordMessageBusRefusal(
                 refusal.originNode(),
@@ -1014,8 +1348,125 @@ public class RegistryService {
         );
         worldMapStoreProvider.start();
         LOGGER.info("Central world map store listening on message bus as {}", messageBusAdapter.getServerId());
-        authorityDispatcherStartupState = startAuthorityEventDispatcher(authorityConfig);
+        authorityDispatcherStartupState = startAuthorityHotStateProjectionDispatcher(
+            commandLogRuntime.log(),
+            authorityConfig,
+            stateProjectionCursorStore
+        );
         return provider;
+    }
+
+    private AuthorityHotStateBinding createAuthorityHotStateProjection(Map<String, Object> authorityConfig) {
+        Map<String, Object> substrateConfig = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("substrate", Map.of()));
+        String hotState = configuredAuthorityHotStateSubstrate(substrateConfig);
+        ValkeyAuthoritySnapshotCacheProjection snapshotCache = createAuthoritySnapshotCacheProjection(authorityConfig);
+        if ("in-memory".equals(hotState) || "memory".equals(hotState)) {
+            InMemoryAuthorityHotStateProjection projection = new InMemoryAuthorityHotStateProjection();
+            AuthorityStateRestoreTarget restoreTarget = fanoutRestoreTarget(projection, snapshotCache);
+            LOGGER.info("Central authority hot-state projection using in-memory compatibility substrate");
+            return new AuthorityHotStateBinding(
+                "in-memory",
+                projection,
+                restoreTarget,
+                projection,
+                projection,
+                snapshotCache
+            );
+        }
+        if ("cassandra".equals(hotState)) {
+            Map<String, Object> cassandraConfig = copyStringMap(
+                (Map<?, ?>) substrateConfig.getOrDefault("cassandra", Map.of())
+            );
+            String keyspace = stringValue(cassandraConfig.get("keyspace"), "fulcrum_authority");
+            CqlSession session = cassandraSession(cassandraConfig, keyspace);
+            CassandraAuthorityHotStateProjection projection =
+                new CassandraAuthorityHotStateProjection(session, keyspace);
+            try {
+                if (booleanValue(cassandraConfig.get("auto-apply-schema"), false)) {
+                    LOGGER.info("Applying Cassandra authority hot-state schema (keyspace={})", keyspace);
+                    CassandraAuthorityHotStateSchema.apply(session, keyspace);
+                }
+                projection.validateSchema();
+            } catch (RuntimeException exception) {
+                session.close();
+                if (snapshotCache != null) {
+                    snapshotCache.close();
+                }
+                throw exception;
+            }
+            AuthorityStateRestoreTarget restoreTarget = fanoutRestoreTarget(projection, snapshotCache);
+            AutoCloseable resource = snapshotCache == null
+                ? session
+                : () -> {
+                    try {
+                        session.close();
+                    } finally {
+                        snapshotCache.close();
+                    }
+                };
+            LOGGER.info("Central authority hot-state projection using Cassandra-compatible substrate (keyspace={})",
+                keyspace);
+            return new AuthorityHotStateBinding("cassandra", projection, restoreTarget, projection, projection, resource);
+        }
+        if (snapshotCache != null) {
+            snapshotCache.close();
+        }
+        throw new IllegalStateException("Unsupported authority hot-state substrate " + hotState);
+    }
+
+    private ValkeyAuthoritySnapshotCacheProjection createAuthoritySnapshotCacheProjection(
+        Map<String, Object> authorityConfig
+    ) {
+        Map<String, Object> cacheConfig = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("snapshot-cache", Map.of()));
+        boolean redisMessageBus = messageBusConnectionConfig != null
+            && messageBusConnectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS;
+        boolean enabled = booleanValue(cacheConfig.get("enabled"), redisMessageBus);
+        if (!enabled) {
+            LOGGER.info("Central authority Valkey snapshot cache disabled");
+            return null;
+        }
+        if (!redisMessageBus) {
+            throw new IllegalStateException(
+                "Central authority Valkey snapshot cache requires a Redis-compatible Valkey connection"
+            );
+        }
+
+        long ttlSeconds = longValue(cacheConfig.get("ttl-seconds"), 300L);
+        ValkeyAuthoritySnapshotCacheProjection projection = new ValkeyAuthoritySnapshotCacheProjection(
+            messageBusConnectionConfig,
+            Duration.ofSeconds(ttlSeconds)
+        );
+        authoritySnapshotCacheProjection = projection;
+        LOGGER.info(
+            "Central authority Valkey snapshot cache enabled via Redis-compatible wire protocol (ttl={}s)",
+            ttlSeconds
+        );
+        return projection;
+    }
+
+    private static AuthorityStateRestoreTarget fanoutRestoreTarget(
+        AuthorityStateRestoreTarget primary,
+        ValkeyAuthoritySnapshotCacheProjection snapshotCache
+    ) {
+        return snapshotCache == null
+            ? primary
+            : new FanoutAuthorityStateRestoreTarget(primary, List.of(snapshotCache));
+    }
+
+    private void validateAuthorityHotStateProjection() {
+        if (authorityHotStateProjection instanceof CassandraAuthorityHotStateProjection cassandraProjection) {
+            cassandraProjection.validateSchema();
+        }
+    }
+
+    private void validateAuthoritySnapshotCacheProjection() {
+        if (authoritySnapshotCacheProjection != null) {
+            authoritySnapshotCacheProjection.validateConnection();
+        }
     }
 
     private DataAuthority.AuthorityBootIdentity authorityBootIdentity() {
@@ -1034,17 +1485,415 @@ public class RegistryService {
         );
     }
 
-    private DataAuthority.CommandPort createAuthorityCommandDelegate(
+    private AuthorityCommandLogRuntime createAuthorityCommandLogRuntime(
         Map<String, Object> authorityConfig,
         DataAuthority.CommandPort delegate,
-        AuthorityFencingCommandPort.PartitionEpochStore epochStore
+        PostgresAuthorityPartitionEpochStore epochStore,
+        PostgresAuthorityCommandConsumerCursorStore cursorStore
     ) {
-        DataAuthority.CommandPort fencedDelegate = new AuthorityFencingCommandPort(
-            createAuthorityCommandCache(authorityConfig, delegate),
-            epochStore,
-            messageBusAdapter.getServerId()
+        Map<String, Object> substrateConfig = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("substrate", Map.of()));
+        String commandLog = stringValue(substrateConfig.get("command-log"), "in-memory").trim().toLowerCase();
+        Duration clientTimeout = Duration.ofMillis(Math.max(
+            1L,
+            longValue(commandWorkerConfig(authorityConfig).get("request-timeout-ms"), 5_000L)
+        ));
+        int maxRecordsPerPartition = Math.max(
+            1,
+            intValue(commandWorkerConfig(authorityConfig).get("max-records-per-partition"), 64)
         );
-        return new AuthorityPrincipalCommandPort(new AuthorityCommandScopeGuard(fencedDelegate));
+        if ("in-memory".equals(commandLog) || "memory".equals(commandLog)) {
+            InMemoryAuthorityLog log = new InMemoryAuthorityLog();
+            AuthorityLogCommandWorker worker = new AuthorityLogCommandWorker(
+                log,
+                delegate,
+                epochStore,
+                messageBusAdapter.getServerId()
+            );
+            authorityLogResource = null;
+            LOGGER.info("Central authority command log using in-memory compatibility substrate");
+            return new AuthorityCommandLogRuntime(
+                log,
+                new AuthorityLogDataAuthorityClient(log, clientTimeout),
+                new AuthorityLogCommandPort(log, delegate, epochStore, messageBusAdapter.getServerId()),
+                authorityCommandWorkerRuntimes(
+                    worker,
+                    maxRecordsPerPartition,
+                    AuthorityCommandConsumerCursorStore.inMemory()
+                )
+            );
+        }
+        if ("kafka".equals(commandLog)) {
+            KafkaAuthorityLog kafkaAuthorityLog = new KafkaAuthorityLog(kafkaAuthorityLogProperties(substrateConfig));
+            authorityLogResource = kafkaAuthorityLog;
+            LOGGER.info("Central authority command log using Kafka-compatible substrate ({})",
+                kafkaAuthorityLog.summary());
+            return new AuthorityCommandLogRuntime(
+                kafkaAuthorityLog,
+                new AuthorityLogDataAuthorityClient(kafkaAuthorityLog, clientTimeout),
+                new AuthorityLogCommandPort(kafkaAuthorityLog, delegate, epochStore, messageBusAdapter.getServerId()),
+                kafkaAuthorityCommandWorkers(
+                    kafkaAuthorityLog,
+                    delegate,
+                    epochStore,
+                    cursorStore,
+                    messageBusAdapter.getServerId(),
+                    commandWorkerPollTimeout(authorityConfig)
+                )
+            );
+        }
+        throw new IllegalStateException("Unsupported authority command-log substrate " + commandLog);
+    }
+
+    private static List<AuthorityCommandWorkerRuntime> authorityCommandWorkerRuntimes(
+        AuthorityLogCommandWorker worker,
+        int maxRecordsPerPartition,
+        AuthorityCommandConsumerCursorStore cursorStore
+    ) {
+        List<AuthorityCommandWorkerRuntime> workers = new ArrayList<>();
+        AuthorityDomainTopology.all().values().stream()
+            .sorted((left, right) -> left.domain().compareTo(right.domain()))
+            .forEach(topology -> workers.add(new PartitionLoopAuthorityCommandWorkerRuntime(
+                new AuthorityLogCommandWorkerLoop(
+                    worker,
+                    topology.domain(),
+                    partitions(topology.partitionCount()),
+                    maxRecordsPerPartition,
+                    cursorStore
+                )
+            )));
+        return List.copyOf(workers);
+    }
+
+    private static List<AuthorityCommandWorkerRuntime> kafkaAuthorityCommandWorkers(
+        KafkaAuthorityLog log,
+        DataAuthority.CommandPort delegate,
+        PostgresAuthorityPartitionEpochStore epochStore,
+        AuthorityCommandConsumerCursorStore cursorStore,
+        String ownerNode,
+        Duration pollTimeout
+    ) {
+        List<AuthorityCommandWorkerRuntime> workers = new ArrayList<>();
+        AuthorityDomainTopology.all().values().stream()
+            .sorted((left, right) -> left.domain().compareTo(right.domain()))
+            .forEach(topology -> workers.add(new KafkaAuthorityCommandWorkerRuntime(
+                new KafkaAuthorityCommandWorker(log, delegate, epochStore, cursorStore, ownerNode, topology.domain()),
+                pollTimeout
+            )));
+        return List.copyOf(workers);
+    }
+
+    private static List<Integer> partitions(int partitionCount) {
+        List<Integer> partitions = new ArrayList<>();
+        for (int partition = 0; partition < partitionCount; partition++) {
+            partitions.add(partition);
+        }
+        return partitions;
+    }
+
+    private static Map<String, Object> commandWorkerConfig(Map<String, Object> authorityConfig) {
+        if (authorityConfig == null) {
+            return Map.of();
+        }
+        return copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("command-worker", Map.of()));
+    }
+
+    private static Duration commandWorkerPollTimeout(Map<String, Object> authorityConfig) {
+        return Duration.ofMillis(Math.max(
+            1L,
+            longValue(commandWorkerConfig(authorityConfig).get("poll-timeout-ms"), 250L)
+        ));
+    }
+
+    private void startAuthorityCommandWorkers(
+        List<AuthorityCommandWorkerRuntime> workers,
+        Map<String, Object> authorityConfig
+    ) {
+        stopAuthorityCommandWorkers();
+        Map<String, Object> workerConfig = commandWorkerConfig(authorityConfig);
+        if (!booleanValue(workerConfig.get("enabled"), true)) {
+            LOGGER.warn("Central authority command workers are disabled; log-backed command clients will time out");
+            closeAuthorityCommandWorkerResources(workers);
+            return;
+        }
+        long intervalMs = Math.max(10L, longValue(workerConfig.get("interval-ms"), 100L));
+        for (AuthorityCommandWorkerRuntime worker : workers) {
+            ScheduledFuture<?> task = scheduler.scheduleWithFixedDelay(
+                () -> pollAuthorityCommandWorker(worker),
+                0L,
+                intervalMs,
+                TimeUnit.MILLISECONDS
+            );
+            authorityCommandWorkerTasks.add(task);
+            authorityCommandWorkerResources.add(worker);
+        }
+        LOGGER.info(
+            "Central authority command workers started for {} domains (interval={}ms, workerTypes={})",
+            workers.size(),
+            intervalMs,
+            workerTypes(workers)
+        );
+    }
+
+    private static Map<String, Object> stateProjectionWorkerConfig(Map<String, Object> authorityConfig) {
+        if (authorityConfig == null) {
+            return Map.of();
+        }
+        return copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("state-projection-worker", Map.of()));
+    }
+
+    private DispatcherStartupState startAuthorityHotStateProjectionDispatcher(
+        AuthorityLog log,
+        Map<String, Object> authorityConfig,
+        AuthorityStateProjectionCursorStore cursorStore
+    ) {
+        Map<String, Object> workerConfig = stateProjectionWorkerConfig(authorityConfig);
+        if (booleanValue(workerConfig.get("enabled"), true)) {
+            return startAuthorityStateProjectionWorkers(log, authorityConfig, cursorStore);
+        }
+        LOGGER.warn("Kafka state projection workers are disabled; falling back to Postgres authority event dispatcher");
+        return startAuthorityEventDispatcher(authorityConfig);
+    }
+
+    private DispatcherStartupState startAuthorityStateProjectionWorkers(
+        AuthorityLog log,
+        Map<String, Object> authorityConfig,
+        AuthorityStateProjectionCursorStore cursorStore
+    ) {
+        stopAuthorityStateProjectionWorkers();
+        if (log == null) {
+            throw new IllegalStateException("Central data authority state projection requires an authority log");
+        }
+        AuthorityStateRestoreTarget restoreTarget = authorityStateRestoreTarget;
+        if (restoreTarget == null) {
+            throw new IllegalStateException(
+                "Central data authority hot-state projection does not support state-topic restore"
+            );
+        }
+        Map<String, Object> workerConfig = stateProjectionWorkerConfig(authorityConfig);
+        long intervalMs = Math.max(10L, longValue(workerConfig.get("interval-ms"), 1000L));
+        int maxRecordsPerPartition = Math.max(
+            1,
+            intValue(workerConfig.get("max-records-per-partition"), 64)
+        );
+        AuthorityStateProjectionCursorStore effectiveCursorStore =
+            cursorStore == null ? AuthorityStateProjectionCursorStore.inMemory() : cursorStore;
+        AuthorityStateProjectionWorker worker = new AuthorityStateProjectionWorker(log, restoreTarget);
+        List<AuthorityStateProjectionRuntime> workers = new ArrayList<>();
+        AuthorityDomainTopology.all().values().stream()
+            .sorted((left, right) -> left.domain().compareTo(right.domain()))
+            .forEach(topology -> workers.add(new PartitionLoopAuthorityStateProjectionRuntime(
+                new AuthorityStateProjectionWorkerLoop(
+                    worker,
+                    topology.domain(),
+                    partitions(topology.partitionCount()),
+                    maxRecordsPerPartition,
+                    effectiveCursorStore
+                )
+            )));
+        for (AuthorityStateProjectionRuntime runtime : workers) {
+            ScheduledFuture<?> task = scheduler.scheduleWithFixedDelay(
+                () -> pollAuthorityStateProjectionWorker(runtime),
+                0L,
+                intervalMs,
+                TimeUnit.MILLISECONDS
+            );
+            authorityStateProjectionWorkerTasks.add(task);
+            authorityStateProjectionWorkerResources.add(runtime);
+        }
+        LOGGER.info(
+            "Central authority state projection workers started for {} domains (projection={}, interval={}ms)",
+            workers.size(),
+            restoreTarget.projectionName(),
+            intervalMs
+        );
+        return DispatcherStartupState.enabled(
+            restoreTarget.projectionName(),
+            maxRecordsPerPartition,
+            intervalMs,
+            0L
+        );
+    }
+
+    private void pollAuthorityStateProjectionWorker(AuthorityStateProjectionRuntime worker) {
+        try {
+            AuthorityStateProjectionWorkerLoop.PollResult result = worker.pollOnce();
+            if (result.processedCount() > 0) {
+                LOGGER.debug(
+                    "Authority state projection processed {} records for projection {} domain {} ({}, restored={}, idempotentSkips={})",
+                    result.processedCount(),
+                    worker.projectionName(),
+                    worker.domain(),
+                    worker.workerType(),
+                    result.restoredCount(),
+                    result.idempotentSkipCount()
+                );
+            }
+        } catch (Exception exception) {
+            LOGGER.error(
+                "Authority state projection poll failed for projection {} domain {} ({})",
+                worker.projectionName(),
+                worker.domain(),
+                worker.workerType(),
+                exception
+            );
+        }
+    }
+
+    private void stopAuthorityStateProjectionWorkers() {
+        for (ScheduledFuture<?> task : authorityStateProjectionWorkerTasks) {
+            task.cancel(false);
+        }
+        authorityStateProjectionWorkerTasks.clear();
+        closeAuthorityCommandWorkerResources(authorityStateProjectionWorkerResources);
+        authorityStateProjectionWorkerResources.clear();
+    }
+
+    private static List<String> workerTypes(List<AuthorityCommandWorkerRuntime> workers) {
+        if (workers == null || workers.isEmpty()) {
+            return List.of();
+        }
+        return workers.stream()
+            .map(AuthorityCommandWorkerRuntime::workerType)
+            .distinct()
+            .sorted()
+            .toList();
+    }
+
+    private void pollAuthorityCommandWorker(AuthorityCommandWorkerRuntime worker) {
+        try {
+            int processedCount = worker.pollOnce();
+            if (processedCount > 0) {
+                LOGGER.debug(
+                    "Authority command worker processed {} records for domain {} ({})",
+                    processedCount,
+                    worker.domain(),
+                    worker.workerType()
+                );
+            }
+        } catch (Exception exception) {
+            LOGGER.error(
+                "Authority command worker poll failed for domain {} ({})",
+                worker.domain(),
+                worker.workerType(),
+                exception
+            );
+        }
+    }
+
+    private void stopAuthorityCommandWorkers() {
+        for (ScheduledFuture<?> task : authorityCommandWorkerTasks) {
+            task.cancel(false);
+        }
+        authorityCommandWorkerTasks.clear();
+        closeAuthorityCommandWorkerResources(authorityCommandWorkerResources);
+        authorityCommandWorkerResources.clear();
+    }
+
+    private void closeAuthorityCommandWorkerResources(List<? extends AutoCloseable> resources) {
+        for (AutoCloseable resource : resources) {
+            try {
+                resource.close();
+            } catch (Exception exception) {
+                LOGGER.warn("Failed to close authority command worker resource", exception);
+            }
+        }
+    }
+
+    private static Properties kafkaAuthorityLogProperties(Map<String, Object> substrateConfig) {
+        Map<String, Object> kafkaConfig = substrateConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) substrateConfig.getOrDefault("kafka", Map.of()));
+        Properties properties = new Properties();
+        properties.setProperty(
+            "bootstrap.servers",
+            stringValue(kafkaConfig.get("bootstrap-servers"),
+                stringValue(kafkaConfig.get("bootstrap.servers"), "localhost:9092"))
+        );
+        properties.setProperty(
+            "client.id",
+            stringValue(kafkaConfig.get("client-id"),
+                stringValue(kafkaConfig.get("client.id"), "fulcrum-authority-log"))
+        );
+        Object securityProtocol = kafkaConfig.get("security-protocol");
+        if (securityProtocol == null) {
+            securityProtocol = kafkaConfig.get("security.protocol");
+        }
+        if (securityProtocol != null && !securityProtocol.toString().isBlank()) {
+            properties.setProperty("security.protocol", securityProtocol.toString());
+        }
+        Object saslMechanism = kafkaConfig.get("sasl-mechanism");
+        if (saslMechanism == null) {
+            saslMechanism = kafkaConfig.get("sasl.mechanism");
+        }
+        if (saslMechanism != null && !saslMechanism.toString().isBlank()) {
+            properties.setProperty("sasl.mechanism", saslMechanism.toString());
+        }
+        Object saslJaasConfig = kafkaConfig.get("sasl-jaas-config");
+        if (saslJaasConfig == null) {
+            saslJaasConfig = kafkaConfig.get("sasl.jaas.config");
+        }
+        if (saslJaasConfig != null && !saslJaasConfig.toString().isBlank()) {
+            properties.setProperty("sasl.jaas.config", saslJaasConfig.toString());
+        }
+        return properties;
+    }
+
+    private static CqlSession cassandraSession(Map<String, Object> cassandraConfig, String keyspace) {
+        var builder = CqlSession.builder();
+        for (InetSocketAddress contactPoint : cassandraContactPoints(cassandraConfig.get("contact-points"))) {
+            builder.addContactPoint(contactPoint);
+        }
+        String localDatacenter = stringValue(cassandraConfig.get("local-datacenter"), "datacenter1");
+        if (localDatacenter != null && !localDatacenter.isBlank()) {
+            builder.withLocalDatacenter(localDatacenter);
+        }
+        if (keyspace != null && !keyspace.isBlank()) {
+            builder.withKeyspace(CqlIdentifier.fromCql(keyspace));
+        }
+        return builder.build();
+    }
+
+    private static List<InetSocketAddress> cassandraContactPoints(Object rawContactPoints) {
+        List<InetSocketAddress> contactPoints = new ArrayList<>();
+        if (rawContactPoints instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                if (item != null && !item.toString().isBlank()) {
+                    contactPoints.add(cassandraContactPoint(item.toString()));
+                }
+            }
+        } else {
+            String raw = stringValue(rawContactPoints, "localhost:9042");
+            for (String item : raw.split(",")) {
+                if (!item.isBlank()) {
+                    contactPoints.add(cassandraContactPoint(item));
+                }
+            }
+        }
+        return contactPoints.isEmpty() ? List.of(cassandraContactPoint("localhost:9042")) : List.copyOf(contactPoints);
+    }
+
+    private static InetSocketAddress cassandraContactPoint(String rawContactPoint) {
+        String value = rawContactPoint == null || rawContactPoint.isBlank()
+            ? "localhost:9042"
+            : rawContactPoint.trim();
+        int separator = value.lastIndexOf(':');
+        if (separator > 0 && separator < value.length() - 1) {
+            return new InetSocketAddress(
+                value.substring(0, separator).trim(),
+                Integer.parseInt(value.substring(separator + 1).trim())
+            );
+        }
+        return new InetSocketAddress(value, 9042);
+    }
+
+    private DataAuthority.CommandPort createAuthorityCommandDelegate(
+        Map<String, Object> authorityConfig,
+        DataAuthority.CommandPort delegate
+    ) {
+        DataAuthority.CommandPort cachedDelegate = createAuthorityCommandCache(authorityConfig, delegate);
+        return new AuthorityPrincipalCommandPort(new AuthorityCommandScopeGuard(cachedDelegate));
     }
 
     private DataAuthority.CommandPort createAuthorityCommandCache(
@@ -1058,21 +1907,67 @@ public class RegistryService {
             && messageBusConnectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS;
         boolean enabled = booleanValue(cacheConfig.get("enabled"), redisMessageBus);
         if (!enabled) {
-            LOGGER.info("Central authority Redis idempotency result cache disabled");
+            LOGGER.info("Central authority Valkey idempotency result cache disabled");
             return delegate;
         }
         if (!redisMessageBus) {
-            LOGGER.warn("Central authority idempotency result cache requires Redis message bus; using durable Postgres path only");
+            LOGGER.warn("Central authority Valkey idempotency result cache requires Redis-compatible message bus; using durable Postgres path only");
             return delegate;
         }
 
         long ttlSeconds = longValue(cacheConfig.get("ttl-seconds"), 86_400L);
-        authorityCommandResultCache = new RedisAuthorityCommandResultCache(
+        authorityCommandResultCache = new ValkeyAuthorityCommandResultCache(
             messageBusConnectionConfig,
             Duration.ofSeconds(ttlSeconds)
         );
-        LOGGER.info("Central authority Redis idempotency result cache enabled (ttl={}s)", ttlSeconds);
+        LOGGER.info("Central authority Valkey idempotency result cache enabled via Redis-compatible wire protocol (ttl={}s)",
+            ttlSeconds);
         return new CachedAuthorityCommandPort(delegate, authorityCommandResultCache);
+    }
+
+    private AuthoritySubstratePreflight.ActualSubstrate authorityActualSubstrate(
+        Map<String, Object> authorityConfig
+    ) {
+        Map<String, Object> substrateConfig = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("substrate", Map.of()));
+        return new AuthoritySubstratePreflight.ActualSubstrate(
+            actualAuthorityCommandLogSubstrate(substrateConfig),
+            actualAuthorityHotStateSubstrate(substrateConfig),
+            "postgresql",
+            actualAuthorityCacheSubstrate(authorityConfig)
+        );
+    }
+
+    private String actualAuthorityCommandLogSubstrate(Map<String, Object> substrateConfig) {
+        String commandLog = stringValue(substrateConfig.get("command-log"), "in-memory").trim().toLowerCase();
+        if ("memory".equals(commandLog)) {
+            return "in-memory";
+        }
+        return commandLog;
+    }
+
+    private String actualAuthorityHotStateSubstrate(Map<String, Object> substrateConfig) {
+        String hotState = configuredAuthorityHotStateSubstrate(substrateConfig);
+        return "memory".equals(hotState) ? "in-memory" : hotState;
+    }
+
+    private static String configuredAuthorityHotStateSubstrate(Map<String, Object> substrateConfig) {
+        return stringValue(substrateConfig.get("hot-state"), "in-memory").trim().toLowerCase();
+    }
+
+    private String actualAuthorityCacheSubstrate(Map<String, Object> authorityConfig) {
+        Map<String, Object> idempotencyCacheConfig = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("idempotency-cache", Map.of()));
+        Map<String, Object> snapshotCacheConfig = authorityConfig == null
+            ? Map.of()
+            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("snapshot-cache", Map.of()));
+        boolean redisMessageBus = messageBusConnectionConfig != null
+            && messageBusConnectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS;
+        boolean idempotencyEnabled = booleanValue(idempotencyCacheConfig.get("enabled"), redisMessageBus);
+        boolean snapshotEnabled = booleanValue(snapshotCacheConfig.get("enabled"), redisMessageBus);
+        return idempotencyEnabled && snapshotEnabled && redisMessageBus ? "valkey" : "none";
     }
 
     private DispatcherStartupState startAuthorityEventDispatcher(Map<String, Object> authorityConfig) {
@@ -1080,19 +1975,25 @@ public class RegistryService {
             ? Map.of()
             : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("event-dispatcher", Map.of()));
         if (!booleanValue(dispatcherConfig.get("enabled"), true)) {
-            LOGGER.info("Central authority event dispatcher disabled");
-            return DispatcherStartupState.disabled("config-disabled");
+            throw new IllegalStateException(
+                "Central data authority hot reads require authority.event-dispatcher.enabled=true"
+            );
         }
 
         int batchSize = intValue(dispatcherConfig.get("batch-size"), 50);
         long intervalMs = longValue(dispatcherConfig.get("interval-ms"), 1000L);
         long retryDelayMs = longValue(dispatcherConfig.get("retry-delay-ms"), 5000L);
+        AuthorityEventDispatchTarget hotStateProjection = authorityHotStateProjection;
+        if (hotStateProjection == null) {
+            throw new IllegalStateException("Central data authority hot-state projection was not initialized");
+        }
         authorityEventDispatcher = new PostgresAuthorityEventDispatcher(
             authorityPostgres,
-            List.of(new ShadowAuthorityEventDispatchTarget()),
+            List.of(hotStateProjection),
             new PostgresAuthorityEventDispatcher.Options(batchSize, Duration.ofMillis(retryDelayMs))
         );
         authorityEventDispatcher.validateSchema();
+        PostgresAuthorityEventDispatcher.DispatchCycleResult warmup = authorityEventDispatcher.dispatchOnce();
         authorityEventDispatcherTask = scheduler.scheduleWithFixedDelay(
             this::dispatchAuthorityEvents,
             intervalMs,
@@ -1100,11 +2001,13 @@ public class RegistryService {
             TimeUnit.MILLISECONDS
         );
         LOGGER.info(
-            "Central authority event dispatcher enabled (consumer=registry-shadow-drain, batchSize={}, interval={}ms)",
+            "Central authority event dispatcher enabled (consumer={}, batchSize={}, interval={}ms, warmupDelivered={})",
+            hotStateProjection.consumerName(),
             batchSize,
-            intervalMs
+            intervalMs,
+            warmup.delivered()
         );
-        return DispatcherStartupState.enabled("registry-shadow-drain", batchSize, intervalMs, retryDelayMs);
+        return DispatcherStartupState.enabled(hotStateProjection.consumerName(), batchSize, intervalMs, retryDelayMs);
     }
 
     private void dispatchAuthorityEvents() {
@@ -1415,6 +2318,13 @@ public class RegistryService {
             lines.add("Command Contract: " + shortReceiptFingerprint(authority.commandContractFingerprint()));
             lines.add("Read Contract: " + shortReceiptFingerprint(authority.readContractFingerprint()));
             lines.add("Custody Fingerprint: " + shortReceiptFingerprint(authority.custodyFingerprint()));
+            lines.add("Substrate Mode: " + authority.substrateMode());
+            lines.add("Substrate Target Complete: " + authority.substrateTargetComplete());
+            lines.add("Substrate Command Log: " + authority.substrateCommandLog());
+            lines.add("Substrate Hot State: " + authority.substrateHotState());
+            lines.add("Substrate History: " + authority.substrateHistory());
+            lines.add("Substrate Cache: " + authority.substrateCache());
+            lines.add("Substrate Limitations: " + authority.substrateLimitations());
             lines.add("Checks: " + authority.checkNames());
         }
         if (!dispatcher.enabled()) {
@@ -1430,7 +2340,7 @@ public class RegistryService {
     RegistryStartupReceipt getStartupReceipt() {
         return startupReceipt;
     }
-    
+
     /**
      * Get the server registry
      */
@@ -1501,8 +2411,19 @@ public class RegistryService {
                 dataAuthorityProvider.close();
             }
 
+            stopAuthorityStateProjectionWorkers();
+            stopAuthorityCommandWorkers();
+
+            if (authorityHotStateResource != null) {
+                authorityHotStateResource.close();
+            }
+
             if (authorityCommandResultCache != null) {
                 authorityCommandResultCache.close();
+            }
+
+            if (authorityLogResource != null) {
+                authorityLogResource.close();
             }
 
             if (authorityPostgres != null) {
@@ -1534,18 +2455,6 @@ public class RegistryService {
         }
     }
 
-    private static final class ShadowAuthorityEventDispatchTarget implements AuthorityEventDispatchTarget {
-        @Override
-        public String consumerName() {
-            return "registry-shadow-drain";
-        }
-
-        @Override
-        public AuthorityEventDispatchResult dispatch(AuthorityEventEnvelope event) {
-            return AuthorityEventDispatchResult.success();
-        }
-    }
-    
     /**
      * Diagnose Netty classloading issues
      */

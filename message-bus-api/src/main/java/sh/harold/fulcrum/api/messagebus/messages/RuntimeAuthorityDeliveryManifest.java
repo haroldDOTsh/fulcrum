@@ -23,11 +23,23 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
     private int commandSchemaVersion;
     private String commandContractFingerprint;
     private String commandRouteManifestFingerprint;
+    private String authorityDomainTopologyFingerprint;
     private int readSchemaVersion;
     private String readContractFingerprint;
+    private Map<String, String> authorityServicesByDomain = new LinkedHashMap<>();
+    private Map<String, String> authorityConsumerGroupsByDomain = new LinkedHashMap<>();
+    private Map<String, String> authorityPrincipalsByDomain = new LinkedHashMap<>();
     private Map<String, String> commandDomainsByType = new LinkedHashMap<>();
     private Map<String, String> commandDeliveryModesByType = new LinkedHashMap<>();
     private Map<String, String> commandPartitionKeyVectorsByType = new LinkedHashMap<>();
+    private Map<String, String> commandAuthorityServicesByType = new LinkedHashMap<>();
+    private Map<String, String> commandConsumerGroupsByType = new LinkedHashMap<>();
+    private Map<String, String> commandAuthorityPrincipalsByType = new LinkedHashMap<>();
+    private Map<String, String> commandPartitionCountsByType = new LinkedHashMap<>();
+    private Map<String, String> commandTopicsByType = new LinkedHashMap<>();
+    private Map<String, String> commandResponseTopicsByType = new LinkedHashMap<>();
+    private Map<String, String> commandEventTopicsByType = new LinkedHashMap<>();
+    private Map<String, String> commandStateTopicsByType = new LinkedHashMap<>();
     private Map<String, String> commandLogStoresByType = new LinkedHashMap<>();
     private Map<String, String> commandHotProjectionStoresByType = new LinkedHashMap<>();
     private Map<String, String> commandHistoryStoresByType = new LinkedHashMap<>();
@@ -77,6 +89,14 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
             Map.of(),
             Map.of(),
             Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
             readProjectionFamiliesByType,
             Map.of(),
             Map.of(),
@@ -121,6 +141,14 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
             Map.of(),
             Map.of(),
             Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
             readProjectionFamiliesByType,
             Map.of(),
             Map.of(),
@@ -152,6 +180,216 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
         Map<String, String> readCacheStoresByType,
         String manifestFingerprint
     ) {
+        this(
+            nodeKind,
+            manifestVersion,
+            authorityServerId,
+            runtimeDataMode,
+            cacheMode,
+            startupAttestationFingerprint,
+            commandSchemaVersion,
+            commandContractFingerprint,
+            commandRouteManifestFingerprint,
+            null,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            readSchemaVersion,
+            readContractFingerprint,
+            commandDomainsByType,
+            commandDeliveryModesByType,
+            commandPartitionKeyVectorsByType,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            commandLogStoresByType,
+            commandHotProjectionStoresByType,
+            commandHistoryStoresByType,
+            commandCacheStoresByType,
+            readProjectionFamiliesByType,
+            readServingStoresByType,
+            readCacheStoresByType,
+            manifestFingerprint
+        );
+    }
+
+    public RuntimeAuthorityDeliveryManifest(
+        String nodeKind,
+        int manifestVersion,
+        String authorityServerId,
+        String runtimeDataMode,
+        String cacheMode,
+        String startupAttestationFingerprint,
+        int commandSchemaVersion,
+        String commandContractFingerprint,
+        String commandRouteManifestFingerprint,
+        int readSchemaVersion,
+        String readContractFingerprint,
+        Map<String, String> commandDomainsByType,
+        Map<String, String> commandDeliveryModesByType,
+        Map<String, String> commandPartitionKeyVectorsByType,
+        Map<String, String> commandTopicsByType,
+        Map<String, String> commandResponseTopicsByType,
+        Map<String, String> commandEventTopicsByType,
+        Map<String, String> commandStateTopicsByType,
+        Map<String, String> commandLogStoresByType,
+        Map<String, String> commandHotProjectionStoresByType,
+        Map<String, String> commandHistoryStoresByType,
+        Map<String, String> commandCacheStoresByType,
+        Map<String, String> readProjectionFamiliesByType,
+        Map<String, String> readServingStoresByType,
+        Map<String, String> readCacheStoresByType,
+        String manifestFingerprint
+    ) {
+        this(
+            nodeKind,
+            manifestVersion,
+            authorityServerId,
+            runtimeDataMode,
+            cacheMode,
+            startupAttestationFingerprint,
+            commandSchemaVersion,
+            commandContractFingerprint,
+            commandRouteManifestFingerprint,
+            null,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            readSchemaVersion,
+            readContractFingerprint,
+            commandDomainsByType,
+            commandDeliveryModesByType,
+            commandPartitionKeyVectorsByType,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            commandTopicsByType,
+            commandResponseTopicsByType,
+            commandEventTopicsByType,
+            commandStateTopicsByType,
+            commandLogStoresByType,
+            commandHotProjectionStoresByType,
+            commandHistoryStoresByType,
+            commandCacheStoresByType,
+            readProjectionFamiliesByType,
+            readServingStoresByType,
+            readCacheStoresByType,
+            manifestFingerprint
+        );
+    }
+
+    public RuntimeAuthorityDeliveryManifest(
+        String nodeKind,
+        int manifestVersion,
+        String authorityServerId,
+        String runtimeDataMode,
+        String cacheMode,
+        String startupAttestationFingerprint,
+        int commandSchemaVersion,
+        String commandContractFingerprint,
+        String commandRouteManifestFingerprint,
+        int readSchemaVersion,
+        String readContractFingerprint,
+        Map<String, String> commandDomainsByType,
+        Map<String, String> commandDeliveryModesByType,
+        Map<String, String> commandPartitionKeyVectorsByType,
+        Map<String, String> commandAuthorityServicesByType,
+        Map<String, String> commandConsumerGroupsByType,
+        Map<String, String> commandAuthorityPrincipalsByType,
+        Map<String, String> commandPartitionCountsByType,
+        Map<String, String> commandTopicsByType,
+        Map<String, String> commandResponseTopicsByType,
+        Map<String, String> commandEventTopicsByType,
+        Map<String, String> commandStateTopicsByType,
+        Map<String, String> commandLogStoresByType,
+        Map<String, String> commandHotProjectionStoresByType,
+        Map<String, String> commandHistoryStoresByType,
+        Map<String, String> commandCacheStoresByType,
+        Map<String, String> readProjectionFamiliesByType,
+        Map<String, String> readServingStoresByType,
+        Map<String, String> readCacheStoresByType,
+        String manifestFingerprint
+    ) {
+        this(
+            nodeKind,
+            manifestVersion,
+            authorityServerId,
+            runtimeDataMode,
+            cacheMode,
+            startupAttestationFingerprint,
+            commandSchemaVersion,
+            commandContractFingerprint,
+            commandRouteManifestFingerprint,
+            null,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            readSchemaVersion,
+            readContractFingerprint,
+            commandDomainsByType,
+            commandDeliveryModesByType,
+            commandPartitionKeyVectorsByType,
+            commandAuthorityServicesByType,
+            commandConsumerGroupsByType,
+            commandAuthorityPrincipalsByType,
+            commandPartitionCountsByType,
+            commandTopicsByType,
+            commandResponseTopicsByType,
+            commandEventTopicsByType,
+            commandStateTopicsByType,
+            commandLogStoresByType,
+            commandHotProjectionStoresByType,
+            commandHistoryStoresByType,
+            commandCacheStoresByType,
+            readProjectionFamiliesByType,
+            readServingStoresByType,
+            readCacheStoresByType,
+            manifestFingerprint
+        );
+    }
+
+    public RuntimeAuthorityDeliveryManifest(
+        String nodeKind,
+        int manifestVersion,
+        String authorityServerId,
+        String runtimeDataMode,
+        String cacheMode,
+        String startupAttestationFingerprint,
+        int commandSchemaVersion,
+        String commandContractFingerprint,
+        String commandRouteManifestFingerprint,
+        String authorityDomainTopologyFingerprint,
+        Map<String, String> authorityServicesByDomain,
+        Map<String, String> authorityConsumerGroupsByDomain,
+        Map<String, String> authorityPrincipalsByDomain,
+        int readSchemaVersion,
+        String readContractFingerprint,
+        Map<String, String> commandDomainsByType,
+        Map<String, String> commandDeliveryModesByType,
+        Map<String, String> commandPartitionKeyVectorsByType,
+        Map<String, String> commandAuthorityServicesByType,
+        Map<String, String> commandConsumerGroupsByType,
+        Map<String, String> commandAuthorityPrincipalsByType,
+        Map<String, String> commandPartitionCountsByType,
+        Map<String, String> commandTopicsByType,
+        Map<String, String> commandResponseTopicsByType,
+        Map<String, String> commandEventTopicsByType,
+        Map<String, String> commandStateTopicsByType,
+        Map<String, String> commandLogStoresByType,
+        Map<String, String> commandHotProjectionStoresByType,
+        Map<String, String> commandHistoryStoresByType,
+        Map<String, String> commandCacheStoresByType,
+        Map<String, String> readProjectionFamiliesByType,
+        Map<String, String> readServingStoresByType,
+        Map<String, String> readCacheStoresByType,
+        String manifestFingerprint
+    ) {
         this.nodeKind = nodeKind;
         this.manifestVersion = manifestVersion;
         this.authorityServerId = authorityServerId;
@@ -161,11 +399,23 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
         this.commandSchemaVersion = commandSchemaVersion;
         this.commandContractFingerprint = commandContractFingerprint;
         this.commandRouteManifestFingerprint = commandRouteManifestFingerprint;
+        this.authorityDomainTopologyFingerprint = authorityDomainTopologyFingerprint;
         this.readSchemaVersion = readSchemaVersion;
         this.readContractFingerprint = readContractFingerprint;
+        setAuthorityServicesByDomain(authorityServicesByDomain);
+        setAuthorityConsumerGroupsByDomain(authorityConsumerGroupsByDomain);
+        setAuthorityPrincipalsByDomain(authorityPrincipalsByDomain);
         setCommandDomainsByType(commandDomainsByType);
         setCommandDeliveryModesByType(commandDeliveryModesByType);
         setCommandPartitionKeyVectorsByType(commandPartitionKeyVectorsByType);
+        setCommandAuthorityServicesByType(commandAuthorityServicesByType);
+        setCommandConsumerGroupsByType(commandConsumerGroupsByType);
+        setCommandAuthorityPrincipalsByType(commandAuthorityPrincipalsByType);
+        setCommandPartitionCountsByType(commandPartitionCountsByType);
+        setCommandTopicsByType(commandTopicsByType);
+        setCommandResponseTopicsByType(commandResponseTopicsByType);
+        setCommandEventTopicsByType(commandEventTopicsByType);
+        setCommandStateTopicsByType(commandStateTopicsByType);
         setCommandLogStoresByType(commandLogStoresByType);
         setCommandHotProjectionStoresByType(commandHotProjectionStoresByType);
         setCommandHistoryStoresByType(commandHistoryStoresByType);
@@ -212,6 +462,14 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
             Map.of(),
             Map.of(),
             Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
             readProjectionFamiliesByType,
             Map.of(),
             Map.of()
@@ -241,7 +499,7 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
         Map<String, String> readServingStoresByType,
         Map<String, String> readCacheStoresByType
     ) {
-        String manifestFingerprint = fingerprint(
+        return create(
             nodeKind,
             manifestVersion,
             authorityServerId,
@@ -256,6 +514,214 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
             commandDomainsByType,
             commandDeliveryModesByType,
             commandPartitionKeyVectorsByType,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            commandLogStoresByType,
+            commandHotProjectionStoresByType,
+            commandHistoryStoresByType,
+            commandCacheStoresByType,
+            readProjectionFamiliesByType,
+            readServingStoresByType,
+            readCacheStoresByType
+        );
+    }
+
+    public static RuntimeAuthorityDeliveryManifest create(
+        String nodeKind,
+        int manifestVersion,
+        String authorityServerId,
+        String runtimeDataMode,
+        String cacheMode,
+        String startupAttestationFingerprint,
+        int commandSchemaVersion,
+        String commandContractFingerprint,
+        String commandRouteManifestFingerprint,
+        int readSchemaVersion,
+        String readContractFingerprint,
+        Map<String, String> commandDomainsByType,
+        Map<String, String> commandDeliveryModesByType,
+        Map<String, String> commandPartitionKeyVectorsByType,
+        Map<String, String> commandTopicsByType,
+        Map<String, String> commandResponseTopicsByType,
+        Map<String, String> commandEventTopicsByType,
+        Map<String, String> commandStateTopicsByType,
+        Map<String, String> commandLogStoresByType,
+        Map<String, String> commandHotProjectionStoresByType,
+        Map<String, String> commandHistoryStoresByType,
+        Map<String, String> commandCacheStoresByType,
+        Map<String, String> readProjectionFamiliesByType,
+        Map<String, String> readServingStoresByType,
+        Map<String, String> readCacheStoresByType
+    ) {
+        return create(
+            nodeKind,
+            manifestVersion,
+            authorityServerId,
+            runtimeDataMode,
+            cacheMode,
+            startupAttestationFingerprint,
+            commandSchemaVersion,
+            commandContractFingerprint,
+            commandRouteManifestFingerprint,
+            null,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            readSchemaVersion,
+            readContractFingerprint,
+            commandDomainsByType,
+            commandDeliveryModesByType,
+            commandPartitionKeyVectorsByType,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            commandTopicsByType,
+            commandResponseTopicsByType,
+            commandEventTopicsByType,
+            commandStateTopicsByType,
+            commandLogStoresByType,
+            commandHotProjectionStoresByType,
+            commandHistoryStoresByType,
+            commandCacheStoresByType,
+            readProjectionFamiliesByType,
+            readServingStoresByType,
+            readCacheStoresByType
+        );
+    }
+
+    public static RuntimeAuthorityDeliveryManifest create(
+        String nodeKind,
+        int manifestVersion,
+        String authorityServerId,
+        String runtimeDataMode,
+        String cacheMode,
+        String startupAttestationFingerprint,
+        int commandSchemaVersion,
+        String commandContractFingerprint,
+        String commandRouteManifestFingerprint,
+        int readSchemaVersion,
+        String readContractFingerprint,
+        Map<String, String> commandDomainsByType,
+        Map<String, String> commandDeliveryModesByType,
+        Map<String, String> commandPartitionKeyVectorsByType,
+        Map<String, String> commandAuthorityServicesByType,
+        Map<String, String> commandConsumerGroupsByType,
+        Map<String, String> commandAuthorityPrincipalsByType,
+        Map<String, String> commandPartitionCountsByType,
+        Map<String, String> commandTopicsByType,
+        Map<String, String> commandResponseTopicsByType,
+        Map<String, String> commandEventTopicsByType,
+        Map<String, String> commandStateTopicsByType,
+        Map<String, String> commandLogStoresByType,
+        Map<String, String> commandHotProjectionStoresByType,
+        Map<String, String> commandHistoryStoresByType,
+        Map<String, String> commandCacheStoresByType,
+        Map<String, String> readProjectionFamiliesByType,
+        Map<String, String> readServingStoresByType,
+        Map<String, String> readCacheStoresByType
+    ) {
+        return create(
+            nodeKind,
+            manifestVersion,
+            authorityServerId,
+            runtimeDataMode,
+            cacheMode,
+            startupAttestationFingerprint,
+            commandSchemaVersion,
+            commandContractFingerprint,
+            commandRouteManifestFingerprint,
+            null,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            readSchemaVersion,
+            readContractFingerprint,
+            commandDomainsByType,
+            commandDeliveryModesByType,
+            commandPartitionKeyVectorsByType,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            commandTopicsByType,
+            commandResponseTopicsByType,
+            commandEventTopicsByType,
+            commandStateTopicsByType,
+            commandLogStoresByType,
+            commandHotProjectionStoresByType,
+            commandHistoryStoresByType,
+            commandCacheStoresByType,
+            readProjectionFamiliesByType,
+            readServingStoresByType,
+            readCacheStoresByType
+        );
+    }
+
+    public static RuntimeAuthorityDeliveryManifest create(
+        String nodeKind,
+        int manifestVersion,
+        String authorityServerId,
+        String runtimeDataMode,
+        String cacheMode,
+        String startupAttestationFingerprint,
+        int commandSchemaVersion,
+        String commandContractFingerprint,
+        String commandRouteManifestFingerprint,
+        String authorityDomainTopologyFingerprint,
+        Map<String, String> authorityServicesByDomain,
+        Map<String, String> authorityConsumerGroupsByDomain,
+        Map<String, String> authorityPrincipalsByDomain,
+        int readSchemaVersion,
+        String readContractFingerprint,
+        Map<String, String> commandDomainsByType,
+        Map<String, String> commandDeliveryModesByType,
+        Map<String, String> commandPartitionKeyVectorsByType,
+        Map<String, String> commandAuthorityServicesByType,
+        Map<String, String> commandConsumerGroupsByType,
+        Map<String, String> commandAuthorityPrincipalsByType,
+        Map<String, String> commandPartitionCountsByType,
+        Map<String, String> commandTopicsByType,
+        Map<String, String> commandResponseTopicsByType,
+        Map<String, String> commandEventTopicsByType,
+        Map<String, String> commandStateTopicsByType,
+        Map<String, String> commandLogStoresByType,
+        Map<String, String> commandHotProjectionStoresByType,
+        Map<String, String> commandHistoryStoresByType,
+        Map<String, String> commandCacheStoresByType,
+        Map<String, String> readProjectionFamiliesByType,
+        Map<String, String> readServingStoresByType,
+        Map<String, String> readCacheStoresByType
+    ) {
+        String manifestFingerprint = fingerprint(
+            nodeKind,
+            manifestVersion,
+            authorityServerId,
+            runtimeDataMode,
+            cacheMode,
+            startupAttestationFingerprint,
+            commandSchemaVersion,
+            commandContractFingerprint,
+            commandRouteManifestFingerprint,
+            authorityDomainTopologyFingerprint,
+            authorityServicesByDomain,
+            authorityConsumerGroupsByDomain,
+            authorityPrincipalsByDomain,
+            readSchemaVersion,
+            readContractFingerprint,
+            commandDomainsByType,
+            commandDeliveryModesByType,
+            commandPartitionKeyVectorsByType,
+            commandAuthorityServicesByType,
+            commandConsumerGroupsByType,
+            commandAuthorityPrincipalsByType,
+            commandPartitionCountsByType,
+            commandTopicsByType,
+            commandResponseTopicsByType,
+            commandEventTopicsByType,
+            commandStateTopicsByType,
             commandLogStoresByType,
             commandHotProjectionStoresByType,
             commandHistoryStoresByType,
@@ -274,11 +740,23 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
             commandSchemaVersion,
             commandContractFingerprint,
             commandRouteManifestFingerprint,
+            authorityDomainTopologyFingerprint,
+            authorityServicesByDomain,
+            authorityConsumerGroupsByDomain,
+            authorityPrincipalsByDomain,
             readSchemaVersion,
             readContractFingerprint,
             commandDomainsByType,
             commandDeliveryModesByType,
             commandPartitionKeyVectorsByType,
+            commandAuthorityServicesByType,
+            commandConsumerGroupsByType,
+            commandAuthorityPrincipalsByType,
+            commandPartitionCountsByType,
+            commandTopicsByType,
+            commandResponseTopicsByType,
+            commandEventTopicsByType,
+            commandStateTopicsByType,
             commandLogStoresByType,
             commandHotProjectionStoresByType,
             commandHistoryStoresByType,
@@ -355,6 +833,134 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
         Map<String, String> readServingStoresByType,
         Map<String, String> readCacheStoresByType
     ) {
+        return fingerprint(
+            nodeKind,
+            manifestVersion,
+            authorityServerId,
+            runtimeDataMode,
+            cacheMode,
+            startupAttestationFingerprint,
+            commandSchemaVersion,
+            commandContractFingerprint,
+            commandRouteManifestFingerprint,
+            readSchemaVersion,
+            readContractFingerprint,
+            commandDomainsByType,
+            commandDeliveryModesByType,
+            commandPartitionKeyVectorsByType,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            commandLogStoresByType,
+            commandHotProjectionStoresByType,
+            commandHistoryStoresByType,
+            commandCacheStoresByType,
+            readProjectionFamiliesByType,
+            readServingStoresByType,
+            readCacheStoresByType
+        );
+    }
+
+    public static String fingerprint(
+        String nodeKind,
+        int manifestVersion,
+        String authorityServerId,
+        String runtimeDataMode,
+        String cacheMode,
+        String startupAttestationFingerprint,
+        int commandSchemaVersion,
+        String commandContractFingerprint,
+        String commandRouteManifestFingerprint,
+        int readSchemaVersion,
+        String readContractFingerprint,
+        Map<String, String> commandDomainsByType,
+        Map<String, String> commandDeliveryModesByType,
+        Map<String, String> commandPartitionKeyVectorsByType,
+        Map<String, String> commandTopicsByType,
+        Map<String, String> commandResponseTopicsByType,
+        Map<String, String> commandEventTopicsByType,
+        Map<String, String> commandStateTopicsByType,
+        Map<String, String> commandLogStoresByType,
+        Map<String, String> commandHotProjectionStoresByType,
+        Map<String, String> commandHistoryStoresByType,
+        Map<String, String> commandCacheStoresByType,
+        Map<String, String> readProjectionFamiliesByType,
+        Map<String, String> readServingStoresByType,
+        Map<String, String> readCacheStoresByType
+    ) {
+        return fingerprint(
+            nodeKind,
+            manifestVersion,
+            authorityServerId,
+            runtimeDataMode,
+            cacheMode,
+            startupAttestationFingerprint,
+            commandSchemaVersion,
+            commandContractFingerprint,
+            commandRouteManifestFingerprint,
+            null,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            readSchemaVersion,
+            readContractFingerprint,
+            commandDomainsByType,
+            commandDeliveryModesByType,
+            commandPartitionKeyVectorsByType,
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            commandTopicsByType,
+            commandResponseTopicsByType,
+            commandEventTopicsByType,
+            commandStateTopicsByType,
+            commandLogStoresByType,
+            commandHotProjectionStoresByType,
+            commandHistoryStoresByType,
+            commandCacheStoresByType,
+            readProjectionFamiliesByType,
+            readServingStoresByType,
+            readCacheStoresByType
+        );
+    }
+
+    public static String fingerprint(
+        String nodeKind,
+        int manifestVersion,
+        String authorityServerId,
+        String runtimeDataMode,
+        String cacheMode,
+        String startupAttestationFingerprint,
+        int commandSchemaVersion,
+        String commandContractFingerprint,
+        String commandRouteManifestFingerprint,
+        String authorityDomainTopologyFingerprint,
+        Map<String, String> authorityServicesByDomain,
+        Map<String, String> authorityConsumerGroupsByDomain,
+        Map<String, String> authorityPrincipalsByDomain,
+        int readSchemaVersion,
+        String readContractFingerprint,
+        Map<String, String> commandDomainsByType,
+        Map<String, String> commandDeliveryModesByType,
+        Map<String, String> commandPartitionKeyVectorsByType,
+        Map<String, String> commandAuthorityServicesByType,
+        Map<String, String> commandConsumerGroupsByType,
+        Map<String, String> commandAuthorityPrincipalsByType,
+        Map<String, String> commandPartitionCountsByType,
+        Map<String, String> commandTopicsByType,
+        Map<String, String> commandResponseTopicsByType,
+        Map<String, String> commandEventTopicsByType,
+        Map<String, String> commandStateTopicsByType,
+        Map<String, String> commandLogStoresByType,
+        Map<String, String> commandHotProjectionStoresByType,
+        Map<String, String> commandHistoryStoresByType,
+        Map<String, String> commandCacheStoresByType,
+        Map<String, String> readProjectionFamiliesByType,
+        Map<String, String> readServingStoresByType,
+        Map<String, String> readCacheStoresByType
+    ) {
         StringBuilder material = new StringBuilder()
             .append("runtime-authority-delivery-manifest\n")
             .append("nodeKind=").append(value(nodeKind)).append('\n')
@@ -366,11 +972,25 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
             .append("commandSchemaVersion=").append(commandSchemaVersion).append('\n')
             .append("commandContractFingerprint=").append(value(commandContractFingerprint)).append('\n')
             .append("commandRouteManifestFingerprint=").append(value(commandRouteManifestFingerprint)).append('\n')
+            .append("authorityDomainTopologyFingerprint=")
+            .append(value(authorityDomainTopologyFingerprint))
+            .append('\n')
             .append("readSchemaVersion=").append(readSchemaVersion).append('\n')
             .append("readContractFingerprint=").append(value(readContractFingerprint)).append('\n');
+        appendMap(material, "authorityServicesByDomain", authorityServicesByDomain);
+        appendMap(material, "authorityConsumerGroupsByDomain", authorityConsumerGroupsByDomain);
+        appendMap(material, "authorityPrincipalsByDomain", authorityPrincipalsByDomain);
         appendMap(material, "commandDomainsByType", commandDomainsByType);
         appendMap(material, "commandDeliveryModesByType", commandDeliveryModesByType);
         appendMap(material, "commandPartitionKeyVectorsByType", commandPartitionKeyVectorsByType);
+        appendMap(material, "commandAuthorityServicesByType", commandAuthorityServicesByType);
+        appendMap(material, "commandConsumerGroupsByType", commandConsumerGroupsByType);
+        appendMap(material, "commandAuthorityPrincipalsByType", commandAuthorityPrincipalsByType);
+        appendMap(material, "commandPartitionCountsByType", commandPartitionCountsByType);
+        appendMap(material, "commandTopicsByType", commandTopicsByType);
+        appendMap(material, "commandResponseTopicsByType", commandResponseTopicsByType);
+        appendMap(material, "commandEventTopicsByType", commandEventTopicsByType);
+        appendMap(material, "commandStateTopicsByType", commandStateTopicsByType);
         appendMap(material, "commandLogStoresByType", commandLogStoresByType);
         appendMap(material, "commandHotProjectionStoresByType", commandHotProjectionStoresByType);
         appendMap(material, "commandHistoryStoresByType", commandHistoryStoresByType);
@@ -459,6 +1079,14 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
         this.commandRouteManifestFingerprint = commandRouteManifestFingerprint;
     }
 
+    public String getAuthorityDomainTopologyFingerprint() {
+        return authorityDomainTopologyFingerprint;
+    }
+
+    public void setAuthorityDomainTopologyFingerprint(String authorityDomainTopologyFingerprint) {
+        this.authorityDomainTopologyFingerprint = authorityDomainTopologyFingerprint;
+    }
+
     public int getReadSchemaVersion() {
         return readSchemaVersion;
     }
@@ -473,6 +1101,30 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
 
     public void setReadContractFingerprint(String readContractFingerprint) {
         this.readContractFingerprint = readContractFingerprint;
+    }
+
+    public Map<String, String> getAuthorityServicesByDomain() {
+        return authorityServicesByDomain;
+    }
+
+    public void setAuthorityServicesByDomain(Map<String, String> authorityServicesByDomain) {
+        this.authorityServicesByDomain = copyMap(authorityServicesByDomain);
+    }
+
+    public Map<String, String> getAuthorityConsumerGroupsByDomain() {
+        return authorityConsumerGroupsByDomain;
+    }
+
+    public void setAuthorityConsumerGroupsByDomain(Map<String, String> authorityConsumerGroupsByDomain) {
+        this.authorityConsumerGroupsByDomain = copyMap(authorityConsumerGroupsByDomain);
+    }
+
+    public Map<String, String> getAuthorityPrincipalsByDomain() {
+        return authorityPrincipalsByDomain;
+    }
+
+    public void setAuthorityPrincipalsByDomain(Map<String, String> authorityPrincipalsByDomain) {
+        this.authorityPrincipalsByDomain = copyMap(authorityPrincipalsByDomain);
     }
 
     public Map<String, String> getCommandDomainsByType() {
@@ -497,6 +1149,70 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
 
     public void setCommandPartitionKeyVectorsByType(Map<String, String> commandPartitionKeyVectorsByType) {
         this.commandPartitionKeyVectorsByType = copyMap(commandPartitionKeyVectorsByType);
+    }
+
+    public Map<String, String> getCommandAuthorityServicesByType() {
+        return commandAuthorityServicesByType;
+    }
+
+    public void setCommandAuthorityServicesByType(Map<String, String> commandAuthorityServicesByType) {
+        this.commandAuthorityServicesByType = copyMap(commandAuthorityServicesByType);
+    }
+
+    public Map<String, String> getCommandConsumerGroupsByType() {
+        return commandConsumerGroupsByType;
+    }
+
+    public void setCommandConsumerGroupsByType(Map<String, String> commandConsumerGroupsByType) {
+        this.commandConsumerGroupsByType = copyMap(commandConsumerGroupsByType);
+    }
+
+    public Map<String, String> getCommandAuthorityPrincipalsByType() {
+        return commandAuthorityPrincipalsByType;
+    }
+
+    public void setCommandAuthorityPrincipalsByType(Map<String, String> commandAuthorityPrincipalsByType) {
+        this.commandAuthorityPrincipalsByType = copyMap(commandAuthorityPrincipalsByType);
+    }
+
+    public Map<String, String> getCommandPartitionCountsByType() {
+        return commandPartitionCountsByType;
+    }
+
+    public void setCommandPartitionCountsByType(Map<String, String> commandPartitionCountsByType) {
+        this.commandPartitionCountsByType = copyMap(commandPartitionCountsByType);
+    }
+
+    public Map<String, String> getCommandTopicsByType() {
+        return commandTopicsByType;
+    }
+
+    public void setCommandTopicsByType(Map<String, String> commandTopicsByType) {
+        this.commandTopicsByType = copyMap(commandTopicsByType);
+    }
+
+    public Map<String, String> getCommandResponseTopicsByType() {
+        return commandResponseTopicsByType;
+    }
+
+    public void setCommandResponseTopicsByType(Map<String, String> commandResponseTopicsByType) {
+        this.commandResponseTopicsByType = copyMap(commandResponseTopicsByType);
+    }
+
+    public Map<String, String> getCommandEventTopicsByType() {
+        return commandEventTopicsByType;
+    }
+
+    public void setCommandEventTopicsByType(Map<String, String> commandEventTopicsByType) {
+        this.commandEventTopicsByType = copyMap(commandEventTopicsByType);
+    }
+
+    public Map<String, String> getCommandStateTopicsByType() {
+        return commandStateTopicsByType;
+    }
+
+    public void setCommandStateTopicsByType(Map<String, String> commandStateTopicsByType) {
+        this.commandStateTopicsByType = copyMap(commandStateTopicsByType);
     }
 
     public Map<String, String> getCommandLogStoresByType() {
@@ -569,6 +1285,7 @@ public class RuntimeAuthorityDeliveryManifest implements Serializable {
             + ", authorityServerId=" + authorityServerId
             + ", runtimeDataMode=" + runtimeDataMode
             + ", commandRouteManifest=" + shortFingerprint(commandRouteManifestFingerprint)
+            + ", authorityDomainTopology=" + shortFingerprint(authorityDomainTopologyFingerprint)
             + ", manifestFingerprint=" + shortFingerprint(manifestFingerprint);
     }
 

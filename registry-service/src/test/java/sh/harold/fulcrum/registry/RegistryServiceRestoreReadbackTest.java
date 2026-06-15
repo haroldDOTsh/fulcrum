@@ -2,9 +2,11 @@ package sh.harold.fulcrum.registry;
 
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCustodyPreflight;
+import sh.harold.fulcrum.api.data.impl.authority.events.InMemoryAuthorityHotStateProjection;
 import sh.harold.fulcrum.api.data.impl.postgres.FulcrumDataMigrations;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionBudget;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
+import sh.harold.fulcrum.registry.authority.AuthoritySubstratePreflight;
 import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshot;
 import sh.harold.fulcrum.registry.persistence.RegistryNodeSnapshotStore;
 import sh.harold.fulcrum.registry.proxy.ProxyRegistry;
@@ -120,8 +122,13 @@ class RegistryServiceRestoreReadbackTest {
             "REDIS",
             restoreReport,
             budget,
-            RegistryService.AuthorityStartupState.from(custody),
-            RegistryService.DispatcherStartupState.enabled("registry-shadow-drain", 10, 250L, 1000L)
+            RegistryService.AuthorityStartupState.from(custody, targetSubstrateReport()),
+            RegistryService.DispatcherStartupState.enabled(
+                InMemoryAuthorityHotStateProjection.PROJECTION_NAME,
+                10,
+                250L,
+                1000L
+            )
         );
 
         assertThat(receipt.snapshotRestore().readbackClean()).isTrue();
@@ -138,6 +145,13 @@ class RegistryServiceRestoreReadbackTest {
         assertThat(receipt.authority().custodyFingerprint()).isEqualTo(custody.custodyFingerprint());
         assertThat(receipt.authority().checkNames())
             .containsExactly("authority-command-log-schema", "postgres-data-authority-schema");
+        assertThat(receipt.authority().substrateMode()).isEqualTo("target");
+        assertThat(receipt.authority().substrateTargetComplete()).isTrue();
+        assertThat(receipt.authority().substrateCommandLog()).isEqualTo("kafka");
+        assertThat(receipt.authority().substrateHotState()).isEqualTo("cassandra");
+        assertThat(receipt.authority().substrateHistory()).isEqualTo("postgresql");
+        assertThat(receipt.authority().substrateCache()).isEqualTo("valkey");
+        assertThat(receipt.authority().substrateLimitations()).isEmpty();
         assertThat(receipt.dispatcher().enabled()).isTrue();
         assertThat(receipt.dispatcher().schemaValidated()).isTrue();
         assertThat(receipt.dispatcher().scheduled()).isTrue();
@@ -151,7 +165,7 @@ class RegistryServiceRestoreReadbackTest {
             .contains("contractVersion=3")
             .contains("ddlOwner=data-api")
             .contains("schemaMigrationResource=" + FulcrumDataMigrations.SCHEMA_MIGRATION)
-            .contains("consumerName=registry-shadow-drain")
+            .contains("consumerName=" + InMemoryAuthorityHotStateProjection.PROJECTION_NAME)
             .doesNotContain("jdbc", "password", "username");
 
         assertThat(RegistryService.authorityStatusLines(
@@ -164,8 +178,15 @@ class RegistryServiceRestoreReadbackTest {
                 "Owner Node: registry-test",
                 "Principal Source: message-bus-provider",
                 "Preflight Passed: true",
+                "Substrate Mode: target",
+                "Substrate Target Complete: true",
+                "Substrate Command Log: kafka",
+                "Substrate Hot State: cassandra",
+                "Substrate History: postgresql",
+                "Substrate Cache: valkey",
                 "Checks: [authority-command-log-schema, postgres-data-authority-schema]",
-                "Dispatcher: enabled, consumer=registry-shadow-drain, batchSize=10, intervalMs=250"
+                "Dispatcher: enabled, consumer=" + InMemoryAuthorityHotStateProjection.PROJECTION_NAME
+                    + ", batchSize=10, intervalMs=250"
             )
             .anySatisfy(line -> assertThat(line).startsWith("Startup Receipt: "))
             .anySatisfy(line -> assertThat(line).startsWith("Custody Fingerprint: "));
@@ -216,7 +237,45 @@ class RegistryServiceRestoreReadbackTest {
             restoreReport,
             budget,
             authority,
-            RegistryService.DispatcherStartupState.enabled("registry-shadow-drain", 50, 1000L, 5000L)
+            RegistryService.DispatcherStartupState.enabled(
+                InMemoryAuthorityHotStateProjection.PROJECTION_NAME,
+                50,
+                1000L,
+                5000L
+            )
+        );
+        RegistryService.RegistryStartupReceipt changedAuthoritySubstrate = RegistryService.createStartupReceipt(
+            Instant.parse("2026-06-13T00:00:00Z"),
+            "registry-test",
+            "IN_MEMORY",
+            restoreReport,
+            budget,
+            RegistryService.AuthorityStartupState.from(
+                DataAuthorityCustodyPreflight.inspect(
+                    "registry-test",
+                    "message-bus-provider",
+                    List.of(DataAuthorityCustodyPreflight.check("postgres-data-authority-schema", () -> {
+                    }))
+                ),
+                AuthoritySubstratePreflight.inspect(
+                    Map.of(
+                        "substrate", Map.of(
+                            "mode", "target",
+                            "command-log", "kafka",
+                            "hot-state", "cassandra",
+                            "history", "postgresql",
+                            "cache", "valkey"
+                        )
+                    ),
+                    new AuthoritySubstratePreflight.ActualSubstrate(
+                        "kafka",
+                        "cassandra",
+                        "postgresql",
+                        "valkey"
+                    )
+                )
+            ),
+            dispatcher
         );
         RegistryService.RegistryStartupReceipt changedSchema = RegistryService.createStartupReceipt(
             Instant.parse("2026-06-13T00:00:00Z"),
@@ -250,6 +309,7 @@ class RegistryServiceRestoreReadbackTest {
 
         assertThat(sameEvidence.fingerprint()).isEqualTo(first.fingerprint());
         assertThat(changedDispatcher.fingerprint()).isNotEqualTo(first.fingerprint());
+        assertThat(changedAuthoritySubstrate.fingerprint()).isNotEqualTo(first.fingerprint());
         assertThat(changedSchema.fingerprint()).isNotEqualTo(first.fingerprint());
         assertThat(first.authority().enabled()).isFalse();
         assertThat(first.authority().disabledReason()).isEqualTo("authority-disabled");
@@ -268,6 +328,26 @@ class RegistryServiceRestoreReadbackTest {
             "001",
             FulcrumDataMigrations.SCHEMA_MIGRATION,
             FulcrumDataMigrations.SCHEMA_MIGRATION
+        );
+    }
+
+    private static AuthoritySubstratePreflight.Report targetSubstrateReport() {
+        return AuthoritySubstratePreflight.inspect(
+            Map.of(
+                "substrate", Map.of(
+                    "mode", "target",
+                    "command-log", "kafka",
+                    "hot-state", "cassandra",
+                    "history", "postgresql",
+                    "cache", "valkey"
+                )
+            ),
+            new AuthoritySubstratePreflight.ActualSubstrate(
+                "kafka",
+                "cassandra",
+                "postgresql",
+                "valkey"
+            )
         );
     }
 

@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.registry.authority;
 
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
@@ -76,6 +77,21 @@ public final class AuthorityDeliveryManifestValidator {
             .equals(safeMap(manifest.getCommandPartitionKeyVectorsByType()))) {
             return "Data Authority command partition-key vector manifest mismatch";
         }
+        if (!DataAuthorityCommandContracts.commandTopicsByType().equals(safeMap(manifest.getCommandTopicsByType()))) {
+            return "Data Authority command topic manifest mismatch";
+        }
+        if (!DataAuthorityCommandContracts.responseTopicsByType()
+            .equals(safeMap(manifest.getCommandResponseTopicsByType()))) {
+            return "Data Authority command response topic manifest mismatch";
+        }
+        if (!DataAuthorityCommandContracts.eventTopicsByType()
+            .equals(safeMap(manifest.getCommandEventTopicsByType()))) {
+            return "Data Authority command event topic manifest mismatch";
+        }
+        if (!DataAuthorityCommandContracts.stateTopicsByType()
+            .equals(safeMap(manifest.getCommandStateTopicsByType()))) {
+            return "Data Authority command state topic manifest mismatch";
+        }
         if (!expectedCommandLogStores().equals(safeMap(manifest.getCommandLogStoresByType()))) {
             return "Data Authority command log store manifest mismatch";
         }
@@ -97,6 +113,35 @@ public final class AuthorityDeliveryManifestValidator {
         if (!expectedReadCacheStores().equals(safeMap(manifest.getReadCacheStoresByType()))) {
             return "Data Authority read cache store manifest mismatch";
         }
+        if (!Objects.equals(
+            manifest.getAuthorityDomainTopologyFingerprint(),
+            AuthorityDomainTopology.fingerprint()
+        )) {
+            return "Data Authority domain topology fingerprint mismatch";
+        }
+        if (!expectedAuthorityServicesByDomain().equals(safeMap(manifest.getAuthorityServicesByDomain()))) {
+            return "Data Authority authority service topology mismatch";
+        }
+        if (!expectedAuthorityConsumerGroupsByDomain()
+            .equals(safeMap(manifest.getAuthorityConsumerGroupsByDomain()))) {
+            return "Data Authority consumer group topology mismatch";
+        }
+        if (!expectedAuthorityPrincipalsByDomain().equals(safeMap(manifest.getAuthorityPrincipalsByDomain()))) {
+            return "Data Authority authority principal topology mismatch";
+        }
+        if (!expectedCommandAuthorityServices().equals(safeMap(manifest.getCommandAuthorityServicesByType()))) {
+            return "Data Authority command authority service manifest mismatch";
+        }
+        if (!expectedCommandConsumerGroups().equals(safeMap(manifest.getCommandConsumerGroupsByType()))) {
+            return "Data Authority command consumer group manifest mismatch";
+        }
+        if (!expectedCommandAuthorityPrincipals()
+            .equals(safeMap(manifest.getCommandAuthorityPrincipalsByType()))) {
+            return "Data Authority command authority principal manifest mismatch";
+        }
+        if (!expectedCommandPartitionCounts().equals(safeMap(manifest.getCommandPartitionCountsByType()))) {
+            return "Data Authority command partition-count manifest mismatch";
+        }
 
         String expectedFingerprint = RuntimeAuthorityDeliveryManifest.fingerprint(
             manifest.getNodeKind(),
@@ -108,11 +153,23 @@ public final class AuthorityDeliveryManifestValidator {
             manifest.getCommandSchemaVersion(),
             manifest.getCommandContractFingerprint(),
             manifest.getCommandRouteManifestFingerprint(),
+            manifest.getAuthorityDomainTopologyFingerprint(),
+            manifest.getAuthorityServicesByDomain(),
+            manifest.getAuthorityConsumerGroupsByDomain(),
+            manifest.getAuthorityPrincipalsByDomain(),
             manifest.getReadSchemaVersion(),
             manifest.getReadContractFingerprint(),
             manifest.getCommandDomainsByType(),
             manifest.getCommandDeliveryModesByType(),
             manifest.getCommandPartitionKeyVectorsByType(),
+            manifest.getCommandAuthorityServicesByType(),
+            manifest.getCommandConsumerGroupsByType(),
+            manifest.getCommandAuthorityPrincipalsByType(),
+            manifest.getCommandPartitionCountsByType(),
+            manifest.getCommandTopicsByType(),
+            manifest.getCommandResponseTopicsByType(),
+            manifest.getCommandEventTopicsByType(),
+            manifest.getCommandStateTopicsByType(),
             manifest.getCommandLogStoresByType(),
             manifest.getCommandHotProjectionStoresByType(),
             manifest.getCommandHistoryStoresByType(),
@@ -139,12 +196,40 @@ public final class AuthorityDeliveryManifestValidator {
         }
     }
 
+    private static Map<String, String> expectedAuthorityServicesByDomain() {
+        return expectedDomainMetadata(AuthorityDomainTopology.DomainTopology::authorityService);
+    }
+
+    private static Map<String, String> expectedAuthorityConsumerGroupsByDomain() {
+        return expectedDomainMetadata(AuthorityDomainTopology.DomainTopology::consumerGroup);
+    }
+
+    private static Map<String, String> expectedAuthorityPrincipalsByDomain() {
+        return expectedDomainMetadata(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+    }
+
     private static Map<String, String> expectedCommandDomains() {
         return expectedCommandMetadata(DataAuthorityCommandContracts.CommandContract::domain);
     }
 
     private static Map<String, String> expectedCommandDeliveryModes() {
         return expectedCommandMetadata(contract -> contract.deliveryMode().name());
+    }
+
+    private static Map<String, String> expectedCommandAuthorityServices() {
+        return expectedCommandTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityService);
+    }
+
+    private static Map<String, String> expectedCommandConsumerGroups() {
+        return expectedCommandTopologyMetadata(AuthorityDomainTopology.DomainTopology::consumerGroup);
+    }
+
+    private static Map<String, String> expectedCommandAuthorityPrincipals() {
+        return expectedCommandTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+    }
+
+    private static Map<String, String> expectedCommandPartitionCounts() {
+        return expectedCommandTopologyMetadata(topology -> Integer.toString(topology.partitionCount()));
     }
 
     private static Map<String, String> expectedCommandLogStores() {
@@ -182,6 +267,29 @@ public final class AuthorityDeliveryManifestValidator {
         DataAuthorityCommandContracts.all().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> values.put(entry.getKey().name(), extractor.apply(entry.getValue())));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, String> expectedCommandTopologyMetadata(
+        Function<AuthorityDomainTopology.DomainTopology, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        DataAuthorityCommandContracts.all().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> values.put(
+                entry.getKey().name(),
+                extractor.apply(AuthorityDomainTopology.domain(entry.getValue().domain()))
+            ));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, String> expectedDomainMetadata(
+        Function<AuthorityDomainTopology.DomainTopology, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        AuthorityDomainTopology.all().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
         return Map.copyOf(values);
     }
 

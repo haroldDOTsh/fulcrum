@@ -2,6 +2,7 @@ package sh.harold.fulcrum.registry.authority;
 
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
@@ -91,51 +92,47 @@ class AuthorityDeliveryManifestValidatorTest {
 
     @Test
     void rejectsManifestMissingPartitionKeyVectors() {
-        RuntimeAuthorityDeliveryManifest manifest = new RuntimeAuthorityDeliveryManifest(
-            "Paper",
-            1,
-            "registry-service",
-            "remote-authority",
-            "watermarked-snapshot-cache",
-            "attestation-fingerprint",
-            DataAuthority.COMMAND_SCHEMA_VERSION,
-            DataAuthorityCommandContracts.fingerprint(),
-            DataAuthorityCommandContracts.routeManifestFingerprint(),
-            DataAuthorityReadContracts.schemaVersion(),
-            DataAuthorityReadContracts.fingerprint(),
-            commandDomainsByType(),
-            commandDeliveryModesByType(),
-            readProjectionFamiliesByType(),
-            "legacy-manifest-fingerprint"
-        );
+        RuntimeAuthorityDeliveryManifest manifest = validManifest();
+        manifest.setCommandPartitionKeyVectorsByType(Map.of());
 
         assertThat(AuthorityDeliveryManifestValidator.rejection(manifest))
             .isEqualTo("Data Authority command partition-key vector manifest mismatch");
     }
 
     @Test
+    void rejectsManifestMissingDomainTopologyMetadata() {
+        RuntimeAuthorityDeliveryManifest manifest = validManifest();
+        manifest.setAuthorityDomainTopologyFingerprint("");
+
+        assertThat(AuthorityDeliveryManifestValidator.rejection(manifest))
+            .isEqualTo("Data Authority domain topology fingerprint mismatch");
+    }
+
+    @Test
+    void rejectsManifestMissingCommandTopologyMetadata() {
+        RuntimeAuthorityDeliveryManifest manifest = validManifest();
+        manifest.setCommandConsumerGroupsByType(Map.of());
+
+        assertThat(AuthorityDeliveryManifestValidator.rejection(manifest))
+            .isEqualTo("Data Authority command consumer group manifest mismatch");
+    }
+
+    @Test
     void rejectsManifestMissingStorePlacementMetadata() {
-        RuntimeAuthorityDeliveryManifest manifest = new RuntimeAuthorityDeliveryManifest(
-            "Paper",
-            1,
-            "registry-service",
-            "remote-authority",
-            "watermarked-snapshot-cache",
-            "attestation-fingerprint",
-            DataAuthority.COMMAND_SCHEMA_VERSION,
-            DataAuthorityCommandContracts.fingerprint(),
-            DataAuthorityCommandContracts.routeManifestFingerprint(),
-            DataAuthorityReadContracts.schemaVersion(),
-            DataAuthorityReadContracts.fingerprint(),
-            commandDomainsByType(),
-            commandDeliveryModesByType(),
-            DataAuthorityCommandContracts.routePartitionKeyVectors(),
-            readProjectionFamiliesByType(),
-            "legacy-manifest-fingerprint"
-        );
+        RuntimeAuthorityDeliveryManifest manifest = validManifest();
+        manifest.setCommandLogStoresByType(Map.of());
 
         assertThat(AuthorityDeliveryManifestValidator.rejection(manifest))
             .isEqualTo("Data Authority command log store manifest mismatch");
+    }
+
+    @Test
+    void rejectsManifestMissingRouteTopicMetadata() {
+        RuntimeAuthorityDeliveryManifest manifest = validManifest();
+        manifest.setCommandTopicsByType(Map.of());
+
+        assertThat(AuthorityDeliveryManifestValidator.rejection(manifest))
+            .isEqualTo("Data Authority command topic manifest mismatch");
     }
 
     @Test
@@ -172,11 +169,23 @@ class AuthorityDeliveryManifestValidatorTest {
             DataAuthority.COMMAND_SCHEMA_VERSION,
             DataAuthorityCommandContracts.fingerprint(),
             DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityDomainTopology.fingerprint(),
+            authorityServicesByDomain(),
+            authorityConsumerGroupsByDomain(),
+            authorityPrincipalsByDomain(),
             DataAuthorityReadContracts.schemaVersion(),
             DataAuthorityReadContracts.fingerprint(),
             commandDomainsByType(),
             commandDeliveryModesByType(),
             DataAuthorityCommandContracts.routePartitionKeyVectors(),
+            commandAuthorityServicesByType(),
+            commandConsumerGroupsByType(),
+            commandAuthorityPrincipalsByType(),
+            commandPartitionCountsByType(),
+            DataAuthorityCommandContracts.commandTopicsByType(),
+            DataAuthorityCommandContracts.responseTopicsByType(),
+            DataAuthorityCommandContracts.eventTopicsByType(),
+            DataAuthorityCommandContracts.stateTopicsByType(),
             commandLogStoresByType(),
             commandHotProjectionStoresByType(),
             commandHistoryStoresByType(),
@@ -193,6 +202,34 @@ class AuthorityDeliveryManifestValidatorTest {
 
     private static Map<String, String> commandDeliveryModesByType() {
         return commandMetadataByType(contract -> contract.deliveryMode().name());
+    }
+
+    private static Map<String, String> authorityServicesByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityService);
+    }
+
+    private static Map<String, String> authorityConsumerGroupsByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::consumerGroup);
+    }
+
+    private static Map<String, String> authorityPrincipalsByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+    }
+
+    private static Map<String, String> commandAuthorityServicesByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::authorityService);
+    }
+
+    private static Map<String, String> commandConsumerGroupsByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::consumerGroup);
+    }
+
+    private static Map<String, String> commandAuthorityPrincipalsByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+    }
+
+    private static Map<String, String> commandPartitionCountsByType() {
+        return commandTopologyMetadataByType(topology -> Integer.toString(topology.partitionCount()));
     }
 
     private static Map<String, String> commandLogStoresByType() {
@@ -230,6 +267,29 @@ class AuthorityDeliveryManifestValidatorTest {
         DataAuthorityCommandContracts.all().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> values.put(entry.getKey().name(), extractor.apply(entry.getValue())));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, String> commandTopologyMetadataByType(
+        Function<AuthorityDomainTopology.DomainTopology, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        DataAuthorityCommandContracts.all().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> values.put(
+                entry.getKey().name(),
+                extractor.apply(AuthorityDomainTopology.domain(entry.getValue().domain()))
+            ));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, String> domainTopologyMetadata(
+        Function<AuthorityDomainTopology.DomainTopology, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        AuthorityDomainTopology.all().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
         return Map.copyOf(values);
     }
 

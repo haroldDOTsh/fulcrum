@@ -2,6 +2,7 @@ package sh.harold.fulcrum.registry.persistence;
 
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.data.impl.postgres.FulcrumDataMigrations;
@@ -461,7 +462,7 @@ class RegistryNodeSnapshotStoreWiringTest {
             "route-manifest",
             1,
             "read-contract",
-            Map.of("GRANT_RANK", "player_rank"),
+            Map.of("GRANT_RANK", "rank"),
             Map.of("GRANT_RANK", "SYNC_INTERACTIVE"),
             Map.of("GRANT_RANK", "rank:player:{aggregateId}=>rank:player:{aggregateId}"),
             Map.of("GRANT_RANK", "kafka"),
@@ -486,11 +487,23 @@ class RegistryNodeSnapshotStoreWiringTest {
             DataAuthority.COMMAND_SCHEMA_VERSION,
             DataAuthorityCommandContracts.fingerprint(),
             DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityDomainTopology.fingerprint(),
+            authorityServicesByDomain(),
+            authorityConsumerGroupsByDomain(),
+            authorityPrincipalsByDomain(),
             DataAuthorityReadContracts.schemaVersion(),
             DataAuthorityReadContracts.fingerprint(),
             commandDomainsByType(),
             commandDeliveryModesByType(),
             DataAuthorityCommandContracts.routePartitionKeyVectors(),
+            commandAuthorityServicesByType(),
+            commandConsumerGroupsByType(),
+            commandAuthorityPrincipalsByType(),
+            commandPartitionCountsByType(),
+            DataAuthorityCommandContracts.commandTopicsByType(),
+            DataAuthorityCommandContracts.responseTopicsByType(),
+            DataAuthorityCommandContracts.eventTopicsByType(),
+            DataAuthorityCommandContracts.stateTopicsByType(),
             commandLogStoresByType(),
             commandHotProjectionStoresByType(),
             commandHistoryStoresByType(),
@@ -519,30 +532,42 @@ class RegistryNodeSnapshotStoreWiringTest {
     }
 
     private static Map<String, Object> authorityDeliveryManifestMetadata(RuntimeAuthorityDeliveryManifest manifest) {
-        return Map.ofEntries(
-            Map.entry("nodeKind", manifest.getNodeKind()),
-            Map.entry("manifestVersion", manifest.getManifestVersion()),
-            Map.entry("authorityServerId", manifest.getAuthorityServerId()),
-            Map.entry("runtimeDataMode", manifest.getRuntimeDataMode()),
-            Map.entry("cacheMode", manifest.getCacheMode()),
-            Map.entry("startupAttestationFingerprint", manifest.getStartupAttestationFingerprint()),
-            Map.entry("commandSchemaVersion", manifest.getCommandSchemaVersion()),
-            Map.entry("commandContractFingerprint", manifest.getCommandContractFingerprint()),
-            Map.entry("commandRouteManifestFingerprint", manifest.getCommandRouteManifestFingerprint()),
-            Map.entry("readSchemaVersion", manifest.getReadSchemaVersion()),
-            Map.entry("readContractFingerprint", manifest.getReadContractFingerprint()),
-            Map.entry("commandDomainsByType", manifest.getCommandDomainsByType()),
-            Map.entry("commandDeliveryModesByType", manifest.getCommandDeliveryModesByType()),
-            Map.entry("commandPartitionKeyVectorsByType", manifest.getCommandPartitionKeyVectorsByType()),
-            Map.entry("commandLogStoresByType", manifest.getCommandLogStoresByType()),
-            Map.entry("commandHotProjectionStoresByType", manifest.getCommandHotProjectionStoresByType()),
-            Map.entry("commandHistoryStoresByType", manifest.getCommandHistoryStoresByType()),
-            Map.entry("commandCacheStoresByType", manifest.getCommandCacheStoresByType()),
-            Map.entry("readProjectionFamiliesByType", manifest.getReadProjectionFamiliesByType()),
-            Map.entry("readServingStoresByType", manifest.getReadServingStoresByType()),
-            Map.entry("readCacheStoresByType", manifest.getReadCacheStoresByType()),
-            Map.entry("manifestFingerprint", manifest.getManifestFingerprint())
-        );
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("nodeKind", manifest.getNodeKind());
+        metadata.put("manifestVersion", manifest.getManifestVersion());
+        metadata.put("authorityServerId", manifest.getAuthorityServerId());
+        metadata.put("runtimeDataMode", manifest.getRuntimeDataMode());
+        metadata.put("cacheMode", manifest.getCacheMode());
+        metadata.put("startupAttestationFingerprint", manifest.getStartupAttestationFingerprint());
+        metadata.put("commandSchemaVersion", manifest.getCommandSchemaVersion());
+        metadata.put("commandContractFingerprint", manifest.getCommandContractFingerprint());
+        metadata.put("commandRouteManifestFingerprint", manifest.getCommandRouteManifestFingerprint());
+        metadata.put("authorityDomainTopologyFingerprint", manifest.getAuthorityDomainTopologyFingerprint());
+        metadata.put("authorityServicesByDomain", manifest.getAuthorityServicesByDomain());
+        metadata.put("authorityConsumerGroupsByDomain", manifest.getAuthorityConsumerGroupsByDomain());
+        metadata.put("authorityPrincipalsByDomain", manifest.getAuthorityPrincipalsByDomain());
+        metadata.put("readSchemaVersion", manifest.getReadSchemaVersion());
+        metadata.put("readContractFingerprint", manifest.getReadContractFingerprint());
+        metadata.put("commandDomainsByType", manifest.getCommandDomainsByType());
+        metadata.put("commandDeliveryModesByType", manifest.getCommandDeliveryModesByType());
+        metadata.put("commandPartitionKeyVectorsByType", manifest.getCommandPartitionKeyVectorsByType());
+        metadata.put("commandAuthorityServicesByType", manifest.getCommandAuthorityServicesByType());
+        metadata.put("commandConsumerGroupsByType", manifest.getCommandConsumerGroupsByType());
+        metadata.put("commandAuthorityPrincipalsByType", manifest.getCommandAuthorityPrincipalsByType());
+        metadata.put("commandPartitionCountsByType", manifest.getCommandPartitionCountsByType());
+        metadata.put("commandTopicsByType", manifest.getCommandTopicsByType());
+        metadata.put("commandResponseTopicsByType", manifest.getCommandResponseTopicsByType());
+        metadata.put("commandEventTopicsByType", manifest.getCommandEventTopicsByType());
+        metadata.put("commandStateTopicsByType", manifest.getCommandStateTopicsByType());
+        metadata.put("commandLogStoresByType", manifest.getCommandLogStoresByType());
+        metadata.put("commandHotProjectionStoresByType", manifest.getCommandHotProjectionStoresByType());
+        metadata.put("commandHistoryStoresByType", manifest.getCommandHistoryStoresByType());
+        metadata.put("commandCacheStoresByType", manifest.getCommandCacheStoresByType());
+        metadata.put("readProjectionFamiliesByType", manifest.getReadProjectionFamiliesByType());
+        metadata.put("readServingStoresByType", manifest.getReadServingStoresByType());
+        metadata.put("readCacheStoresByType", manifest.getReadCacheStoresByType());
+        metadata.put("manifestFingerprint", manifest.getManifestFingerprint());
+        return metadata;
     }
 
     private static Map<String, String> commandDomainsByType() {
@@ -551,6 +576,34 @@ class RegistryNodeSnapshotStoreWiringTest {
 
     private static Map<String, String> commandDeliveryModesByType() {
         return commandMetadataByType(contract -> contract.deliveryMode().name());
+    }
+
+    private static Map<String, String> authorityServicesByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityService);
+    }
+
+    private static Map<String, String> authorityConsumerGroupsByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::consumerGroup);
+    }
+
+    private static Map<String, String> authorityPrincipalsByDomain() {
+        return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+    }
+
+    private static Map<String, String> commandAuthorityServicesByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::authorityService);
+    }
+
+    private static Map<String, String> commandConsumerGroupsByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::consumerGroup);
+    }
+
+    private static Map<String, String> commandAuthorityPrincipalsByType() {
+        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+    }
+
+    private static Map<String, String> commandPartitionCountsByType() {
+        return commandTopologyMetadataByType(topology -> Integer.toString(topology.partitionCount()));
     }
 
     private static Map<String, String> commandLogStoresByType() {
@@ -588,6 +641,29 @@ class RegistryNodeSnapshotStoreWiringTest {
         DataAuthorityCommandContracts.all().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> values.put(entry.getKey().name(), extractor.apply(entry.getValue())));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, String> commandTopologyMetadataByType(
+        Function<AuthorityDomainTopology.DomainTopology, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        DataAuthorityCommandContracts.all().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> values.put(
+                entry.getKey().name(),
+                extractor.apply(AuthorityDomainTopology.domain(entry.getValue().domain()))
+            ));
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, String> domainTopologyMetadata(
+        Function<AuthorityDomainTopology.DomainTopology, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        AuthorityDomainTopology.all().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
         return Map.copyOf(values);
     }
 
