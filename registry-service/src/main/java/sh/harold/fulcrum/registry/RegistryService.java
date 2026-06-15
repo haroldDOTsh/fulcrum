@@ -208,7 +208,7 @@ public class RegistryService {
             : false;
         boolean authorityEnabled = System.getenv("AUTHORITY_ENABLED") != null
             ? Boolean.parseBoolean(System.getenv("AUTHORITY_ENABLED"))
-            : postgresEnabled;
+            : false;
 
         return Map.of(
             "redis", Map.of(
@@ -516,7 +516,7 @@ public class RegistryService {
         Properties poolProperties = postgresPoolProperties(postgresConfig);
         List<PostgresConnectionBudget.Declaration> declarations = new ArrayList<>();
 
-        if (authorityEnabled(authorityConfig, true)) {
+        if (authorityEnabled(authorityConfig)) {
             declarations.add(PostgresConnectionBudget.fromPoolProperties(
                 "registry-service:central-authority",
                 "registry-service",
@@ -1227,7 +1227,7 @@ public class RegistryService {
         Map<String, Object> postgresConfig = (Map<String, Object>) config.get("postgres");
         Map<String, Object> authorityConfig = (Map<String, Object>) config.get("authority");
         boolean postgresEnabled = postgresConfig != null && booleanValue(postgresConfig.get("enabled"), false);
-        boolean authorityEnabled = authorityEnabled(authorityConfig, postgresEnabled);
+        boolean authorityEnabled = authorityEnabled(authorityConfig);
 
         if (!authorityEnabled) {
             LOGGER.info("Central data authority disabled");
@@ -2040,15 +2040,15 @@ public class RegistryService {
         LOGGER.info("Central data authority migrations completed");
     }
 
-    private static boolean authorityEnabled(Map<String, Object> authorityConfig, boolean postgresEnabled) {
+    private static boolean authorityEnabled(Map<String, Object> authorityConfig) {
         if (authorityConfig == null || !authorityConfig.containsKey("enabled")) {
-            return postgresEnabled;
+            return false;
         }
         Object enabled = authorityConfig.get("enabled");
         if (enabled == null || enabled.toString().isBlank()) {
-            return postgresEnabled;
+            return false;
         }
-        return booleanValue(enabled, postgresEnabled);
+        return booleanValue(enabled, false);
     }
 
     private static String jdbcUrl(Map<String, Object> postgresConfig) {

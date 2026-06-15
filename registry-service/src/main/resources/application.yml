@@ -28,7 +28,7 @@ postgres:
 
 # Central data authority. Game nodes submit commands here instead of opening DB pools.
 authority:
-  enabled: ${AUTHORITY_ENABLED:}
+  enabled: ${AUTHORITY_ENABLED:false}
   migrations:
     enabled: true
     auto-migrate: ${AUTHORITY_AUTO_MIGRATE:false}

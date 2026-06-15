@@ -43,6 +43,19 @@ class RegistryServicePostgresConnectionBudgetTest {
     }
 
     @Test
+    void postgresDoesNotImplicitlyEnableAuthorityPool() {
+        PostgresConnectionBudget.Report report = RegistryService.buildPostgresConnectionBudget(
+            configWithoutAuthority(true, 2, 0, 8)
+        );
+
+        assertThat(report.accepted()).isTrue();
+        assertThat(report.totalDeclaredMaxPoolSize()).isEqualTo(2);
+        assertThat(report.declarations())
+            .extracting(PostgresConnectionBudget.Declaration::ownerRole)
+            .containsExactly("registry-service:node-snapshots");
+    }
+
+    @Test
     void disabledPostgresDeclaresNoPools() {
         PostgresConnectionBudget.Report report = RegistryService.buildPostgresConnectionBudget(
             config(false, true, 2, 0, 8)
@@ -87,6 +100,27 @@ class RegistryServicePostgresConnectionBudgetTest {
             ),
             "authority", Map.of(
                 "enabled", authorityEnabled
+            )
+        );
+    }
+
+    private static Map<String, Object> configWithoutAuthority(boolean postgresEnabled,
+                                                              int maximumPoolSize,
+                                                              int minimumIdle,
+                                                              int maxTotalPoolSize) {
+        return Map.of(
+            "postgres", Map.of(
+                "enabled", postgresEnabled,
+                "database", "fulcrum",
+                "pool", Map.of(
+                    "maximum-pool-size", maximumPoolSize,
+                    "minimum-idle", minimumIdle,
+                    "connection-timeout", 7000
+                ),
+                "connection-budget", Map.of(
+                    "max-total-pool-size", maxTotalPoolSize,
+                    "enforce", true
+                )
             )
         );
     }

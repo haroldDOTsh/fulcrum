@@ -57,11 +57,11 @@ public class AuthorityCommandIngressCommand implements CommandHandler {
         }
 
         TableFormatter table = new TableFormatter()
-            .addHeaders("Command ID", "Type", "Status", "Reason", "Route", "Principal", "Replays", "Updated");
+            .addHeaders("Command ID", "Declaration", "Status", "Reason", "Route", "Principal", "Replays", "Updated");
         for (PostgresAuthorityCommandIngressLog.CommandIngressEntry entry : entries) {
             table.addRow(
                 entry.commandId().toString(),
-                entry.commandType().name(),
+                entry.declarationId(),
                 entry.status().name(),
                 entry.rejectionReason().name(),
                 truncate(entry.commandDomain() + "/" + entry.partitionKey(), 32),
@@ -87,7 +87,7 @@ public class AuthorityCommandIngressCommand implements CommandHandler {
         }
 
         System.out.println("Command ID: " + entry.commandId());
-        System.out.println("Type: " + entry.commandType());
+        System.out.println("Declaration ID: " + entry.declarationId());
         System.out.println("Status: " + entry.status());
         System.out.println("Replayable: " + entry.replayable());
         System.out.println("Scope: " + entry.aggregateScope());
