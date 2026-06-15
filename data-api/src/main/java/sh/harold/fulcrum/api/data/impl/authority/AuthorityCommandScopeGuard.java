@@ -3,7 +3,6 @@ package sh.harold.fulcrum.api.data.impl.authority;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
@@ -35,30 +34,15 @@ public final class AuthorityCommandScopeGuard implements DataAuthority.CommandPo
     }
 
     private static String expectedScope(DataAuthority.AuthorityCommand command) {
-        if (command instanceof DataAuthority.PlayerRankCommand rank) {
-            return rankScope(rank.playerId());
+        AuthorityCommandManifest.CommandContract contract =
+            AuthorityCommandManifest.declaration(command.declarationId());
+        Object aggregateId = AuthorityCommandPayloads.payload(command).get(contract.aggregateIdField());
+        if (aggregateId == null || aggregateId.toString().isBlank()) {
+            throw new IllegalArgumentException(
+                "Command " + command.declarationId()
+                    + " is missing aggregate id field " + contract.aggregateIdField()
+            );
         }
-        if (command instanceof DataAuthority.PlayerProfileCommand profile) {
-            return playerScope(profile.playerId());
-        }
-        if (command instanceof DataAuthority.PlayerSessionCommand session) {
-            return session.subject().scope();
-        }
-        if (command instanceof DataAuthority.MatchCommand match) {
-            return matchScope(match.matchId());
-        }
-        throw new IllegalArgumentException("Unsupported authority command type: " + command.getClass().getName());
-    }
-
-    private static String playerScope(UUID playerId) {
-        return "player:" + playerId;
-    }
-
-    private static String rankScope(UUID playerId) {
-        return "rank:player:" + playerId;
-    }
-
-    private static String matchScope(UUID matchId) {
-        return "match:" + matchId;
+        return contract.aggregateScopePrefix() + aggregateId;
     }
 }
