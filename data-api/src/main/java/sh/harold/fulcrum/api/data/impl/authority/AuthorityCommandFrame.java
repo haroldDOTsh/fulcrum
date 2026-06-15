@@ -10,7 +10,6 @@ import java.util.UUID;
 
 record AuthorityCommandFrame(
     UUID commandId,
-    DataAuthority.CommandType type,
     String declarationId,
     String actorId,
     String scope,
@@ -29,19 +28,11 @@ record AuthorityCommandFrame(
         }
         DataAuthorityCommandContracts.CommandContract contract =
             DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
-        if (type == null) {
-            type = contract.type();
-        }
-        if (contract.type() != type) {
-            throw new IllegalArgumentException(
-                "Command declaration " + declarationId + " does not match command type " + type
-            );
-        }
         route = route == null ? AuthorityCommandRoute.fromDeclarationId(declarationId, scope) : route;
         provenance = provenance == null ? DataAuthority.CommandProvenance.unknown() : provenance;
         payload = payload == null ? Map.of() : Map.copyOf(payload);
         DataAuthorityCommandContracts.validate(
-            type,
+            contract.type(),
             schemaVersion,
             provenance.contractVersion(),
             scope,
@@ -57,7 +48,6 @@ record AuthorityCommandFrame(
         DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contract(manifest.type());
         return new AuthorityCommandFrame(
             manifest.commandId(),
-            manifest.type(),
             contract.declarationId(),
             manifest.actorId(),
             manifest.scope(),
@@ -74,14 +64,10 @@ record AuthorityCommandFrame(
 
     static AuthorityCommandFrame fromPayloads(Map<String, Object> manifestPayload, Map<String, Object> commandPayload) {
         String declarationId = string(manifestPayload.get("declarationId"));
-        DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
-        DataAuthority.CommandType type = contract.type();
         String scope = string(manifestPayload.get("scope"));
         DataAuthority.CommandProvenance provenance = provenance(mapValue(manifestPayload.get("provenance")));
         return new AuthorityCommandFrame(
             uuid(manifestPayload.get("commandId")),
-            type,
             declarationId,
             string(manifestPayload.get("actorId")),
             scope,
@@ -119,6 +105,7 @@ record AuthorityCommandFrame(
     }
 
     DataAuthority.AuthorityCommand toCommand() {
+        DataAuthority.CommandType type = type();
         DataAuthority.CommandManifest manifest = new DataAuthority.CommandManifest(
             commandId,
             type,
@@ -183,6 +170,10 @@ record AuthorityCommandFrame(
         };
         DataAuthorityCommandContracts.validate(command);
         return command;
+    }
+
+    DataAuthority.CommandType type() {
+        return DataAuthorityCommandContracts.contractByDeclarationId(declarationId).type();
     }
 
     private static DataAuthority.CommandProvenance provenance(Map<?, ?> raw) {

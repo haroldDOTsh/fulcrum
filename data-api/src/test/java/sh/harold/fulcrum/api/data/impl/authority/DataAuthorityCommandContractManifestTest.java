@@ -198,7 +198,6 @@ class DataAuthorityCommandContractManifestTest {
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
-            command.type(),
             declarationId(command),
             command.actorId(),
             command.scope(),
@@ -219,7 +218,6 @@ class DataAuthorityCommandContractManifestTest {
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
-            command.type(),
             declarationId(command),
             command.actorId(),
             command.scope(),
@@ -240,7 +238,6 @@ class DataAuthorityCommandContractManifestTest {
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
-            command.type(),
             declarationId(command),
             command.actorId(),
             command.scope(),
@@ -262,7 +259,6 @@ class DataAuthorityCommandContractManifestTest {
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
-            command.type(),
             declarationId(command),
             command.actorId(),
             command.scope(),
@@ -288,7 +284,6 @@ class DataAuthorityCommandContractManifestTest {
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
-            command.type(),
             declarationId(command),
             command.actorId(),
             command.scope(),
