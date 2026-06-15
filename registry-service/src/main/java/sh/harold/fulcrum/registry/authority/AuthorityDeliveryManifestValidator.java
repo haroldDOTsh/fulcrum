@@ -77,18 +77,19 @@ public final class AuthorityDeliveryManifestValidator {
             .equals(safeMap(manifest.getCommandPartitionKeyVectorsByType()))) {
             return "Data Authority command partition-key vector manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.commandTopicsByType().equals(safeMap(manifest.getCommandTopicsByType()))) {
+        if (!DataAuthorityCommandContracts.commandTopicsByDeclarationId()
+            .equals(safeMap(manifest.getCommandTopicsByType()))) {
             return "Data Authority command topic manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.responseTopicsByType()
+        if (!DataAuthorityCommandContracts.responseTopicsByDeclarationId()
             .equals(safeMap(manifest.getCommandResponseTopicsByType()))) {
             return "Data Authority command response topic manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.eventTopicsByType()
+        if (!DataAuthorityCommandContracts.eventTopicsByDeclarationId()
             .equals(safeMap(manifest.getCommandEventTopicsByType()))) {
             return "Data Authority command event topic manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.stateTopicsByType()
+        if (!DataAuthorityCommandContracts.stateTopicsByDeclarationId()
             .equals(safeMap(manifest.getCommandStateTopicsByType()))) {
             return "Data Authority command state topic manifest mismatch";
         }
@@ -264,9 +265,9 @@ public final class AuthorityDeliveryManifestValidator {
         Function<DataAuthorityCommandContracts.CommandContract, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.all().entrySet().stream()
+        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
-            .forEach(entry -> values.put(entry.getKey().name(), extractor.apply(entry.getValue())));
+            .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
         return Map.copyOf(values);
     }
 
@@ -274,10 +275,10 @@ public final class AuthorityDeliveryManifestValidator {
         Function<AuthorityDomainTopology.DomainTopology, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.all().entrySet().stream()
+        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> values.put(
-                entry.getKey().name(),
+                entry.getKey(),
                 extractor.apply(AuthorityDomainTopology.domain(entry.getValue().domain()))
             ));
         return Map.copyOf(values);

@@ -79,45 +79,45 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void contractManifestClassifiesSyncAndAsyncCommands() {
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.RECORD_PLAYER_LOGIN))
+        assertThat(CONTRACTS.get("RECORD_PLAYER_LOGIN").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT))
+        assertThat(CONTRACTS.get("RECORD_PLAYER_LOGOUT").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.RECORD_MATCH_START))
+        assertThat(CONTRACTS.get("RECORD_MATCH_START").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.RECORD_MATCH_END))
+        assertThat(CONTRACTS.get("RECORD_MATCH_END").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.GRANT_RANK))
+        assertThat(CONTRACTS.get("GRANT_RANK").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.REVOKE_RANK))
+        assertThat(CONTRACTS.get("REVOKE_RANK").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.START_SESSION))
+        assertThat(CONTRACTS.get("START_SESSION").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.RENEW_SESSION))
+        assertThat(CONTRACTS.get("RENEW_SESSION").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
-        assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.END_SESSION))
+        assertThat(CONTRACTS.get("END_SESSION").deliveryMode())
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
     }
 
     @Test
     void contractManifestClassifiesCompareRequiredCommands() {
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.RECORD_PLAYER_LOGIN))
+        assertThat(CONTRACTS.get("RECORD_PLAYER_LOGIN").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT))
+        assertThat(CONTRACTS.get("RECORD_PLAYER_LOGOUT").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.START_SESSION))
+        assertThat(CONTRACTS.get("START_SESSION").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.RENEW_SESSION))
+        assertThat(CONTRACTS.get("RENEW_SESSION").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.END_SESSION))
+        assertThat(CONTRACTS.get("END_SESSION").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.RECORD_MATCH_START))
+        assertThat(CONTRACTS.get("RECORD_MATCH_START").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.RECORD_MATCH_END))
+        assertThat(CONTRACTS.get("RECORD_MATCH_END").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.GRANT_RANK))
+        assertThat(CONTRACTS.get("GRANT_RANK").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.COMPARE_REQUIRED);
-        assertThat(DataAuthorityCommandContracts.revisionPolicy(DataAuthority.CommandType.REVOKE_RANK))
+        assertThat(CONTRACTS.get("REVOKE_RANK").revisionPolicy())
             .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.COMPARE_REQUIRED);
     }
 

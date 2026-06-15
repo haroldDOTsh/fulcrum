@@ -23,21 +23,19 @@ public final class DataAuthorityCommandContracts {
     private static final String ROUTE_MANIFEST_FINGERPRINT = routeManifestFingerprint(CONTRACTS_BY_DECLARATION_ID);
     private static final Map<String, String> ROUTE_PARTITION_KEY_VECTORS = routePartitionKeyVectors(
         CONTRACTS_BY_DECLARATION_ID);
-    private static final Map<String, String> COMMAND_TOPICS_BY_TYPE = routeVectors(CONTRACTS_BY_DECLARATION_ID,
+    private static final Map<String, String> COMMAND_TOPICS_BY_DECLARATION_ID = routeVectors(CONTRACTS_BY_DECLARATION_ID,
         AuthorityCommandRoute::commandTopic);
-    private static final Map<String, String> RESPONSE_TOPICS_BY_TYPE = routeVectors(CONTRACTS_BY_DECLARATION_ID,
-        AuthorityCommandRoute::responseTopic);
-    private static final Map<String, String> EVENT_TOPICS_BY_TYPE = routeVectors(CONTRACTS_BY_DECLARATION_ID,
+    private static final Map<String, String> RESPONSE_TOPICS_BY_DECLARATION_ID = routeVectors(
+        CONTRACTS_BY_DECLARATION_ID,
+        AuthorityCommandRoute::responseTopic
+    );
+    private static final Map<String, String> EVENT_TOPICS_BY_DECLARATION_ID = routeVectors(CONTRACTS_BY_DECLARATION_ID,
         AuthorityCommandRoute::eventTopic);
-    private static final Map<String, String> STATE_TOPICS_BY_TYPE = routeVectors(CONTRACTS_BY_DECLARATION_ID,
+    private static final Map<String, String> STATE_TOPICS_BY_DECLARATION_ID = routeVectors(CONTRACTS_BY_DECLARATION_ID,
         AuthorityCommandRoute::stateTopic);
     private static final Set<String> COMMAND_TOPICS = commandTopics(CONTRACTS_BY_DECLARATION_ID);
 
     private DataAuthorityCommandContracts() {
-    }
-
-    public static Map<DataAuthority.CommandType, CommandContract> all() {
-        return CONTRACTS_BY_TYPE;
     }
 
     public static Map<String, CommandContract> allByDeclarationId() {
@@ -64,14 +62,6 @@ public final class DataAuthorityCommandContracts {
         return contract;
     }
 
-    public static CommandDeliveryMode deliveryMode(DataAuthority.CommandType type) {
-        return contract(type).deliveryMode();
-    }
-
-    public static CommandRevisionPolicy revisionPolicy(DataAuthority.CommandType type) {
-        return contract(type).revisionPolicy();
-    }
-
     public static String fingerprint() {
         return FINGERPRINT;
     }
@@ -84,20 +74,20 @@ public final class DataAuthorityCommandContracts {
         return ROUTE_PARTITION_KEY_VECTORS;
     }
 
-    public static Map<String, String> commandTopicsByType() {
-        return COMMAND_TOPICS_BY_TYPE;
+    public static Map<String, String> commandTopicsByDeclarationId() {
+        return COMMAND_TOPICS_BY_DECLARATION_ID;
     }
 
-    public static Map<String, String> responseTopicsByType() {
-        return RESPONSE_TOPICS_BY_TYPE;
+    public static Map<String, String> responseTopicsByDeclarationId() {
+        return RESPONSE_TOPICS_BY_DECLARATION_ID;
     }
 
-    public static Map<String, String> eventTopicsByType() {
-        return EVENT_TOPICS_BY_TYPE;
+    public static Map<String, String> eventTopicsByDeclarationId() {
+        return EVENT_TOPICS_BY_DECLARATION_ID;
     }
 
-    public static Map<String, String> stateTopicsByType() {
-        return STATE_TOPICS_BY_TYPE;
+    public static Map<String, String> stateTopicsByDeclarationId() {
+        return STATE_TOPICS_BY_DECLARATION_ID;
     }
 
     public static Set<String> commandTopics() {

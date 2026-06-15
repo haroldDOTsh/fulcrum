@@ -163,10 +163,10 @@ class RegistrationHandlerAuthorityDeliveryManifestTest {
             commandConsumerGroupsByType(),
             commandAuthorityPrincipalsByType(),
             commandPartitionCountsByType(),
-            DataAuthorityCommandContracts.commandTopicsByType(),
-            DataAuthorityCommandContracts.responseTopicsByType(),
-            DataAuthorityCommandContracts.eventTopicsByType(),
-            DataAuthorityCommandContracts.stateTopicsByType(),
+            DataAuthorityCommandContracts.commandTopicsByDeclarationId(),
+            DataAuthorityCommandContracts.responseTopicsByDeclarationId(),
+            DataAuthorityCommandContracts.eventTopicsByDeclarationId(),
+            DataAuthorityCommandContracts.stateTopicsByDeclarationId(),
             commandLogStoresByType(),
             commandHotProjectionStoresByType(),
             commandHistoryStoresByType(),
@@ -245,9 +245,9 @@ class RegistrationHandlerAuthorityDeliveryManifestTest {
         Function<DataAuthorityCommandContracts.CommandContract, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.all().entrySet().stream()
+        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
-            .forEach(entry -> values.put(entry.getKey().name(), extractor.apply(entry.getValue())));
+            .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
         return Map.copyOf(values);
     }
 
@@ -255,10 +255,10 @@ class RegistrationHandlerAuthorityDeliveryManifestTest {
         Function<AuthorityDomainTopology.DomainTopology, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.all().entrySet().stream()
+        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> values.put(
-                entry.getKey().name(),
+                entry.getKey(),
                 extractor.apply(AuthorityDomainTopology.domain(entry.getValue().domain()))
             ));
         return Map.copyOf(values);
