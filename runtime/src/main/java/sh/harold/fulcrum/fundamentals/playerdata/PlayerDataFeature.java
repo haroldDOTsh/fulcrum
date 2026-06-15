@@ -10,7 +10,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.data.authority.client.AuthorityCommands;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.runtime.threading.PaperRuntime;
@@ -117,9 +116,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         DataAuthority.PlayerProfileCommand command,
         String username
     ) {
-        if (commandSubmissionPort == null
-            || DataAuthorityCommandContracts.deliveryMode(command.type())
-                != DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE) {
+        if (commandSubmissionPort == null) {
             return false;
         }
         commandSubmissionPort.submitDurable(command).whenComplete((receipt, error) -> {

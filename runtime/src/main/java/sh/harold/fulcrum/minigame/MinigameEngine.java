@@ -18,7 +18,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.data.authority.client.AuthorityCommands;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
@@ -515,9 +514,7 @@ public final class MinigameEngine {
     }
 
     private boolean submitDurableIfAvailable(DataAuthority.MatchCommand command, UUID matchId) {
-        if (commandSubmissionPort == null
-            || DataAuthorityCommandContracts.deliveryMode(command.type())
-                != DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE) {
+        if (commandSubmissionPort == null) {
             return false;
         }
         commandSubmissionPort.submitDurable(command).whenComplete((receipt, error) -> {
