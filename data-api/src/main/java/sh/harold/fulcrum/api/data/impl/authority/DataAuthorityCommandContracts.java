@@ -17,8 +17,6 @@ import java.util.function.Function;
  */
 public final class DataAuthorityCommandContracts {
     private static final Map<String, CommandContract> CONTRACTS_BY_DECLARATION_ID = contractsByDeclarationId();
-    private static final Map<DataAuthority.CommandType, CommandContract> CONTRACTS_BY_TYPE =
-        contractsByType(CONTRACTS_BY_DECLARATION_ID);
     private static final String FINGERPRINT = fingerprint(CONTRACTS_BY_DECLARATION_ID);
     private static final String ROUTE_MANIFEST_FINGERPRINT = routeManifestFingerprint(CONTRACTS_BY_DECLARATION_ID);
     private static final Map<String, String> ROUTE_PARTITION_KEY_VECTORS = routePartitionKeyVectors(
@@ -44,11 +42,20 @@ public final class DataAuthorityCommandContracts {
 
     public static CommandContract contract(DataAuthority.CommandType type) {
         Objects.requireNonNull(type, "type");
-        CommandContract contract = CONTRACTS_BY_TYPE.get(type);
-        if (contract == null) {
+        CommandContract match = null;
+        for (CommandContract contract : CONTRACTS_BY_DECLARATION_ID.values()) {
+            if (contract.type() != type) {
+                continue;
+            }
+            if (match != null) {
+                throw new IllegalStateException("Multiple authority command contracts for " + type);
+            }
+            match = contract;
+        }
+        if (match == null) {
             throw new IllegalArgumentException("No authority command contract for " + type);
         }
-        return contract;
+        return match;
     }
 
     public static CommandContract contractByDeclarationId(String declarationId) {
@@ -367,19 +374,6 @@ public final class DataAuthorityCommandContracts {
                 if (previous != null) {
                     throw new IllegalStateException("Duplicate command declaration for " + command.declarationId());
                 }
-            }
-        }
-        return Map.copyOf(values);
-    }
-
-    private static Map<DataAuthority.CommandType, CommandContract> contractsByType(
-        Map<String, CommandContract> contracts
-    ) {
-        Map<DataAuthority.CommandType, CommandContract> values = new LinkedHashMap<>();
-        for (CommandContract contract : contracts.values()) {
-            CommandContract previous = values.put(contract.type(), contract);
-            if (previous != null) {
-                throw new IllegalStateException("Duplicate legacy command type for " + contract.type());
             }
         }
         return Map.copyOf(values);
