@@ -116,7 +116,7 @@ public final class AuthorityContractArtifacts {
         DataAuthorityCommandContracts.CommandContract contract
     ) {
         String aggregateScopeTemplate = contract.aggregateScopePrefix() + "{aggregateId}";
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), aggregateScopeTemplate);
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), aggregateScopeTemplate);
         AuthorityLogTopicPolicy commandPolicy = requirePolicy(policiesByTopic, route.commandTopic());
         AuthorityLogTopicPolicy statePolicy = requirePolicy(policiesByTopic, route.stateTopic());
         return new CommandRow(
