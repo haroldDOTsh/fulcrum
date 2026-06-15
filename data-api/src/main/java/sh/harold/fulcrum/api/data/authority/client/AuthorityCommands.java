@@ -58,7 +58,7 @@ public final class AuthorityCommands {
             this.subject = Objects.requireNonNull(subject, "subject");
         }
 
-        public DataAuthority.PlayerProfileCommand recordLogin(
+        public DataAuthority.AuthorityCommand recordLogin(
             String username,
             long timestampEpochMillis,
             String lastIp,
@@ -86,7 +86,7 @@ public final class AuthorityCommands {
             );
         }
 
-        public DataAuthority.PlayerProfileCommand recordLogout(
+        public DataAuthority.AuthorityCommand recordLogout(
             String username,
             long timestampEpochMillis,
             String lastIp,
@@ -159,7 +159,7 @@ public final class AuthorityCommands {
             this.subject = Objects.requireNonNull(subject, "subject");
         }
 
-        public DataAuthority.PlayerSessionCommand startSession(
+        public DataAuthority.AuthorityCommand startSession(
             String username,
             UUID sessionId,
             long timestampEpochMillis,
@@ -181,7 +181,7 @@ public final class AuthorityCommands {
             );
         }
 
-        public DataAuthority.PlayerSessionCommand renewSession(
+        public DataAuthority.AuthorityCommand renewSession(
             String username,
             UUID sessionId,
             long timestampEpochMillis,
@@ -203,7 +203,7 @@ public final class AuthorityCommands {
             );
         }
 
-        public DataAuthority.PlayerSessionCommand endSession(
+        public DataAuthority.AuthorityCommand endSession(
             String username,
             UUID sessionId,
             long timestampEpochMillis,
@@ -268,7 +268,7 @@ public final class AuthorityCommands {
             this.playerId = Objects.requireNonNull(playerId, "playerId");
         }
 
-        public DataAuthority.PlayerRankCommand grantRank(
+        public DataAuthority.AuthorityCommand grantRank(
             String primaryRank,
             List<String> ranks,
             long expectedRevision,
@@ -283,7 +283,7 @@ public final class AuthorityCommands {
             );
         }
 
-        public DataAuthority.PlayerRankCommand revokeRank(
+        public DataAuthority.AuthorityCommand revokeRank(
             String primaryRank,
             List<String> ranks,
             long expectedRevision,
@@ -330,7 +330,7 @@ public final class AuthorityCommands {
             this.matchId = Objects.requireNonNull(matchId, "matchId");
         }
 
-        public DataAuthority.MatchCommand recordStart(
+        public DataAuthority.AuthorityCommand recordStart(
             String familyId,
             String mapId,
             String serverId,
@@ -356,7 +356,7 @@ public final class AuthorityCommands {
             );
         }
 
-        public DataAuthority.MatchCommand recordEnd(
+        public DataAuthority.AuthorityCommand recordEnd(
             String familyId,
             String mapId,
             String serverId,
