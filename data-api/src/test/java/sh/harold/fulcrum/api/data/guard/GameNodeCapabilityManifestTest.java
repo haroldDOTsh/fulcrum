@@ -18,12 +18,17 @@ class GameNodeCapabilityManifestTest {
     void loadsNegativeCapabilityManifest() {
         GameNodeCapabilityManifest manifest = manifest("PAPER");
 
-        assertThat(manifest.version()).isEqualTo(1);
+        assertThat(manifest.version()).isEqualTo(2);
         assertThat(manifest.nodeKind()).isEqualTo(GameNodeStorageGuard.NodeKind.PAPER);
         assertThat(manifest.forbidLocalAuthority()).isTrue();
         assertThat(manifest.forbidDirectStoreConfig()).isTrue();
         assertThat(manifest.forbiddenCapabilities())
-            .contains("authority.local", "store.direct.sql", "store.migration.resources");
+            .contains(
+                "authority.local",
+                "authority.command.message-bus",
+                "store.direct.sql",
+                "store.migration.resources"
+            );
         assertThat(manifest.commandSchemaVersion()).isEqualTo(DataAuthority.COMMAND_SCHEMA_VERSION);
         assertThat(manifest.commandContractFingerprint()).isEqualTo(DataAuthorityCommandContracts.fingerprint());
         assertThat(manifest.readSchemaVersion()).isEqualTo(DataAuthorityReadContracts.schemaVersion());
@@ -65,11 +70,22 @@ class GameNodeCapabilityManifestTest {
     }
 
     @Test
+    void rejectsNonDurableAuthorityCommandTransportWhenForbidden() {
+        GameNodeCapabilityManifest manifest = manifest("PAPER");
+
+        assertThatThrownBy(() -> manifest.requireAllowedConfig(Map.of(
+            "authority", Map.of("mode", "remote", "command-transport", "message-bus")
+        )))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("authority.command-transport=kafka");
+    }
+
+    @Test
     void allowsRemoteClientConfigWhenNoStoreSettingsExist() {
         GameNodeCapabilityManifest manifest = manifest("PAPER");
 
         manifest.requireAllowedConfig(Map.of(
-            "authority", Map.of("mode", "remote", "server-id", "registry-service"),
+            "authority", Map.of("mode", "remote", "server-id", "registry-service", "command-transport", "kafka"),
             "redis", Map.of("host", "localhost", "port", 6379)
         ));
     }
@@ -77,7 +93,7 @@ class GameNodeCapabilityManifestTest {
     @Test
     void rejectsManifestWithoutForbiddenCapabilities() {
         assertThatThrownBy(() -> GameNodeCapabilityManifest.load(stream("""
-            manifest.version=1
+            manifest.version=2
             node-kind=PAPER
             forbid-local-authority=true
             forbid-direct-store-config=true
@@ -98,11 +114,11 @@ class GameNodeCapabilityManifestTest {
 
     private static GameNodeCapabilityManifest manifest(String nodeKind) {
         return GameNodeCapabilityManifest.load(stream("""
-            manifest.version=1
+            manifest.version=2
             node-kind=%s
             forbid-local-authority=true
             forbid-direct-store-config=true
-            forbidden-capabilities=authority.local,store.direct.sql,store.direct.document,store.direct.wide-column,store.migration.resources,driver.jdbc.sql,pool.direct.sql
+            forbidden-capabilities=authority.local,authority.command.message-bus,store.direct.sql,store.direct.document,store.migration.resources,driver.jdbc.sql,pool.direct.sql
             data-authority.command-schema-version=%d
             data-authority.command-contract-fingerprint=%s
             data-authority.read-schema-version=%d

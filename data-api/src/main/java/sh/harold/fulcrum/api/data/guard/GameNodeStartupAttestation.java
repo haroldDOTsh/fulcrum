@@ -36,13 +36,9 @@ public final class GameNodeStartupAttestation {
             "store.direct.document",
             "com/mongodb/MongoClientSettings.class",
             "game-node classpath must not expose the MongoDB direct document store driver"
-        ),
-        new ResourceProbe(
-            "store.direct.wide-column",
-            "com/datastax/oss/driver/api/core/CqlSession.class",
-            "game-node classpath must not expose the Cassandra direct wide-column store driver"
         )
     );
+    private static final String COMMAND_MESSAGE_BUS_CAPABILITY = "authority.command.message-bus";
 
     private GameNodeStartupAttestation() {
     }
@@ -115,6 +111,18 @@ public final class GameNodeStartupAttestation {
                 "authority.mode",
                 "negative capability manifest forbids authority.mode=local on game nodes"
             ));
+        }
+        if (manifest.forbiddenCapabilities().contains(COMMAND_MESSAGE_BUS_CAPABILITY)) {
+            String commandTransport = stringValue(safeConfig, "authority.command-transport");
+            if (!commandTransport.isBlank()
+                && !"kafka".equalsIgnoreCase(commandTransport)
+                && !"log".equalsIgnoreCase(commandTransport)) {
+                violations.add(new Violation(
+                    "config",
+                    "authority.command-transport",
+                    "game-node authority commands must use the durable Kafka command log"
+                ));
+            }
         }
         if (manifest.forbidDirectStoreConfig()) {
             for (GameNodeStorageGuard.Violation violation :

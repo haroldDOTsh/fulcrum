@@ -234,7 +234,8 @@ class DataLayerAdrConformanceTest {
                 "default-runnable",
                 "static-contract",
                 "live-postgres",
-                "blocked-external-dependency",
+                "live-target-substrate",
+                "remaining-deployment",
                 "Passing `.\\gradlew.bat test` is not a claim that live PostgreSQL behavior was",
                 "Passing `.\\gradlew.bat build` is not a claim that Docker/Testcontainers"
             );
@@ -281,6 +282,36 @@ class DataLayerAdrConformanceTest {
                 "Phase 5",
                 "Phase 6"
             );
+    }
+
+    @Test
+    void bundledGameNodeNegativeCapabilityManifestsTrackReadContractFingerprint() {
+        String readFingerprint = readRepoFile(
+            "data-api/src/test/resources/contracts/data-authority-read-contract.sha256"
+        ).trim();
+
+        for (String manifestPath : List.of(
+            "runtime/src/main/resources/META-INF/fulcrum/game-node-negative-capabilities.properties",
+            "runtime-velocity/src/main/resources/META-INF/fulcrum/game-node-negative-capabilities.properties"
+        )) {
+            String manifest = readRepoFile(manifestPath);
+
+            assertThat(manifest)
+                .as(manifestPath + " forbids direct data authority and store access")
+                .contains(
+                    "forbid-local-authority=true",
+                    "forbid-direct-store-config=true",
+                    "store.direct.sql",
+                    "store.direct.document",
+                    "driver.jdbc.sql",
+                    "pool.direct.sql",
+                    "data-authority.read-schema-version=1"
+                )
+                .doesNotContain("store.direct.wide-column");
+            assertThat(propertyValue(manifest, "data-authority.read-contract-fingerprint"))
+                .as(manifestPath + " read contract fingerprint")
+                .isEqualTo(readFingerprint);
+        }
     }
 
     private static List<AdrEvidenceHook> adrEvidenceHooks() {
@@ -405,6 +436,10 @@ class DataLayerAdrConformanceTest {
                     proof(
                         "runtime-velocity/src/test/java/sh/harold/fulcrum/velocity/fundamentals/data/VelocityDataAuthorityFeatureTest.java",
                         "bundledGameNodeConfigDoesNotShipPostgresCredentials"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/DataLayerAdrConformanceTest.java",
+                        "bundledGameNodeNegativeCapabilityManifestsTrackReadContractFingerprint"
                     )
                 )
             ),
@@ -451,6 +486,14 @@ class DataLayerAdrConformanceTest {
                     proof(
                         "registry-service/src/test/java/sh/harold/fulcrum/registry/RegistryServicePostgresConnectionBudgetTest.java",
                         "configuredCeilingFlagsOverBudgetDocket"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/PostgresConnectionAdapterTest.java",
+                        "defaultsToPgBouncerTransactionPoolingSafeDriverSettings"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/PostgresConnectionAdapterTest.java",
+                        "transactionPoolingRejectsServerPreparedStatementOverrides"
                     )
                 )
             ),
@@ -460,11 +503,23 @@ class DataLayerAdrConformanceTest {
                 List.of(
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataLayerStorePlacementArchitectureTest.java",
+                        "executableStorePlacementsMatchArchitectureTable"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataLayerStorePlacementArchitectureTest.java",
                         "architectureStorePlacementRowsUseKnownStoreTaxonomy"
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataLayerStorePlacementArchitectureTest.java",
                         "commandContractsMatchDocumentedStorePlacements"
+                    ),
+                    proof(
+                        "registry-service/src/test/java/sh/harold/fulcrum/registry/authority/AuthoritySubstratePreflightTest.java",
+                        "targetModeAcceptsWhenDeclaredAndActualSubstratesAreTarget"
+                    ),
+                    proof(
+                        "registry-service/src/test/java/sh/harold/fulcrum/registry/authority/AuthoritySubstratePreflightTest.java",
+                        "targetModeRejectsDeclaredTargetWhenActualRuntimeIsCompatibility"
                     )
                 )
             ),
@@ -477,8 +532,20 @@ class DataLayerAdrConformanceTest {
                         "contractManifestCoversEveryCommandType"
                     ),
                     proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityContractArtifactsTest.java",
+                        "generatedArtifactsCoverAdr0008CodegenOutputs"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/authority/client/AuthorityCommandsTest.java",
+                        "rankCommandOwnsScopeIdempotencyAndExpectedRevision"
+                    ),
+                    proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/CanonicalSchemaDdlBoundaryTest.java",
                         "productionDdlLivesOnlyInDataApiMigrations"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/CanonicalSchemaDdlBoundaryTest.java",
+                        "gameNodeProductionCodeDoesNotHandAssembleAuthorityCommandEnvelopes"
                     )
                 )
             ),
@@ -505,6 +572,10 @@ class DataLayerAdrConformanceTest {
                 "ADR-0002",
                 List.of(
                     proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityDomainTopologyTest.java",
+                        "declaresConsumerGroupAndPrincipalForEveryCommandDomain"
+                    ),
+                    proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
                         "routePartitionKeyVectorsCoverEveryCommandType"
                     ),
@@ -520,11 +591,23 @@ class DataLayerAdrConformanceTest {
                 List.of(
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataLayerStorePlacementArchitectureTest.java",
+                        "executableStorePlacementsMatchArchitectureTable"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataLayerStorePlacementArchitectureTest.java",
                         "architectureStorePlacementRowsUseKnownStoreTaxonomy"
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataLayerStorePlacementArchitectureTest.java",
                         "commandContractsMatchDocumentedStorePlacements"
+                    ),
+                    proof(
+                        "registry-service/src/test/java/sh/harold/fulcrum/registry/authority/AuthoritySubstratePreflightTest.java",
+                        "targetModeAcceptsWhenDeclaredAndActualSubstratesAreTarget"
+                    ),
+                    proof(
+                        "registry-service/src/test/java/sh/harold/fulcrum/registry/authority/AuthoritySubstratePreflightTest.java",
+                        "targetModeRejectsDeclaredTargetWhenActualRuntimeIsCompatibility"
                     )
                 )
             ),
@@ -569,6 +652,14 @@ class DataLayerAdrConformanceTest {
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityPrincipalCommandPortTest.java",
                         "rejectsMessageBusCommandWithoutVerifiedPrincipal"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityLogTopologyTest.java",
+                        "topologyDeclaresDocumentedTopicFamilies"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/DataLayerAdrConformanceTest.java",
+                        "bundledGameNodeNegativeCapabilityManifestsTrackReadContractFingerprint"
                     )
                 )
             ),
@@ -583,6 +674,14 @@ class DataLayerAdrConformanceTest {
                     proof(
                         "registry-service/src/test/java/sh/harold/fulcrum/registry/RegistryServicePostgresConnectionBudgetTest.java",
                         "configuredCeilingFlagsOverBudgetDocket"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/PostgresConnectionAdapterTest.java",
+                        "defaultsToPgBouncerTransactionPoolingSafeDriverSettings"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/PostgresConnectionAdapterTest.java",
+                        "transactionPoolingRejectsServerPreparedStatementOverrides"
                     )
                 )
             ),
@@ -613,8 +712,20 @@ class DataLayerAdrConformanceTest {
                         "schemaContractCoversEveryCanonicalMigrationTable"
                     ),
                     proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityContractArtifactsTest.java",
+                        "generatedArtifactsCoverAdr0008CodegenOutputs"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/authority/client/AuthorityCommandsTest.java",
+                        "rankCommandOwnsScopeIdempotencyAndExpectedRevision"
+                    ),
+                    proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/CanonicalSchemaDdlBoundaryTest.java",
                         "productionDdlLivesOnlyInDataApiMigrations"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/postgres/CanonicalSchemaDdlBoundaryTest.java",
+                        "gameNodeProductionCodeDoesNotHandAssembleAuthorityCommandEnvelopes"
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
@@ -626,6 +737,18 @@ class DataLayerAdrConformanceTest {
                 "ADR-0009",
                 "ADR-0009",
                 List.of(
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityDomainTopologyTest.java",
+                        "domainTopologyBindsKafkaTopicFamiliesToConsumerGroups"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityLogTopologyTest.java",
+                        "topologyDeclaresDocumentedTopicFamilies"
+                    ),
+                    proof(
+                        "registry-service/src/test/java/sh/harold/fulcrum/registry/RegistryServiceRestoreReadbackTest.java",
+                        "startupReceiptCapturesRestoreBudgetCustodyAndDispatcherEvidence"
+                    ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
                         "routePartitionKeyVectorsCoverEveryCommandType"
@@ -647,6 +770,10 @@ class DataLayerAdrConformanceTest {
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/events/InMemoryAuthorityHotStateProjectionTest.java",
                         "manifestDeclaresHotStateEventSurface"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/events/CassandraAuthorityHotStateProjectionTest.java",
+                        "dispatchMatchEventWritesReducedStateRecord"
                     )
                 )
             ),
@@ -661,6 +788,14 @@ class DataLayerAdrConformanceTest {
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/CachedAuthorityCommandPortTest.java",
                         "cacheWriteFailureStillReturnsDurableResultAndDoesNotPoisonInFlight"
+                    ),
+                    proof(
+                        "registry-service/src/test/java/sh/harold/fulcrum/registry/authority/ValkeyAuthorityCommandResultCacheTest.java",
+                        "declaresValkeyStoreOverRedisCompatibleWireProtocol"
+                    ),
+                    proof(
+                        "registry-service/src/test/java/sh/harold/fulcrum/registry/authority/ValkeyAuthorityCommandResultCacheTest.java",
+                        "writeScriptPreservesDedupeAndTtlSemantics"
                     )
                 )
             )
@@ -733,6 +868,15 @@ class DataLayerAdrConformanceTest {
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to read repo file: " + path, exception);
         }
+    }
+
+    private static String propertyValue(String properties, String key) {
+        String prefix = key + "=";
+        return properties.lines()
+            .filter(line -> line.startsWith(prefix))
+            .map(line -> line.substring(prefix.length()).trim())
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("Property not found: " + key));
     }
 
     private static String readResource(String resourcePath) {

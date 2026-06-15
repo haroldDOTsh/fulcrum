@@ -123,6 +123,10 @@ class DataLayerArchitecturePhaseConformanceTest {
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityLifecyclePolicyMigrationTest.java",
                         "lifecyclePoliciesPointAtRealTimestampColumnsAndBrinIndexes"
+                    ),
+                    proof(
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityLifecyclePartitionPlannerTest.java",
+                        "plannerBuildsCurrentAndNextMonthlyPartitionWorkOrdersFromMigrationPolicies"
                     )
                 )
             ),
@@ -150,7 +154,7 @@ class DataLayerArchitecturePhaseConformanceTest {
                 List.of(
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/events/InMemoryAuthorityHotStateProjectionTest.java",
-                        "eventLogRebuildsEquivalentHotStateProjection"
+                        "compactedRankStateRecordRebuildsHotStateProjection"
                     ),
                     proof(
                         "registry-service/src/test/java/sh/harold/fulcrum/registry/RegistryServiceRestoreReadbackTest.java",

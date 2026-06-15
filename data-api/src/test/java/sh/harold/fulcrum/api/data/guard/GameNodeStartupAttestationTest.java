@@ -45,7 +45,7 @@ class GameNodeStartupAttestationTest {
         assertThat(report.summary())
             .contains(
                 "nodeKind=Paper",
-                "manifestVersion=1",
+                "manifestVersion=2",
                 "passed=true",
                 DataAuthorityCommandContracts.fingerprint().substring(0, 12),
                 DataAuthorityReadContracts.fingerprint().substring(0, 12),
@@ -89,6 +89,47 @@ class GameNodeStartupAttestationTest {
     }
 
     @Test
+    void rejectsNonDurableAuthorityCommandTransportInEffectiveConfig() {
+        GameNodeCapabilityManifest manifest = manifest("PAPER");
+
+        assertThatThrownBy(() -> GameNodeStartupAttestation.require(
+            manifest,
+            Map.of(
+                "authority", Map.of(
+                    "mode", "remote",
+                    "server-id", "registry-service",
+                    "command-transport", "message-bus"
+                )
+            ),
+            emptyLoader(),
+            List.of()
+        ))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("authority.command-transport")
+            .hasMessageContaining("durable Kafka command log");
+    }
+
+    @Test
+    void allowsKafkaAuthorityCommandTransportInEffectiveConfig() {
+        GameNodeCapabilityManifest manifest = manifest("PAPER");
+
+        GameNodeStartupAttestation.Report report = GameNodeStartupAttestation.require(
+            manifest,
+            Map.of(
+                "authority", Map.of(
+                    "mode", "remote",
+                    "server-id", "registry-service",
+                    "command-transport", "kafka"
+                )
+            ),
+            emptyLoader(),
+            List.of()
+        );
+
+        assertThat(report.passed()).isTrue();
+    }
+
+    @Test
     void rejectsForbiddenClasspathResourceWhenCapabilityIsManifested() {
         GameNodeCapabilityManifest manifest = manifest("PAPER");
         GameNodeStartupAttestation.ResourceProbe probe = new GameNodeStartupAttestation.ResourceProbe(
@@ -120,7 +161,7 @@ class GameNodeStartupAttestationTest {
     }
 
     @Test
-    void defaultResourceProbesRejectExternalDocumentAndWideColumnStoreDrivers() {
+    void defaultResourceProbesRejectExternalDocumentStoreDriversButAllowCassandraReadDriver() {
         GameNodeCapabilityManifest manifest = manifest("PAPER");
 
         GameNodeStartupAttestation.Report report = GameNodeStartupAttestation.inspect(
@@ -136,10 +177,11 @@ class GameNodeStartupAttestationTest {
         assertThat(report.passed()).isFalse();
         assertThat(report.violations())
             .extracting(GameNodeStartupAttestation.Violation::path)
-            .contains(
-                "com/mongodb/MongoClientSettings.class",
-                "com/datastax/oss/driver/api/core/CqlSession.class"
-            );
+            .contains("com/mongodb/MongoClientSettings.class")
+            .doesNotContain("com/datastax/oss/driver/api/core/CqlSession.class");
+        assertThat(GameNodeStartupAttestation.defaultResourceProbes())
+            .extracting(GameNodeStartupAttestation.ResourceProbe::capability)
+            .doesNotContain("store.direct.wide-column");
     }
 
     @Test
@@ -238,11 +280,11 @@ class GameNodeStartupAttestationTest {
         String readContractFingerprint
     ) {
         return GameNodeCapabilityManifest.load(new ByteArrayInputStream("""
-            manifest.version=1
+            manifest.version=2
             node-kind=%s
             forbid-local-authority=true
             forbid-direct-store-config=true
-            forbidden-capabilities=authority.local,store.direct.sql,store.direct.document,store.direct.wide-column,store.migration.resources,driver.jdbc.sql,pool.direct.sql
+            forbidden-capabilities=authority.local,authority.command.message-bus,store.direct.sql,store.direct.document,store.migration.resources,driver.jdbc.sql,pool.direct.sql
             data-authority.command-schema-version=%d
             data-authority.command-contract-fingerprint=%s
             data-authority.read-schema-version=%d

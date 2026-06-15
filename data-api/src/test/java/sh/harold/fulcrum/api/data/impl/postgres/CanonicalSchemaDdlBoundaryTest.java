@@ -23,6 +23,10 @@ class CanonicalSchemaDdlBoundaryTest {
             + "PostgresConnectionAdapter|PostgresDataAuthority|PostgresRegistryNodeSnapshotStore|"
             + "DriverManager|DataSource|postgres)\\b"
     );
+    private static final Pattern HAND_ASSEMBLED_AUTHORITY_ENVELOPE = Pattern.compile(
+        "(?s)(?:DataAuthority\\.CommandManifest\\.create|"
+            + "new\\s+DataAuthority\\.(?:PlayerProfileCommand|PlayerSessionCommand|PlayerRankCommand|MatchCommand)\\s*\\()"
+    );
 
     @Test
     void productionDdlLivesOnlyInDataApiMigrations() throws IOException {
@@ -69,6 +73,31 @@ class CanonicalSchemaDdlBoundaryTest {
             .isEmpty();
     }
 
+    @Test
+    void gameNodeProductionCodeDoesNotHandAssembleAuthorityCommandEnvelopes() throws IOException {
+        Path repoRoot = repoRoot();
+        List<String> violations = new ArrayList<>();
+
+        for (String root : List.of("runtime/src/main", "runtime-velocity/src/main")) {
+            Path moduleRoot = repoRoot.resolve(root);
+            if (!Files.exists(moduleRoot)) {
+                continue;
+            }
+            try (Stream<Path> paths = Files.walk(moduleRoot)) {
+                paths.filter(Files::isRegularFile)
+                    .filter(path -> hasScannedExtension(repoRoot.relativize(path).toString().replace('\\', '/')))
+                    .filter(CanonicalSchemaDdlBoundaryTest::containsHandAssembledAuthorityEnvelope)
+                    .map(path -> repoRoot.relativize(path).toString().replace('\\', '/'))
+                    .sorted()
+                    .forEach(violations::add);
+            }
+        }
+
+        assertThat(violations)
+            .as("Game-node runtime modules must use the generated-shaped authority command facade")
+            .isEmpty();
+    }
+
     private static Path repoRoot() {
         Path current = Path.of("").toAbsolutePath().normalize();
         return "data-api".equals(current.getFileName().toString()) ? current.getParent() : current;
@@ -112,6 +141,15 @@ class CanonicalSchemaDdlBoundaryTest {
         try {
             String contents = Files.readString(path, StandardCharsets.UTF_8);
             return GAME_NODE_DIRECT_POSTGRES_ACCESS.matcher(stripComments(path, contents)).find();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to read " + path, exception);
+        }
+    }
+
+    private static boolean containsHandAssembledAuthorityEnvelope(Path path) {
+        try {
+            String contents = Files.readString(path, StandardCharsets.UTF_8);
+            return HAND_ASSEMBLED_AUTHORITY_ENVELOPE.matcher(stripComments(path, contents)).find();
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to read " + path, exception);
         }

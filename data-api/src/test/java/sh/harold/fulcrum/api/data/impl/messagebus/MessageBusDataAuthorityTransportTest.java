@@ -5,6 +5,7 @@ import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityFencingCommandPort;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipalCommandPort;
 import sh.harold.fulcrum.api.data.impl.authority.AuthoritySnapshotInvalidation;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityTopologyEvidence;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityWriterClaim;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
@@ -37,8 +38,8 @@ class MessageBusDataAuthorityTransportTest {
             "rank:player:" + playerId,
             "player_rank",
             playerId.toString(),
-            "player_rank",
-            "state.player_rank",
+            "rank",
+            "state.rank",
             "rank:player:" + playerId,
             commandId,
             eventId,
@@ -49,10 +50,11 @@ class MessageBusDataAuthorityTransportTest {
         );
         DataAuthority.CommandSettlement settlement = new DataAuthority.CommandSettlement(
             "postgres-authority-state",
-            "player_rank",
-            "cmd.player_rank",
-            "evt.player_rank",
-            "state.player_rank",
+            "rank",
+            "cmd.rank",
+            "rsp.rank",
+            "evt.rank",
+            "state.rank",
             "rank:player:" + playerId,
             "12",
             "rank:" + commandId,
@@ -156,7 +158,7 @@ class MessageBusDataAuthorityTransportTest {
 
         Object rawResponse = bus.request(
             "authority-1",
-            MessageBusAuthorityChannels.COMMAND,
+            rankCommandTopic(playerId),
             Map.copyOf(wire),
             Duration.ofSeconds(1)
         ).toCompletableFuture().join();
@@ -214,7 +216,7 @@ class MessageBusDataAuthorityTransportTest {
 
         Object rawResponse = bus.request(
             "authority-1",
-            MessageBusAuthorityChannels.COMMAND,
+            rankCommandTopic(playerId),
             Map.copyOf(wire),
             Duration.ofSeconds(1)
         ).toCompletableFuture().join();
@@ -232,6 +234,96 @@ class MessageBusDataAuthorityTransportTest {
             "routeManifestFingerprint",
             "0000000000000000000000000000000000000000000000000000000000000000"
         );
+    }
+
+    @Test
+    void commandProviderRejectsTopologyFingerprintMismatchWithoutDelegating() {
+        UUID commandId = UUID.randomUUID();
+        UUID playerId = UUID.randomUUID();
+        AtomicReference<DataAuthority.AuthorityCommand> received = new AtomicReference<>();
+        AtomicReference<MessageBusDataAuthorityProvider.CommandRefusal> refusal = new AtomicReference<>();
+        DataAuthority.CommandPort commandPort = command -> {
+            received.set(command);
+            return CompletableFuture.completedFuture(acceptedResult(command, 1L));
+        };
+
+        InMemoryMessageBus bus = new InMemoryMessageBus(new TestAdapter("authority-1"));
+        MessageBusDataAuthorityProvider provider = new MessageBusDataAuthorityProvider(
+            bus,
+            commandPort,
+            ignored -> CompletableFuture.completedFuture(Optional.empty()),
+            ignored -> CompletableFuture.completedFuture(Optional.empty()),
+            refusal::set
+        );
+        provider.start();
+
+        Map<String, Object> wire = validRankWire(commandId, playerId, DataAuthority.ANY_REVISION);
+        wire.put(
+            "authorityDomainTopologyFingerprint",
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        );
+
+        Object rawResponse = bus.request(
+            "authority-1",
+            rankCommandTopic(playerId),
+            Map.copyOf(wire),
+            Duration.ofSeconds(1)
+        ).toCompletableFuture().join();
+        Map<?, ?> response = (Map<?, ?>) rawResponse;
+
+        assertThat(response.get("commandId")).isEqualTo(commandId.toString());
+        assertThat(response.get("accepted")).isEqualTo(false);
+        assertThat(response.get("rejectionReason")).isEqualTo(DataAuthority.RejectionReason.VALIDATION_FAILED.name());
+        assertThat(response.get("message").toString())
+            .contains("authorityDomainTopologyFingerprint")
+            .contains("000000000000")
+            .contains("expected");
+        assertThat(received.get()).isNull();
+        assertThat(refusal.get()).isNotNull();
+        assertThat(refusal.get().wire())
+            .containsEntry(
+                "authorityDomainTopologyFingerprint",
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            );
+    }
+
+    @Test
+    void commandProviderRejectsMissingTopologyFingerprintWithoutDelegating() {
+        UUID commandId = UUID.randomUUID();
+        UUID playerId = UUID.randomUUID();
+        AtomicReference<DataAuthority.AuthorityCommand> received = new AtomicReference<>();
+        DataAuthority.CommandPort commandPort = command -> {
+            received.set(command);
+            return CompletableFuture.completedFuture(acceptedResult(command, 1L));
+        };
+
+        InMemoryMessageBus bus = new InMemoryMessageBus(new TestAdapter("authority-1"));
+        MessageBusDataAuthorityProvider provider = new MessageBusDataAuthorityProvider(
+            bus,
+            commandPort,
+            ignored -> CompletableFuture.completedFuture(Optional.empty()),
+            ignored -> CompletableFuture.completedFuture(Optional.empty())
+        );
+        provider.start();
+
+        Map<String, Object> wire = validRankWire(commandId, playerId, DataAuthority.ANY_REVISION);
+        wire.remove("readContractFingerprint");
+
+        Object rawResponse = bus.request(
+            "authority-1",
+            rankCommandTopic(playerId),
+            Map.copyOf(wire),
+            Duration.ofSeconds(1)
+        ).toCompletableFuture().join();
+        Map<?, ?> response = (Map<?, ?>) rawResponse;
+
+        assertThat(response.get("commandId")).isEqualTo(commandId.toString());
+        assertThat(response.get("accepted")).isEqualTo(false);
+        assertThat(response.get("rejectionReason")).isEqualTo(DataAuthority.RejectionReason.VALIDATION_FAILED.name());
+        assertThat(response.get("message").toString())
+            .contains("readContractFingerprint")
+            .contains("<missing>");
+        assertThat(received.get()).isNull();
     }
 
     @Test
@@ -363,7 +455,7 @@ class MessageBusDataAuthorityTransportTest {
         UUID commandId = UUID.randomUUID();
         UUID playerId = UUID.randomUUID();
         InMemoryMessageBus bus = new InMemoryMessageBus(new TestAdapter("authority-1"));
-        bus.subscribeRequest(MessageBusAuthorityChannels.COMMAND, ignored -> CompletableFuture.completedFuture(Map.of(
+        bus.subscribeRequest(rankCommandTopic(playerId), ignored -> CompletableFuture.completedFuture(Map.of(
             "commandId", commandId.toString(),
             "accepted", false,
             "revision", 8L,
@@ -410,7 +502,7 @@ class MessageBusDataAuthorityTransportTest {
         );
 
         InMemoryMessageBus bus = new InMemoryMessageBus(new TestAdapter("authority-1"));
-        bus.subscribeRequest(MessageBusAuthorityChannels.COMMAND, ignored -> CompletableFuture.completedFuture(Map.of(
+        bus.subscribeRequest(rankCommandTopic(playerId), ignored -> CompletableFuture.completedFuture(Map.of(
             "commandId", commandId.toString(),
             "accepted", false,
             "revision", 8L,
@@ -567,6 +659,7 @@ class MessageBusDataAuthorityTransportTest {
         wire.put("contractFingerprint", DataAuthorityCommandContracts.fingerprint());
         wire.put("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
         wire.put("route", rankRoute(scopedPlayerId));
+        stampAuthorityTopology(wire);
         wire.put("payload", Map.of(
             "playerId", payloadPlayerId.toString(),
             "primaryRank", "ADMIN",
@@ -575,7 +668,7 @@ class MessageBusDataAuthorityTransportTest {
 
         Object rawResponse = bus.request(
             "authority-1",
-            MessageBusAuthorityChannels.COMMAND,
+            rankCommandTopic(scopedPlayerId),
             Map.copyOf(wire),
             Duration.ofSeconds(1)
         ).toCompletableFuture().join();
@@ -1737,7 +1830,7 @@ class MessageBusDataAuthorityTransportTest {
             .hasRootCauseInstanceOf(IllegalStateException.class)
             .hasRootCauseMessage(
                 "Authority read quote deliveryReceipt.stateTopic mismatch: "
-                    + "expected state.player_rank but received state.player_profile"
+                    + "expected one of [state.player_rank, state.rank] but received state.player_profile"
             );
     }
 
@@ -1799,7 +1892,7 @@ class MessageBusDataAuthorityTransportTest {
         DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
             "message-bus-test-authority",
             command.scope(),
-            string(route.get("domain")),
+            projectionFamily(command.type()),
             aggregateId == null ? command.scope() : aggregateId.toString(),
             string(route.get("domain")),
             string(route.get("stateTopic")),
@@ -1815,6 +1908,7 @@ class MessageBusDataAuthorityTransportTest {
             "message-bus-test-authority",
             string(route.get("domain")),
             string(route.get("commandTopic")),
+            string(route.get("responseTopic")),
             string(route.get("eventTopic")),
             string(route.get("stateTopic")),
             string(route.get("partitionKey")),
@@ -1838,8 +1932,8 @@ class MessageBusDataAuthorityTransportTest {
             "rank:player:" + playerId,
             "player_rank",
             playerId.toString(),
-            "player_rank",
-            "state.player_rank",
+            "rank",
+            "state.rank",
             "rank:player:" + playerId,
             sourceCommandId,
             eventId,
@@ -1850,10 +1944,11 @@ class MessageBusDataAuthorityTransportTest {
         );
         return new DataAuthority.CommandSettlement(
             "postgres-authority-state",
-            "player_rank",
-            "cmd.player_rank",
-            "evt.player_rank",
-            "state.player_rank",
+            "rank",
+            "cmd.rank",
+            "rsp.rank",
+            "evt.rank",
+            "state.rank",
             "rank:player:" + playerId,
             "12",
             idempotencyKey,
@@ -1862,18 +1957,72 @@ class MessageBusDataAuthorityTransportTest {
         );
     }
 
+    private static Map<String, Object> validRankWire(
+        UUID commandId,
+        UUID playerId,
+        long expectedRevision
+    ) {
+        Map<String, Object> wire = new java.util.LinkedHashMap<>();
+        wire.put("commandId", commandId.toString());
+        wire.put("commandType", DataAuthority.CommandType.GRANT_RANK.name());
+        wire.put("actorId", "rank-service");
+        wire.put("scope", "rank:player:" + playerId);
+        wire.put("idempotencyKey", "rank:" + commandId);
+        wire.put("deadlineEpochMillis", System.currentTimeMillis() + 1000);
+        wire.put("fencingToken", "3");
+        wire.put("expectedRevision", expectedRevision);
+        wire.put("schemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
+        wire.put("contractFingerprint", DataAuthorityCommandContracts.fingerprint());
+        wire.put("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+        wire.put("route", rankRoute(playerId));
+        stampAuthorityTopology(wire);
+        wire.put("payload", Map.of(
+            "playerId", playerId.toString(),
+            "primaryRank", "ADMIN",
+            "ranks", List.of("DEFAULT", "ADMIN")
+        ));
+        return wire;
+    }
+
+    private static void stampAuthorityTopology(Map<String, Object> wire) {
+        DataAuthority.CommandType type = DataAuthority.CommandType.valueOf(string(wire.get("commandType")));
+        wire.putAll(AuthorityTopologyEvidence.commandWirePayload(
+            type,
+            string(wire.get("scope")),
+            mapValue(wire.get("route"))
+        ));
+    }
+
     private static Map<String, Object> rankRoute(UUID playerId) {
         return Map.of(
-            "domain", "player_rank",
-            "commandTopic", "cmd.player_rank",
-            "eventTopic", "evt.player_rank",
-            "stateTopic", "state.player_rank",
+            "domain", "rank",
+            "commandTopic", "cmd.rank",
+            "responseTopic", "rsp.rank",
+            "eventTopic", "evt.rank",
+            "stateTopic", "state.rank",
             "partitionKey", "rank:player:" + playerId
         );
     }
 
+    private static String rankCommandTopic(UUID playerId) {
+        return string(rankRoute(playerId).get("commandTopic"));
+    }
+
+    private static Map<?, ?> mapValue(Object value) {
+        return value instanceof Map<?, ?> map ? map : Map.of();
+    }
+
     private static String string(Object value) {
         return value == null ? null : value.toString();
+    }
+
+    private static String projectionFamily(DataAuthority.CommandType type) {
+        return switch (type) {
+            case GRANT_RANK, REVOKE_RANK -> "player_rank";
+            case RECORD_MATCH_START, RECORD_MATCH_END -> "match";
+            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
+                "player_profile";
+        };
     }
 
     private record TestAdapter(String serverId) implements MessageBusAdapter {

@@ -13,6 +13,7 @@ import java.util.Set;
  */
 public final class GameNodeCapabilityManifest {
     public static final String RESOURCE_PATH = "META-INF/fulcrum/game-node-negative-capabilities.properties";
+    private static final String COMMAND_MESSAGE_BUS_CAPABILITY = "authority.command.message-bus";
 
     private final int version;
     private final GameNodeStorageGuard.NodeKind nodeKind;
@@ -125,6 +126,18 @@ public final class GameNodeCapabilityManifest {
                 "P3 no-store violation for " + nodeKind.displayName()
                     + " game node. Negative capability manifest forbids authority.mode=local."
             );
+        }
+        if (forbiddenCapabilities.contains(COMMAND_MESSAGE_BUS_CAPABILITY)) {
+            String commandTransport = stringValue(safeConfig, "authority.command-transport");
+            if (!commandTransport.isBlank()
+                && !"kafka".equalsIgnoreCase(commandTransport)
+                && !"log".equalsIgnoreCase(commandTransport)) {
+                throw new IllegalStateException(
+                    "P3 no-store violation for " + nodeKind.displayName()
+                        + " game node. Negative capability manifest requires "
+                        + "authority.command-transport=kafka for durable command-log ingress."
+                );
+            }
         }
         if (forbidDirectStoreConfig) {
             GameNodeStorageGuard.requireNoStoreGameNode(nodeKind, safeConfig);
