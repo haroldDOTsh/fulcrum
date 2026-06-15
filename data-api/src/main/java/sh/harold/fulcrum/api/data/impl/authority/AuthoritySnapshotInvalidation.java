@@ -143,7 +143,7 @@ public record AuthoritySnapshotInvalidation(
                     && aggregateType.equals(watermark.aggregateType())
                     && aggregateId.equals(watermark.aggregateId())
                     && projectionFamily.equals(watermark.aggregateType())
-                    && expectedStateTopic(projectionFamily).equals(watermark.stateTopic())
+                    && DataAuthorityReadContracts.stateTopicMatches(projectionFamily, watermark.stateTopic())
                     && aggregateScope.equals(watermark.partitionKey()))
             );
     }
@@ -207,10 +207,6 @@ public record AuthoritySnapshotInvalidation(
             return "rank:player:" + aggregateId;
         }
         return "";
-    }
-
-    private static String expectedStateTopic(String projectionFamily) {
-        return "state." + projectionFamily;
     }
 
     private static Map<?, ?> mapValue(Object value) {

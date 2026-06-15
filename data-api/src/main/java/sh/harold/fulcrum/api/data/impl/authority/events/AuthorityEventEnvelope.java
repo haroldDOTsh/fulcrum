@@ -19,6 +19,7 @@ public record AuthorityEventEnvelope(
     String eventType,
     Map<String, Object> payload,
     Map<String, Object> provenance,
+    String eventChainHash,
     Instant createdAt
 ) {
     /**
@@ -33,6 +34,7 @@ public record AuthorityEventEnvelope(
      * @param eventType event type name
      * @param payload event payload
      * @param provenance command route provenance
+     * @param eventChainHash durable event chain hash, or blank to derive a compatibility fingerprint
      * @param createdAt event creation timestamp
      */
     public AuthorityEventEnvelope {
@@ -59,6 +61,47 @@ public record AuthorityEventEnvelope(
         }
         payload = immutableCopy(payload);
         provenance = immutableCopy(provenance);
+        eventChainHash = eventChainHash == null || eventChainHash.isBlank()
+            ? AuthorityEventFingerprints.inputFingerprint(
+                eventId.toString(),
+                commandId.toString(),
+                aggregateScope,
+                aggregateType,
+                aggregateId,
+                revision,
+                eventType,
+                createdAt.toString(),
+                payload,
+                provenance
+            )
+            : eventChainHash.trim();
+    }
+
+    public AuthorityEventEnvelope(
+        UUID eventId,
+        UUID commandId,
+        String aggregateScope,
+        String aggregateType,
+        String aggregateId,
+        long revision,
+        String eventType,
+        Map<String, Object> payload,
+        Map<String, Object> provenance,
+        Instant createdAt
+    ) {
+        this(
+            eventId,
+            commandId,
+            aggregateScope,
+            aggregateType,
+            aggregateId,
+            revision,
+            eventType,
+            payload,
+            provenance,
+            null,
+            createdAt
+        );
     }
 
     private static Map<String, Object> immutableCopy(Map<String, Object> values) {

@@ -247,7 +247,7 @@ public final class PostgresAuthorityEventDispatcher {
             ? """
                 SELECT event_id, command_id, aggregate_scope, aggregate_type, aggregate_id,
                        revision, event_type, payload::text AS payload,
-                       provenance::text AS provenance, created_at
+                       provenance::text AS provenance, chain_hash, created_at
                 FROM authority_events
                 ORDER BY created_at, event_id
                 LIMIT ?
@@ -255,7 +255,7 @@ public final class PostgresAuthorityEventDispatcher {
             : """
                 SELECT event_id, command_id, aggregate_scope, aggregate_type, aggregate_id,
                        revision, event_type, payload::text AS payload,
-                       provenance::text AS provenance, created_at
+                       provenance::text AS provenance, chain_hash, created_at
                 FROM authority_events
                 WHERE created_at > ?
                    OR (created_at = ? AND event_id > ?)
@@ -295,6 +295,7 @@ public final class PostgresAuthorityEventDispatcher {
             rows.getString("event_type"),
             jsonMap(rows.getString("payload")),
             jsonMap(rows.getString("provenance")),
+            rows.getString("chain_hash"),
             rows.getTimestamp("created_at").toInstant()
         );
     }

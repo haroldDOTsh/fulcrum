@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -82,6 +83,214 @@ class WatermarkedDataAuthorityCacheTest {
         assertThat(second.quote().provenance().cacheAgeMillis()).isEqualTo(250L);
         assertThat(second.quote().provenance().maxAgeMillis()).isEqualTo(5_000L);
         assertThat(reads).hasValue(1);
+    }
+
+    @Test
+    void cacheMissReadsHotStateThenCacheHitReportsCache() {
+        UUID playerId = UUID.randomUUID();
+        MutableClock clock = new MutableClock(1_000L);
+        AtomicInteger reads = new AtomicInteger();
+        DataAuthority.PlayerRankSnapshot snapshot = rankSnapshot(playerId, "ADMIN", 4L, clock.millis());
+        WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
+            unusedCommandPort(),
+            unusedProfileReader(),
+            new DataAuthority.PlayerRankReader() {
+                @Override
+                public CompletableFuture<Optional<DataAuthority.PlayerRankSnapshot>> findRanks(UUID id) {
+                    return CompletableFuture.completedFuture(Optional.of(snapshot));
+                }
+
+                @Override
+                public CompletableFuture<DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot>> quoteRanks(
+                    UUID id,
+                    DataAuthority.ReadRequirement requirement
+                ) {
+                    reads.incrementAndGet();
+                    DataAuthority.ReadQuote quote = new DataAuthority.ReadQuote(
+                        "rank:player:" + id,
+                        AuthoritySnapshotInvalidation.PLAYER_RANK,
+                        requirement.minimumRevision(),
+                        snapshot.revision(),
+                        DataAuthority.ReadQuoteStatus.SATISFIED,
+                        snapshot.watermark(),
+                        null,
+                        DataAuthority.ReadProvenance.hotState(),
+                        DataAuthority.ProjectionDeliveryReceipt.fromWatermark(
+                            AuthoritySnapshotInvalidation.PLAYER_RANK,
+                            snapshot.watermark()
+                        )
+                    );
+                    return CompletableFuture.completedFuture(DataAuthority.QuotedRead.satisfied(snapshot, quote));
+                }
+            },
+            Duration.ofSeconds(5),
+            clock
+        );
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> first = cache
+            .quoteRanks(playerId, DataAuthority.ReadRequirement.atLeast(4L))
+            .toCompletableFuture()
+            .join();
+        clock.advanceMillis(250L);
+        DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> second = cache
+            .quoteRanks(playerId, DataAuthority.ReadRequirement.atLeast(4L))
+            .toCompletableFuture()
+            .join();
+
+        assertThat(first.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.HOT_STATE);
+        assertThat(second.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.CACHE);
+        assertThat(reads).hasValue(1);
+    }
+
+    @Test
+    void snapshotCacheStoreHitIsReadBeforeHotState() {
+        UUID playerId = UUID.randomUUID();
+        String scope = "rank:player:" + playerId;
+        MutableClock clock = new MutableClock(1_000L);
+        DataAuthority.PlayerRankSnapshot snapshot = rankSnapshot(playerId, "ADMIN", 4L, 900L);
+        List<String> events = new ArrayList<>();
+        RecordingSnapshotCacheStore snapshotStore = new RecordingSnapshotCacheStore(events);
+        snapshotStore.writeRank(AuthoritySnapshotCacheStore.SnapshotLine.snapshot(
+            AuthoritySnapshotInvalidation.PLAYER_RANK,
+            scope,
+            snapshot.revision(),
+            snapshot.watermark(),
+            snapshot,
+            900L,
+            DataAuthority.ReadProvenance.hotState()
+        ));
+        events.clear();
+        WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
+            unusedCommandPort(),
+            unusedProfileReader(),
+            unusedRankReader(),
+            Duration.ofSeconds(5),
+            clock,
+            snapshotStore
+        );
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> read = cache
+            .quoteRanks(playerId, DataAuthority.ReadRequirement.atLeast(4L))
+            .toCompletableFuture()
+            .join();
+
+        assertThat(read.satisfied()).isTrue();
+        assertThat(read.snapshot()).contains(snapshot);
+        assertThat(read.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.CACHE);
+        assertThat(read.quote().provenance().cachedAtEpochMillis()).isEqualTo(900L);
+        assertThat(read.quote().provenance().observedAtEpochMillis()).isEqualTo(1_000L);
+        assertThat(events).containsExactly("cache:readRank:" + scope);
+    }
+
+    @Test
+    void snapshotCacheStoreMissReadsHotStateThenFillsLine() {
+        UUID playerId = UUID.randomUUID();
+        String scope = "rank:player:" + playerId;
+        MutableClock clock = new MutableClock(1_000L);
+        DataAuthority.PlayerRankSnapshot snapshot = rankSnapshot(playerId, "ADMIN", 4L, clock.millis());
+        List<String> events = new ArrayList<>();
+        RecordingSnapshotCacheStore snapshotStore = new RecordingSnapshotCacheStore(events);
+        DataAuthority.PlayerRankReader rankReader = new DataAuthority.PlayerRankReader() {
+            @Override
+            public CompletableFuture<Optional<DataAuthority.PlayerRankSnapshot>> findRanks(UUID id) {
+                return CompletableFuture.failedFuture(new AssertionError("findRanks was not expected"));
+            }
+
+            @Override
+            public CompletableFuture<DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot>> quoteRanks(
+                UUID id,
+                DataAuthority.ReadRequirement requirement
+            ) {
+                events.add("hot:quoteRank:" + scope);
+                return CompletableFuture.completedFuture(hotStateRankRead(scope, snapshot, requirement));
+            }
+        };
+        WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
+            unusedCommandPort(),
+            unusedProfileReader(),
+            rankReader,
+            Duration.ofSeconds(5),
+            clock,
+            snapshotStore
+        );
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> first = cache
+            .quoteRanks(playerId, DataAuthority.ReadRequirement.atLeast(4L))
+            .toCompletableFuture()
+            .join();
+        clock.advanceMillis(250L);
+        DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> second = cache
+            .quoteRanks(playerId, DataAuthority.ReadRequirement.atLeast(4L))
+            .toCompletableFuture()
+            .join();
+
+        assertThat(first.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.HOT_STATE);
+        assertThat(second.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.CACHE);
+        assertThat(events).containsExactly(
+            "cache:readRank:" + scope,
+            "hot:quoteRank:" + scope,
+            "cache:writeRank:" + scope + ":4",
+            "cache:readRank:" + scope
+        );
+    }
+
+    @Test
+    void staleSnapshotCacheStoreLineFallsThroughToHotState() {
+        UUID playerId = UUID.randomUUID();
+        String scope = "rank:player:" + playerId;
+        MutableClock clock = new MutableClock(1_000L);
+        DataAuthority.PlayerRankSnapshot stale = rankSnapshot(playerId, "VIP", 3L, 900L);
+        DataAuthority.PlayerRankSnapshot updated = rankSnapshot(playerId, "ADMIN", 4L, clock.millis());
+        List<String> events = new ArrayList<>();
+        RecordingSnapshotCacheStore snapshotStore = new RecordingSnapshotCacheStore(events);
+        snapshotStore.writeRank(AuthoritySnapshotCacheStore.SnapshotLine.snapshot(
+            AuthoritySnapshotInvalidation.PLAYER_RANK,
+            scope,
+            stale.revision(),
+            stale.watermark(),
+            stale,
+            900L,
+            DataAuthority.ReadProvenance.hotState()
+        ));
+        events.clear();
+        DataAuthority.PlayerRankReader rankReader = new DataAuthority.PlayerRankReader() {
+            @Override
+            public CompletableFuture<Optional<DataAuthority.PlayerRankSnapshot>> findRanks(UUID id) {
+                return CompletableFuture.failedFuture(new AssertionError("findRanks was not expected"));
+            }
+
+            @Override
+            public CompletableFuture<DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot>> quoteRanks(
+                UUID id,
+                DataAuthority.ReadRequirement requirement
+            ) {
+                events.add("hot:quoteRank:" + scope);
+                return CompletableFuture.completedFuture(hotStateRankRead(scope, updated, requirement));
+            }
+        };
+        WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
+            unusedCommandPort(),
+            unusedProfileReader(),
+            rankReader,
+            Duration.ofSeconds(5),
+            clock,
+            snapshotStore
+        );
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> read = cache
+            .quoteRanks(playerId, DataAuthority.ReadRequirement.atLeast(4L))
+            .toCompletableFuture()
+            .join();
+
+        assertThat(read.satisfied()).isTrue();
+        assertThat(read.snapshot()).contains(updated);
+        assertThat(read.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.HOT_STATE);
+        assertThat(events).containsExactly(
+            "cache:readRank:" + scope,
+            "cache:invalidateRank:" + scope + ":3",
+            "hot:quoteRank:" + scope,
+            "cache:writeRank:" + scope + ":4"
+        );
     }
 
     @Test
@@ -342,6 +551,57 @@ class WatermarkedDataAuthorityCacheTest {
     }
 
     @Test
+    void durableSubmissionDelegatesToWrappedCommandPort() {
+        UUID playerId = UUID.randomUUID();
+        DataAuthority.PlayerRankCommand command = rankCommand(UUID.randomUUID(), playerId, 3L);
+        DataAuthority.CommandSubmissionReceipt receipt = submissionReceipt(command, 2, 17L);
+        AtomicReference<DataAuthority.AuthorityCommand> submitted = new AtomicReference<>();
+        class DurablePort implements DataAuthority.CommandPort, DataAuthority.CommandSubmissionPort {
+            @Override
+            public CompletableFuture<DataAuthority.CommandResult> submit(DataAuthority.AuthorityCommand command) {
+                return CompletableFuture.failedFuture(new AssertionError("submit was not expected"));
+            }
+
+            @Override
+            public CompletableFuture<DataAuthority.CommandSubmissionReceipt> submitDurable(
+                DataAuthority.AuthorityCommand command
+            ) {
+                submitted.set(command);
+                return CompletableFuture.completedFuture(receipt);
+            }
+        }
+        WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
+            new DurablePort(),
+            unusedProfileReader(),
+            unusedRankReader()
+        );
+
+        DataAuthority.CommandSubmissionReceipt result = cache.submitDurable(command)
+            .toCompletableFuture()
+            .join();
+
+        assertThat(result).isSameAs(receipt);
+        assertThat(submitted).hasValue(command);
+    }
+
+    @Test
+    void durableSubmissionFailsWhenWrappedCommandPortDoesNotSupportIt() {
+        UUID playerId = UUID.randomUUID();
+        WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
+            unusedCommandPort(),
+            unusedProfileReader(),
+            unusedRankReader()
+        );
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> cache
+                .submitDurable(rankCommand(UUID.randomUUID(), playerId, 3L))
+                .toCompletableFuture()
+                .join())
+            .hasCauseInstanceOf(UnsupportedOperationException.class)
+            .hasMessageContaining("Wrapped Data Authority command port does not support durable command submission");
+    }
+
+    @Test
     void quotedRankReadTreatsMissingRequiredRevisionAsUnknownOrStale() {
         UUID playerId = UUID.randomUUID();
         UUID commandId = UUID.randomUUID();
@@ -568,6 +828,30 @@ class WatermarkedDataAuthorityCacheTest {
 
         assertThat(cache.findRanks(playerId).toCompletableFuture().join()).contains(snapshot);
         assertThat(reads).hasValue(1);
+    }
+
+    @Test
+    void rankInvalidationAcceptsRouteStateTopicAlias() {
+        UUID playerId = UUID.randomUUID();
+        AuthoritySnapshotInvalidation invalidation = new AuthoritySnapshotInvalidation(
+            AuthoritySnapshotInvalidation.SCHEMA_VERSION,
+            AuthoritySnapshotInvalidation.PLAYER_RANK,
+            "rank:player:" + playerId,
+            AuthoritySnapshotInvalidation.PLAYER_RANK,
+            playerId.toString(),
+            5L,
+            watermark(
+                "rank:player:" + playerId,
+                AuthoritySnapshotInvalidation.PLAYER_RANK,
+                playerId.toString(),
+                "rank",
+                "state.rank",
+                5L,
+                1_000L
+            )
+        );
+
+        assertThat(invalidation.actionable()).isTrue();
     }
 
     @Test
@@ -805,6 +1089,51 @@ class WatermarkedDataAuthorityCacheTest {
         );
     }
 
+    private static DataAuthority.CommandSubmissionReceipt submissionReceipt(
+        DataAuthority.AuthorityCommand command,
+        int partition,
+        long offset
+    ) {
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
+        return new DataAuthority.CommandSubmissionReceipt(
+            command.commandId(),
+            command.type(),
+            command.scope(),
+            route.domain(),
+            route.commandTopic(),
+            route.responseTopic(),
+            route.eventTopic(),
+            route.stateTopic(),
+            route.partitionKey(),
+            partition,
+            offset,
+            System.currentTimeMillis(),
+            command.provenance()
+        );
+    }
+
+    private static DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> hotStateRankRead(
+        String scope,
+        DataAuthority.PlayerRankSnapshot snapshot,
+        DataAuthority.ReadRequirement requirement
+    ) {
+        DataAuthority.ReadQuote quote = new DataAuthority.ReadQuote(
+            scope,
+            AuthoritySnapshotInvalidation.PLAYER_RANK,
+            requirement.minimumRevision(),
+            snapshot.revision(),
+            DataAuthority.ReadQuoteStatus.SATISFIED,
+            snapshot.watermark(),
+            null,
+            DataAuthority.ReadProvenance.hotState(),
+            DataAuthority.ProjectionDeliveryReceipt.fromWatermark(
+                AuthoritySnapshotInvalidation.PLAYER_RANK,
+                snapshot.watermark()
+            )
+        );
+        return DataAuthority.QuotedRead.satisfied(snapshot, quote);
+    }
+
     private static DataAuthority.PlayerProfileCommand profileCommand(
         UUID commandId,
         UUID playerId,
@@ -848,6 +1177,51 @@ class WatermarkedDataAuthorityCacheTest {
 
     private static DataAuthority.PlayerRankReader unusedRankReader() {
         return playerId -> CompletableFuture.failedFuture(new AssertionError("rank reader was not expected"));
+    }
+
+    private static final class RecordingSnapshotCacheStore implements AuthoritySnapshotCacheStore {
+        private final AuthoritySnapshotCacheStore delegate = new InMemoryAuthoritySnapshotCacheStore();
+        private final List<String> events;
+
+        private RecordingSnapshotCacheStore(List<String> events) {
+            this.events = events;
+        }
+
+        @Override
+        public Optional<SnapshotLine<DataAuthority.PlayerProfileSnapshot>> readProfile(String aggregateScope) {
+            events.add("cache:readProfile:" + aggregateScope);
+            return delegate.readProfile(aggregateScope);
+        }
+
+        @Override
+        public Optional<SnapshotLine<DataAuthority.PlayerRankSnapshot>> readRank(String aggregateScope) {
+            events.add("cache:readRank:" + aggregateScope);
+            return delegate.readRank(aggregateScope);
+        }
+
+        @Override
+        public void writeProfile(SnapshotLine<DataAuthority.PlayerProfileSnapshot> line) {
+            events.add("cache:writeProfile:" + line.aggregateScope() + ":" + line.revision());
+            delegate.writeProfile(line);
+        }
+
+        @Override
+        public void writeRank(SnapshotLine<DataAuthority.PlayerRankSnapshot> line) {
+            events.add("cache:writeRank:" + line.aggregateScope() + ":" + line.revision());
+            delegate.writeRank(line);
+        }
+
+        @Override
+        public void invalidateProfile(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
+            events.add("cache:invalidateProfile:" + aggregateScope + ":" + revision);
+            delegate.invalidateProfile(aggregateScope, revision, invalidatedAtEpochMillis);
+        }
+
+        @Override
+        public void invalidateRank(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
+            events.add("cache:invalidateRank:" + aggregateScope + ":" + revision);
+            delegate.invalidateRank(aggregateScope, revision, invalidatedAtEpochMillis);
+        }
     }
 
     private static final class MutableClock extends Clock {

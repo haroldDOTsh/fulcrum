@@ -9,7 +9,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Function;
 import java.util.function.ToLongFunction;
@@ -18,6 +17,7 @@ import java.util.function.ToLongFunction;
  * Node-local hot snapshot cache that only serves values with authority watermark proof.
  */
 public final class WatermarkedDataAuthorityCache implements DataAuthority.CommandPort,
+    DataAuthority.CommandSubmissionPort,
     DataAuthority.PlayerProfileReader,
     DataAuthority.PlayerRankReader {
 
@@ -28,13 +28,10 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
     private final DataAuthority.CommandPort commandPort;
     private final DataAuthority.PlayerProfileReader profileReader;
     private final DataAuthority.PlayerRankReader rankReader;
+    private final AuthoritySnapshotCacheStore snapshotCacheStore;
     private final long maxAgeMillis;
     private final Clock clock;
-    private final ConcurrentMap<String, Cached<DataAuthority.PlayerProfileSnapshot>> profileSnapshots =
-        new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Cached<DataAuthority.PlayerRankSnapshot>> rankSnapshots =
-        new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Long> revisionFloors = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Long> revisionFloors = new java.util.concurrent.ConcurrentHashMap<>();
 
     public WatermarkedDataAuthorityCache(
         DataAuthority.CommandPort commandPort,
@@ -60,9 +57,21 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         Duration maxAge,
         Clock clock
     ) {
+        this(commandPort, profileReader, rankReader, maxAge, clock, new InMemoryAuthoritySnapshotCacheStore());
+    }
+
+    public WatermarkedDataAuthorityCache(
+        DataAuthority.CommandPort commandPort,
+        DataAuthority.PlayerProfileReader profileReader,
+        DataAuthority.PlayerRankReader rankReader,
+        Duration maxAge,
+        Clock clock,
+        AuthoritySnapshotCacheStore snapshotCacheStore
+    ) {
         this.commandPort = Objects.requireNonNull(commandPort, "commandPort");
         this.profileReader = Objects.requireNonNull(profileReader, "profileReader");
         this.rankReader = Objects.requireNonNull(rankReader, "rankReader");
+        this.snapshotCacheStore = Objects.requireNonNull(snapshotCacheStore, "snapshotCacheStore");
         Duration effectiveMaxAge = maxAge == null ? DEFAULT_MAX_AGE : maxAge;
         this.maxAgeMillis = effectiveMaxAge.toMillis();
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -78,6 +87,19 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
                 }
                 return result;
             });
+    }
+
+    @Override
+    public CompletionStage<DataAuthority.CommandSubmissionReceipt> submitDurable(
+        DataAuthority.AuthorityCommand command
+    ) {
+        Objects.requireNonNull(command, "command");
+        if (commandPort instanceof DataAuthority.CommandSubmissionPort submissionPort) {
+            return submissionPort.submitDurable(command);
+        }
+        return CompletableFuture.failedFuture(new UnsupportedOperationException(
+            "Wrapped Data Authority command port does not support durable command submission"
+        ));
     }
 
     @Override
@@ -157,50 +179,38 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         }
         observe(scope, revision);
         if (AuthoritySnapshotInvalidation.PLAYER_PROFILE.equals(invalidation.projectionFamily())) {
-            profileSnapshots.remove(scope);
+            snapshotCacheStore.invalidateProfile(scope, revision, clock.millis());
         } else if (AuthoritySnapshotInvalidation.PLAYER_RANK.equals(invalidation.projectionFamily())) {
-            rankSnapshots.remove(scope);
+            snapshotCacheStore.invalidateRank(scope, revision, clock.millis());
         }
-    }
-
-    private <T> Optional<T> readCache(
-        String scope,
-        ConcurrentMap<String, Cached<T>> cache,
-        ToLongFunction<T> revision,
-        Function<T, DataAuthority.SnapshotWatermark> watermark
-    ) {
-        Cached<T> cached = cache.get(scope);
-        if (cached == null) {
-            return Optional.empty();
-        }
-        if (expired(cached) || !acceptedSnapshot(scope, cached.value(), revision, watermark)) {
-            cache.remove(scope, cached);
-            return Optional.empty();
-        }
-        observe(scope, watermark.apply(cached.value()).sourceRevision());
-        return Optional.of(cached.value());
     }
 
     private DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> readRankCache(
         String scope,
         DataAuthority.ReadRequirement requirement
     ) {
-        Cached<DataAuthority.PlayerRankSnapshot> cached = rankSnapshots.get(scope);
-        if (cached == null) {
+        Optional<AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerRankSnapshot>> cached =
+            snapshotCacheStore.readRank(scope);
+        if (cached.isEmpty()) {
             return null;
         }
-        if (expired(cached)) {
-            rankSnapshots.remove(scope, cached);
+        AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerRankSnapshot> line = cached.get();
+        if (!serveableLine(scope, AuthoritySnapshotInvalidation.PLAYER_RANK, line)) {
+            snapshotCacheStore.invalidateRank(scope, line.revision(), clock.millis());
+            return null;
+        }
+        if (expired(line)) {
+            snapshotCacheStore.invalidateRank(scope, line.revision(), clock.millis());
             return null;
         }
         DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> quote = quoteSnapshot(
             scope,
             AuthoritySnapshotInvalidation.PLAYER_RANK,
-            Optional.of(cached.value()),
+            Optional.of(line.snapshot()),
             requirement,
             DataAuthority.ReadProvenance.cacheFrom(
-                cached.provenance(),
-                cached.cachedAtEpochMillis(),
+                line.provenance(),
+                line.cachedAtEpochMillis(),
                 clock.millis(),
                 maxAgeMillis
             ),
@@ -208,10 +218,10 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             DataAuthority.PlayerRankSnapshot::watermark
         );
         if (!quote.satisfied()) {
-            rankSnapshots.remove(scope, cached);
+            snapshotCacheStore.invalidateRank(scope, line.revision(), clock.millis());
             return null;
         }
-        observe(scope, cached.value().watermark().sourceRevision());
+        observe(scope, line.snapshot().watermark().sourceRevision());
         return quote;
     }
 
@@ -219,22 +229,28 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         String scope,
         DataAuthority.ReadRequirement requirement
     ) {
-        Cached<DataAuthority.PlayerProfileSnapshot> cached = profileSnapshots.get(scope);
-        if (cached == null) {
+        Optional<AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerProfileSnapshot>> cached =
+            snapshotCacheStore.readProfile(scope);
+        if (cached.isEmpty()) {
             return null;
         }
-        if (expired(cached)) {
-            profileSnapshots.remove(scope, cached);
+        AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerProfileSnapshot> line = cached.get();
+        if (!serveableLine(scope, AuthoritySnapshotInvalidation.PLAYER_PROFILE, line)) {
+            snapshotCacheStore.invalidateProfile(scope, line.revision(), clock.millis());
+            return null;
+        }
+        if (expired(line)) {
+            snapshotCacheStore.invalidateProfile(scope, line.revision(), clock.millis());
             return null;
         }
         DataAuthority.QuotedRead<DataAuthority.PlayerProfileSnapshot> quote = quoteSnapshot(
             scope,
             AuthoritySnapshotInvalidation.PLAYER_PROFILE,
-            Optional.of(cached.value()),
+            Optional.of(line.snapshot()),
             requirement,
             DataAuthority.ReadProvenance.cacheFrom(
-                cached.provenance(),
-                cached.cachedAtEpochMillis(),
+                line.provenance(),
+                line.cachedAtEpochMillis(),
                 clock.millis(),
                 maxAgeMillis
             ),
@@ -242,32 +258,11 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             DataAuthority.PlayerProfileSnapshot::watermark
         );
         if (!quote.satisfied()) {
-            profileSnapshots.remove(scope, cached);
+            snapshotCacheStore.invalidateProfile(scope, line.revision(), clock.millis());
             return null;
         }
-        observe(scope, cached.value().watermark().sourceRevision());
+        observe(scope, line.snapshot().watermark().sourceRevision());
         return quote;
-    }
-
-    private <T> Optional<T> acceptFetched(
-        String scope,
-        Optional<T> fetched,
-        ConcurrentMap<String, Cached<T>> cache,
-        ToLongFunction<T> revision,
-        Function<T, DataAuthority.SnapshotWatermark> watermark
-    ) {
-        if (fetched.isEmpty()) {
-            cache.remove(scope);
-            return Optional.empty();
-        }
-        T snapshot = fetched.get();
-        if (!acceptedSnapshot(scope, snapshot, revision, watermark)) {
-            cache.remove(scope);
-            return Optional.empty();
-        }
-        observe(scope, watermark.apply(snapshot).sourceRevision());
-        cache.put(scope, new Cached<>(snapshot, clock.millis()));
-        return fetched;
     }
 
     private DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> acceptFetchedRank(
@@ -290,7 +285,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
                     DataAuthority.PlayerRankSnapshot::watermark
                 );
             }
-            rankSnapshots.remove(scope);
+            snapshotCacheStore.invalidateRank(scope, upstreamRevision(scope, fetched.quote()), clock.millis());
             return fetched;
         }
         DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> quote = quoteSnapshot(
@@ -303,12 +298,20 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             DataAuthority.PlayerRankSnapshot::watermark
         );
         if (!quote.satisfied()) {
-            rankSnapshots.remove(scope);
+            snapshotCacheStore.invalidateRank(scope, quote.quote().observedRevision(), clock.millis());
             return quote;
         }
         DataAuthority.PlayerRankSnapshot snapshot = quote.snapshot().orElseThrow();
         observe(scope, snapshot.watermark().sourceRevision());
-        rankSnapshots.put(scope, new Cached<>(snapshot, clock.millis(), provenance));
+        snapshotCacheStore.writeRank(AuthoritySnapshotCacheStore.SnapshotLine.snapshot(
+            AuthoritySnapshotInvalidation.PLAYER_RANK,
+            scope,
+            snapshot.revision(),
+            snapshot.watermark(),
+            snapshot,
+            clock.millis(),
+            provenance
+        ));
         return quote;
     }
 
@@ -332,7 +335,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
                     DataAuthority.PlayerProfileSnapshot::watermark
                 );
             }
-            profileSnapshots.remove(scope);
+            snapshotCacheStore.invalidateProfile(scope, upstreamRevision(scope, fetched.quote()), clock.millis());
             return fetched;
         }
         DataAuthority.QuotedRead<DataAuthority.PlayerProfileSnapshot> quote = quoteSnapshot(
@@ -345,12 +348,20 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             DataAuthority.PlayerProfileSnapshot::watermark
         );
         if (!quote.satisfied()) {
-            profileSnapshots.remove(scope);
+            snapshotCacheStore.invalidateProfile(scope, quote.quote().observedRevision(), clock.millis());
             return quote;
         }
         DataAuthority.PlayerProfileSnapshot snapshot = quote.snapshot().orElseThrow();
         observe(scope, snapshot.watermark().sourceRevision());
-        profileSnapshots.put(scope, new Cached<>(snapshot, clock.millis(), provenance));
+        snapshotCacheStore.writeProfile(AuthoritySnapshotCacheStore.SnapshotLine.snapshot(
+            AuthoritySnapshotInvalidation.PLAYER_PROFILE,
+            scope,
+            snapshot.revision(),
+            snapshot.watermark(),
+            snapshot,
+            clock.millis(),
+            provenance
+        ));
         return quote;
     }
 
@@ -393,8 +404,11 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             status = DataAuthority.ReadQuoteStatus.UNWATERMARKED;
         } else if (!scope.equals(snapshotWatermark.aggregateScope())) {
             status = DataAuthority.ReadQuoteStatus.SCOPE_MISMATCH;
-        } else if (!expectedStateTopic(projectionFamily).equals(snapshotWatermark.stateTopic())) {
+        } else if (!stateTopicMatches(projectionFamily, snapshotWatermark.stateTopic())) {
             status = DataAuthority.ReadQuoteStatus.UNKNOWN_OR_STALE;
+        } else if (effectiveRequirement.visibilityToken() != null
+            && !snapshotWatermark.satisfies(effectiveRequirement.visibilityToken())) {
+            status = DataAuthority.ReadQuoteStatus.VISIBILITY_TOKEN_MISMATCH;
         } else if (snapshotWatermark.sourceRevision() != snapshotRevision) {
             status = DataAuthority.ReadQuoteStatus.REVISION_MISMATCH;
         } else if (snapshotRevision < requiredRevision || snapshotWatermark.sourceRevision() < requiredRevision) {
@@ -460,16 +474,26 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         if (snapshotWatermark.sourceRevision() != snapshotRevision) {
             return false;
         }
-        String expectedStateTopic = expectedStateTopicForScope(scope);
-        if (expectedStateTopic != null && !expectedStateTopic.equals(snapshotWatermark.stateTopic())) {
+        String projectionFamily = projectionFamilyForScope(scope);
+        if (projectionFamily != null && !stateTopicMatches(projectionFamily, snapshotWatermark.stateTopic())) {
             return false;
         }
         long requiredRevision = revisionFloors.getOrDefault(scope, 0L);
         return snapshotRevision >= requiredRevision && snapshotWatermark.sourceRevision() >= requiredRevision;
     }
 
-    private boolean expired(Cached<?> cached) {
+    private boolean expired(AuthoritySnapshotCacheStore.SnapshotLine<?> cached) {
         return maxAgeMillis >= 0L && cached.cachedAtEpochMillis() + maxAgeMillis < clock.millis();
+    }
+
+    private boolean serveableLine(
+        String scope,
+        String projectionFamily,
+        AuthoritySnapshotCacheStore.SnapshotLine<?> line
+    ) {
+        return line.serveable()
+            && projectionFamily.equals(line.projectionFamily())
+            && scope.equals(line.aggregateScope());
     }
 
     private void recordAcceptedCommand(DataAuthority.AuthorityCommand command, long revision) {
@@ -478,8 +502,8 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             return;
         }
         observe(scope, revision);
-        profileSnapshots.remove(scope);
-        rankSnapshots.remove(scope);
+        snapshotCacheStore.invalidateProfile(scope, revision, clock.millis());
+        snapshotCacheStore.invalidateRank(scope, revision, clock.millis());
     }
 
     private void observe(String scope, long revision) {
@@ -509,30 +533,27 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         return "rank:player:" + playerId;
     }
 
-    private static String expectedStateTopic(String projectionFamily) {
-        return "state." + projectionFamily;
+    private static boolean stateTopicMatches(String projectionFamily, String stateTopic) {
+        return DataAuthorityReadContracts.stateTopicMatches(projectionFamily, stateTopic);
     }
 
-    private static String expectedStateTopicForScope(String scope) {
+    private static String projectionFamilyForScope(String scope) {
         if (scope == null || scope.isBlank()) {
             return null;
         }
         if (scope.startsWith("rank:player:")) {
-            return expectedStateTopic(AuthoritySnapshotInvalidation.PLAYER_RANK);
+            return AuthoritySnapshotInvalidation.PLAYER_RANK;
         }
         if (scope.startsWith("player:")) {
-            return expectedStateTopic(AuthoritySnapshotInvalidation.PLAYER_PROFILE);
+            return AuthoritySnapshotInvalidation.PLAYER_PROFILE;
         }
         return null;
     }
 
-    private record Cached<T>(T value, long cachedAtEpochMillis, DataAuthority.ReadProvenance provenance) {
-        private Cached(T value, long cachedAtEpochMillis) {
-            this(value, cachedAtEpochMillis, DataAuthority.ReadProvenance.unknown());
+    private long upstreamRevision(String scope, DataAuthority.ReadQuote upstreamQuote) {
+        if (upstreamQuote == null) {
+            return revisionFloors.getOrDefault(scope, 0L);
         }
-
-        private Cached {
-            provenance = provenance == null ? DataAuthority.ReadProvenance.unknown() : provenance;
-        }
+        return Math.max(upstreamQuote.observedRevision(), upstreamQuote.requiredRevision());
     }
 }

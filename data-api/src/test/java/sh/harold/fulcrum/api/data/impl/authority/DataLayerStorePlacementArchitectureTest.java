@@ -47,6 +47,21 @@ class DataLayerStorePlacementArchitectureTest {
     }
 
     @Test
+    void executableStorePlacementsMatchArchitectureTable() throws IOException {
+        Map<String, Set<String>> documentedPlacements = architectureStorePlacements();
+
+        assertThat(AuthorityStorePlacements.all().keySet())
+            .containsExactlyInAnyOrderElementsOf(documentedPlacements.keySet());
+        AuthorityStorePlacements.all().forEach((concern, placement) ->
+            assertThat(placement.allStores().stream()
+                .map(DataLayerStorePlacementArchitectureTest::normalizedStore)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet()))
+                .as(concern + " executable stores")
+                .containsExactlyInAnyOrderElementsOf(storesFor(documentedPlacements, concern))
+        );
+    }
+
+    @Test
     void commandContractsMatchDocumentedStorePlacements() throws IOException {
         Map<String, Set<String>> placements = architectureStorePlacements();
 
@@ -120,6 +135,43 @@ class DataLayerStorePlacementArchitectureTest {
             DataAuthorityReadContracts.ReadType.PLAYER_RANK,
             "Live effective ranks (for permission checks)"
         );
+    }
+
+    @Test
+    void postgresAuthorityDoesNotWriteLiveRankProjection() throws IOException {
+        String source = Files.readString(postgresAuthoritySourcePath());
+
+        assertThat(source)
+            .doesNotContain("INSERT INTO player_rank_projection")
+            .contains("INSERT INTO player_rank_audit");
+    }
+
+    @Test
+    void postgresAuthorityDoesNotWriteLivePresenceProfileFields() throws IOException {
+        String source = Files.readString(postgresAuthoritySourcePath());
+
+        assertThat(source)
+            .doesNotContain("INSERT INTO player_profiles")
+            .doesNotContain("profile_data = player_profiles.profile_data || EXCLUDED.profile_data")
+            .contains("INSERT INTO player_sessions");
+    }
+
+    @Test
+    void postgresAuthorityWritesMatchHistoryOnlyOnMatchEnd() throws IOException {
+        String source = Files.readString(postgresAuthoritySourcePath());
+        String startMethod = methodSlice(
+            source,
+            "private DataAuthority.CommandResult persistMatchStart",
+            "private DataAuthority.CommandResult persistMatchEnd"
+        );
+        String endMethod = methodSlice(
+            source,
+            "private DataAuthority.CommandResult persistMatchEnd",
+            "private void persistMatchParticipants"
+        );
+
+        assertThat(startMethod).doesNotContain("INSERT INTO match_records");
+        assertThat(endMethod).contains("INSERT INTO match_records");
     }
 
     private static void assertCommandPlacement(
@@ -200,6 +252,47 @@ class DataLayerStorePlacementArchitectureTest {
             return fromModule;
         }
         return Path.of("refactor", "data-layer-architecture.md");
+    }
+
+    private static Path postgresAuthoritySourcePath() {
+        Path fromModule = Path.of(
+            "src",
+            "main",
+            "java",
+            "sh",
+            "harold",
+            "fulcrum",
+            "api",
+            "data",
+            "impl",
+            "authority",
+            "PostgresDataAuthority.java"
+        );
+        if (Files.exists(fromModule)) {
+            return fromModule;
+        }
+        return Path.of(
+            "data-api",
+            "src",
+            "main",
+            "java",
+            "sh",
+            "harold",
+            "fulcrum",
+            "api",
+            "data",
+            "impl",
+            "authority",
+            "PostgresDataAuthority.java"
+        );
+    }
+
+    private static String methodSlice(String source, String startMarker, String endMarker) {
+        int start = source.indexOf(startMarker);
+        int end = source.indexOf(endMarker);
+        assertThat(start).as(startMarker).isNotNegative();
+        assertThat(end).as(endMarker).isGreaterThan(start);
+        return source.substring(start, end);
     }
 
     private static Set<String> storesIn(String cell) {

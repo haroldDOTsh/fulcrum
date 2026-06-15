@@ -2,6 +2,8 @@ package sh.harold.fulcrum.api.data.impl.authority.events;
 
 import com.google.gson.Gson;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogTopology;
+import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -24,6 +26,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 public final class InMemoryAuthorityHotStateProjection implements AuthorityEventDispatchTarget,
     AuthorityEventReplayTarget,
+    AuthorityStateRestoreTarget,
     DataAuthority.PlayerProfileReader,
     DataAuthority.PlayerRankReader {
     public static final String PROJECTION_NAME = "authority-hot-state";
@@ -58,6 +61,11 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     @Override
     public String projectionName() {
         return PROJECTION_NAME;
+    }
+
+    @Override
+    public String projectionVersion() {
+        return PROJECTION_VERSION;
     }
 
     @Override
@@ -127,6 +135,26 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
             Optional.ofNullable(ranks.get(playerId)),
             System.currentTimeMillis()
         ));
+    }
+
+    public AuthorityStateRestoreResult restore(AuthorityStateRecord record) {
+        Objects.requireNonNull(record, "record");
+        if (!record.hasValidStateFingerprint()) {
+            return AuthorityStateRestoreResult.skipped(
+                PROJECTION_VERSION,
+                record,
+                "state fingerprint mismatch"
+            );
+        }
+        return switch (record.aggregateType()) {
+            case PLAYER_PROFILE -> restoreProfile(record);
+            case PLAYER_RANK -> restoreRank(record);
+            default -> AuthorityStateRestoreResult.skipped(
+                PROJECTION_VERSION,
+                record,
+                "unsupported aggregate type " + record.aggregateType()
+            );
+        };
     }
 
     private ProjectionChange reduce(AuthorityEventEnvelope event) {
@@ -220,6 +248,56 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         );
     }
 
+    private AuthorityStateRestoreResult restoreProfile(AuthorityStateRecord record) {
+        Map<String, Object> payload = record.statePayload();
+        UUID playerId = uuid(payload.get("playerId"));
+        if (playerId == null) {
+            playerId = uuid(record.aggregateId());
+        }
+        if (playerId == null) {
+            return AuthorityStateRestoreResult.skipped(PROJECTION_VERSION, record, "state record is missing playerId");
+        }
+        DataAuthority.PlayerProfileSnapshot snapshot = new DataAuthority.PlayerProfileSnapshot(
+            playerId,
+            boundedUsername(string(payload.get("username"), UNKNOWN)),
+            string(payload.get("normalizedUsername"), string(payload.get("username"), UNKNOWN).toLowerCase(Locale.ROOT)),
+            booleanValue(payload.get("online")),
+            string(payload.get("currentServer"), null),
+            string(payload.get("currentProxy"), null),
+            longValue(payload.get("totalPlaytimeMs"), 0L),
+            stringMap(payload.get("profileData")),
+            longValue(payload.get("revision"), record.revision()),
+            watermark(record)
+        );
+        profiles.compute(playerId, (ignored, current) -> newerSnapshot(current, snapshot) ? snapshot : current);
+        return AuthorityStateRestoreResult.restored(PROJECTION_VERSION, record);
+    }
+
+    private AuthorityStateRestoreResult restoreRank(AuthorityStateRecord record) {
+        Map<String, Object> payload = record.statePayload();
+        UUID playerId = uuid(payload.get("playerId"));
+        if (playerId == null) {
+            playerId = uuid(record.aggregateId());
+        }
+        if (playerId == null) {
+            return AuthorityStateRestoreResult.skipped(PROJECTION_VERSION, record, "state record is missing playerId");
+        }
+        String primaryRank = string(payload.get("primaryRank"), "DEFAULT");
+        List<String> restoredRanks = strings(payload.get("ranks"));
+        if (restoredRanks.isEmpty()) {
+            restoredRanks = List.of(primaryRank);
+        }
+        DataAuthority.PlayerRankSnapshot snapshot = new DataAuthority.PlayerRankSnapshot(
+            playerId,
+            primaryRank,
+            restoredRanks,
+            longValue(payload.get("revision"), record.revision()),
+            watermark(record)
+        );
+        ranks.compute(playerId, (ignored, current) -> newerSnapshot(current, snapshot) ? snapshot : current);
+        return AuthorityStateRestoreResult.restored(PROJECTION_VERSION, record);
+    }
+
     private DataAuthority.QuotedRead<DataAuthority.PlayerProfileSnapshot> quoteProfileSnapshot(
         UUID playerId,
         DataAuthority.ReadRequirement requirement,
@@ -270,7 +348,7 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
                 status,
                 null,
                 null,
-                DataAuthority.ReadProvenance.cache(nowEpochMillis, nowEpochMillis, requirement.maxAgeMillis()),
+                DataAuthority.ReadProvenance.hotState(),
                 null
             ));
         }
@@ -285,8 +363,10 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
             status = DataAuthority.ReadQuoteStatus.UNWATERMARKED;
         } else if (!aggregateScope.equals(watermark.aggregateScope())) {
             status = DataAuthority.ReadQuoteStatus.SCOPE_MISMATCH;
-        } else if (!("state." + projectionFamily).equals(watermark.stateTopic())) {
+        } else if (!stateTopicMatches(projectionFamily, watermark.stateTopic())) {
             status = DataAuthority.ReadQuoteStatus.UNKNOWN_OR_STALE;
+        } else if (requirement.visibilityToken() != null && !watermark.satisfies(requirement.visibilityToken())) {
+            status = DataAuthority.ReadQuoteStatus.VISIBILITY_TOKEN_MISMATCH;
         } else if (watermark.sourceRevision() != projected.revision()) {
             status = DataAuthority.ReadQuoteStatus.REVISION_MISMATCH;
         } else if (projected.revision() < requiredRevision || watermark.sourceRevision() < requiredRevision) {
@@ -307,11 +387,7 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
             status,
             watermark,
             null,
-            DataAuthority.ReadProvenance.cache(
-                watermark.eventCreatedEpochMillis(),
-                nowEpochMillis,
-                requirement.maxAgeMillis()
-            ),
+            DataAuthority.ReadProvenance.hotState(),
             receipt
         );
         return status == DataAuthority.ReadQuoteStatus.SATISFIED
@@ -336,20 +412,45 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     ) {
         Map<?, ?> route = route(event);
         String aggregateType = string(event.aggregateType(), projectionFamily);
+        String commandDomain = string(route.get("domain"), projectionFamily);
+        String partitionKey = string(route.get("partitionKey"), event.aggregateScope());
         return new DataAuthority.SnapshotWatermark(
             PROJECTION_NAME,
             event.aggregateScope(),
             aggregateType,
             event.aggregateId(),
-            string(route.get("domain"), projectionFamily),
+            commandDomain,
             string(route.get("stateTopic"), "state." + projectionFamily),
-            string(route.get("partitionKey"), event.aggregateScope()),
+            partitionKey,
             event.commandId(),
             event.eventId(),
             event.revision(),
             event.createdAt().toEpochMilli(),
+            AuthorityLogTopology.partition(commandDomain, partitionKey),
+            Math.max(0L, event.revision() - 1L),
             stateFingerprint,
             AuthorityEventFingerprints.inputFingerprint(event)
+        );
+    }
+
+    private DataAuthority.SnapshotWatermark watermark(AuthorityStateRecord record) {
+        String partitionKey = record.partitionKey();
+        return new DataAuthority.SnapshotWatermark(
+            PROJECTION_NAME,
+            record.aggregateScope(),
+            record.aggregateType(),
+            record.aggregateId(),
+            record.commandDomain(),
+            record.stateTopic(),
+            partitionKey,
+            record.commandId(),
+            record.eventId(),
+            record.revision(),
+            record.eventCreatedAt().toEpochMilli(),
+            record.sourcePartition(),
+            record.sourceOffset(),
+            record.stateFingerprint(),
+            record.eventChainHash()
         );
     }
 
@@ -435,6 +536,10 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         return route instanceof Map<?, ?> map ? map : Map.of();
     }
 
+    private static boolean stateTopicMatches(String projectionFamily, String stateTopic) {
+        return DataAuthorityReadContracts.stateTopicMatches(projectionFamily, stateTopic);
+    }
+
     private static UUID playerId(AuthorityEventEnvelope event) {
         UUID aggregateId = uuid(event.aggregateId());
         if (aggregateId != null) {
@@ -508,6 +613,19 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         return List.of(value.toString());
     }
 
+    private static Map<String, Object> stringMap(Object value) {
+        if (!(value instanceof Map<?, ?> map) || map.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        map.forEach((key, child) -> {
+            if (key != null && child != null) {
+                values.put(key.toString(), child);
+            }
+        });
+        return Map.copyOf(values);
+    }
+
     private static UUID uuid(Object value) {
         if (value instanceof UUID uuid) {
             return uuid;
@@ -529,6 +647,27 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
 
     private static String string(Object value, String fallback) {
         return value == null || value.toString().isBlank() ? fallback : value.toString();
+    }
+
+    private static boolean booleanValue(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return value != null && Boolean.parseBoolean(value.toString());
+    }
+
+    private static long longValue(Object value, long fallback) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null || value.toString().isBlank()) {
+            return fallback;
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 
     private static List<String> acceptedEventTypes() {

@@ -20,17 +20,43 @@ final class AuthorityEventFingerprints {
     }
 
     static String inputFingerprint(AuthorityEventEnvelope event) {
+        return inputFingerprint(
+            event.eventId().toString(),
+            event.commandId().toString(),
+            event.aggregateScope(),
+            event.aggregateType(),
+            event.aggregateId(),
+            event.revision(),
+            event.eventType(),
+            event.createdAt().toString(),
+            event.payload(),
+            event.provenance()
+        );
+    }
+
+    static String inputFingerprint(
+        String eventId,
+        String commandId,
+        String aggregateScope,
+        String aggregateType,
+        String aggregateId,
+        long revision,
+        String eventType,
+        String createdAt,
+        Map<String, Object> payload,
+        Map<String, Object> provenance
+    ) {
         Map<String, Object> values = new LinkedHashMap<>();
-        values.put("eventId", event.eventId().toString());
-        values.put("commandId", event.commandId().toString());
-        values.put("aggregateScope", event.aggregateScope());
-        values.put("aggregateType", event.aggregateType());
-        values.put("aggregateId", event.aggregateId());
-        values.put("revision", event.revision());
-        values.put("eventType", event.eventType());
-        values.put("createdAt", event.createdAt().toString());
-        values.put("payload", event.payload());
-        values.put("provenance", event.provenance());
+        values.put("eventId", eventId);
+        values.put("commandId", commandId);
+        values.put("aggregateScope", aggregateScope);
+        values.put("aggregateType", aggregateType);
+        values.put("aggregateId", aggregateId);
+        values.put("revision", revision);
+        values.put("eventType", eventType);
+        values.put("createdAt", createdAt);
+        values.put("payload", payload);
+        values.put("provenance", provenance);
         return sha256(GSON.toJson(canonicalValue(values)));
     }
 

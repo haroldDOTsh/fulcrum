@@ -18,6 +18,7 @@ if (creativeLibraryDir.isDirectory) {
 
 include(
     "message-bus-api",
+    "data-valkey",
     "runtime",
     "runtime-velocity",
     "registry-service",
