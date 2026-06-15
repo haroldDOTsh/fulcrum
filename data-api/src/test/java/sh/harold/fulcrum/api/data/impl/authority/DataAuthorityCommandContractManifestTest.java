@@ -2,24 +2,16 @@ package sh.harold.fulcrum.api.data.impl.authority;
 
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
-import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusDataAuthorityClient;
-import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusDataAuthorityProvider;
-import sh.harold.fulcrum.api.messagebus.adapter.MessageBusAdapter;
-import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
-import sh.harold.fulcrum.api.messagebus.impl.InMemoryMessageBus;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
+import java.time.Instant;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -132,7 +124,7 @@ class DataAuthorityCommandContractManifestTest {
     }
 
     @Test
-    void contractCommandsRoundTripThroughMessageBusTransport() {
+    void contractCommandsRoundTripThroughAuthorityLogTransport() {
         EnumMap<DataAuthority.CommandType, DataAuthority.AuthorityCommand> received =
             new EnumMap<>(DataAuthority.CommandType.class);
         DataAuthority.CommandPort commandPort = new AuthorityPrincipalCommandPort(command -> {
@@ -142,31 +134,22 @@ class DataAuthorityCommandContractManifestTest {
                 Math.max(1L, command.expectedRevision() + 1L)
             ));
         });
-
-        InMemoryMessageBus bus = new InMemoryMessageBus(new TestAdapter("authority-contract-test"));
-        MessageBusDataAuthorityProvider provider = new MessageBusDataAuthorityProvider(
-            bus,
-            commandPort,
-            ignored -> CompletableFuture.completedFuture(Optional.empty()),
-            ignored -> CompletableFuture.completedFuture(Optional.empty())
-        );
-        provider.start();
-        MessageBusDataAuthorityClient client = new MessageBusDataAuthorityClient(
-            bus,
-            "authority-contract-test",
-            Duration.ofSeconds(1)
-        );
+        InMemoryAuthorityLog log = new InMemoryAuthorityLog();
+        AuthorityLogCommandProcessor processor = new AuthorityLogCommandProcessor(log, commandPort);
 
         for (DataAuthorityCommandContracts.CommandContract contract : CONTRACTS.values()) {
             DataAuthority.AuthorityCommand command = sampleCommand(contract.type());
-            DataAuthority.CommandResult result = client.submit(command).toCompletableFuture().join();
+            AuthorityLogRecord commandRecord = AuthorityLogFrames.appendCommand(log, command);
+            DataAuthority.CommandResult result = processor.process(
+                commandRecord,
+                writerClaim(command, contract.domain())
+            ).toCompletableFuture().join().commandResult();
             DataAuthority.AuthorityCommand decoded = received.get(contract.type());
 
             assertThat(result.accepted()).as(contract.type() + " result").isTrue();
             assertThat(decoded).as(contract.type() + " decoded command").isInstanceOf(contract.commandClass());
-            assertThat(decoded.actorId()).as(contract.type() + " actor").isEqualTo("node:authority-contract-test");
+            assertThat(decoded.actorId()).as(contract.type() + " actor").isEqualTo("contract-test");
             assertThat(AuthorityCommandRoute.fromCommand(decoded).domain()).isEqualTo(contract.domain());
-            assertThat(decoded.provenance().verifiedPrincipal()).isEqualTo("node:authority-contract-test");
             AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(decoded);
             assertThat(frame.manifestPayload())
                 .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
@@ -411,6 +394,22 @@ class DataAuthorityCommandContractManifestTest {
         );
     }
 
+    private static AuthorityWriterClaim writerClaim(
+        DataAuthority.AuthorityCommand command,
+        String domain
+    ) {
+        return AuthorityWriterClaim.mint(
+            domain,
+            AuthorityCommandRoute.fromCommand(command).commandTopic(),
+            AuthorityWriteCustody.fromCommand(command).ownershipPartitionKey(),
+            "authority-contract-test",
+            1L,
+            null,
+            0L,
+            Instant.EPOCH
+        );
+    }
+
     private static DataAuthority.CommandSettlement settlement(
         DataAuthority.AuthorityCommand command,
         long revision
@@ -419,7 +418,7 @@ class DataAuthorityCommandContractManifestTest {
         Object aggregateId = command.payload()
             .get(DataAuthorityCommandContracts.contract(command.type()).aggregateIdField());
         DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
-            "message-bus-test-authority",
+            "authority-log-test-authority",
             command.scope(),
             projectionFamily(command.type()),
             aggregateId == null ? command.scope() : aggregateId.toString(),
@@ -434,7 +433,7 @@ class DataAuthorityCommandContractManifestTest {
             "event-chain:" + command.commandId()
         );
         return new DataAuthority.CommandSettlement(
-            "message-bus-test-authority",
+            "authority-log-test-authority",
             route.domain(),
             route.commandTopic(),
             route.responseTopic(),
@@ -463,35 +462,6 @@ class DataAuthorityCommandContractManifestTest {
                 throw new AssertionError("Missing golden contract fingerprint resource " + path);
             }
             return new String(input.readAllBytes(), StandardCharsets.UTF_8).trim();
-        }
-    }
-
-    private record TestAdapter(String serverId) implements MessageBusAdapter {
-        @Override
-        public String getServerId() {
-            return serverId;
-        }
-
-        @Override
-        public Executor getAsyncExecutor() {
-            return Runnable::run;
-        }
-
-        @Override
-        public Logger getLogger() {
-            return Logger.getLogger(DataAuthorityCommandContractManifestTest.class.getName());
-        }
-
-        @Override
-        public MessageBusConnectionConfig getConnectionConfig() {
-            return MessageBusConnectionConfig.builder()
-                .type(MessageBusConnectionConfig.MessageBusType.IN_MEMORY)
-                .build();
-        }
-
-        @Override
-        public boolean isRunning() {
-            return true;
         }
     }
 }

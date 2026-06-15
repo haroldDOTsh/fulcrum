@@ -39,7 +39,6 @@ import sh.harold.fulcrum.api.data.impl.authority.events.FanoutAuthorityStateRest
 import sh.harold.fulcrum.api.data.impl.authority.events.InMemoryAuthorityHotStateProjection;
 import sh.harold.fulcrum.api.data.impl.authority.events.PostgresAuthorityEventDispatcher;
 import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityStateRestoreTarget;
-import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusDataAuthorityProvider;
 import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusWorldMapStoreProvider;
 import sh.harold.fulcrum.api.data.impl.postgres.FulcrumDataMigrations;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionBudget;
@@ -125,7 +124,6 @@ public class RegistryService {
     private PostgresAuthorityCommandRefusalLog authorityCommandRefusalLog;
     private PostgresAuthorityStateRestoreDrill authorityStateRestoreDrill;
     private CachedAuthorityCommandPort.CommandResultCache authorityCommandResultCache;
-    private MessageBusDataAuthorityProvider dataAuthorityProvider;
     private MessageBusWorldMapStoreProvider worldMapStoreProvider;
     private PostgresAuthorityEventDispatcher authorityEventDispatcher;
     private AuthorityEventDispatchTarget authorityHotStateProjection;
@@ -375,7 +373,7 @@ public class RegistryService {
             messageBus = MessageBusFactory.create(messageBusAdapter);
             postgresConnectionBudget = buildPostgresConnectionBudget(config);
             logPostgresConnectionBudget(postgresConnectionBudget);
-            dataAuthorityProvider = createDataAuthorityProvider();
+            createDataAuthorityProvider();
             nodeSnapshotStore = createNodeSnapshotStore();
             serverRegistry.setSnapshotStore(nodeSnapshotStore);
             proxyRegistry.setSnapshotStore(nodeSnapshotStore);
@@ -1224,7 +1222,7 @@ public class RegistryService {
         }
     }
 
-    private MessageBusDataAuthorityProvider createDataAuthorityProvider() {
+    private void createDataAuthorityProvider() {
         Map<String, Object> postgresConfig = (Map<String, Object>) config.get("postgres");
         Map<String, Object> authorityConfig = (Map<String, Object>) config.get("authority");
         boolean postgresEnabled = postgresConfig != null && booleanValue(postgresConfig.get("enabled"), false);
@@ -1235,7 +1233,7 @@ public class RegistryService {
             authorityStartupState = AuthorityStartupState.disabled("authority-disabled");
             authorityDispatcherStartupState = DispatcherStartupState.disabled("authority-disabled");
             authorityStateRestoreDrill = null;
-            return null;
+            return;
         }
         if (postgresConfig == null || !postgresEnabled) {
             throw new IllegalStateException("Central data authority requires postgres.enabled=true");
@@ -1325,22 +1323,7 @@ public class RegistryService {
         LOGGER.info("Central data authority custody preflight passed: {}", custodyPreflight.summary());
         authorityStartupState = AuthorityStartupState.from(custodyPreflight, substratePreflight);
         startAuthorityCommandWorkers(commandLogRuntime.workers(), authorityConfig);
-
-        MessageBusDataAuthorityProvider provider = new MessageBusDataAuthorityProvider(
-            messageBus,
-            authorityCommandPort,
-            authorityProfileReader,
-            authorityRankReader,
-            this::authorityBootIdentity,
-            refusal -> authorityCommandRefusalLog.recordMessageBusRefusal(
-                refusal.originNode(),
-                refusal.targetNode(),
-                refusal.wire(),
-                refusal.result()
-            )
-        );
-        provider.start();
-        LOGGER.info("Central data authority listening on message bus as {}", messageBusAdapter.getServerId());
+        LOGGER.info("Central data authority command ingress is the durable authority log");
 
         worldMapStoreProvider = new MessageBusWorldMapStoreProvider(
             messageBus,
@@ -1353,7 +1336,6 @@ public class RegistryService {
             authorityConfig,
             stateProjectionCursorStore
         );
-        return provider;
     }
 
     private AuthorityHotStateBinding createAuthorityHotStateProjection(Map<String, Object> authorityConfig) {
@@ -2405,10 +2387,6 @@ public class RegistryService {
 
             if (authorityEventDispatcherTask != null) {
                 authorityEventDispatcherTask.cancel(false);
-            }
-
-            if (dataAuthorityProvider != null) {
-                dataAuthorityProvider.close();
             }
 
             stopAuthorityStateProjectionWorkers();

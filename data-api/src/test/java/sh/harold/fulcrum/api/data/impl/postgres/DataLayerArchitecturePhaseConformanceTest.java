@@ -49,12 +49,12 @@ class DataLayerArchitecturePhaseConformanceTest {
                 "hello-world command round-trips log",
                 List.of(
                     proof(
-                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/messagebus/MessageBusDataAuthorityTransportTest.java",
-                        "commandClientSubmitsTypedCommandThroughProvider"
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
+                        "contractCommandsRoundTripThroughAuthorityLogTransport"
                     ),
                     proof(
-                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/messagebus/MessageBusDataAuthorityTransportTest.java",
-                        "acceptedRankCommandPublishesWatermarkedSnapshotInvalidation"
+                        "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityLogCommandPortTest.java",
+                        "acceptedCommandsAppendCommandEventStateAndResponseFrames"
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/WatermarkedDataAuthorityCacheTest.java",

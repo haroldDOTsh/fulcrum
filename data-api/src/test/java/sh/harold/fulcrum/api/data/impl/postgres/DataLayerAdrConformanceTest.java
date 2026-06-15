@@ -729,7 +729,7 @@ class DataLayerAdrConformanceTest {
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
-                        "contractCommandsRoundTripThroughMessageBusTransport"
+                        "contractCommandsRoundTripThroughAuthorityLogTransport"
                     )
                 )
             ),

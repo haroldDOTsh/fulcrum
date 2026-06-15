@@ -27,6 +27,11 @@ class CanonicalSchemaDdlBoundaryTest {
         "(?s)(?:DataAuthority\\.CommandManifest\\.create|"
             + "new\\s+DataAuthority\\.(?:PlayerProfileCommand|PlayerSessionCommand|PlayerRankCommand|MatchCommand)\\s*\\()"
     );
+    private static final Pattern MESSAGE_BUS_AUTHORITY_INGRESS = Pattern.compile(
+        "(?s)MessageBusDataAuthority(?:Client|Provider)|"
+            + "fulcrum\\.authority\\.(?:profile|rank)\\.read|"
+            + "\\b(?:PROFILE_READ|RANK_READ)\\b"
+    );
 
     @Test
     void productionDdlLivesOnlyInDataApiMigrations() throws IOException {
@@ -98,6 +103,25 @@ class CanonicalSchemaDdlBoundaryTest {
             .isEmpty();
     }
 
+    @Test
+    void productionCodeDoesNotExposeMessageBusAuthorityCommandIngress() throws IOException {
+        Path repoRoot = repoRoot();
+        List<String> violations = new ArrayList<>();
+
+        try (Stream<Path> paths = Files.walk(repoRoot)) {
+            paths.filter(Files::isRegularFile)
+                .filter(path -> isProductionCandidate(repoRoot, path))
+                .filter(CanonicalSchemaDdlBoundaryTest::containsMessageBusAuthorityIngress)
+                .map(path -> repoRoot.relativize(path).toString().replace('\\', '/'))
+                .sorted()
+                .forEach(violations::add);
+        }
+
+        assertThat(violations)
+            .as("Authority commands must enter through the durable authority log, not Redis/message-bus side doors")
+            .isEmpty();
+    }
+
     private static Path repoRoot() {
         Path current = Path.of("").toAbsolutePath().normalize();
         return "data-api".equals(current.getFileName().toString()) ? current.getParent() : current;
@@ -150,6 +174,15 @@ class CanonicalSchemaDdlBoundaryTest {
         try {
             String contents = Files.readString(path, StandardCharsets.UTF_8);
             return HAND_ASSEMBLED_AUTHORITY_ENVELOPE.matcher(stripComments(path, contents)).find();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to read " + path, exception);
+        }
+    }
+
+    private static boolean containsMessageBusAuthorityIngress(Path path) {
+        try {
+            String contents = Files.readString(path, StandardCharsets.UTF_8);
+            return MESSAGE_BUS_AUTHORITY_INGRESS.matcher(stripComments(path, contents)).find();
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to read " + path, exception);
         }
