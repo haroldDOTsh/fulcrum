@@ -28,18 +28,6 @@ final class AuthorityDomainDeclarations {
             .toList();
     }
 
-    static CommandDeclaration command(DataAuthority.CommandType type) {
-        Objects.requireNonNull(type, "type");
-        for (DomainDeclaration declaration : DECLARATIONS.values()) {
-            for (CommandDeclaration command : declaration.commands()) {
-                if (command.type() == type) {
-                    return command;
-                }
-            }
-        }
-        throw new IllegalArgumentException("No authority command declaration for " + type);
-    }
-
     static CommandDeclaration command(String declarationId) {
         String effectiveDeclarationId = requireText(declarationId, "declarationId");
         for (DomainDeclaration declaration : DECLARATIONS.values()) {

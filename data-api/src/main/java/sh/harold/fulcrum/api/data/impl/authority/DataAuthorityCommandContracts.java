@@ -147,7 +147,7 @@ public final class DataAuthorityCommandContracts {
         requireSettlementField("watermark.aggregateScope", command.scope(), watermark.aggregateScope());
         requireSettlementField(
             "watermark.aggregateType",
-            AuthorityDomainDeclarations.command(command.type()).projectionFamily(),
+            AuthorityDomainDeclarations.command(contract.declarationId()).projectionFamily(),
             watermark.aggregateType()
         );
         requireSettlementField("watermark.commandDomain", route.domain(), watermark.commandDomain());
