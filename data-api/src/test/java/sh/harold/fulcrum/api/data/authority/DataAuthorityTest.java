@@ -653,11 +653,12 @@ class DataAuthorityTest {
             watermark
         );
 
-        DataAuthority.PlayerPresenceReader reader = id ->
-            CompletableFuture.completedFuture(id.equals(subjectId) ? Optional.of(snapshot) : Optional.empty());
+        DataAuthority.Subject subject = DataAuthority.Subject.player(subjectId);
+        DataAuthority.PresenceReader reader = value ->
+            CompletableFuture.completedFuture(value.equals(subject) ? Optional.of(snapshot) : Optional.empty());
 
         DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> read = reader
-            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(6L))
+            .quotePresence(subject, DataAuthority.ReadRequirement.atLeast(6L))
             .toCompletableFuture()
             .join();
 

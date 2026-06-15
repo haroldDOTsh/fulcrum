@@ -303,7 +303,7 @@ class CassandraAuthorityHotStateProjectionTest {
             new CassandraAuthorityHotStateProjection(session, "fulcrum_authority");
 
         DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> read = projection
-            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(8L))
+            .quotePresence(DataAuthority.Subject.player(subjectId), DataAuthority.ReadRequirement.atLeast(8L))
             .toCompletableFuture()
             .join();
 

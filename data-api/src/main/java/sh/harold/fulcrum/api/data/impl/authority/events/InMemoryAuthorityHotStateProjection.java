@@ -28,7 +28,7 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     AuthorityEventReplayTarget,
     AuthorityStateRestoreTarget,
     DataAuthority.PlayerProfileReader,
-    DataAuthority.PlayerPresenceReader,
+    DataAuthority.PresenceReader,
     DataAuthority.PlayerRankReader {
     public static final String PROJECTION_NAME = "authority-hot-state";
     public static final String PROJECTION_VERSION = "authority-hot-state-v1";
@@ -127,21 +127,21 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     }
 
     @Override
-    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID subjectId) {
-        Objects.requireNonNull(subjectId, "subjectId");
-        return CompletableFuture.completedFuture(Optional.ofNullable(presences.get(subjectId)));
+    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(DataAuthority.Subject subject) {
+        Objects.requireNonNull(subject, "subject");
+        return CompletableFuture.completedFuture(Optional.ofNullable(presences.get(subject.subjectId())));
     }
 
     @Override
     public CompletionStage<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
-        UUID subjectId,
+        DataAuthority.Subject subject,
         DataAuthority.ReadRequirement requirement
     ) {
-        Objects.requireNonNull(subjectId, "subjectId");
+        Objects.requireNonNull(subject, "subject");
         return CompletableFuture.completedFuture(quotePresenceSnapshot(
-            subjectId,
+            subject.subjectId(),
             DataAuthority.ReadRequirement.orEventual(requirement),
-            Optional.ofNullable(presences.get(subjectId)),
+            Optional.ofNullable(presences.get(subject.subjectId())),
             System.currentTimeMillis()
         ));
     }

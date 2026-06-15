@@ -49,7 +49,7 @@ class AuthoritySnapshotCacheReaderTest {
         );
 
         DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> read = reader
-            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(9L))
+            .quotePresence(DataAuthority.Subject.player(subjectId), DataAuthority.ReadRequirement.atLeast(9L))
             .toCompletableFuture()
             .join();
 

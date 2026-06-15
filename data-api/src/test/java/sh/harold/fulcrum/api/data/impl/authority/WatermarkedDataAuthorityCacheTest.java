@@ -242,15 +242,18 @@ class WatermarkedDataAuthorityCacheTest {
         DataAuthority.PlayerPresenceSnapshot snapshot = presenceSnapshot(subjectId, 4L, clock.millis());
         List<String> events = new ArrayList<>();
         RecordingSnapshotCacheStore snapshotStore = new RecordingSnapshotCacheStore(events);
-        DataAuthority.PlayerPresenceReader presenceReader = new DataAuthority.PlayerPresenceReader() {
+        DataAuthority.Subject subject = DataAuthority.Subject.player(subjectId);
+        DataAuthority.PresenceReader presenceReader = new DataAuthority.PresenceReader() {
             @Override
-            public CompletableFuture<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID id) {
+            public CompletableFuture<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(
+                DataAuthority.Subject value
+            ) {
                 return CompletableFuture.failedFuture(new AssertionError("findPresence was not expected"));
             }
 
             @Override
             public CompletableFuture<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
-                UUID id,
+                DataAuthority.Subject value,
                 DataAuthority.ReadRequirement requirement
             ) {
                 events.add("hot:quotePresence:" + scope);
@@ -268,12 +271,12 @@ class WatermarkedDataAuthorityCacheTest {
         );
 
         DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> first = cache
-            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(4L))
+            .quotePresence(subject, DataAuthority.ReadRequirement.atLeast(4L))
             .toCompletableFuture()
             .join();
         clock.advanceMillis(250L);
         DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> second = cache
-            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(4L))
+            .quotePresence(subject, DataAuthority.ReadRequirement.atLeast(4L))
             .toCompletableFuture()
             .join();
 
@@ -774,14 +777,15 @@ class WatermarkedDataAuthorityCacheTest {
         AtomicReference<Optional<DataAuthority.PlayerPresenceSnapshot>> snapshot = new AtomicReference<>(
             Optional.of(presenceSnapshot(subjectId, 2L, 1_000L))
         );
+        DataAuthority.Subject subject = DataAuthority.Subject.player(subjectId);
         WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
             unusedCommandPort(),
             unusedProfileReader(),
-            id -> CompletableFuture.completedFuture(snapshot.get()),
+            value -> CompletableFuture.completedFuture(snapshot.get()),
             unusedRankReader()
         );
 
-        assertThat(cache.findPresence(subjectId).toCompletableFuture().join())
+        assertThat(cache.findPresence(subject).toCompletableFuture().join())
             .get()
             .extracting(DataAuthority.PlayerPresenceSnapshot::revision)
             .isEqualTo(2L);
@@ -791,14 +795,14 @@ class WatermarkedDataAuthorityCacheTest {
             .orElseThrow();
         cache.handleInvalidation(floor);
 
-        assertThat(cache.findPresence(subjectId).toCompletableFuture().join()).isEmpty();
+        assertThat(cache.findPresence(subject).toCompletableFuture().join()).isEmpty();
 
         snapshot.set(Optional.empty());
-        assertThat(cache.findPresence(subjectId).toCompletableFuture().join()).isEmpty();
+        assertThat(cache.findPresence(subject).toCompletableFuture().join()).isEmpty();
 
         DataAuthority.PlayerPresenceSnapshot updated = presenceSnapshot(subjectId, 3L, 1_001L);
         snapshot.set(Optional.of(updated));
-        assertThat(cache.findPresence(subjectId).toCompletableFuture().join()).contains(updated);
+        assertThat(cache.findPresence(subject).toCompletableFuture().join()).contains(updated);
     }
 
     @Test

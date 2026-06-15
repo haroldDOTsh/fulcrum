@@ -24,7 +24,7 @@ import java.util.concurrent.CompletionStage;
  * Cassandra-backed hot state projection for authority profile and rank reads.
  */
 public final class CassandraAuthorityHotStateProjection implements DataAuthority.PlayerProfileReader,
-    DataAuthority.PlayerPresenceReader,
+    DataAuthority.PresenceReader,
     DataAuthority.PlayerRankReader,
     AuthorityEventDispatchTarget,
     AuthorityStateRestoreTarget {
@@ -157,18 +157,18 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
     }
 
     @Override
-    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID subjectId) {
-        Objects.requireNonNull(subjectId, "subjectId");
-        return CompletableFuture.completedFuture(loadPresence(subjectId));
+    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(DataAuthority.Subject subject) {
+        Objects.requireNonNull(subject, "subject");
+        return CompletableFuture.completedFuture(loadPresence(subject.subjectId()));
     }
 
     @Override
     public CompletionStage<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
-        UUID subjectId,
+        DataAuthority.Subject subject,
         DataAuthority.ReadRequirement requirement
     ) {
-        Objects.requireNonNull(subjectId, "subjectId");
-        return DataAuthority.PlayerPresenceReader.super.quotePresence(subjectId, requirement)
+        Objects.requireNonNull(subject, "subject");
+        return DataAuthority.PresenceReader.super.quotePresence(subject, requirement)
             .thenApply(this::withHotStateProvenance);
     }
 

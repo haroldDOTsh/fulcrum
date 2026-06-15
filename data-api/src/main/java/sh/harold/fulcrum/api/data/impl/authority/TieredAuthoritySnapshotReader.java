@@ -11,21 +11,21 @@ import java.util.concurrent.CompletionStage;
  * Hot-read path: Valkey snapshot cache first, then Cassandra hot state.
  */
 public final class TieredAuthoritySnapshotReader implements DataAuthority.PlayerProfileReader,
-    DataAuthority.PlayerPresenceReader,
+    DataAuthority.PresenceReader,
     DataAuthority.PlayerRankReader {
     private final DataAuthority.PlayerProfileReader cacheProfileReader;
-    private final DataAuthority.PlayerPresenceReader cachePresenceReader;
+    private final DataAuthority.PresenceReader cachePresenceReader;
     private final DataAuthority.PlayerRankReader cacheRankReader;
     private final DataAuthority.PlayerProfileReader hotStateProfileReader;
-    private final DataAuthority.PlayerPresenceReader hotStatePresenceReader;
+    private final DataAuthority.PresenceReader hotStatePresenceReader;
     private final DataAuthority.PlayerRankReader hotStateRankReader;
 
     public TieredAuthoritySnapshotReader(
         DataAuthority.PlayerProfileReader cacheProfileReader,
-        DataAuthority.PlayerPresenceReader cachePresenceReader,
+        DataAuthority.PresenceReader cachePresenceReader,
         DataAuthority.PlayerRankReader cacheRankReader,
         DataAuthority.PlayerProfileReader hotStateProfileReader,
-        DataAuthority.PlayerPresenceReader hotStatePresenceReader,
+        DataAuthority.PresenceReader hotStatePresenceReader,
         DataAuthority.PlayerRankReader hotStateRankReader
     ) {
         this.cacheProfileReader = Objects.requireNonNull(cacheProfileReader, "cacheProfileReader");
@@ -54,20 +54,20 @@ public final class TieredAuthoritySnapshotReader implements DataAuthority.Player
     }
 
     @Override
-    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID subjectId) {
-        return quotePresence(subjectId, DataAuthority.ReadRequirement.eventual())
+    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(DataAuthority.Subject subject) {
+        return quotePresence(subject, DataAuthority.ReadRequirement.eventual())
             .thenApply(read -> read.satisfied() ? read.snapshot() : Optional.empty());
     }
 
     @Override
     public CompletionStage<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
-        UUID subjectId,
+        DataAuthority.Subject subject,
         DataAuthority.ReadRequirement requirement
     ) {
-        return cachePresenceReader.quotePresence(subjectId, requirement)
+        return cachePresenceReader.quotePresence(subject, requirement)
             .thenCompose(cacheRead -> cacheRead.satisfied()
                 ? java.util.concurrent.CompletableFuture.completedFuture(cacheRead)
-                : hotStatePresenceReader.quotePresence(subjectId, requirement));
+                : hotStatePresenceReader.quotePresence(subject, requirement));
     }
 
     @Override

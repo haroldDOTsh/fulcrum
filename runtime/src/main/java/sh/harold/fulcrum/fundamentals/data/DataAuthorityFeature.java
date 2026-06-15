@@ -60,7 +60,7 @@ public class DataAuthorityFeature implements PluginFeature {
     private DataAuthority.CommandPort commandPort;
     private DataAuthority.CommandSubmissionPort commandSubmissionPort;
     private DataAuthority.PlayerProfileReader profileReader;
-    private DataAuthority.PlayerPresenceReader presenceReader;
+    private DataAuthority.PresenceReader presenceReader;
     private DataAuthority.PlayerRankReader rankReader;
     private RuntimeDataAuthorityAttestation dataAuthorityAttestation;
     private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest;
@@ -113,7 +113,7 @@ public class DataAuthorityFeature implements PluginFeature {
             ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.CommandPort.class);
             ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.CommandSubmissionPort.class);
             ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.PlayerProfileReader.class);
-            ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.PlayerPresenceReader.class);
+            ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.PresenceReader.class);
             ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.PlayerRankReader.class);
             ServiceLocatorImpl.getInstance().unregisterService(RuntimeDataAuthorityAttestation.class);
             ServiceLocatorImpl.getInstance().unregisterService(RuntimeAuthorityDeliveryManifest.class);
@@ -410,7 +410,7 @@ public class DataAuthorityFeature implements PluginFeature {
 
     private record HotReadResource(
         DataAuthority.PlayerProfileReader profileReader,
-        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PresenceReader presenceReader,
         DataAuthority.PlayerRankReader rankReader,
         AuthoritySnapshotCacheStore cacheStore,
         AutoCloseable resource
@@ -586,7 +586,7 @@ public class DataAuthorityFeature implements PluginFeature {
             container.register(DataAuthority.CommandSubmissionPort.class, commandSubmissionPort);
         }
         container.register(DataAuthority.PlayerProfileReader.class, profileReader);
-        container.register(DataAuthority.PlayerPresenceReader.class, presenceReader);
+        container.register(DataAuthority.PresenceReader.class, presenceReader);
         container.register(DataAuthority.PlayerRankReader.class, rankReader);
         container.register(RuntimeDataAuthorityAttestation.class, dataAuthorityAttestation);
         container.register(RuntimeAuthorityDeliveryManifest.class, authorityDeliveryManifest);
@@ -600,7 +600,7 @@ public class DataAuthorityFeature implements PluginFeature {
                 );
             }
             ServiceLocatorImpl.getInstance().registerService(DataAuthority.PlayerProfileReader.class, profileReader);
-            ServiceLocatorImpl.getInstance().registerService(DataAuthority.PlayerPresenceReader.class, presenceReader);
+            ServiceLocatorImpl.getInstance().registerService(DataAuthority.PresenceReader.class, presenceReader);
             ServiceLocatorImpl.getInstance().registerService(DataAuthority.PlayerRankReader.class, rankReader);
             ServiceLocatorImpl.getInstance().registerService(RuntimeDataAuthorityAttestation.class, dataAuthorityAttestation);
             ServiceLocatorImpl.getInstance().registerService(RuntimeAuthorityDeliveryManifest.class, authorityDeliveryManifest);

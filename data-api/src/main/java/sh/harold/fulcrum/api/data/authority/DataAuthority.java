@@ -871,18 +871,18 @@ public final class DataAuthority {
         }
     }
 
-    public interface PlayerPresenceReader {
-        CompletionStage<Optional<PlayerPresenceSnapshot>> findPresence(UUID subjectId);
+    public interface PresenceReader {
+        CompletionStage<Optional<PlayerPresenceSnapshot>> findPresence(Subject subject);
 
         default CompletionStage<QuotedRead<PlayerPresenceSnapshot>> quotePresence(
-            UUID subjectId,
+            Subject subject,
             ReadRequirement requirement
         ) {
-            Objects.requireNonNull(subjectId, "subjectId");
+            Objects.requireNonNull(subject, "subject");
             ReadRequirement effectiveRequirement = ReadRequirement.orEventual(requirement);
-            return findPresence(subjectId)
+            return findPresence(subject)
                 .thenApply(snapshot -> quotePresenceSnapshot(
-                    subjectId,
+                    subject.subjectId(),
                     effectiveRequirement,
                     snapshot,
                     0L,

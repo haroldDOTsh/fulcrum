@@ -160,7 +160,7 @@ class InMemoryAuthorityHotStateProjectionTest {
         ));
 
         DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> read =
-            projection.quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(3L))
+            projection.quotePresence(DataAuthority.Subject.player(subjectId), DataAuthority.ReadRequirement.atLeast(3L))
                 .toCompletableFuture()
                 .join();
 

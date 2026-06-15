@@ -19,7 +19,7 @@ import java.util.function.ToLongFunction;
 public final class WatermarkedDataAuthorityCache implements DataAuthority.CommandPort,
     DataAuthority.CommandSubmissionPort,
     DataAuthority.PlayerProfileReader,
-    DataAuthority.PlayerPresenceReader,
+    DataAuthority.PresenceReader,
     DataAuthority.PlayerRankReader {
 
     public static final Duration DEFAULT_MAX_AGE = Duration.ofMillis(
@@ -28,7 +28,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
 
     private final DataAuthority.CommandPort commandPort;
     private final DataAuthority.PlayerProfileReader profileReader;
-    private final DataAuthority.PlayerPresenceReader presenceReader;
+    private final DataAuthority.PresenceReader presenceReader;
     private final DataAuthority.PlayerRankReader rankReader;
     private final AuthoritySnapshotCacheStore snapshotCacheStore;
     private final long maxAgeMillis;
@@ -46,7 +46,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
     public WatermarkedDataAuthorityCache(
         DataAuthority.CommandPort commandPort,
         DataAuthority.PlayerProfileReader profileReader,
-        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PresenceReader presenceReader,
         DataAuthority.PlayerRankReader rankReader
     ) {
         this(commandPort, profileReader, presenceReader, rankReader, DEFAULT_MAX_AGE);
@@ -64,7 +64,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
     public WatermarkedDataAuthorityCache(
         DataAuthority.CommandPort commandPort,
         DataAuthority.PlayerProfileReader profileReader,
-        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PresenceReader presenceReader,
         DataAuthority.PlayerRankReader rankReader,
         Duration maxAge
     ) {
@@ -92,7 +92,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
     public WatermarkedDataAuthorityCache(
         DataAuthority.CommandPort commandPort,
         DataAuthority.PlayerProfileReader profileReader,
-        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PresenceReader presenceReader,
         DataAuthority.PlayerRankReader rankReader,
         Duration maxAge,
         Clock clock
@@ -122,7 +122,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
     public WatermarkedDataAuthorityCache(
         DataAuthority.CommandPort commandPort,
         DataAuthority.PlayerProfileReader profileReader,
-        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PresenceReader presenceReader,
         DataAuthority.PlayerRankReader rankReader,
         Duration maxAge,
         Clock clock,
@@ -196,22 +196,22 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
     }
 
     @Override
-    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID subjectId) {
-        return quotePresence(subjectId, DataAuthority.ReadRequirement.eventual())
+    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(DataAuthority.Subject subject) {
+        return quotePresence(subject, DataAuthority.ReadRequirement.eventual())
             .thenApply(read -> read.satisfied() ? read.snapshot() : Optional.empty());
     }
 
     @Override
     public CompletionStage<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
-        UUID subjectId,
+        DataAuthority.Subject subject,
         DataAuthority.ReadRequirement requirement
     ) {
-        Objects.requireNonNull(subjectId, "subjectId");
+        Objects.requireNonNull(subject, "subject");
         DataAuthority.ReadRequirement effectiveRequirement = DataAuthorityReadContracts.effectiveRequirement(
             DataAuthorityReadContracts.ReadType.PLAYER_PRESENCE,
             requirement
         );
-        String scope = presenceScope(subjectId);
+        String scope = presenceScope(subject);
         DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> cached = readPresenceCache(
             scope,
             effectiveRequirement
@@ -219,7 +219,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         if (cached != null) {
             return CompletableFuture.completedFuture(cached);
         }
-        return presenceReader.quotePresence(subjectId, effectiveRequirement)
+        return presenceReader.quotePresence(subject, effectiveRequirement)
             .thenApply(read -> acceptFetchedPresence(
                 scope,
                 read,
@@ -711,7 +711,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             return profileScope(profileCommand.playerId());
         }
         if (command instanceof DataAuthority.PlayerSessionCommand sessionCommand) {
-            return presenceScope(sessionCommand.subject().subjectId());
+            return presenceScope(sessionCommand.subject());
         }
         return null;
     }
@@ -724,8 +724,8 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         return "rank:player:" + playerId;
     }
 
-    private static String presenceScope(UUID subjectId) {
-        return DataAuthority.Subject.SCOPE_PREFIX + subjectId;
+    private static String presenceScope(DataAuthority.Subject subject) {
+        return subject.scope();
     }
 
     private static boolean stateTopicMatches(String projectionFamily, String stateTopic) {
@@ -755,8 +755,8 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         return Math.max(upstreamQuote.observedRevision(), upstreamQuote.requiredRevision());
     }
 
-    private static DataAuthority.PlayerPresenceReader missingPresenceReader() {
-        return subjectId -> CompletableFuture.failedFuture(new UnsupportedOperationException(
+    private static DataAuthority.PresenceReader missingPresenceReader() {
+        return subject -> CompletableFuture.failedFuture(new UnsupportedOperationException(
             "Wrapped Data Authority presence reader is not configured"
         ));
     }
