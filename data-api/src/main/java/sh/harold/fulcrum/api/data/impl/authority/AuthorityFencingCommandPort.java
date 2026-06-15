@@ -101,61 +101,8 @@ public final class AuthorityFencingCommandPort implements DataAuthority.CommandP
         String fencingToken
     ) {
         DataAuthority.CommandManifest manifest = manifest(command, fencingToken);
-        if (command instanceof DataAuthority.PlayerProfileCommand profile) {
-            return new DataAuthority.PlayerProfileCommand(
-                manifest,
-                profile.playerId(),
-                profile.username(),
-                profile.timestampEpochMillis(),
-                profile.lastIp(),
-                profile.lastWorld(),
-                profile.lastLocation(),
-                profile.gameMode(),
-                profile.level(),
-                profile.exp(),
-                profile.health(),
-                profile.foodLevel(),
-                profile.playtimeStartField()
-            );
-        }
-        if (command instanceof DataAuthority.PlayerSessionCommand session) {
-            return new DataAuthority.PlayerSessionCommand(
-                manifest,
-                session.playerId(),
-                session.username(),
-                session.sessionId(),
-                session.timestampEpochMillis(),
-                session.currentServer(),
-                session.currentProxy(),
-                session.lastIp(),
-                session.protocolVersion(),
-                session.disconnectReason()
-            );
-        }
-        if (command instanceof DataAuthority.PlayerRankCommand rank) {
-            return new DataAuthority.PlayerRankCommand(
-                manifest,
-                rank.playerId(),
-                rank.primaryRank(),
-                rank.ranks()
-            );
-        }
-        if (command instanceof DataAuthority.MatchCommand match) {
-            return new DataAuthority.MatchCommand(
-                manifest,
-                match.matchId(),
-                match.familyId(),
-                match.mapId(),
-                match.serverId(),
-                match.slotId(),
-                match.state(),
-                match.startedAtEpochMillis(),
-                match.endedAtEpochMillis(),
-                match.slotMetadata(),
-                match.participants()
-            );
-        }
-        throw new IllegalArgumentException("Unsupported authority command type: " + command.getClass().getName());
+        return AuthorityDomainDeclarations.command(command.declarationId())
+            .toCommand(manifest, AuthorityCommandPayloads.payload(command));
     }
 
     private static DataAuthority.CommandManifest manifest(
