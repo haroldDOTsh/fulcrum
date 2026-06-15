@@ -110,9 +110,9 @@ public final class DataAuthorityCommandContracts {
             );
         }
         DataAuthority.CommandManifest manifest = command.manifest();
-        validateManifestContract(command.type(), manifest.schemaVersion(), command.provenance().contractVersion());
+        validateManifestContract(contract, manifest.schemaVersion(), command.provenance().contractVersion());
         validate(
-            command.type(),
+            contract,
             manifest.schemaVersion(),
             command.provenance().contractVersion(),
             command.scope(),
@@ -215,7 +215,7 @@ public final class DataAuthorityCommandContracts {
     }
 
     static void validate(
-        DataAuthority.CommandType type,
+        CommandContract contract,
         int schemaVersion,
         int provenanceContractVersion,
         String scope,
@@ -223,41 +223,49 @@ public final class DataAuthorityCommandContracts {
         long expectedRevision,
         Map<String, Object> payload
     ) {
-        CommandContract contract = contract(type);
-        validateManifestContract(type, schemaVersion, provenanceContractVersion);
-        validateRoute(type, scope, route);
+        validateManifestContract(contract, schemaVersion, provenanceContractVersion);
+        validateRoute(contract, scope, route);
         validatePayload(contract, payload);
         validateAggregateScope(contract, scope, payload);
         validateRevisionPolicy(contract, expectedRevision);
     }
 
     private static void validateRoute(
-        DataAuthority.CommandType type,
+        CommandContract contract,
         String scope,
         AuthorityCommandRoute route
     ) {
-        CommandContract contract = contract(type);
         AuthorityCommandRoute expectedRoute = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), scope);
         if (route != null && !contract.domain().equals(route.domain())) {
             throw new IllegalArgumentException(
-                "Command " + type + " route domain " + route.domain()
+                "Command " + contract.declarationId() + " route domain " + route.domain()
                     + " does not match contract domain " + contract.domain()
             );
         }
         if (route != null && !expectedRoute.commandTopic().equals(route.commandTopic())) {
-            throw new IllegalArgumentException("Command " + type + " command topic does not match contract route");
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " command topic does not match contract route"
+            );
         }
         if (route != null && !expectedRoute.responseTopic().equals(route.responseTopic())) {
-            throw new IllegalArgumentException("Command " + type + " response topic does not match contract route");
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " response topic does not match contract route"
+            );
         }
         if (route != null && !expectedRoute.eventTopic().equals(route.eventTopic())) {
-            throw new IllegalArgumentException("Command " + type + " event topic does not match contract route");
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " event topic does not match contract route"
+            );
         }
         if (route != null && !expectedRoute.stateTopic().equals(route.stateTopic())) {
-            throw new IllegalArgumentException("Command " + type + " state topic does not match contract route");
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " state topic does not match contract route"
+            );
         }
         if (route != null && !expectedRoute.partitionKey().equals(route.partitionKey())) {
-            throw new IllegalArgumentException("Command " + type + " partition key does not match command scope");
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " partition key does not match command scope"
+            );
         }
     }
 
@@ -280,20 +288,20 @@ public final class DataAuthorityCommandContracts {
     }
 
     private static void validateManifestContract(
-        DataAuthority.CommandType type,
+        CommandContract contract,
         int schemaVersion,
         int provenanceContractVersion
     ) {
         if (schemaVersion != DataAuthority.COMMAND_SCHEMA_VERSION) {
             throw new IllegalArgumentException(
-                "Command " + type + " schema version " + schemaVersion
+                "Command " + contract.declarationId() + " schema version " + schemaVersion
                     + " is not supported by authority contract version "
                     + DataAuthority.COMMAND_SCHEMA_VERSION
             );
         }
         if (provenanceContractVersion != DataAuthority.COMMAND_SCHEMA_VERSION) {
             throw new IllegalArgumentException(
-                "Command " + type + " provenance contract version " + provenanceContractVersion
+                "Command " + contract.declarationId() + " provenance contract version " + provenanceContractVersion
                     + " is not supported by authority contract version "
                     + DataAuthority.COMMAND_SCHEMA_VERSION
             );

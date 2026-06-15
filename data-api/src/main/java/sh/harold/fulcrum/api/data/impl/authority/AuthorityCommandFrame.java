@@ -32,7 +32,7 @@ record AuthorityCommandFrame(
         provenance = provenance == null ? DataAuthority.CommandProvenance.unknown() : provenance;
         payload = payload == null ? Map.of() : Map.copyOf(payload);
         DataAuthorityCommandContracts.validate(
-            contract.type(),
+            contract,
             schemaVersion,
             provenance.contractVersion(),
             scope,
