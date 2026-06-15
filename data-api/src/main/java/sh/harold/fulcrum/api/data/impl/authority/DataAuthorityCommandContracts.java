@@ -16,31 +16,43 @@ import java.util.function.Function;
  * Executable command contract manifest for authority command frames.
  */
 public final class DataAuthorityCommandContracts {
-    private static final Map<DataAuthority.CommandType, CommandContract> CONTRACTS = contracts();
-    private static final String FINGERPRINT = fingerprint(CONTRACTS);
-    private static final String ROUTE_MANIFEST_FINGERPRINT = routeManifestFingerprint(CONTRACTS);
-    private static final Map<String, String> ROUTE_PARTITION_KEY_VECTORS = routePartitionKeyVectors(CONTRACTS);
-    private static final Map<String, String> COMMAND_TOPICS_BY_TYPE = routeVectors(CONTRACTS,
+    private static final Map<String, CommandContract> CONTRACTS_BY_DECLARATION_ID = contractsByDeclarationId();
+    private static final Map<DataAuthority.CommandType, CommandContract> CONTRACTS_BY_TYPE =
+        contractsByType(CONTRACTS_BY_DECLARATION_ID);
+    private static final String FINGERPRINT = fingerprint(CONTRACTS_BY_DECLARATION_ID);
+    private static final String ROUTE_MANIFEST_FINGERPRINT = routeManifestFingerprint(CONTRACTS_BY_DECLARATION_ID);
+    private static final Map<String, String> ROUTE_PARTITION_KEY_VECTORS = routePartitionKeyVectors(
+        CONTRACTS_BY_DECLARATION_ID);
+    private static final Map<String, String> COMMAND_TOPICS_BY_TYPE = routeVectors(CONTRACTS_BY_DECLARATION_ID,
         AuthorityCommandRoute::commandTopic);
-    private static final Map<String, String> RESPONSE_TOPICS_BY_TYPE = routeVectors(CONTRACTS,
+    private static final Map<String, String> RESPONSE_TOPICS_BY_TYPE = routeVectors(CONTRACTS_BY_DECLARATION_ID,
         AuthorityCommandRoute::responseTopic);
-    private static final Map<String, String> EVENT_TOPICS_BY_TYPE = routeVectors(CONTRACTS,
+    private static final Map<String, String> EVENT_TOPICS_BY_TYPE = routeVectors(CONTRACTS_BY_DECLARATION_ID,
         AuthorityCommandRoute::eventTopic);
-    private static final Map<String, String> STATE_TOPICS_BY_TYPE = routeVectors(CONTRACTS,
+    private static final Map<String, String> STATE_TOPICS_BY_TYPE = routeVectors(CONTRACTS_BY_DECLARATION_ID,
         AuthorityCommandRoute::stateTopic);
-    private static final Set<String> COMMAND_TOPICS = commandTopics(CONTRACTS);
+    private static final Set<String> COMMAND_TOPICS = commandTopics(CONTRACTS_BY_DECLARATION_ID);
 
     private DataAuthorityCommandContracts() {
     }
 
     public static Map<DataAuthority.CommandType, CommandContract> all() {
-        return CONTRACTS;
+        return CONTRACTS_BY_TYPE;
+    }
+
+    public static Map<String, CommandContract> allByDeclarationId() {
+        return CONTRACTS_BY_DECLARATION_ID;
     }
 
     public static CommandContract contract(DataAuthority.CommandType type) {
-        CommandContract contract = CONTRACTS.get(type);
+        Objects.requireNonNull(type, "type");
+        return contractByDeclarationId(type.name());
+    }
+
+    public static CommandContract contractByDeclarationId(String declarationId) {
+        CommandContract contract = CONTRACTS_BY_DECLARATION_ID.get(declarationId);
         if (contract == null) {
-            throw new IllegalArgumentException("No authority command contract for " + type);
+            throw new IllegalArgumentException("No authority command contract for " + declarationId);
         }
         return contract;
     }
@@ -368,11 +380,12 @@ public final class DataAuthorityCommandContracts {
         }
     }
 
-    private static Map<DataAuthority.CommandType, CommandContract> contracts() {
-        Map<DataAuthority.CommandType, CommandContract> values = new LinkedHashMap<>();
+    private static Map<String, CommandContract> contractsByDeclarationId() {
+        Map<String, CommandContract> values = new LinkedHashMap<>();
         for (AuthorityDomainDeclarations.DomainDeclaration domain : AuthorityDomainDeclarations.all().values()) {
             for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
-                CommandContract previous = values.put(command.type(), new CommandContract(
+                CommandContract previous = values.put(command.declarationId(), new CommandContract(
+                    command.declarationId(),
                     command.type(),
                     command.commandClass(),
                     domain.domain(),
@@ -388,8 +401,21 @@ public final class DataAuthorityCommandContracts {
                     command.allowedPayloadFields()
                 ));
                 if (previous != null) {
-                    throw new IllegalStateException("Duplicate command declaration for " + command.type());
+                    throw new IllegalStateException("Duplicate command declaration for " + command.declarationId());
                 }
+            }
+        }
+        return Map.copyOf(values);
+    }
+
+    private static Map<DataAuthority.CommandType, CommandContract> contractsByType(
+        Map<String, CommandContract> contracts
+    ) {
+        Map<DataAuthority.CommandType, CommandContract> values = new LinkedHashMap<>();
+        for (CommandContract contract : contracts.values()) {
+            CommandContract previous = values.put(contract.type(), contract);
+            if (previous != null) {
+                throw new IllegalStateException("Duplicate legacy command type for " + contract.type());
             }
         }
         return Map.copyOf(values);
@@ -402,13 +428,13 @@ public final class DataAuthorityCommandContracts {
         return stores.iterator().next();
     }
 
-    private static String fingerprint(Map<DataAuthority.CommandType, CommandContract> contracts) {
+    private static String fingerprint(Map<String, CommandContract> contracts) {
         StringBuilder material = new StringBuilder()
             .append("commandSchemaVersion=").append(DataAuthority.COMMAND_SCHEMA_VERSION).append('\n');
         contracts.values().stream()
-            .sorted((left, right) -> left.type().name().compareTo(right.type().name()))
+            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> material
-                .append(contract.type().name()).append('|')
+                .append(contract.declarationId()).append('|')
                 .append(contract.commandClass().getName()).append('|')
                 .append(contract.domain()).append('|')
                 .append(contract.deliveryMode().name()).append('|')
@@ -430,16 +456,16 @@ public final class DataAuthorityCommandContracts {
         }
     }
 
-    private static String routeManifestFingerprint(Map<DataAuthority.CommandType, CommandContract> contracts) {
+    private static String routeManifestFingerprint(Map<String, CommandContract> contracts) {
         StringBuilder material = new StringBuilder()
             .append("routeManifestSchemaVersion=").append(DataAuthority.COMMAND_SCHEMA_VERSION).append('\n');
         contracts.values().stream()
-            .sorted((left, right) -> left.type().name().compareTo(right.type().name()))
+            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> {
                 String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
                 AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), sampleScope);
                 material
-                    .append(contract.type().name()).append('|')
+                    .append(contract.declarationId()).append('|')
                     .append(contract.domain()).append('|')
                     .append(contract.aggregateScopePrefix()).append('|')
                     .append(route.domain()).append('|')
@@ -459,38 +485,38 @@ public final class DataAuthorityCommandContracts {
     }
 
     private static Map<String, String> routePartitionKeyVectors(
-        Map<DataAuthority.CommandType, CommandContract> contracts
+        Map<String, CommandContract> contracts
     ) {
         Map<String, String> values = new LinkedHashMap<>();
         contracts.values().stream()
-            .sorted((left, right) -> left.type().name().compareTo(right.type().name()))
+            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> {
                 String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
                 AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), sampleScope);
-                values.put(contract.type().name(), sampleScope + "=>" + route.partitionKey());
+                values.put(contract.declarationId(), sampleScope + "=>" + route.partitionKey());
             });
         return Map.copyOf(values);
     }
 
     private static Map<String, String> routeVectors(
-        Map<DataAuthority.CommandType, CommandContract> contracts,
+        Map<String, CommandContract> contracts,
         Function<AuthorityCommandRoute, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
         contracts.values().stream()
-            .sorted((left, right) -> left.type().name().compareTo(right.type().name()))
+            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> {
                 String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
                 AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), sampleScope);
-                values.put(contract.type().name(), extractor.apply(route));
+                values.put(contract.declarationId(), extractor.apply(route));
             });
         return Map.copyOf(values);
     }
 
-    private static Set<String> commandTopics(Map<DataAuthority.CommandType, CommandContract> contracts) {
+    private static Set<String> commandTopics(Map<String, CommandContract> contracts) {
         Set<String> values = new LinkedHashSet<>();
         contracts.values().stream()
-            .sorted((left, right) -> left.type().name().compareTo(right.type().name()))
+            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> {
                 String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
                 values.add(AuthorityCommandRoute.from(contract.type(), sampleScope).commandTopic());
@@ -523,6 +549,7 @@ public final class DataAuthorityCommandContracts {
     }
 
     public record CommandContract(
+        String declarationId,
         DataAuthority.CommandType type,
         Class<? extends DataAuthority.AuthorityCommand> commandClass,
         String domain,
@@ -538,6 +565,9 @@ public final class DataAuthorityCommandContracts {
         Set<String> allowedPayloadFields
     ) {
         public CommandContract {
+            if (declarationId == null || declarationId.isBlank()) {
+                throw new IllegalArgumentException("declarationId is required");
+            }
             type = Objects.requireNonNull(type, "type");
             commandClass = Objects.requireNonNull(commandClass, "commandClass");
             if (domain == null || domain.isBlank()) {

@@ -39,8 +39,8 @@ class AuthorityContractArtifactsTest {
             .extracting(AuthorityDomainTopology.DomainTopology::domain)
             .containsExactlyInAnyOrderElementsOf(AuthorityDomainTopology.all().keySet());
         assertThat(manifest.commands())
-            .extracting(AuthorityContractArtifacts.CommandRow::type)
-            .containsExactlyInAnyOrderElementsOf(AuthorityDomainDeclarations.commandTypes());
+            .extracting(AuthorityContractArtifacts.CommandRow::declarationId)
+            .containsExactlyInAnyOrderElementsOf(AuthorityDomainDeclarations.declarationIds());
         assertThat(manifest.reads())
             .extracting(AuthorityContractArtifacts.ReadRow::type)
             .containsExactlyInAnyOrderElementsOf(EnumSet.allOf(DataAuthorityReadContracts.ReadType.class));
@@ -131,11 +131,11 @@ class AuthorityContractArtifactsTest {
             .map(AuthorityContractArtifacts.GeneratedArtifactRow::artifactId)
             .collect(Collectors.toUnmodifiableSet());
 
-        for (DataAuthority.CommandType type : AuthorityDomainDeclarations.commandTypes()) {
+        for (String declarationId : AuthorityDomainDeclarations.declarationIds()) {
             assertThat(artifactIds).contains(
-                "typed-client/command/" + type,
-                "command-serializer/" + type,
-                "projection-writer/" + type
+                "typed-client/command/" + declarationId,
+                "command-serializer/" + declarationId,
+                "projection-writer/" + declarationId
             );
         }
         for (DataAuthorityReadContracts.ReadType type : EnumSet.allOf(DataAuthorityReadContracts.ReadType.class)) {

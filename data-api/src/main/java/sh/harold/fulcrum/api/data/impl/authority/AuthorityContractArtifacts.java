@@ -104,8 +104,8 @@ public final class AuthorityContractArtifacts {
 
     private static List<CommandRow> commandRows(FulcrumSchemaContract schema) {
         Map<String, AuthorityLogTopicPolicy> policiesByTopic = AuthorityLogTopology.policiesByTopic();
-        return DataAuthorityCommandContracts.all().values().stream()
-            .sorted(Comparator.comparing(contract -> contract.type().name()))
+        return DataAuthorityCommandContracts.allByDeclarationId().values().stream()
+            .sorted(Comparator.comparing(DataAuthorityCommandContracts.CommandContract::declarationId))
             .map(contract -> commandRow(schema, policiesByTopic, contract))
             .toList();
     }
@@ -120,6 +120,7 @@ public final class AuthorityContractArtifacts {
         AuthorityLogTopicPolicy commandPolicy = requirePolicy(policiesByTopic, route.commandTopic());
         AuthorityLogTopicPolicy statePolicy = requirePolicy(policiesByTopic, route.stateTopic());
         return new CommandRow(
+            contract.declarationId(),
             contract.type(),
             contract.domain(),
             contract.deliveryMode(),
@@ -186,13 +187,13 @@ public final class AuthorityContractArtifacts {
 
     private static GeneratedArtifactRow generatedCommandClient(CommandRow command) {
         return new GeneratedArtifactRow(
-            "typed-client/command/" + command.type(),
+            "typed-client/command/" + command.declarationId(),
             GeneratedArtifactKind.TYPED_CLIENT,
-            "command:" + command.type(),
-            "generated/authority/client/commands/" + command.type() + ".java",
+            "command:" + command.declarationId(),
+            "generated/authority/client/commands/" + command.declarationId() + ".java",
             DataAuthorityCommandContracts.fingerprint(),
             List.of(
-                "command-contract:" + command.type(),
+                "command-contract:" + command.declarationId(),
                 "route:" + command.commandTopic(),
                 "route:" + command.responseTopic()
             ),
@@ -203,13 +204,13 @@ public final class AuthorityContractArtifacts {
 
     private static GeneratedArtifactRow generatedCommandSerializer(CommandRow command) {
         return new GeneratedArtifactRow(
-            "command-serializer/" + command.type(),
+            "command-serializer/" + command.declarationId(),
             GeneratedArtifactKind.COMMAND_SERIALIZER,
-            "command:" + command.type(),
-            "generated/authority/serializers/" + command.type() + "Serializer.java",
+            "command:" + command.declarationId(),
+            "generated/authority/serializers/" + command.declarationId() + "Serializer.java",
             DataAuthorityCommandContracts.fingerprint(),
             List.of(
-                "command-contract:" + command.type(),
+                "command-contract:" + command.declarationId(),
                 "command-class:" + command.commandClassName(),
                 "aggregate-id-field:" + command.aggregateIdField()
             ),
@@ -220,13 +221,13 @@ public final class AuthorityContractArtifacts {
 
     private static GeneratedArtifactRow generatedProjectionWriter(CommandRow command) {
         return new GeneratedArtifactRow(
-            "projection-writer/" + command.type(),
+            "projection-writer/" + command.declarationId(),
             GeneratedArtifactKind.PROJECTION_WRITER,
-            "command:" + command.type(),
-            "generated/authority/projections/" + command.domain() + "/" + command.type() + "ProjectionWriter.java",
+            "command:" + command.declarationId(),
+            "generated/authority/projections/" + command.domain() + "/" + command.declarationId() + "ProjectionWriter.java",
             DataAuthorityCommandContracts.fingerprint(),
             List.of(
-                "command-contract:" + command.type(),
+                "command-contract:" + command.declarationId(),
                 "event-topic:" + command.eventTopic(),
                 "state-topic:" + command.stateTopic(),
                 "history-store:" + command.historyStore(),
@@ -435,7 +436,7 @@ public final class AuthorityContractArtifacts {
                 .sorted(Comparator.comparing(TopicRow::topic))
                 .forEach(topic -> material.append(topic.material()).append('\n'));
             commands.stream()
-                .sorted(Comparator.comparing(row -> row.type().name()))
+                .sorted(Comparator.comparing(CommandRow::declarationId))
                 .forEach(command -> material.append(command.material()).append('\n'));
             reads.stream()
                 .sorted(Comparator.comparing(row -> row.type().name()))
@@ -542,6 +543,7 @@ public final class AuthorityContractArtifacts {
     }
 
     public record CommandRow(
+        String declarationId,
         DataAuthority.CommandType type,
         String domain,
         DataAuthorityCommandContracts.CommandDeliveryMode deliveryMode,
@@ -565,6 +567,7 @@ public final class AuthorityContractArtifacts {
         List<SchemaTableRef> schemaTables
     ) {
         public CommandRow {
+            declarationId = requireText(declarationId, "declarationId");
             type = Objects.requireNonNull(type, "type");
             domain = requireText(domain, "domain");
             deliveryMode = Objects.requireNonNull(deliveryMode, "deliveryMode");
@@ -593,7 +596,7 @@ public final class AuthorityContractArtifacts {
         }
 
         private String material() {
-            return "command|" + type
+            return "command|" + declarationId
                 + "|domain=" + domain
                 + "|deliveryMode=" + deliveryMode
                 + "|revisionPolicy=" + revisionPolicy

@@ -28,16 +28,29 @@ final class AuthorityDomainDeclarations {
             .toList();
     }
 
+    static List<String> declarationIds() {
+        return DECLARATIONS.values().stream()
+            .flatMap(declaration -> declaration.commands().stream())
+            .map(CommandDeclaration::declarationId)
+            .sorted()
+            .toList();
+    }
+
     static CommandDeclaration command(DataAuthority.CommandType type) {
         Objects.requireNonNull(type, "type");
+        return command(type.name());
+    }
+
+    static CommandDeclaration command(String declarationId) {
+        String effectiveDeclarationId = requireText(declarationId, "declarationId");
         for (DomainDeclaration declaration : DECLARATIONS.values()) {
             for (CommandDeclaration command : declaration.commands()) {
-                if (command.type() == type) {
+                if (command.declarationId().equals(effectiveDeclarationId)) {
                     return command;
                 }
             }
         }
-        throw new IllegalArgumentException("No authority command declaration for " + type);
+        throw new IllegalArgumentException("No authority command declaration for " + effectiveDeclarationId);
     }
 
     static AuthorityCommandRoute route(CommandDeclaration command) {
@@ -63,21 +76,21 @@ final class AuthorityDomainDeclarations {
     private static Map<String, DomainDeclaration> declarations() {
         Map<String, DomainDeclaration> values = new LinkedHashMap<>();
         put(values, declare("match", List.of(
-            match(DataAuthority.CommandType.RECORD_MATCH_END),
-            match(DataAuthority.CommandType.RECORD_MATCH_START)
+            match("RECORD_MATCH_END", DataAuthority.CommandType.RECORD_MATCH_END),
+            match("RECORD_MATCH_START", DataAuthority.CommandType.RECORD_MATCH_START)
         )));
         put(values, declare("player", List.of(
-            profile(DataAuthority.CommandType.RECORD_PLAYER_LOGIN),
-            profile(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT)
+            profile("RECORD_PLAYER_LOGIN", DataAuthority.CommandType.RECORD_PLAYER_LOGIN),
+            profile("RECORD_PLAYER_LOGOUT", DataAuthority.CommandType.RECORD_PLAYER_LOGOUT)
         )));
         put(values, declare("rank", List.of(
-            rank(DataAuthority.CommandType.GRANT_RANK),
-            rank(DataAuthority.CommandType.REVOKE_RANK)
+            rank("GRANT_RANK", DataAuthority.CommandType.GRANT_RANK),
+            rank("REVOKE_RANK", DataAuthority.CommandType.REVOKE_RANK)
         )));
         put(values, declare("session", List.of(
-            session(DataAuthority.CommandType.END_SESSION),
-            session(DataAuthority.CommandType.RENEW_SESSION),
-            session(DataAuthority.CommandType.START_SESSION)
+            session("END_SESSION", DataAuthority.CommandType.END_SESSION),
+            session("RENEW_SESSION", DataAuthority.CommandType.RENEW_SESSION),
+            session("START_SESSION", DataAuthority.CommandType.START_SESSION)
         )));
         return Map.copyOf(values);
     }
@@ -101,8 +114,9 @@ final class AuthorityDomainDeclarations {
         );
     }
 
-    private static CommandDeclaration profile(DataAuthority.CommandType type) {
+    private static CommandDeclaration profile(String declarationId, DataAuthority.CommandType type) {
         return new CommandDeclaration(
+            declarationId,
             type,
             DataAuthority.PlayerProfileCommand.class,
             "player",
@@ -121,8 +135,9 @@ final class AuthorityDomainDeclarations {
         );
     }
 
-    private static CommandDeclaration session(DataAuthority.CommandType type) {
+    private static CommandDeclaration session(String declarationId, DataAuthority.CommandType type) {
         return new CommandDeclaration(
+            declarationId,
             type,
             DataAuthority.PlayerSessionCommand.class,
             "session",
@@ -141,8 +156,9 @@ final class AuthorityDomainDeclarations {
         );
     }
 
-    private static CommandDeclaration rank(DataAuthority.CommandType type) {
+    private static CommandDeclaration rank(String declarationId, DataAuthority.CommandType type) {
         return new CommandDeclaration(
+            declarationId,
             type,
             DataAuthority.PlayerRankCommand.class,
             "rank",
@@ -157,8 +173,9 @@ final class AuthorityDomainDeclarations {
         );
     }
 
-    private static CommandDeclaration match(DataAuthority.CommandType type) {
+    private static CommandDeclaration match(String declarationId, DataAuthority.CommandType type) {
         return new CommandDeclaration(
+            declarationId,
             type,
             DataAuthority.MatchCommand.class,
             "match",
@@ -212,11 +229,11 @@ final class AuthorityDomainDeclarations {
             if (commands.isEmpty()) {
                 throw new IllegalArgumentException("commands is required");
             }
-            Set<DataAuthority.CommandType> commandTypes = commands.stream()
-                .map(CommandDeclaration::type)
+            Set<String> declarationIds = commands.stream()
+                .map(CommandDeclaration::declarationId)
                 .collect(Collectors.toUnmodifiableSet());
-            if (commandTypes.size() != commands.size()) {
-                throw new IllegalArgumentException("commands must be unique by type");
+            if (declarationIds.size() != commands.size()) {
+                throw new IllegalArgumentException("commands must be unique by declaration id");
             }
             for (CommandDeclaration command : commands) {
                 if (!domain.equals(command.domain())) {
@@ -243,6 +260,7 @@ final class AuthorityDomainDeclarations {
     }
 
     record CommandDeclaration(
+        String declarationId,
         DataAuthority.CommandType type,
         Class<? extends DataAuthority.AuthorityCommand> commandClass,
         String domain,
@@ -256,6 +274,7 @@ final class AuthorityDomainDeclarations {
         Set<String> allowedPayloadFields
     ) {
         CommandDeclaration {
+            declarationId = requireText(declarationId, "declarationId");
             type = Objects.requireNonNull(type, "type");
             commandClass = Objects.requireNonNull(commandClass, "commandClass");
             domain = requireText(domain, "domain");
@@ -274,6 +293,7 @@ final class AuthorityDomainDeclarations {
                 throw new IllegalArgumentException(type + " required fields must be allowed fields");
             }
         }
+
     }
 
     private static List<String> distinctSorted(List<String> values) {

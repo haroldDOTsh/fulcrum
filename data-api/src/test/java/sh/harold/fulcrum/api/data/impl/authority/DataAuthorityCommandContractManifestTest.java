@@ -16,15 +16,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DataAuthorityCommandContractManifestTest {
-    private static final Map<DataAuthority.CommandType, DataAuthorityCommandContracts.CommandContract> CONTRACTS =
-        DataAuthorityCommandContracts.all();
+    private static final Map<String, DataAuthorityCommandContracts.CommandContract> CONTRACTS =
+        DataAuthorityCommandContracts.allByDeclarationId();
 
     @Test
     void contractManifestCoversEveryDeclaredCommand() {
         assertThat(CONTRACTS.keySet()).containsExactlyInAnyOrderElementsOf(
-            AuthorityDomainDeclarations.commandTypes()
+            AuthorityDomainDeclarations.declarationIds()
         );
         for (DataAuthorityCommandContracts.CommandContract contract : CONTRACTS.values()) {
+            assertThat(contract.declarationId()).as(contract.type() + " declaration id")
+                .isEqualTo(contract.type().name());
             assertThat(contract.allowedPayloadFields())
                 .as(contract.type() + " allowed payload fields")
                 .containsAll(contract.requiredPayloadFields());
@@ -53,9 +55,10 @@ class DataAuthorityCommandContractManifestTest {
     void contractManifestIsDerivedFromDomainDeclarations() {
         for (AuthorityDomainDeclarations.DomainDeclaration domain : AuthorityDomainDeclarations.all().values()) {
             for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
-                DataAuthorityCommandContracts.CommandContract contract = CONTRACTS.get(command.type());
+                DataAuthorityCommandContracts.CommandContract contract = CONTRACTS.get(command.declarationId());
 
                 assertThat(contract).as(command.type() + " contract").isNotNull();
+                assertThat(contract.declarationId()).isEqualTo(command.declarationId());
                 assertThat(contract.commandClass()).isEqualTo(command.commandClass());
                 assertThat(contract.domain()).isEqualTo(domain.domain());
                 assertThat(contract.deliveryMode()).isEqualTo(command.deliveryMode());
@@ -136,13 +139,17 @@ class DataAuthorityCommandContractManifestTest {
     void routePartitionKeyVectorsCoverEveryDeclaredCommand() {
         Map<String, String> vectors = DataAuthorityCommandContracts.routePartitionKeyVectors();
 
-        assertThat(vectors.keySet()).containsExactlyInAnyOrderElementsOf(
-            AuthorityDomainDeclarations.commandTypes().stream().map(DataAuthority.CommandType::name).toList()
-        );
+        assertThat(vectors.keySet()).containsExactlyInAnyOrderElementsOf(AuthorityDomainDeclarations.declarationIds());
         assertThat(vectors)
             .containsEntry("GRANT_RANK", "rank:player:{aggregateId}=>rank:player:{aggregateId}")
             .containsEntry("RECORD_PLAYER_LOGIN", "player:{aggregateId}=>player:{aggregateId}")
             .containsEntry("RECORD_MATCH_START", "match:{aggregateId}=>match:{aggregateId}");
+    }
+
+    @Test
+    void stringLookupRejectsUndeclaredDeclarationId() {
+        assertThatThrownBy(() -> DataAuthorityCommandContracts.contractByDeclarationId("NOT_DECLARED"))
+            .hasMessageContaining("No authority command contract for NOT_DECLARED");
     }
 
     @Test
