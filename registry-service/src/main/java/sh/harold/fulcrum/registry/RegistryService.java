@@ -1,61 +1,21 @@
 package sh.harold.fulcrum.registry;
 
-import com.datastax.oss.driver.api.core.CqlIdentifier;
-import com.datastax.oss.driver.api.core.CqlSession;
 import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandConsumerCursorStore;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandScopeGuard;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityLog;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogCommandPort;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogCommandWorker;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogCommandWorkerLoop;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogDataAuthorityClient;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipalCommandPort;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionCursorStore;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionWorker;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionWorkerLoop;
-import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainScopedCommandPort;
-import sh.harold.fulcrum.api.data.impl.authority.CachedAuthorityCommandPort;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCustodyPreflight;
-import sh.harold.fulcrum.api.data.impl.authority.InMemoryAuthorityLog;
-import sh.harold.fulcrum.api.data.impl.authority.KafkaAuthorityCommandWorker;
-import sh.harold.fulcrum.api.data.impl.authority.KafkaAuthorityLog;
-import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandConsumerCursorStore;
 import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandIngressLog;
-import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityCommandRefusalLog;
-import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityPartitionEpochStore;
-import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityStateProjectionCursorStore;
 import sh.harold.fulcrum.api.data.impl.authority.PostgresAuthorityStateRestoreDrill;
-import sh.harold.fulcrum.api.data.impl.authority.PostgresDataAuthority;
-import sh.harold.fulcrum.api.data.impl.authority.PostgresLoggedAuthorityCommandPort;
-import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityEventDispatchTarget;
-import sh.harold.fulcrum.api.data.impl.authority.events.CassandraAuthorityHotStateProjection;
-import sh.harold.fulcrum.api.data.impl.authority.events.CassandraAuthorityHotStateSchema;
-import sh.harold.fulcrum.api.data.impl.authority.events.FanoutAuthorityStateRestoreTarget;
-import sh.harold.fulcrum.api.data.impl.authority.events.InMemoryAuthorityHotStateProjection;
-import sh.harold.fulcrum.api.data.impl.authority.events.PostgresAuthorityEventDispatcher;
-import sh.harold.fulcrum.api.data.impl.authority.events.AuthorityStateRestoreTarget;
-import sh.harold.fulcrum.api.data.impl.messagebus.MessageBusWorldMapStoreProvider;
-import sh.harold.fulcrum.api.data.impl.postgres.FulcrumDataMigrations;
 import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionBudget;
-import sh.harold.fulcrum.api.data.impl.postgres.PostgresConnectionAdapter;
-import sh.harold.fulcrum.api.data.impl.postgres.PostgresMigrationRunner;
-import sh.harold.fulcrum.api.data.impl.world.PostgresWorldMapStore;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
 import sh.harold.fulcrum.api.messagebus.ChannelConstants;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 import sh.harold.fulcrum.api.messagebus.impl.MessageBusFactory;
 import sh.harold.fulcrum.registry.adapter.RegistryMessageBusAdapter;
 import sh.harold.fulcrum.registry.allocation.IdAllocator;
-import sh.harold.fulcrum.registry.authority.AuthorityRuntimeAdmission;
 import sh.harold.fulcrum.registry.authority.AuthoritySubstratePreflight;
-import sh.harold.fulcrum.registry.authority.ValkeyAuthorityCommandResultCache;
-import sh.harold.fulcrum.registry.authority.ValkeyAuthoritySnapshotCacheProjection;
 import sh.harold.fulcrum.registry.console.CommandRegistry;
 import sh.harold.fulcrum.registry.console.InteractiveConsole;
 import sh.harold.fulcrum.registry.console.commands.*;
@@ -73,10 +33,8 @@ import sh.harold.fulcrum.registry.slot.SlotProvisionService;
 import sh.harold.fulcrum.registry.route.PlayerRoutingService;
 
 import java.io.InputStream;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,7 +44,6 @@ import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -112,28 +69,6 @@ public class RegistryService {
     private MessageBus messageBus;
     private RegistryMessageBusAdapter messageBusAdapter;
     private MessageBusConnectionConfig messageBusConnectionConfig;
-    private PostgresConnectionAdapter authorityPostgres;
-    private DataAuthority.CommandPort authorityCommandPort;
-    private PostgresLoggedAuthorityCommandPort postgresAuthorityCommandJournal;
-    private AuthorityLogCommandPort authorityLogCommandPort;
-    private final List<ScheduledFuture<?>> authorityCommandWorkerTasks = new ArrayList<>();
-    private final List<AutoCloseable> authorityCommandWorkerResources = new ArrayList<>();
-    private final List<ScheduledFuture<?>> authorityStateProjectionWorkerTasks = new ArrayList<>();
-    private final List<AutoCloseable> authorityStateProjectionWorkerResources = new ArrayList<>();
-    private AutoCloseable authorityLogResource;
-    private PostgresAuthorityCommandIngressLog authorityCommandIngressLog;
-    private PostgresAuthorityCommandRefusalLog authorityCommandRefusalLog;
-    private PostgresAuthorityStateRestoreDrill authorityStateRestoreDrill;
-    private CachedAuthorityCommandPort.CommandResultCache authorityCommandResultCache;
-    private MessageBusWorldMapStoreProvider worldMapStoreProvider;
-    private PostgresAuthorityEventDispatcher authorityEventDispatcher;
-    private AuthorityEventDispatchTarget authorityHotStateProjection;
-    private AuthorityStateRestoreTarget authorityStateRestoreTarget;
-    private ValkeyAuthoritySnapshotCacheProjection authoritySnapshotCacheProjection;
-    private DataAuthority.PlayerProfileReader authorityProfileReader;
-    private DataAuthority.PlayerRankReader authorityRankReader;
-    private AutoCloseable authorityHotStateResource;
-    private ScheduledFuture<?> authorityEventDispatcherTask;
     private RegistryCoordinationStore coordinationStore;
     private PostgresConnectionBudget.Report postgresConnectionBudget = PostgresConnectionBudget.empty(0);
     private AuthorityStartupState authorityStartupState = AuthorityStartupState.disabled("not-started");
@@ -374,7 +309,7 @@ public class RegistryService {
             messageBus = MessageBusFactory.create(messageBusAdapter);
             postgresConnectionBudget = buildPostgresConnectionBudget(config);
             logPostgresConnectionBudget(postgresConnectionBudget);
-            createDataAuthorityProvider();
+            recordExternalizedAuthorityStartup();
             nodeSnapshotStore = createNodeSnapshotStore();
             serverRegistry.setSnapshotStore(nodeSnapshotStore);
             proxyRegistry.setSnapshotStore(nodeSnapshotStore);
@@ -509,25 +444,9 @@ public class RegistryService {
             return PostgresConnectionBudget.empty(maxTotalPoolSize);
         }
 
-        Map<String, Object> authorityConfig = config == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) config.getOrDefault("authority", Map.of()));
         String databaseName = stringValue(postgresConfig.get("database"), "fulcrum");
         Properties poolProperties = postgresPoolProperties(postgresConfig);
         List<PostgresConnectionBudget.Declaration> declarations = new ArrayList<>();
-
-        if (authorityEnabled(authorityConfig)) {
-            declarations.add(PostgresConnectionBudget.fromPoolProperties(
-                "registry-service:central-authority",
-                "registry-service",
-                PostgresConnectionBudget.REGISTRY_SERVICE_BOUNDARY,
-                "FulcrumPostgresPool-authority-" + databaseName,
-                poolProperties,
-                4,
-                1,
-                5000L
-            ));
-        }
 
         declarations.add(PostgresConnectionBudget.fromPoolProperties(
             "registry-service:node-snapshots",
@@ -1092,952 +1011,20 @@ public class RegistryService {
         return value == null ? "" : value;
     }
 
-    private record AuthorityHotStateBinding(
-        String substrate,
-        AuthorityEventDispatchTarget dispatchTarget,
-        AuthorityStateRestoreTarget restoreTarget,
-        DataAuthority.PlayerProfileReader profileReader,
-        DataAuthority.PlayerRankReader rankReader,
-        AutoCloseable resource
-    ) {
-    }
-
-    private record AuthorityCommandLogRuntime(
-        AuthorityLog log,
-        DataAuthority.CommandPort commandPort,
-        AuthorityLogCommandPort validationPort,
-        List<AuthorityCommandWorkerRuntime> workers
-    ) {
-    }
-
-    private interface AuthorityCommandWorkerRuntime extends AutoCloseable {
-        String domain();
-
-        String workerType();
-
-        int pollOnce();
-
-        @Override
-        default void close() throws Exception {
-        }
-    }
-
-    private record PartitionLoopAuthorityCommandWorkerRuntime(
-        AuthorityLogCommandWorkerLoop loop
-    ) implements AuthorityCommandWorkerRuntime {
-        private PartitionLoopAuthorityCommandWorkerRuntime {
-            if (loop == null) {
-                throw new IllegalArgumentException("loop is required");
-            }
-        }
-
-        @Override
-        public String domain() {
-            return loop.domain();
-        }
-
-        @Override
-        public String workerType() {
-            return "partition-loop";
-        }
-
-        @Override
-        public int pollOnce() {
-            return loop.pollOnce().toCompletableFuture().join().processedCount();
-        }
-    }
-
-    private record KafkaAuthorityCommandWorkerRuntime(
-        KafkaAuthorityCommandWorker worker,
-        Duration pollTimeout
-    ) implements AuthorityCommandWorkerRuntime {
-        private KafkaAuthorityCommandWorkerRuntime {
-            if (worker == null) {
-                throw new IllegalArgumentException("worker is required");
-            }
-            pollTimeout = pollTimeout == null ? Duration.ofMillis(250L) : pollTimeout;
-        }
-
-        @Override
-        public String domain() {
-            return worker.domain();
-        }
-
-        @Override
-        public String workerType() {
-            return "kafka-consumer-group";
-        }
-
-        @Override
-        public int pollOnce() {
-            return worker.pollOnce(pollTimeout).processedCount();
-        }
-
-        @Override
-        public void close() {
-            worker.close();
-        }
-    }
-
-    private interface AuthorityStateProjectionRuntime extends AutoCloseable {
-        String projectionName();
-
-        String domain();
-
-        String workerType();
-
-        AuthorityStateProjectionWorkerLoop.PollResult pollOnce();
-
-        @Override
-        default void close() throws Exception {
-        }
-    }
-
-    private record PartitionLoopAuthorityStateProjectionRuntime(
-        AuthorityStateProjectionWorkerLoop loop
-    ) implements AuthorityStateProjectionRuntime {
-        private PartitionLoopAuthorityStateProjectionRuntime {
-            if (loop == null) {
-                throw new IllegalArgumentException("loop is required");
-            }
-        }
-
-        @Override
-        public String projectionName() {
-            return loop.projectionName();
-        }
-
-        @Override
-        public String domain() {
-            return loop.domain();
-        }
-
-        @Override
-        public String workerType() {
-            return "state-partition-loop";
-        }
-
-        @Override
-        public AuthorityStateProjectionWorkerLoop.PollResult pollOnce() {
-            return loop.pollOnce();
-        }
-    }
-
-    private void createDataAuthorityProvider() {
-        Map<String, Object> postgresConfig = (Map<String, Object>) config.get("postgres");
+    private void recordExternalizedAuthorityStartup() {
         Map<String, Object> authorityConfig = (Map<String, Object>) config.get("authority");
-        boolean postgresEnabled = postgresConfig != null && booleanValue(postgresConfig.get("enabled"), false);
-        boolean authorityEnabled = authorityEnabled(authorityConfig);
-
-        if (!authorityEnabled) {
-            LOGGER.info("Central data authority disabled");
-            authorityStartupState = AuthorityStartupState.disabled("authority-disabled");
-            authorityDispatcherStartupState = DispatcherStartupState.disabled("authority-disabled");
-            authorityStateRestoreDrill = null;
-            return;
-        }
-        if (postgresConfig == null || !postgresEnabled) {
-            throw new IllegalStateException("Central data authority requires postgres.enabled=true");
-        }
-
-        String databaseName = stringValue(postgresConfig.get("database"), "fulcrum");
-        AuthoritySubstratePreflight.Report substratePreflight =
-            AuthoritySubstratePreflight.inspect(authorityConfig, authorityActualSubstrate(authorityConfig));
-        AuthorityRuntimeAdmission.Report runtimeAdmission =
-            AuthorityRuntimeAdmission.inspect(authorityConfig);
-        if (!substratePreflight.targetComplete()) {
-            LOGGER.warn("Central data authority running on compatibility substrate: {} ({})",
-                substratePreflight.summary(),
-                String.join("; ", substratePreflight.limitations()));
-        }
-        authorityPostgres = new PostgresConnectionAdapter(
-            jdbcUrl(postgresConfig),
-            stringValue(postgresConfig.get("username"), "fulcrum"),
-            stringValue(postgresConfig.get("password"), ""),
-            "authority-" + databaseName,
-            postgresPoolProperties(postgresConfig)
-        );
-        requireDeclaredPostgresPool(authorityPostgres.poolDeclaration(
-            "registry-service:central-authority",
-            "registry-service",
-            PostgresConnectionBudget.REGISTRY_SERVICE_BOUNDARY
-        ));
-        runAuthorityMigrations(authorityConfig, authorityPostgres);
-
-        PostgresDataAuthority dataAuthority = PostgresDataAuthority.claimBacked(authorityPostgres, scheduler);
-        AuthorityHotStateBinding hotState = createAuthorityHotStateProjection(authorityConfig);
-        authorityHotStateProjection = hotState.dispatchTarget();
-        authorityStateRestoreTarget = hotState.restoreTarget();
-        authorityProfileReader = hotState.profileReader();
-        authorityRankReader = hotState.rankReader();
-        authorityHotStateResource = hotState.resource();
-        PostgresAuthorityPartitionEpochStore epochStore = new PostgresAuthorityPartitionEpochStore(authorityPostgres);
-        PostgresAuthorityCommandConsumerCursorStore cursorStore =
-            new PostgresAuthorityCommandConsumerCursorStore(authorityPostgres);
-        cursorStore.validateSchema();
-        PostgresAuthorityStateProjectionCursorStore stateProjectionCursorStore =
-            new PostgresAuthorityStateProjectionCursorStore(authorityPostgres);
-        stateProjectionCursorStore.validateSchema();
-        postgresAuthorityCommandJournal = new PostgresLoggedAuthorityCommandPort(
-            authorityPostgres,
-            createAuthorityCommandDelegate(authorityConfig, dataAuthority)
-        );
-        AuthorityCommandLogRuntime commandLogRuntime = createAuthorityCommandLogRuntime(
-            authorityConfig,
-            postgresAuthorityCommandJournal,
-            epochStore,
-            cursorStore
-        );
-        authorityLogCommandPort = commandLogRuntime.validationPort();
-        authorityCommandPort = commandLogRuntime.commandPort();
-        authorityCommandIngressLog = new PostgresAuthorityCommandIngressLog(authorityPostgres);
-        authorityCommandRefusalLog = new PostgresAuthorityCommandRefusalLog(authorityPostgres);
-        authorityStateRestoreDrill = new PostgresAuthorityStateRestoreDrill(authorityPostgres);
-
-        DataAuthorityCustodyPreflight.Report custodyPreflight = DataAuthorityCustodyPreflight.require(
-            messageBusAdapter.getServerId(),
-            "message-bus-provider",
-            List.of(
-                DataAuthorityCustodyPreflight.check("postgres-data-authority-schema", dataAuthority::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-substrate-declaration",
-                    substratePreflight::requireAccepted),
-                DataAuthorityCustodyPreflight.check("authority-runtime-admission",
-                    runtimeAdmission::requireAccepted),
-                DataAuthorityCustodyPreflight.check("authority-log-topology", authorityLogCommandPort::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-command-log-schema",
-                    postgresAuthorityCommandJournal::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-state-projection-cursor-schema",
-                    stateProjectionCursorStore::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-command-ingress-schema",
-                    authorityCommandIngressLog::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-command-refusal-schema",
-                    authorityCommandRefusalLog::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-partition-epoch-schema", epochStore::validateSchema),
-            DataAuthorityCustodyPreflight.check("authority-state-restore-schema",
-                    authorityStateRestoreDrill::validateSchema),
-                DataAuthorityCustodyPreflight.check("authority-hot-state-schema",
-                    this::validateAuthorityHotStateProjection),
-                DataAuthorityCustodyPreflight.check("authority-snapshot-cache",
-                    this::validateAuthoritySnapshotCacheProjection)
-            )
-        );
-        LOGGER.info("Central data authority custody preflight passed: {}", custodyPreflight.summary());
-        authorityStartupState = AuthorityStartupState.from(custodyPreflight, substratePreflight);
-        startAuthorityCommandWorkers(commandLogRuntime.workers(), authorityConfig);
-        LOGGER.info("Central data authority command ingress is the durable authority log");
-
-        worldMapStoreProvider = new MessageBusWorldMapStoreProvider(
-            messageBus,
-            new PostgresWorldMapStore(authorityPostgres, scheduler)
-        );
-        worldMapStoreProvider.start();
-        LOGGER.info("Central world map store listening on message bus as {}", messageBusAdapter.getServerId());
-        authorityDispatcherStartupState = startAuthorityHotStateProjectionDispatcher(
-            commandLogRuntime.log(),
-            authorityConfig,
-            stateProjectionCursorStore
-        );
-    }
-
-    private AuthorityHotStateBinding createAuthorityHotStateProjection(Map<String, Object> authorityConfig) {
-        Map<String, Object> substrateConfig = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("substrate", Map.of()));
-        String hotState = configuredAuthorityHotStateSubstrate(substrateConfig);
-        ValkeyAuthoritySnapshotCacheProjection snapshotCache = createAuthoritySnapshotCacheProjection(authorityConfig);
-        if ("in-memory".equals(hotState) || "memory".equals(hotState)) {
-            InMemoryAuthorityHotStateProjection projection = new InMemoryAuthorityHotStateProjection();
-            AuthorityStateRestoreTarget restoreTarget = fanoutRestoreTarget(projection, snapshotCache);
-            LOGGER.info("Central authority hot-state projection using in-memory compatibility substrate");
-            return new AuthorityHotStateBinding(
-                "in-memory",
-                projection,
-                restoreTarget,
-                projection,
-                projection,
-                snapshotCache
-            );
-        }
-        if ("cassandra".equals(hotState)) {
-            Map<String, Object> cassandraConfig = copyStringMap(
-                (Map<?, ?>) substrateConfig.getOrDefault("cassandra", Map.of())
-            );
-            String keyspace = stringValue(cassandraConfig.get("keyspace"), "fulcrum_authority");
-            CqlSession session = cassandraSession(cassandraConfig, keyspace);
-            CassandraAuthorityHotStateProjection projection =
-                new CassandraAuthorityHotStateProjection(session, keyspace);
-            try {
-                if (booleanValue(cassandraConfig.get("auto-apply-schema"), false)) {
-                    LOGGER.info("Applying Cassandra authority hot-state schema (keyspace={})", keyspace);
-                    CassandraAuthorityHotStateSchema.apply(session, keyspace);
-                }
-                projection.validateSchema();
-            } catch (RuntimeException exception) {
-                session.close();
-                if (snapshotCache != null) {
-                    snapshotCache.close();
-                }
-                throw exception;
-            }
-            AuthorityStateRestoreTarget restoreTarget = fanoutRestoreTarget(projection, snapshotCache);
-            AutoCloseable resource = snapshotCache == null
-                ? session
-                : () -> {
-                    try {
-                        session.close();
-                    } finally {
-                        snapshotCache.close();
-                    }
-                };
-            LOGGER.info("Central authority hot-state projection using Cassandra-compatible substrate (keyspace={})",
-                keyspace);
-            return new AuthorityHotStateBinding("cassandra", projection, restoreTarget, projection, projection, resource);
-        }
-        if (snapshotCache != null) {
-            snapshotCache.close();
-        }
-        throw new IllegalStateException("Unsupported authority hot-state substrate " + hotState);
-    }
-
-    private ValkeyAuthoritySnapshotCacheProjection createAuthoritySnapshotCacheProjection(
-        Map<String, Object> authorityConfig
-    ) {
-        Map<String, Object> cacheConfig = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("snapshot-cache", Map.of()));
-        boolean redisMessageBus = messageBusConnectionConfig != null
-            && messageBusConnectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS;
-        boolean enabled = booleanValue(cacheConfig.get("enabled"), redisMessageBus);
-        if (!enabled) {
-            LOGGER.info("Central authority Valkey snapshot cache disabled");
-            return null;
-        }
-        if (!redisMessageBus) {
-            throw new IllegalStateException(
-                "Central authority Valkey snapshot cache requires a Redis-compatible Valkey connection"
-            );
-        }
-
-        long ttlSeconds = longValue(cacheConfig.get("ttl-seconds"), 300L);
-        ValkeyAuthoritySnapshotCacheProjection projection = new ValkeyAuthoritySnapshotCacheProjection(
-            messageBusConnectionConfig,
-            Duration.ofSeconds(ttlSeconds)
-        );
-        authoritySnapshotCacheProjection = projection;
-        LOGGER.info(
-            "Central authority Valkey snapshot cache enabled via Redis-compatible wire protocol (ttl={}s)",
-            ttlSeconds
-        );
-        return projection;
-    }
-
-    private static AuthorityStateRestoreTarget fanoutRestoreTarget(
-        AuthorityStateRestoreTarget primary,
-        ValkeyAuthoritySnapshotCacheProjection snapshotCache
-    ) {
-        return snapshotCache == null
-            ? primary
-            : new FanoutAuthorityStateRestoreTarget(primary, List.of(snapshotCache));
-    }
-
-    private void validateAuthorityHotStateProjection() {
-        if (authorityHotStateProjection instanceof CassandraAuthorityHotStateProjection cassandraProjection) {
-            cassandraProjection.validateSchema();
-        }
-    }
-
-    private void validateAuthoritySnapshotCacheProjection() {
-        if (authoritySnapshotCacheProjection != null) {
-            authoritySnapshotCacheProjection.validateConnection();
-        }
-    }
-
-    private DataAuthority.AuthorityBootIdentity authorityBootIdentity() {
-        RegistryStartupReceipt receipt = startupReceipt;
-        if (receipt == null) {
-            return DataAuthority.AuthorityBootIdentity.unknown();
-        }
-        AuthorityStartupState authority = receipt.authority();
-        return new DataAuthority.AuthorityBootIdentity(
-            receipt.registryNodeId(),
-            authority.ownerNode(),
-            receipt.fingerprint(),
-            receipt.createdAt().toEpochMilli(),
-            authority.principalSource(),
-            authority.readContractFingerprint()
-        );
-    }
-
-    private AuthorityCommandLogRuntime createAuthorityCommandLogRuntime(
-        Map<String, Object> authorityConfig,
-        DataAuthority.CommandPort delegate,
-        PostgresAuthorityPartitionEpochStore epochStore,
-        PostgresAuthorityCommandConsumerCursorStore cursorStore
-    ) {
-        Map<String, Object> substrateConfig = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("substrate", Map.of()));
-        String commandLog = stringValue(substrateConfig.get("command-log"), "in-memory").trim().toLowerCase();
-        Duration clientTimeout = Duration.ofMillis(Math.max(
-            1L,
-            longValue(commandWorkerConfig(authorityConfig).get("request-timeout-ms"), 5_000L)
-        ));
-        int maxRecordsPerPartition = Math.max(
-            1,
-            intValue(commandWorkerConfig(authorityConfig).get("max-records-per-partition"), 64)
-        );
-        if ("in-memory".equals(commandLog) || "memory".equals(commandLog)) {
-            InMemoryAuthorityLog log = new InMemoryAuthorityLog();
-            authorityLogResource = null;
-            LOGGER.info("Central authority command log using in-memory compatibility substrate");
-            return new AuthorityCommandLogRuntime(
-                log,
-                new AuthorityLogDataAuthorityClient(log, clientTimeout),
-                new AuthorityLogCommandPort(log, delegate, epochStore, messageBusAdapter.getServerId()),
-                authorityCommandWorkerRuntimes(
-                    log,
-                    delegate,
-                    epochStore,
-                    messageBusAdapter.getServerId(),
-                    maxRecordsPerPartition,
-                    AuthorityCommandConsumerCursorStore.inMemory()
-                )
-            );
-        }
-        if ("kafka".equals(commandLog)) {
-            KafkaAuthorityLog kafkaAuthorityLog = new KafkaAuthorityLog(kafkaAuthorityLogProperties(substrateConfig));
-            authorityLogResource = kafkaAuthorityLog;
-            LOGGER.info("Central authority command log using Kafka-compatible substrate ({})",
-                kafkaAuthorityLog.summary());
-            return new AuthorityCommandLogRuntime(
-                kafkaAuthorityLog,
-                new AuthorityLogDataAuthorityClient(kafkaAuthorityLog, clientTimeout),
-                new AuthorityLogCommandPort(kafkaAuthorityLog, delegate, epochStore, messageBusAdapter.getServerId()),
-                kafkaAuthorityCommandWorkers(
-                    kafkaAuthorityLog,
-                    delegate,
-                    epochStore,
-                    cursorStore,
-                    messageBusAdapter.getServerId(),
-                    commandWorkerPollTimeout(authorityConfig)
-                )
-            );
-        }
-        throw new IllegalStateException("Unsupported authority command-log substrate " + commandLog);
-    }
-
-    private static List<AuthorityCommandWorkerRuntime> authorityCommandWorkerRuntimes(
-        InMemoryAuthorityLog log,
-        DataAuthority.CommandPort delegate,
-        PostgresAuthorityPartitionEpochStore epochStore,
-        String ownerNode,
-        int maxRecordsPerPartition,
-        AuthorityCommandConsumerCursorStore cursorStore
-    ) {
-        List<AuthorityCommandWorkerRuntime> workers = new ArrayList<>();
-        AuthorityDomainTopology.all().values().stream()
-            .sorted((left, right) -> left.domain().compareTo(right.domain()))
-            .forEach(topology -> workers.add(new PartitionLoopAuthorityCommandWorkerRuntime(
-                new AuthorityLogCommandWorkerLoop(
-                    new AuthorityLogCommandWorker(
-                        log,
-                        new AuthorityDomainScopedCommandPort(topology.domain(), delegate),
-                        epochStore,
-                        ownerNode
-                    ),
-                    topology.domain(),
-                    partitions(topology.partitionCount()),
-                    maxRecordsPerPartition,
-                    cursorStore
-                )
-            )));
-        return List.copyOf(workers);
-    }
-
-    private static List<AuthorityCommandWorkerRuntime> kafkaAuthorityCommandWorkers(
-        KafkaAuthorityLog log,
-        DataAuthority.CommandPort delegate,
-        PostgresAuthorityPartitionEpochStore epochStore,
-        AuthorityCommandConsumerCursorStore cursorStore,
-        String ownerNode,
-        Duration pollTimeout
-    ) {
-        List<AuthorityCommandWorkerRuntime> workers = new ArrayList<>();
-        AuthorityDomainTopology.all().values().stream()
-            .sorted((left, right) -> left.domain().compareTo(right.domain()))
-            .forEach(topology -> workers.add(new KafkaAuthorityCommandWorkerRuntime(
-                new KafkaAuthorityCommandWorker(
-                    log,
-                    new AuthorityDomainScopedCommandPort(topology.domain(), delegate),
-                    epochStore,
-                    cursorStore,
-                    ownerNode,
-                    topology.domain()
-                ),
-                pollTimeout
-            )));
-        return List.copyOf(workers);
-    }
-
-    private static List<Integer> partitions(int partitionCount) {
-        List<Integer> partitions = new ArrayList<>();
-        for (int partition = 0; partition < partitionCount; partition++) {
-            partitions.add(partition);
-        }
-        return partitions;
-    }
-
-    private static Map<String, Object> commandWorkerConfig(Map<String, Object> authorityConfig) {
-        if (authorityConfig == null) {
-            return Map.of();
-        }
-        return copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("command-worker", Map.of()));
-    }
-
-    private static Duration commandWorkerPollTimeout(Map<String, Object> authorityConfig) {
-        return Duration.ofMillis(Math.max(
-            1L,
-            longValue(commandWorkerConfig(authorityConfig).get("poll-timeout-ms"), 250L)
-        ));
-    }
-
-    private void startAuthorityCommandWorkers(
-        List<AuthorityCommandWorkerRuntime> workers,
-        Map<String, Object> authorityConfig
-    ) {
-        stopAuthorityCommandWorkers();
-        Map<String, Object> workerConfig = commandWorkerConfig(authorityConfig);
-        if (!booleanValue(workerConfig.get("enabled"), true)) {
-            LOGGER.warn("Central authority command workers are disabled; log-backed command clients will time out");
-            closeAuthorityCommandWorkerResources(workers);
-            return;
-        }
-        long intervalMs = Math.max(10L, longValue(workerConfig.get("interval-ms"), 100L));
-        for (AuthorityCommandWorkerRuntime worker : workers) {
-            ScheduledFuture<?> task = scheduler.scheduleWithFixedDelay(
-                () -> pollAuthorityCommandWorker(worker),
-                0L,
-                intervalMs,
-                TimeUnit.MILLISECONDS
-            );
-            authorityCommandWorkerTasks.add(task);
-            authorityCommandWorkerResources.add(worker);
-        }
-        LOGGER.info(
-            "Central authority command workers started for {} domains (interval={}ms, workerTypes={})",
-            workers.size(),
-            intervalMs,
-            workerTypes(workers)
-        );
-    }
-
-    private static Map<String, Object> stateProjectionWorkerConfig(Map<String, Object> authorityConfig) {
-        if (authorityConfig == null) {
-            return Map.of();
-        }
-        return copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("state-projection-worker", Map.of()));
-    }
-
-    private DispatcherStartupState startAuthorityHotStateProjectionDispatcher(
-        AuthorityLog log,
-        Map<String, Object> authorityConfig,
-        AuthorityStateProjectionCursorStore cursorStore
-    ) {
-        Map<String, Object> workerConfig = stateProjectionWorkerConfig(authorityConfig);
-        if (booleanValue(workerConfig.get("enabled"), true)) {
-            return startAuthorityStateProjectionWorkers(log, authorityConfig, cursorStore);
-        }
-        LOGGER.warn("Kafka state projection workers are disabled; falling back to Postgres authority event dispatcher");
-        return startAuthorityEventDispatcher(authorityConfig);
-    }
-
-    private DispatcherStartupState startAuthorityStateProjectionWorkers(
-        AuthorityLog log,
-        Map<String, Object> authorityConfig,
-        AuthorityStateProjectionCursorStore cursorStore
-    ) {
-        stopAuthorityStateProjectionWorkers();
-        if (log == null) {
-            throw new IllegalStateException("Central data authority state projection requires an authority log");
-        }
-        AuthorityStateRestoreTarget restoreTarget = authorityStateRestoreTarget;
-        if (restoreTarget == null) {
-            throw new IllegalStateException(
-                "Central data authority hot-state projection does not support state-topic restore"
-            );
-        }
-        Map<String, Object> workerConfig = stateProjectionWorkerConfig(authorityConfig);
-        long intervalMs = Math.max(10L, longValue(workerConfig.get("interval-ms"), 1000L));
-        int maxRecordsPerPartition = Math.max(
-            1,
-            intValue(workerConfig.get("max-records-per-partition"), 64)
-        );
-        AuthorityStateProjectionCursorStore effectiveCursorStore =
-            cursorStore == null ? AuthorityStateProjectionCursorStore.inMemory() : cursorStore;
-        AuthorityStateProjectionWorker worker = new AuthorityStateProjectionWorker(log, restoreTarget);
-        List<AuthorityStateProjectionRuntime> workers = new ArrayList<>();
-        AuthorityDomainTopology.all().values().stream()
-            .sorted((left, right) -> left.domain().compareTo(right.domain()))
-            .forEach(topology -> workers.add(new PartitionLoopAuthorityStateProjectionRuntime(
-                new AuthorityStateProjectionWorkerLoop(
-                    worker,
-                    topology.domain(),
-                    partitions(topology.partitionCount()),
-                    maxRecordsPerPartition,
-                    effectiveCursorStore
-                )
-            )));
-        for (AuthorityStateProjectionRuntime runtime : workers) {
-            ScheduledFuture<?> task = scheduler.scheduleWithFixedDelay(
-                () -> pollAuthorityStateProjectionWorker(runtime),
-                0L,
-                intervalMs,
-                TimeUnit.MILLISECONDS
-            );
-            authorityStateProjectionWorkerTasks.add(task);
-            authorityStateProjectionWorkerResources.add(runtime);
-        }
-        LOGGER.info(
-            "Central authority state projection workers started for {} domains (projection={}, interval={}ms)",
-            workers.size(),
-            restoreTarget.projectionName(),
-            intervalMs
-        );
-        return DispatcherStartupState.enabled(
-            restoreTarget.projectionName(),
-            maxRecordsPerPartition,
-            intervalMs,
-            0L
-        );
-    }
-
-    private void pollAuthorityStateProjectionWorker(AuthorityStateProjectionRuntime worker) {
-        try {
-            AuthorityStateProjectionWorkerLoop.PollResult result = worker.pollOnce();
-            if (result.processedCount() > 0) {
-                LOGGER.debug(
-                    "Authority state projection processed {} records for projection {} domain {} ({}, restored={}, idempotentSkips={})",
-                    result.processedCount(),
-                    worker.projectionName(),
-                    worker.domain(),
-                    worker.workerType(),
-                    result.restoredCount(),
-                    result.idempotentSkipCount()
-                );
-            }
-        } catch (Exception exception) {
-            LOGGER.error(
-                "Authority state projection poll failed for projection {} domain {} ({})",
-                worker.projectionName(),
-                worker.domain(),
-                worker.workerType(),
-                exception
-            );
-        }
-    }
-
-    private void stopAuthorityStateProjectionWorkers() {
-        for (ScheduledFuture<?> task : authorityStateProjectionWorkerTasks) {
-            task.cancel(false);
-        }
-        authorityStateProjectionWorkerTasks.clear();
-        closeAuthorityCommandWorkerResources(authorityStateProjectionWorkerResources);
-        authorityStateProjectionWorkerResources.clear();
-    }
-
-    private static List<String> workerTypes(List<AuthorityCommandWorkerRuntime> workers) {
-        if (workers == null || workers.isEmpty()) {
-            return List.of();
-        }
-        return workers.stream()
-            .map(AuthorityCommandWorkerRuntime::workerType)
-            .distinct()
-            .sorted()
-            .toList();
-    }
-
-    private void pollAuthorityCommandWorker(AuthorityCommandWorkerRuntime worker) {
-        try {
-            int processedCount = worker.pollOnce();
-            if (processedCount > 0) {
-                LOGGER.debug(
-                    "Authority command worker processed {} records for domain {} ({})",
-                    processedCount,
-                    worker.domain(),
-                    worker.workerType()
-                );
-            }
-        } catch (Exception exception) {
-            LOGGER.error(
-                "Authority command worker poll failed for domain {} ({})",
-                worker.domain(),
-                worker.workerType(),
-                exception
-            );
-        }
-    }
-
-    private void stopAuthorityCommandWorkers() {
-        for (ScheduledFuture<?> task : authorityCommandWorkerTasks) {
-            task.cancel(false);
-        }
-        authorityCommandWorkerTasks.clear();
-        closeAuthorityCommandWorkerResources(authorityCommandWorkerResources);
-        authorityCommandWorkerResources.clear();
-    }
-
-    private void closeAuthorityCommandWorkerResources(List<? extends AutoCloseable> resources) {
-        for (AutoCloseable resource : resources) {
-            try {
-                resource.close();
-            } catch (Exception exception) {
-                LOGGER.warn("Failed to close authority command worker resource", exception);
-            }
-        }
-    }
-
-    private static Properties kafkaAuthorityLogProperties(Map<String, Object> substrateConfig) {
-        Map<String, Object> kafkaConfig = substrateConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) substrateConfig.getOrDefault("kafka", Map.of()));
-        Properties properties = new Properties();
-        properties.setProperty(
-            "bootstrap.servers",
-            stringValue(kafkaConfig.get("bootstrap-servers"),
-                stringValue(kafkaConfig.get("bootstrap.servers"), "localhost:9092"))
-        );
-        properties.setProperty(
-            "client.id",
-            stringValue(kafkaConfig.get("client-id"),
-                stringValue(kafkaConfig.get("client.id"), "fulcrum-authority-log"))
-        );
-        Object securityProtocol = kafkaConfig.get("security-protocol");
-        if (securityProtocol == null) {
-            securityProtocol = kafkaConfig.get("security.protocol");
-        }
-        if (securityProtocol != null && !securityProtocol.toString().isBlank()) {
-            properties.setProperty("security.protocol", securityProtocol.toString());
-        }
-        Object saslMechanism = kafkaConfig.get("sasl-mechanism");
-        if (saslMechanism == null) {
-            saslMechanism = kafkaConfig.get("sasl.mechanism");
-        }
-        if (saslMechanism != null && !saslMechanism.toString().isBlank()) {
-            properties.setProperty("sasl.mechanism", saslMechanism.toString());
-        }
-        Object saslJaasConfig = kafkaConfig.get("sasl-jaas-config");
-        if (saslJaasConfig == null) {
-            saslJaasConfig = kafkaConfig.get("sasl.jaas.config");
-        }
-        if (saslJaasConfig != null && !saslJaasConfig.toString().isBlank()) {
-            properties.setProperty("sasl.jaas.config", saslJaasConfig.toString());
-        }
-        return properties;
-    }
-
-    private static CqlSession cassandraSession(Map<String, Object> cassandraConfig, String keyspace) {
-        var builder = CqlSession.builder();
-        for (InetSocketAddress contactPoint : cassandraContactPoints(cassandraConfig.get("contact-points"))) {
-            builder.addContactPoint(contactPoint);
-        }
-        String localDatacenter = stringValue(cassandraConfig.get("local-datacenter"), "datacenter1");
-        if (localDatacenter != null && !localDatacenter.isBlank()) {
-            builder.withLocalDatacenter(localDatacenter);
-        }
-        if (keyspace != null && !keyspace.isBlank()) {
-            builder.withKeyspace(CqlIdentifier.fromCql(keyspace));
-        }
-        return builder.build();
-    }
-
-    private static List<InetSocketAddress> cassandraContactPoints(Object rawContactPoints) {
-        List<InetSocketAddress> contactPoints = new ArrayList<>();
-        if (rawContactPoints instanceof Iterable<?> iterable) {
-            for (Object item : iterable) {
-                if (item != null && !item.toString().isBlank()) {
-                    contactPoints.add(cassandraContactPoint(item.toString()));
-                }
-            }
+        String disabledReason = authorityStartupDisabledReason(authorityConfig);
+        authorityStartupState = AuthorityStartupState.disabled(disabledReason);
+        authorityDispatcherStartupState = DispatcherStartupState.disabled(disabledReason);
+        if ("authority-externalized".equals(disabledReason)) {
+            LOGGER.info("Central data authority startup is externalized; registry will not start an in-process authority");
         } else {
-            String raw = stringValue(rawContactPoints, "localhost:9042");
-            for (String item : raw.split(",")) {
-                if (!item.isBlank()) {
-                    contactPoints.add(cassandraContactPoint(item));
-                }
-            }
-        }
-        return contactPoints.isEmpty() ? List.of(cassandraContactPoint("localhost:9042")) : List.copyOf(contactPoints);
-    }
-
-    private static InetSocketAddress cassandraContactPoint(String rawContactPoint) {
-        String value = rawContactPoint == null || rawContactPoint.isBlank()
-            ? "localhost:9042"
-            : rawContactPoint.trim();
-        int separator = value.lastIndexOf(':');
-        if (separator > 0 && separator < value.length() - 1) {
-            return new InetSocketAddress(
-                value.substring(0, separator).trim(),
-                Integer.parseInt(value.substring(separator + 1).trim())
-            );
-        }
-        return new InetSocketAddress(value, 9042);
-    }
-
-    private DataAuthority.CommandPort createAuthorityCommandDelegate(
-        Map<String, Object> authorityConfig,
-        DataAuthority.CommandPort delegate
-    ) {
-        DataAuthority.CommandPort cachedDelegate = createAuthorityCommandCache(authorityConfig, delegate);
-        return new AuthorityPrincipalCommandPort(new AuthorityCommandScopeGuard(cachedDelegate));
-    }
-
-    private DataAuthority.CommandPort createAuthorityCommandCache(
-        Map<String, Object> authorityConfig,
-        DataAuthority.CommandPort delegate
-    ) {
-        Map<String, Object> cacheConfig = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("idempotency-cache", Map.of()));
-        boolean redisMessageBus = messageBusConnectionConfig != null
-            && messageBusConnectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS;
-        boolean enabled = booleanValue(cacheConfig.get("enabled"), redisMessageBus);
-        if (!enabled) {
-            LOGGER.info("Central authority Valkey idempotency result cache disabled");
-            return delegate;
-        }
-        if (!redisMessageBus) {
-            LOGGER.warn("Central authority Valkey idempotency result cache requires Redis-compatible message bus; using durable Postgres path only");
-            return delegate;
-        }
-
-        long ttlSeconds = longValue(cacheConfig.get("ttl-seconds"), 86_400L);
-        authorityCommandResultCache = new ValkeyAuthorityCommandResultCache(
-            messageBusConnectionConfig,
-            Duration.ofSeconds(ttlSeconds)
-        );
-        LOGGER.info("Central authority Valkey idempotency result cache enabled via Redis-compatible wire protocol (ttl={}s)",
-            ttlSeconds);
-        return new CachedAuthorityCommandPort(delegate, authorityCommandResultCache);
-    }
-
-    private AuthoritySubstratePreflight.ActualSubstrate authorityActualSubstrate(
-        Map<String, Object> authorityConfig
-    ) {
-        Map<String, Object> substrateConfig = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("substrate", Map.of()));
-        return new AuthoritySubstratePreflight.ActualSubstrate(
-            actualAuthorityCommandLogSubstrate(substrateConfig),
-            actualAuthorityHotStateSubstrate(substrateConfig),
-            "postgresql",
-            actualAuthorityCacheSubstrate(authorityConfig)
-        );
-    }
-
-    private String actualAuthorityCommandLogSubstrate(Map<String, Object> substrateConfig) {
-        String commandLog = stringValue(substrateConfig.get("command-log"), "in-memory").trim().toLowerCase();
-        if ("memory".equals(commandLog)) {
-            return "in-memory";
-        }
-        return commandLog;
-    }
-
-    private String actualAuthorityHotStateSubstrate(Map<String, Object> substrateConfig) {
-        String hotState = configuredAuthorityHotStateSubstrate(substrateConfig);
-        return "memory".equals(hotState) ? "in-memory" : hotState;
-    }
-
-    private static String configuredAuthorityHotStateSubstrate(Map<String, Object> substrateConfig) {
-        return stringValue(substrateConfig.get("hot-state"), "in-memory").trim().toLowerCase();
-    }
-
-    private String actualAuthorityCacheSubstrate(Map<String, Object> authorityConfig) {
-        Map<String, Object> idempotencyCacheConfig = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("idempotency-cache", Map.of()));
-        Map<String, Object> snapshotCacheConfig = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("snapshot-cache", Map.of()));
-        boolean redisMessageBus = messageBusConnectionConfig != null
-            && messageBusConnectionConfig.getType() == MessageBusConnectionConfig.MessageBusType.REDIS;
-        boolean idempotencyEnabled = booleanValue(idempotencyCacheConfig.get("enabled"), redisMessageBus);
-        boolean snapshotEnabled = booleanValue(snapshotCacheConfig.get("enabled"), redisMessageBus);
-        return idempotencyEnabled && snapshotEnabled && redisMessageBus ? "valkey" : "none";
-    }
-
-    private DispatcherStartupState startAuthorityEventDispatcher(Map<String, Object> authorityConfig) {
-        Map<String, Object> dispatcherConfig = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("event-dispatcher", Map.of()));
-        if (!booleanValue(dispatcherConfig.get("enabled"), true)) {
-            throw new IllegalStateException(
-                "Central data authority hot reads require authority.event-dispatcher.enabled=true"
-            );
-        }
-
-        int batchSize = intValue(dispatcherConfig.get("batch-size"), 50);
-        long intervalMs = longValue(dispatcherConfig.get("interval-ms"), 1000L);
-        long retryDelayMs = longValue(dispatcherConfig.get("retry-delay-ms"), 5000L);
-        AuthorityEventDispatchTarget hotStateProjection = authorityHotStateProjection;
-        if (hotStateProjection == null) {
-            throw new IllegalStateException("Central data authority hot-state projection was not initialized");
-        }
-        authorityEventDispatcher = new PostgresAuthorityEventDispatcher(
-            authorityPostgres,
-            List.of(hotStateProjection),
-            new PostgresAuthorityEventDispatcher.Options(batchSize, Duration.ofMillis(retryDelayMs))
-        );
-        authorityEventDispatcher.validateSchema();
-        PostgresAuthorityEventDispatcher.DispatchCycleResult warmup = authorityEventDispatcher.dispatchOnce();
-        authorityEventDispatcherTask = scheduler.scheduleWithFixedDelay(
-            this::dispatchAuthorityEvents,
-            intervalMs,
-            intervalMs,
-            TimeUnit.MILLISECONDS
-        );
-        LOGGER.info(
-            "Central authority event dispatcher enabled (consumer={}, batchSize={}, interval={}ms, warmupDelivered={})",
-            hotStateProjection.consumerName(),
-            batchSize,
-            intervalMs,
-            warmup.delivered()
-        );
-        return DispatcherStartupState.enabled(hotStateProjection.consumerName(), batchSize, intervalMs, retryDelayMs);
-    }
-
-    private void dispatchAuthorityEvents() {
-        try {
-            PostgresAuthorityEventDispatcher.DispatchCycleResult result = authorityEventDispatcher.dispatchOnce();
-            if (result.hasWork()) {
-                LOGGER.debug(
-                    "Authority event dispatch cycle: targets={}, attempted={}, delivered={}, retries={}, quarantined={}, blocked={}",
-                    result.targetCount(),
-                    result.attempted(),
-                    result.delivered(),
-                    result.retries(),
-                    result.quarantined(),
-                    result.blocked()
-                );
-            }
-        } catch (Exception exception) {
-            LOGGER.warn("Authority event dispatch cycle failed", exception);
+            LOGGER.info("Central data authority disabled");
         }
     }
 
-    private void runAuthorityMigrations(Map<String, Object> authorityConfig, PostgresConnectionAdapter adapter) {
-        Map<String, Object> migrations = authorityConfig == null
-            ? Map.of()
-            : copyStringMap((Map<?, ?>) authorityConfig.getOrDefault("migrations", Map.of()));
-        boolean enabled = booleanValue(migrations.get("enabled"), true);
-        boolean autoMigrate = booleanValue(migrations.get("auto-migrate"), false);
-        if (!enabled || !autoMigrate) {
-            LOGGER.info("Central data authority migrations are not configured for automatic registry execution");
-            return;
-        }
-
-        LOGGER.info("Running central data authority classpath migrations");
-        new PostgresMigrationRunner(adapter).runClasspathMigrations(FulcrumDataMigrations.all());
-        LOGGER.info("Central data authority migrations completed");
+    static String authorityStartupDisabledReason(Map<String, Object> authorityConfig) {
+        return authorityEnabled(authorityConfig) ? "authority-externalized" : "authority-disabled";
     }
 
     private static boolean authorityEnabled(Map<String, Object> authorityConfig) {
@@ -2049,17 +1036,6 @@ public class RegistryService {
             return false;
         }
         return booleanValue(enabled, false);
-    }
-
-    private static String jdbcUrl(Map<String, Object> postgresConfig) {
-        String jdbcUrl = stringValue(postgresConfig.get("jdbc-url"), null);
-        if (jdbcUrl != null && !jdbcUrl.isBlank()) {
-            return jdbcUrl;
-        }
-        String host = stringValue(postgresConfig.get("host"), "localhost");
-        int port = intValue(postgresConfig.get("port"), 5432);
-        String database = stringValue(postgresConfig.get("database"), "fulcrum");
-        return "jdbc:postgresql://" + host + ":" + port + "/" + database;
     }
 
     private static Properties postgresPoolProperties(Map<String, Object> postgresConfig) {
@@ -2116,16 +1092,6 @@ public class RegistryService {
         return fallback;
     }
 
-    private static long longValue(Object value, long fallback) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value != null) {
-            return Long.parseLong(value.toString());
-        }
-        return fallback;
-    }
-
     private static String stringValue(Object value, String fallback) {
         return value == null ? fallback : value.toString();
     }
@@ -2144,12 +1110,6 @@ public class RegistryService {
         commandRegistry.register("debug", new DebugCommand(this));
         commandRegistry.register("reload", new ReloadCommand(this));
         commandRegistry.register("reregister", new ReRegistrationCommand(this, messageBus));
-        if (authorityCommandIngressLog != null && authorityCommandPort != null) {
-            commandRegistry.register("authoritycommands", new AuthorityCommandIngressCommand(this));
-        }
-        if (authorityStateRestoreDrill != null) {
-            commandRegistry.register("authorityrestore", new AuthorityStateRestoreCommand(this));
-        }
         if (slotProvisionService != null) {
             commandRegistry.register("provisionslot", new ProvisionSlotCommand(slotProvisionService));
         }
@@ -2260,21 +1220,21 @@ public class RegistryService {
      * Get the central authority command ingress log, when authority mode is enabled.
      */
     public PostgresAuthorityCommandIngressLog getAuthorityCommandIngressLog() {
-        return authorityCommandIngressLog;
+        return null;
     }
 
     /**
      * Get the central authority command port, when authority mode is enabled.
      */
     public DataAuthority.CommandPort getAuthorityCommandPort() {
-        return authorityCommandPort;
+        return null;
     }
 
     /**
      * Get the central authority state restore drill helper, when authority mode is enabled.
      */
     public PostgresAuthorityStateRestoreDrill getAuthorityStateRestoreDrill() {
-        return authorityStateRestoreDrill;
+        return null;
     }
     
     /**
@@ -2392,33 +1352,6 @@ public class RegistryService {
 
             if (nodeSnapshotStore != null) {
                 nodeSnapshotStore.close();
-            }
-
-            if (worldMapStoreProvider != null) {
-                worldMapStoreProvider.close();
-            }
-
-            if (authorityEventDispatcherTask != null) {
-                authorityEventDispatcherTask.cancel(false);
-            }
-
-            stopAuthorityStateProjectionWorkers();
-            stopAuthorityCommandWorkers();
-
-            if (authorityHotStateResource != null) {
-                authorityHotStateResource.close();
-            }
-
-            if (authorityCommandResultCache != null) {
-                authorityCommandResultCache.close();
-            }
-
-            if (authorityLogResource != null) {
-                authorityLogResource.close();
-            }
-
-            if (authorityPostgres != null) {
-                authorityPostgres.close();
             }
 
             // MessageBus shutdown is handled by the adapter

@@ -317,6 +317,26 @@ class RegistryServiceRestoreReadbackTest {
         assertThat(first.summary()).contains("disabledReason=authority-disabled");
     }
 
+    @Test
+    void authorityEnabledConfigReportsExternalizedStartupStatus() {
+        String disabledReason = RegistryService.authorityStartupDisabledReason(Map.of("enabled", true));
+
+        assertThat(disabledReason).isEqualTo("authority-externalized");
+        assertThat(RegistryService.authorityStatusLines(
+            null,
+            RegistryService.AuthorityStartupState.disabled(disabledReason),
+            RegistryService.DispatcherStartupState.disabled(disabledReason)
+        ))
+            .contains(
+                "Startup Receipt: unavailable",
+                "Enabled: false",
+                "Disabled Reason: authority-externalized",
+                "Dispatcher: disabled (authority-externalized)"
+            );
+        assertThat(RegistryService.authorityStartupDisabledReason(Map.of("enabled", false)))
+            .isEqualTo("authority-disabled");
+    }
+
     private static RegistryNodeSnapshotStore.SnapshotSchemaEvidence snapshotSchemaEvidence() {
         return RegistryNodeSnapshotStore.SnapshotSchemaEvidence.enabled(
             3,

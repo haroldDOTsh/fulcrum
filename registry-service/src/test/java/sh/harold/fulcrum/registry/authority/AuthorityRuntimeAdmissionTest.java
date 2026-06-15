@@ -85,43 +85,21 @@ class AuthorityRuntimeAdmissionTest {
     }
 
     @Test
-    void registryWiresValkeyCacheSectionsToTheirAuthorityRoles() throws Exception {
+    void registryDoesNotMaterializeAuthorityRuntime() throws Exception {
         String source = Files.readString(registryServicePath());
 
-        assertThat(methodSlice(
-            source,
-            "private ValkeyAuthoritySnapshotCacheProjection createAuthoritySnapshotCacheProjection",
-            "private static AuthorityStateRestoreTarget fanoutRestoreTarget"
-        ))
-            .contains("getOrDefault(\"snapshot-cache\", Map.of())")
-            .doesNotContain("getOrDefault(\"idempotency-cache\", Map.of())");
-        assertThat(methodSlice(
-            source,
-            "private DataAuthority.CommandPort createAuthorityCommandCache",
-            "private AuthoritySubstratePreflight.ActualSubstrate authorityActualSubstrate"
-        ))
-            .contains("getOrDefault(\"idempotency-cache\", Map.of())")
-            .doesNotContain("getOrDefault(\"snapshot-cache\", Map.of())");
-    }
-
-    @Test
-    void registryMaterializesCommandWorkersWithDomainScopedDelegates() throws Exception {
-        String source = Files.readString(registryServicePath());
-
-        assertThat(source).doesNotContain("AuthorityLogCommandWorker worker = new AuthorityLogCommandWorker");
-        assertThat(methodSlice(
-            source,
-            "private static List<AuthorityCommandWorkerRuntime> authorityCommandWorkerRuntimes",
-            "private static List<AuthorityCommandWorkerRuntime> kafkaAuthorityCommandWorkers"
-        ))
-            .contains("new AuthorityDomainScopedCommandPort(topology.domain(), delegate)");
-        assertThat(methodSlice(
-            source,
-            "private static List<AuthorityCommandWorkerRuntime> kafkaAuthorityCommandWorkers",
-            "private static List<Integer> partitions"
-        ))
-            .contains("new AuthorityDomainScopedCommandPort(topology.domain(), delegate)");
-        assertThat(source).doesNotContain("DataAuthorityCommandContracts");
+        assertThat(source)
+            .contains("authority-externalized")
+            .doesNotContain(
+                "PostgresDataAuthority",
+                "claimBacked",
+                "AuthorityLogCommandWorker",
+                "AuthorityDomainScopedCommandPort",
+                "ValkeyAuthorityCommandResultCache",
+                "ValkeyAuthoritySnapshotCacheProjection",
+                "registry-service:central-authority",
+                "FulcrumPostgresPool-authority"
+            );
     }
 
     private static Path registryServicePath() {
@@ -151,11 +129,4 @@ class AuthorityRuntimeAdmissionTest {
         );
     }
 
-    private static String methodSlice(String source, String startMarker, String endMarker) {
-        int start = source.indexOf(startMarker);
-        int end = source.indexOf(endMarker);
-        assertThat(start).as(startMarker).isNotNegative();
-        assertThat(end).as(endMarker).isGreaterThan(start);
-        return source.substring(start, end);
-    }
 }

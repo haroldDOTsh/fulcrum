@@ -10,20 +10,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RegistryServicePostgresConnectionBudgetTest {
 
     @Test
-    void declaresAuthorityAndSnapshotPoolsWhenPostgresAuthorityEnabled() {
+    void authorityFlagDoesNotDeclareRegistryAuthorityPool() {
         PostgresConnectionBudget.Report report = RegistryService.buildPostgresConnectionBudget(
             config(true, true, 3, 1, 6)
         );
 
         assertThat(report.accepted()).isTrue();
-        assertThat(report.totalDeclaredMaxPoolSize()).isEqualTo(6);
+        assertThat(report.totalDeclaredMaxPoolSize()).isEqualTo(3);
         assertThat(report.maxTotalPoolSize()).isEqualTo(6);
         assertThat(report.declarations())
             .extracting(PostgresConnectionBudget.Declaration::poolName)
-            .containsExactly("FulcrumPostgresPool-authority-fulcrum", "registry-fulcrum");
+            .containsExactly("registry-fulcrum");
         assertThat(report.declarations())
             .extracting(PostgresConnectionBudget.Declaration::ownerRole)
-            .containsExactly("registry-service:central-authority", "registry-service:node-snapshots");
+            .containsExactly("registry-service:node-snapshots");
         assertThat(report.declarations())
             .extracting(PostgresConnectionBudget.Declaration::allowedRuntimeBoundary)
             .containsOnly(PostgresConnectionBudget.REGISTRY_SERVICE_BOUNDARY);
@@ -69,13 +69,13 @@ class RegistryServicePostgresConnectionBudgetTest {
     @Test
     void configuredCeilingFlagsOverBudgetDocket() {
         PostgresConnectionBudget.Report report = RegistryService.buildPostgresConnectionBudget(
-            config(true, true, 5, 1, 8)
+            config(true, true, 5, 1, 4)
         );
 
         assertThat(report.accepted()).isFalse();
-        assertThat(report.totalDeclaredMaxPoolSize()).isEqualTo(10);
+        assertThat(report.totalDeclaredMaxPoolSize()).isEqualTo(5);
         assertThat(report.violations()).containsExactly(
-            "declared Postgres max pool size 10 exceeds allowed total 8"
+            "declared Postgres max pool size 5 exceeds allowed total 4"
         );
     }
 
