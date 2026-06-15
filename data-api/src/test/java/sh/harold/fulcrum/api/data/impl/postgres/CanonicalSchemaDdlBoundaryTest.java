@@ -27,6 +27,9 @@ class CanonicalSchemaDdlBoundaryTest {
         "(?s)(?:DataAuthority\\.CommandManifest\\.create|"
             + "new\\s+DataAuthority\\.(?:PlayerProfileCommand|PlayerSessionCommand|PlayerRankCommand|MatchCommand)\\s*\\()"
     );
+    private static final Pattern IMPERATIVE_POSTGRES_AUTHORITY_CONSTRUCTION = Pattern.compile(
+        "(?s)new\\s+(?:[\\w.]+\\.)?PostgresDataAuthority\\s*\\("
+    );
     private static final Pattern RAW_AUTHORITY_COMMAND_ACTOR = Pattern.compile(
         "(?s)AuthorityCommands\\.actor\\s*\\("
     );
@@ -103,6 +106,27 @@ class CanonicalSchemaDdlBoundaryTest {
 
         assertThat(violations)
             .as("Game-node runtime modules must use the generated-shaped authority command facade")
+            .isEmpty();
+    }
+
+    @Test
+    void productionCodeOutsideDataApiDoesNotConstructPostgresAuthority() throws IOException {
+        Path repoRoot = repoRoot();
+        List<String> violations = new ArrayList<>();
+
+        try (Stream<Path> paths = Files.walk(repoRoot)) {
+            paths.filter(Files::isRegularFile)
+                .filter(path -> isProductionCandidate(repoRoot, path))
+                .filter(path -> !repoRoot.relativize(path).toString().replace('\\', '/')
+                    .startsWith("data-api/src/main/"))
+                .filter(CanonicalSchemaDdlBoundaryTest::containsImperativePostgresAuthorityConstruction)
+                .map(path -> repoRoot.relativize(path).toString().replace('\\', '/'))
+                .sorted()
+                .forEach(violations::add);
+        }
+
+        assertThat(violations)
+            .as("Platform authorities are materialized by the data-api authority tier, not constructed in services")
             .isEmpty();
     }
 
@@ -202,6 +226,15 @@ class CanonicalSchemaDdlBoundaryTest {
         try {
             String contents = Files.readString(path, StandardCharsets.UTF_8);
             return HAND_ASSEMBLED_AUTHORITY_ENVELOPE.matcher(stripComments(path, contents)).find();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to read " + path, exception);
+        }
+    }
+
+    private static boolean containsImperativePostgresAuthorityConstruction(Path path) {
+        try {
+            String contents = Files.readString(path, StandardCharsets.UTF_8);
+            return IMPERATIVE_POSTGRES_AUTHORITY_CONSTRUCTION.matcher(stripComments(path, contents)).find();
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to read " + path, exception);
         }
