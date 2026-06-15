@@ -40,9 +40,6 @@ CREATE TABLE IF NOT EXISTS player_profiles (
     normalized_username VARCHAR(16) NOT NULL,
     first_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    online BOOLEAN NOT NULL DEFAULT FALSE,
-    current_server TEXT,
-    current_proxy TEXT,
     total_playtime_ms BIGINT NOT NULL DEFAULT 0,
     last_ip TEXT,
     profile_data JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -52,8 +49,6 @@ CREATE TABLE IF NOT EXISTS player_profiles (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_player_profiles_normalized_username
     ON player_profiles (normalized_username);
-CREATE INDEX IF NOT EXISTS idx_player_profiles_online
-    ON player_profiles (online) WHERE online = TRUE;
 
 CREATE TABLE IF NOT EXISTS player_settings (
     player_id UUID NOT NULL REFERENCES player_profiles(player_id) ON DELETE CASCADE,

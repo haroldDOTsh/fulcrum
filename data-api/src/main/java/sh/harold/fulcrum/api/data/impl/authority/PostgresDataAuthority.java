@@ -202,8 +202,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         return CompletableFuture.supplyAsync(() -> {
             try (Connection connection = connectionAdapter.getConnection();
                  PreparedStatement statement = connection.prepareStatement("""
-                     SELECT p.player_id, p.username, p.normalized_username, p.online, p.current_server,
-                            p.current_proxy, p.total_playtime_ms, p.profile_data::text AS profile_data,
+                     SELECT p.player_id, p.username, p.normalized_username,
+                            p.total_playtime_ms, p.profile_data::text AS profile_data,
                             p.revision,
                             s.aggregate_scope AS watermark_aggregate_scope,
                             s.aggregate_type AS watermark_aggregate_type,
@@ -232,9 +232,9 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                         resultSet.getObject("player_id", UUID.class),
                         resultSet.getString("username"),
                         resultSet.getString("normalized_username"),
-                        resultSet.getBoolean("online"),
-                        resultSet.getString("current_server"),
-                        resultSet.getString("current_proxy"),
+                        false,
+                        null,
+                        null,
                         resultSet.getLong("total_playtime_ms"),
                         jsonMap(resultSet.getString("profile_data")),
                         revision,
@@ -266,8 +266,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         return CompletableFuture.supplyAsync(() -> {
             try (Connection connection = connectionAdapter.getConnection();
                  PreparedStatement statement = connection.prepareStatement("""
-                     SELECT p.player_id AS profile_player_id, p.username, p.normalized_username, p.online,
-                            p.current_server, p.current_proxy, p.total_playtime_ms,
+                     SELECT p.player_id AS profile_player_id, p.username, p.normalized_username,
+                            p.total_playtime_ms,
                             p.profile_data::text AS profile_data, p.revision AS profile_revision,
                             s.aggregate_scope AS watermark_aggregate_scope,
                             s.aggregate_type AS watermark_aggregate_type,
@@ -318,9 +318,9 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                             profilePlayerId,
                             resultSet.getString("username"),
                             resultSet.getString("normalized_username"),
-                            resultSet.getBoolean("online"),
-                            resultSet.getString("current_server"),
-                            resultSet.getString("current_proxy"),
+                            false,
+                            null,
+                            null,
                             resultSet.getLong("total_playtime_ms"),
                             jsonMap(resultSet.getString("profile_data")),
                             profileRevision,
@@ -1909,7 +1909,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             return fallback;
         }
         try (PreparedStatement statement = connection.prepareStatement("""
-            SELECT player_id, username, normalized_username, online, current_server, current_proxy,
+            SELECT player_id, username, normalized_username,
                    total_playtime_ms, profile_data::text AS profile_data, revision
             FROM player_profiles
             WHERE player_id = ?
@@ -1923,9 +1923,9 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 state.put("playerId", resultSet.getObject("player_id", UUID.class).toString());
                 state.put("username", resultSet.getString("username"));
                 state.put("normalizedUsername", resultSet.getString("normalized_username"));
-                state.put("online", resultSet.getBoolean("online"));
-                state.put("currentServer", resultSet.getString("current_server"));
-                state.put("currentProxy", resultSet.getString("current_proxy"));
+                state.put("online", false);
+                state.put("currentServer", null);
+                state.put("currentProxy", null);
                 state.put("totalPlaytimeMs", resultSet.getLong("total_playtime_ms"));
                 state.put("profileData", jsonMap(resultSet.getString("profile_data")));
                 state.put("revision", resultSet.getLong("revision"));

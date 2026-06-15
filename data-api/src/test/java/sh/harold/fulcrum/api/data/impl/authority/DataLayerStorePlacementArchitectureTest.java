@@ -149,11 +149,21 @@ class DataLayerStorePlacementArchitectureTest {
     @Test
     void postgresAuthorityDoesNotWriteLivePresenceProfileFields() throws IOException {
         String source = Files.readString(postgresAuthoritySourcePath());
+        String migration = Files.readString(migrationPath());
 
         assertThat(source)
             .doesNotContain("INSERT INTO player_profiles")
+            .doesNotContain("p.online")
+            .doesNotContain("p.current_server")
+            .doesNotContain("p.current_proxy")
+            .doesNotContain("SELECT player_id, username, normalized_username, online")
             .doesNotContain("profile_data = player_profiles.profile_data || EXCLUDED.profile_data")
             .contains("INSERT INTO player_sessions");
+        assertThat(migration)
+            .doesNotContain("online BOOLEAN")
+            .doesNotContain("current_server TEXT")
+            .doesNotContain("current_proxy TEXT")
+            .doesNotContain("idx_player_profiles_online");
     }
 
     @Test
@@ -284,6 +294,21 @@ class DataLayerStorePlacementArchitectureTest {
             "impl",
             "authority",
             "PostgresDataAuthority.java"
+        );
+    }
+
+    private static Path migrationPath() {
+        Path fromModule = Path.of("src", "main", "resources", "migrations", "001_create_fulcrum_data_schema.sql");
+        if (Files.exists(fromModule)) {
+            return fromModule;
+        }
+        return Path.of(
+            "data-api",
+            "src",
+            "main",
+            "resources",
+            "migrations",
+            "001_create_fulcrum_data_schema.sql"
         );
     }
 
