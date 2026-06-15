@@ -40,24 +40,6 @@ public final class DataAuthorityCommandContracts {
         return CONTRACTS_BY_DECLARATION_ID;
     }
 
-    public static CommandContract contract(DataAuthority.CommandType type) {
-        Objects.requireNonNull(type, "type");
-        CommandContract match = null;
-        for (CommandContract contract : CONTRACTS_BY_DECLARATION_ID.values()) {
-            if (contract.type() != type) {
-                continue;
-            }
-            if (match != null) {
-                throw new IllegalStateException("Multiple authority command contracts for " + type);
-            }
-            match = contract;
-        }
-        if (match == null) {
-            throw new IllegalArgumentException("No authority command contract for " + type);
-        }
-        return match;
-    }
-
     public static CommandContract contractByDeclarationId(String declarationId) {
         if (declarationId == null || declarationId.isBlank()) {
             throw new IllegalArgumentException("declarationId is required");
@@ -103,10 +85,10 @@ public final class DataAuthorityCommandContracts {
 
     public static void validate(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
-        CommandContract contract = contract(command.type());
+        CommandContract contract = contractByDeclarationId(command.declarationId());
         if (!contract.commandClass().isInstance(command)) {
             throw new IllegalArgumentException(
-                "Command " + command.type() + " must decode as " + contract.commandClass().getSimpleName()
+                "Command " + command.declarationId() + " must decode as " + contract.commandClass().getSimpleName()
             );
         }
         DataAuthority.CommandManifest manifest = command.manifest();
@@ -131,7 +113,7 @@ public final class DataAuthorityCommandContracts {
             return;
         }
 
-        CommandContract contract = contract(command.type());
+        CommandContract contract = contractByDeclarationId(command.declarationId());
         AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope());
         requireSettlementField("commandDomain", route.domain(), settlement.commandDomain());
         requireSettlementField("commandTopic", route.commandTopic(), settlement.commandTopic());
@@ -197,7 +179,7 @@ public final class DataAuthorityCommandContracts {
             throw new IllegalStateException("Authority command rejected result requires a refusal receipt");
         }
         requireSettlementField("refusalReceipt.commandId", command.commandId(), receipt.commandId());
-        requireSettlementField("refusalReceipt.commandType", command.type().name(), receipt.commandType());
+        requireSettlementField("refusalReceipt.declarationId", command.declarationId(), receipt.declarationId());
         requireSettlementField("refusalReceipt.aggregateScope", command.scope(), receipt.aggregateScope());
         requireSettlementField("refusalReceipt.rejectionReason", result.rejectionReason(), receipt.rejectionReason());
         requireSettlementField("refusalReceipt.resultRevision", result.revision(), receipt.resultRevision());
@@ -314,7 +296,7 @@ public final class DataAuthorityCommandContracts {
             Object value = safePayload.get(requiredField);
             if (value == null || value.toString().isBlank()) {
                 throw new IllegalArgumentException(
-                    "Command " + contract.type() + " is missing required payload field " + requiredField
+                    "Command " + contract.declarationId() + " is missing required payload field " + requiredField
                 );
             }
         }
@@ -322,7 +304,7 @@ public final class DataAuthorityCommandContracts {
         for (String field : safePayload.keySet()) {
             if (!allowedFields.contains(field)) {
                 throw new IllegalArgumentException(
-                    "Command " + contract.type() + " payload field " + field + " is not in the command contract"
+                    "Command " + contract.declarationId() + " payload field " + field + " is not in the command contract"
                 );
             }
         }
@@ -333,7 +315,7 @@ public final class DataAuthorityCommandContracts {
             && expectedRevision == DataAuthority.ANY_REVISION) {
             throw new CommandContractViolation(
                 DataAuthority.RejectionReason.STALE_REVISION,
-                "Command " + contract.type()
+                "Command " + contract.declarationId()
                     + " requires a concrete expectedRevision; ANY_REVISION is only valid for blind writes"
             );
         }
@@ -353,7 +335,7 @@ public final class DataAuthorityCommandContracts {
         if (!expectedScope.equals(scope)) {
             throw new CommandContractViolation(
                 DataAuthority.RejectionReason.INVALID_SCOPE,
-                "Command " + contract.type() + " scope does not match payload aggregate id: expected "
+                "Command " + contract.declarationId() + " scope does not match payload aggregate id: expected "
                     + expectedScope + " but was " + scope
             );
         }
@@ -365,7 +347,6 @@ public final class DataAuthorityCommandContracts {
             for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
                 CommandContract previous = values.put(command.declarationId(), new CommandContract(
                     command.declarationId(),
-                    command.type(),
                     command.commandClass(),
                     domain.domain(),
                     command.deliveryMode(),
@@ -506,7 +487,6 @@ public final class DataAuthorityCommandContracts {
 
     public record CommandContract(
         String declarationId,
-        DataAuthority.CommandType type,
         Class<? extends DataAuthority.AuthorityCommand> commandClass,
         String domain,
         CommandDeliveryMode deliveryMode,
@@ -524,7 +504,6 @@ public final class DataAuthorityCommandContracts {
             if (declarationId == null || declarationId.isBlank()) {
                 throw new IllegalArgumentException("declarationId is required");
             }
-            type = Objects.requireNonNull(type, "type");
             commandClass = Objects.requireNonNull(commandClass, "commandClass");
             if (domain == null || domain.isBlank()) {
                 throw new IllegalArgumentException("domain is required");
@@ -552,10 +531,10 @@ public final class DataAuthorityCommandContracts {
             requiredPayloadFields = requiredPayloadFields == null ? Set.of() : Set.copyOf(requiredPayloadFields);
             allowedPayloadFields = allowedPayloadFields == null ? Set.of() : Set.copyOf(allowedPayloadFields);
             if (!requiredPayloadFields.contains(aggregateIdField)) {
-                throw new IllegalArgumentException(type + " aggregate id field must be required");
+                throw new IllegalArgumentException(declarationId + " aggregate id field must be required");
             }
             if (!allowedPayloadFields.containsAll(requiredPayloadFields)) {
-                throw new IllegalArgumentException(type + " required fields must be allowed fields");
+                throw new IllegalArgumentException(declarationId + " required fields must be allowed fields");
             }
         }
     }

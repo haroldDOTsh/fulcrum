@@ -96,7 +96,7 @@ class AuthorityCommandScopeGuardTest {
         return new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 "rank-service",
                 scope,
                 "rank:" + commandId,
@@ -115,7 +115,7 @@ class AuthorityCommandScopeGuardTest {
         return new DataAuthority.PlayerSessionCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.START_SESSION,
+                "START_SESSION",
                 "session-service",
                 scope,
                 "session:" + commandId,
@@ -140,7 +140,7 @@ class AuthorityCommandScopeGuardTest {
         return new DataAuthority.MatchCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.RECORD_MATCH_START,
+                "RECORD_MATCH_START",
                 "match-service",
                 scope,
                 "match:" + commandId,

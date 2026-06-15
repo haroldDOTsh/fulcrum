@@ -140,7 +140,7 @@ final class AuthorityCommandGuardEvidence {
             AuthorityCommandLane.DEFAULT_LANE_COUNT
         );
         DataAuthorityCommandContracts.CommandContract commandContract =
-            DataAuthorityCommandContracts.contract(command.type());
+            DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId());
         Map<String, Object> contract = new LinkedHashMap<>();
         contract.put("expectedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
         contract.put("receivedSchemaVersion", command.manifest().schemaVersion());

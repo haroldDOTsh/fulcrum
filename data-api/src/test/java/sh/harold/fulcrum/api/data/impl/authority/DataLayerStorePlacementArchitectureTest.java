@@ -67,55 +67,55 @@ class DataLayerStorePlacementArchitectureTest {
 
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
+            "RECORD_PLAYER_LOGIN",
             "Player presence (online, current proxy/server/slot, session id, last-seen)",
             "Player profile of record (identity, first_seen, total_playtime, slow attributes)"
         );
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.RECORD_PLAYER_LOGOUT,
+            "RECORD_PLAYER_LOGOUT",
             "Player presence (online, current proxy/server/slot, session id, last-seen)",
             "Player profile of record (identity, first_seen, total_playtime, slow attributes)"
         );
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.START_SESSION,
+            "START_SESSION",
             "Player presence (online, current proxy/server/slot, session id, last-seen)",
             "Session history"
         );
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.RENEW_SESSION,
+            "RENEW_SESSION",
             "Player presence (online, current proxy/server/slot, session id, last-seen)",
             "Session history"
         );
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.END_SESSION,
+            "END_SESSION",
             "Player presence (online, current proxy/server/slot, session id, last-seen)",
             "Session history"
         );
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.GRANT_RANK,
+            "GRANT_RANK",
             "Live effective ranks (for permission checks)",
             "Rank history + audit"
         );
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.REVOKE_RANK,
+            "REVOKE_RANK",
             "Live effective ranks (for permission checks)",
             "Rank history + audit"
         );
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.RECORD_MATCH_START,
+            "RECORD_MATCH_START",
             "Live match state (during a match)",
             "Match history + participant stats"
         );
         assertCommandPlacement(
             placements,
-            DataAuthority.CommandType.RECORD_MATCH_END,
+            "RECORD_MATCH_END",
             "Live match state (during a match)",
             "Match history + participant stats"
         );
@@ -176,11 +176,11 @@ class DataLayerStorePlacementArchitectureTest {
 
     private static void assertCommandPlacement(
         Map<String, Set<String>> placements,
-        DataAuthority.CommandType type,
+        String type,
         String hotConcern,
         String historyConcern
     ) {
-        DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contract(type);
+        DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contractByDeclarationId(type);
 
         assertThat(storesFor(placements, "Command audit"))
             .as(type + " command log store")

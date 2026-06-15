@@ -245,7 +245,7 @@ public final class PostgresAuthorityCommandIngressLog implements AuthorityComman
         );
         return new CommandIngressEntry(
             rows.getObject("command_id", UUID.class),
-            DataAuthority.CommandType.valueOf(rows.getString("command_type")),
+            rows.getString("command_type"),
             rows.getString("aggregate_scope"),
             rows.getString("idempotency_key"),
             rows.getString("claimed_actor"),
@@ -399,7 +399,7 @@ public final class PostgresAuthorityCommandIngressLog implements AuthorityComman
      * A persisted command ingress frame plus its current terminal state.
      *
      * @param commandId command id
-     * @param commandType command type
+     * @param declarationId command declaration id
      * @param aggregateScope aggregate scope
      * @param idempotencyKey idempotency key
      * @param claimedActor caller-claimed domain actor
@@ -435,7 +435,7 @@ public final class PostgresAuthorityCommandIngressLog implements AuthorityComman
      */
     public record CommandIngressEntry(
         UUID commandId,
-        DataAuthority.CommandType commandType,
+        String declarationId,
         String aggregateScope,
         String idempotencyKey,
         String claimedActor,

@@ -24,7 +24,7 @@ public final class AuthorityDomainScopedCommandPort implements DataAuthority.Com
     @Override
     public CompletionStage<DataAuthority.CommandResult> submit(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
-        String commandDomain = DataAuthorityCommandContracts.contract(command.type()).domain();
+        String commandDomain = DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId()).domain();
         if (!domain.equals(commandDomain)) {
             return CompletableFuture.completedFuture(new DataAuthority.CommandResult(
                 command.commandId(),
@@ -32,7 +32,7 @@ public final class AuthorityDomainScopedCommandPort implements DataAuthority.Com
                 command.expectedRevision(),
                 DataAuthority.RejectionReason.VALIDATION_FAILED,
                 "Authority worker for " + domain + " cannot apply " + commandDomain + " command "
-                    + command.type()
+                    + command.declarationId()
             ));
         }
         return delegate.submit(command);

@@ -412,7 +412,7 @@ public final class MinigameEngine {
         payload.put("state", "STARTED");
         payload.put("startedAt", startedAt);
         payload.put("participants", participantPayload(match));
-        submitMatchCommand(DataAuthority.CommandType.RECORD_MATCH_START, match.getMatchId(), payload);
+        submitMatchCommand("RECORD_MATCH_START", match.getMatchId(), payload);
     }
 
     private void recordMatchEnd(MinigameMatch match,
@@ -428,7 +428,7 @@ public final class MinigameEngine {
         }
         payload.put("endedAt", System.currentTimeMillis());
         payload.put("participants", participantPayload(match));
-        submitMatchCommand(DataAuthority.CommandType.RECORD_MATCH_END, match.getMatchId(), payload);
+        submitMatchCommand("RECORD_MATCH_END", match.getMatchId(), payload);
     }
 
     private Map<String, Object> baseMatchPayload(MinigameMatch match,
@@ -464,7 +464,7 @@ public final class MinigameEngine {
         return participants;
     }
 
-    private void submitMatchCommand(DataAuthority.CommandType type, UUID matchId, Map<String, Object> payload) {
+    private void submitMatchCommand(String declarationId, UUID matchId, Map<String, Object> payload) {
         if (commandPort == null) {
             return;
         }
@@ -472,8 +472,8 @@ public final class MinigameEngine {
         AuthorityCommands.MatchCommands matchCommands = AuthorityCommands.actor(
             serverIdentifier != null ? serverIdentifier.getServerId() : "paper-runtime"
         ).match(matchId);
-        DataAuthority.MatchCommand command = switch (type) {
-            case RECORD_MATCH_START -> matchCommands.recordStart(
+        DataAuthority.MatchCommand command = switch (declarationId) {
+            case "RECORD_MATCH_START" -> matchCommands.recordStart(
                 objectString(payload.get("familyId")),
                 objectString(payload.get("mapId")),
                 objectString(payload.get("serverId")),
@@ -484,7 +484,7 @@ public final class MinigameEngine {
                 participants(payload.get("participants")),
                 now
             );
-            case RECORD_MATCH_END -> matchCommands.recordEnd(
+            case "RECORD_MATCH_END" -> matchCommands.recordEnd(
                 objectString(payload.get("familyId")),
                 objectString(payload.get("mapId")),
                 objectString(payload.get("serverId")),
@@ -496,7 +496,7 @@ public final class MinigameEngine {
                 participants(payload.get("participants")),
                 now
             );
-            default -> throw new IllegalArgumentException("Unsupported match command type " + type);
+            default -> throw new IllegalArgumentException("Unsupported match command declaration " + declarationId);
         };
 
         if (submitDurableIfAvailable(command, matchId)) {
@@ -505,9 +505,9 @@ public final class MinigameEngine {
 
         commandPort.submit(command).whenComplete((result, error) -> {
             if (error != null) {
-                plugin.getLogger().log(Level.WARNING, "Failed to record match " + type + " for " + matchId, error);
+                plugin.getLogger().log(Level.WARNING, "Failed to record match " + declarationId + " for " + matchId, error);
             } else if (!result.accepted()) {
-                plugin.getLogger().warning("Match command " + type + " rejected for " + matchId + ": "
+                plugin.getLogger().warning("Match command " + declarationId + " rejected for " + matchId + ": "
                     + result.rejectionReason() + " " + result.message());
             }
         });
@@ -521,11 +521,11 @@ public final class MinigameEngine {
             if (error != null) {
                 plugin.getLogger().log(
                     Level.WARNING,
-                    "Failed to durably submit match " + command.type() + " for " + matchId,
+                    "Failed to durably submit match " + command.declarationId() + " for " + matchId,
                     error
                 );
             } else {
-                plugin.getLogger().fine("Durably submitted match " + command.type() + " for " + matchId
+                plugin.getLogger().fine("Durably submitted match " + command.declarationId() + " for " + matchId
                     + " to " + receipt.commandTopic() + "[" + receipt.partition() + "]@" + receipt.offset());
             }
         });

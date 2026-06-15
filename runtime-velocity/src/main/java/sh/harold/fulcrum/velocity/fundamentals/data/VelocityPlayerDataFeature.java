@@ -57,26 +57,26 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     public void onPlayerJoin(PostLoginEvent event) {
         Player player = event.getPlayer();
 
-        submitPlayerCommand(player, DataAuthority.CommandType.START_SESSION);
+        submitPlayerCommand(player, "START_SESSION");
     }
     
     @Subscribe
     public void onPlayerDisconnect(DisconnectEvent event) {
         Player player = event.getPlayer();
 
-        submitPlayerCommand(player, DataAuthority.CommandType.END_SESSION);
+        submitPlayerCommand(player, "END_SESSION");
     }
     
     @Subscribe
     public void onServerSwitch(ServerPostConnectEvent event) {
         Player player = event.getPlayer();
 
-        submitPlayerCommand(player, DataAuthority.CommandType.RENEW_SESSION);
+        submitPlayerCommand(player, "RENEW_SESSION");
     }
 
-    private void submitPlayerCommand(Player player, DataAuthority.CommandType commandType) {
+    private void submitPlayerCommand(Player player, String declarationId) {
         long now = System.currentTimeMillis();
-        UUID sessionId = sessionId(player, commandType);
+        UUID sessionId = sessionId(player, declarationId);
         AuthorityCommands.SessionCommands sessionCommands = AuthorityCommands.actor("velocity-proxy")
             .session(player.getUniqueId());
         String currentServer = currentServer(player);
@@ -84,8 +84,8 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
             ? player.getRemoteAddress().getAddress().getHostAddress()
             : null;
         int protocolVersion = player.getProtocolVersion().getProtocol();
-        DataAuthority.PlayerSessionCommand command = switch (commandType) {
-            case START_SESSION -> sessionCommands.startSession(
+        DataAuthority.PlayerSessionCommand command = switch (declarationId) {
+            case "START_SESSION" -> sessionCommands.startSession(
                 player.getUsername(),
                 sessionId,
                 now,
@@ -94,7 +94,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
                 lastIp,
                 protocolVersion
             );
-            case RENEW_SESSION -> sessionCommands.renewSession(
+            case "RENEW_SESSION" -> sessionCommands.renewSession(
                 player.getUsername(),
                 sessionId,
                 now,
@@ -103,7 +103,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
                 lastIp,
                 protocolVersion
             );
-            case END_SESSION -> sessionCommands.endSession(
+            case "END_SESSION" -> sessionCommands.endSession(
                 player.getUsername(),
                 sessionId,
                 now,
@@ -113,28 +113,28 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
                 protocolVersion,
                 null
             );
-            default -> throw new IllegalArgumentException("Unsupported session command type " + commandType);
+            default -> throw new IllegalArgumentException("Unsupported session command declaration " + declarationId);
         };
 
         commandPort.submit(command).whenComplete((result, error) -> {
             if (error != null) {
-                logger.warn("Failed to submit {} for {}: {}", commandType, player.getUsername(), error.getMessage());
+                logger.warn("Failed to submit {} for {}: {}", declarationId, player.getUsername(), error.getMessage());
             } else if (!result.accepted()) {
-                logger.warn("Player command {} rejected for {}: {} {}", commandType, player.getUsername(),
+                logger.warn("Player command {} rejected for {}: {} {}", declarationId, player.getUsername(),
                     result.rejectionReason(), result.message());
             } else {
-                logger.debug("Submitted {} for {}", commandType, player.getUsername());
+                logger.debug("Submitted {} for {}", declarationId, player.getUsername());
             }
         });
     }
 
-    private UUID sessionId(Player player, DataAuthority.CommandType commandType) {
-        if (commandType == DataAuthority.CommandType.START_SESSION) {
+    private UUID sessionId(Player player, String declarationId) {
+        if ("START_SESSION".equals(declarationId)) {
             UUID sessionId = UUID.randomUUID();
             activeSessions.put(player.getUniqueId(), sessionId);
             return sessionId;
         }
-        if (commandType == DataAuthority.CommandType.END_SESSION) {
+        if ("END_SESSION".equals(declarationId)) {
             return activeSessions.remove(player.getUniqueId());
         }
         return activeSessions.get(player.getUniqueId());

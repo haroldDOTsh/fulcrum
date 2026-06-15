@@ -177,7 +177,7 @@ class AuthorityFencingCommandPortTest {
         return new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 "rank-service",
                 "rank:player:" + playerId,
                 "rank:" + commandId,

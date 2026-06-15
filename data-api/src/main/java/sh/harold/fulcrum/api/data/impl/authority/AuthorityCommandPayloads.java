@@ -17,7 +17,7 @@ final class AuthorityCommandPayloads {
                 .put("playerId", profile.playerId().toString())
                 .put("username", profile.username())
                 .put("timestamp", profile.timestampEpochMillis())
-                .put("online", profile.type() == DataAuthority.CommandType.RECORD_PLAYER_LOGIN)
+                .put("online", "RECORD_PLAYER_LOGIN".equals(profile.declarationId()))
                 .put("currentServer", profile.currentServer())
                 .put("currentProxy", profile.currentProxy())
                 .put("lastIp", profile.lastIp())
@@ -37,19 +37,19 @@ final class AuthorityCommandPayloads {
                 .put("username", session.username())
                 .put("sessionId", session.sessionId() == null ? null : session.sessionId().toString())
                 .put("timestamp", session.timestampEpochMillis())
-                .put("online", session.type() != DataAuthority.CommandType.END_SESSION)
+                .put("online", !"END_SESSION".equals(session.declarationId()))
                 .put("currentServer", session.currentServer())
                 .put("currentProxy", session.currentProxy())
                 .put("lastIp", session.lastIp())
                 .put("protocolVersion", session.protocolVersion())
                 .put("disconnectReason", session.disconnectReason());
-            if (session.type() == DataAuthority.CommandType.START_SESSION) {
+            if ("START_SESSION".equals(session.declarationId())) {
                 payload.put("lastProxySession", session.timestampEpochMillis());
             }
-            if (session.type() == DataAuthority.CommandType.RENEW_SESSION) {
+            if ("RENEW_SESSION".equals(session.declarationId())) {
                 payload.put("lastServerSwitch", session.timestampEpochMillis());
             }
-            if (session.type() == DataAuthority.CommandType.END_SESSION) {
+            if ("END_SESSION".equals(session.declarationId())) {
                 payload.put("playtimeStartField", "lastProxySession");
                 payload.put("clearCurrentServer", true);
             }

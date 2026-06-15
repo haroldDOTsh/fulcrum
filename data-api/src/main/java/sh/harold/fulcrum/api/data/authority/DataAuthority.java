@@ -28,18 +28,6 @@ public final class DataAuthority {
     private DataAuthority() {
     }
 
-    public enum CommandType {
-        RECORD_PLAYER_LOGIN,
-        RECORD_PLAYER_LOGOUT,
-        GRANT_RANK,
-        REVOKE_RANK,
-        START_SESSION,
-        RENEW_SESSION,
-        END_SESSION,
-        RECORD_MATCH_START,
-        RECORD_MATCH_END
-    }
-
     public enum RejectionReason {
         NONE,
         STALE_FENCING_TOKEN,
@@ -1008,8 +996,8 @@ public final class DataAuthority {
             return manifest().commandId();
         }
 
-        default CommandType type() {
-            return manifest().type();
+        default String declarationId() {
+            return manifest().declarationId();
         }
 
         default String actorId() {
@@ -1088,7 +1076,7 @@ public final class DataAuthority {
 
     public record CommandManifest(
         UUID commandId,
-        CommandType type,
+        String declarationId,
         String actorId,
         String scope,
         String idempotencyKey,
@@ -1102,8 +1090,8 @@ public final class DataAuthority {
             if (commandId == null) {
                 throw new IllegalArgumentException("commandId is required");
             }
-            if (type == null) {
-                throw new IllegalArgumentException("type is required");
+            if (declarationId == null || declarationId.isBlank()) {
+                throw new IllegalArgumentException("declarationId is required");
             }
             if (actorId == null || actorId.isBlank()) {
                 throw new IllegalArgumentException("actorId is required");
@@ -1126,7 +1114,7 @@ public final class DataAuthority {
 
         public CommandManifest(
             UUID commandId,
-            CommandType type,
+            String declarationId,
             String actorId,
             String scope,
             String idempotencyKey,
@@ -1137,7 +1125,7 @@ public final class DataAuthority {
         ) {
             this(
                 commandId,
-                type,
+                declarationId,
                 actorId,
                 scope,
                 idempotencyKey,
@@ -1151,7 +1139,7 @@ public final class DataAuthority {
 
         public static CommandManifest create(
             UUID commandId,
-            CommandType type,
+            String declarationId,
             String actorId,
             String scope,
             String idempotencyKey,
@@ -1161,7 +1149,7 @@ public final class DataAuthority {
         ) {
             return new CommandManifest(
                 commandId,
-                type,
+                declarationId,
                 actorId,
                 scope,
                 idempotencyKey,
@@ -1174,7 +1162,7 @@ public final class DataAuthority {
 
         public static CommandManifest create(
             UUID commandId,
-            CommandType type,
+            String declarationId,
             String actorId,
             String scope,
             String idempotencyKey,
@@ -1185,7 +1173,7 @@ public final class DataAuthority {
         ) {
             return new CommandManifest(
                 commandId,
-                type,
+                declarationId,
                 actorId,
                 scope,
                 idempotencyKey,
@@ -1216,7 +1204,7 @@ public final class DataAuthority {
         String playtimeStartField
     ) implements AuthorityCommand {
         public PlayerProfileCommand {
-            requireType(manifest, CommandType.RECORD_PLAYER_LOGIN, CommandType.RECORD_PLAYER_LOGOUT);
+            requireDeclarationId(manifest, "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT");
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
             }
@@ -1237,7 +1225,7 @@ public final class DataAuthority {
         String disconnectReason
     ) implements AuthorityCommand {
         public PlayerSessionCommand {
-            requireType(manifest, CommandType.START_SESSION, CommandType.RENEW_SESSION, CommandType.END_SESSION);
+            requireDeclarationId(manifest, "START_SESSION", "RENEW_SESSION", "END_SESSION");
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
             }
@@ -1252,7 +1240,7 @@ public final class DataAuthority {
         List<String> ranks
     ) implements AuthorityCommand {
         public PlayerRankCommand {
-            requireType(manifest, CommandType.GRANT_RANK, CommandType.REVOKE_RANK);
+            requireDeclarationId(manifest, "GRANT_RANK", "REVOKE_RANK");
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
             }
@@ -1291,34 +1279,34 @@ public final class DataAuthority {
         List<MatchParticipant> participants
     ) implements AuthorityCommand {
         public MatchCommand {
-            requireType(manifest, CommandType.RECORD_MATCH_START, CommandType.RECORD_MATCH_END);
+            requireDeclarationId(manifest, "RECORD_MATCH_START", "RECORD_MATCH_END");
             if (matchId == null) {
                 throw new IllegalArgumentException("matchId is required");
             }
             familyId = familyId == null || familyId.isBlank() ? "unknown" : familyId;
             state = state == null || state.isBlank()
-                ? (manifest.type() == CommandType.RECORD_MATCH_START ? "STARTED" : "ENDED")
+                ? ("RECORD_MATCH_START".equals(manifest.declarationId()) ? "STARTED" : "ENDED")
                 : state;
             slotMetadata = slotMetadata == null ? Map.of() : Map.copyOf(slotMetadata);
             participants = participants == null ? List.of() : List.copyOf(participants);
         }
     }
 
-    private static void requireType(CommandManifest manifest, CommandType... allowed) {
+    private static void requireDeclarationId(CommandManifest manifest, String... allowed) {
         if (manifest == null) {
             throw new IllegalArgumentException("manifest is required");
         }
-        for (CommandType type : allowed) {
-            if (manifest.type() == type) {
+        for (String declarationId : allowed) {
+            if (manifest.declarationId().equals(declarationId)) {
                 return;
             }
         }
-        throw new IllegalArgumentException("Command type " + manifest.type() + " is not valid here");
+        throw new IllegalArgumentException("Command declaration " + manifest.declarationId() + " is not valid here");
     }
 
     public record CommandSubmissionReceipt(
         UUID commandId,
-        CommandType commandType,
+        String declarationId,
         String aggregateScope,
         String commandDomain,
         String commandTopic,
@@ -1335,9 +1323,7 @@ public final class DataAuthority {
             if (commandId == null) {
                 throw new IllegalArgumentException("commandId is required");
             }
-            if (commandType == null) {
-                throw new IllegalArgumentException("commandType is required");
-            }
+            declarationId = requireText(declarationId, "declarationId");
             aggregateScope = requireText(aggregateScope, "aggregateScope");
             commandDomain = requireText(commandDomain, "commandDomain");
             commandTopic = requireText(commandTopic, "commandTopic");
@@ -1358,7 +1344,7 @@ public final class DataAuthority {
         public Map<String, Object> payload() {
             java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
             values.put("commandId", commandId.toString());
-            values.put("commandType", commandType.name());
+            values.put("declarationId", declarationId);
             values.put("aggregateScope", aggregateScope);
             values.put("commandDomain", commandDomain);
             values.put("commandTopic", commandTopic);
@@ -1449,7 +1435,7 @@ public final class DataAuthority {
     public record CommandRefusalReceipt(
         String sourceProvider,
         UUID commandId,
-        String commandType,
+        String declarationId,
         String aggregateScope,
         String originNode,
         String targetNode,
@@ -1469,7 +1455,7 @@ public final class DataAuthority {
             if (commandId == null) {
                 throw new IllegalArgumentException("commandId is required");
             }
-            commandType = normalize(commandType);
+            declarationId = normalize(declarationId);
             aggregateScope = normalize(aggregateScope);
             originNode = normalize(originNode);
             targetNode = normalize(targetNode);
@@ -1487,7 +1473,7 @@ public final class DataAuthority {
             String expectedFingerprint = fingerprint(
                 sourceProvider,
                 commandId,
-                commandType,
+                declarationId,
                 aggregateScope,
                 originNode,
                 targetNode,
@@ -1510,7 +1496,7 @@ public final class DataAuthority {
         public static CommandRefusalReceipt create(
             String sourceProvider,
             UUID commandId,
-            String commandType,
+            String declarationId,
             String aggregateScope,
             String originNode,
             String targetNode,
@@ -1525,7 +1511,7 @@ public final class DataAuthority {
             return new CommandRefusalReceipt(
                 sourceProvider,
                 commandId,
-                commandType,
+                declarationId,
                 aggregateScope,
                 originNode,
                 targetNode,
@@ -1547,7 +1533,7 @@ public final class DataAuthority {
             return new CommandRefusalReceipt(
                 string(raw.get("sourceProvider")),
                 uuid(raw.get("commandId")),
-                string(raw.get("commandType")),
+                string(raw.get("declarationId")),
                 string(raw.get("aggregateScope")),
                 string(raw.get("originNode")),
                 string(raw.get("targetNode")),
@@ -1568,7 +1554,7 @@ public final class DataAuthority {
 
         public boolean refused() {
             return rejectionReason != RejectionReason.NONE
-                && known(commandType)
+                && known(declarationId)
                 && known(aggregateScope)
                 && known(originNode)
                 && known(targetNode)
@@ -1583,7 +1569,7 @@ public final class DataAuthority {
             LinkedHashMap<String, Object> values = new LinkedHashMap<>();
             values.put("sourceProvider", sourceProvider);
             values.put("commandId", commandId.toString());
-            values.put("commandType", commandType);
+            values.put("declarationId", declarationId);
             values.put("aggregateScope", aggregateScope);
             values.put("originNode", originNode);
             values.put("targetNode", targetNode);
@@ -1602,7 +1588,7 @@ public final class DataAuthority {
         private static String fingerprint(
             String sourceProvider,
             UUID commandId,
-            String commandType,
+            String declarationId,
             String aggregateScope,
             String originNode,
             String targetNode,
@@ -1617,7 +1603,7 @@ public final class DataAuthority {
             LinkedHashMap<String, Object> values = new LinkedHashMap<>();
             values.put("sourceProvider", sourceProvider);
             values.put("commandId", commandId.toString());
-            values.put("commandType", commandType);
+            values.put("declarationId", declarationId);
             values.put("aggregateScope", aggregateScope);
             values.put("originNode", originNode);
             values.put("targetNode", targetNode);

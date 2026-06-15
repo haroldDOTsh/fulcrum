@@ -722,13 +722,15 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                     return result;
                 }
 
-                DataAuthority.CommandResult result = switch (command.type()) {
-                    case RECORD_PLAYER_LOGIN, START_SESSION -> persistPlayerProfile(connection, command, true);
-                    case RENEW_SESSION -> persistPlayerProfile(connection, command, true);
-                    case RECORD_PLAYER_LOGOUT, END_SESSION -> persistPlayerProfile(connection, command, false);
-                    case GRANT_RANK, REVOKE_RANK -> persistRankProjection(connection, command);
-                    case RECORD_MATCH_START -> persistMatchStart(connection, command);
-                    case RECORD_MATCH_END -> persistMatchEnd(connection, command);
+                DataAuthority.CommandResult result = switch (command.declarationId()) {
+                    case "RECORD_PLAYER_LOGIN", "START_SESSION" -> persistPlayerProfile(connection, command, true);
+                    case "RENEW_SESSION" -> persistPlayerProfile(connection, command, true);
+                    case "RECORD_PLAYER_LOGOUT", "END_SESSION" -> persistPlayerProfile(connection, command, false);
+                    case "GRANT_RANK", "REVOKE_RANK" -> persistRankProjection(connection, command);
+                    case "RECORD_MATCH_START" -> persistMatchStart(connection, command);
+                    case "RECORD_MATCH_END" -> persistMatchEnd(connection, command);
+                    default -> throw new IllegalArgumentException(
+                        "Unsupported authority command declaration: " + command.declarationId());
                 };
 
                 recordCommand(connection, command, result, fingerprint);
@@ -743,7 +745,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                         connection,
                         command.commandId(),
                         settlement.watermark().sourceEventId(),
-                        command.type().name(),
+                        command.declarationId(),
                         settlement
                     );
                 }
@@ -788,9 +790,9 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         Map<String, Object> payload = payload(command);
         Timestamp timestamp = timestamp(longValue(payload, "timestamp", System.currentTimeMillis()));
 
-        if (command.type() == DataAuthority.CommandType.START_SESSION
-            || command.type() == DataAuthority.CommandType.RENEW_SESSION
-            || command.type() == DataAuthority.CommandType.END_SESSION) {
+        if ("START_SESSION".equals(command.declarationId())
+            || "RENEW_SESSION".equals(command.declarationId())
+            || "END_SESSION".equals(command.declarationId())) {
             persistPlayerSession(connection, command, playerId, timestamp);
         }
 
@@ -810,7 +812,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             return;
         }
 
-        boolean ending = command.type() == DataAuthority.CommandType.END_SESSION;
+        boolean ending = "END_SESSION".equals(command.declarationId());
         String state = ending ? "ENDED" : "ACTIVE";
         String proxyId = string(payload, "currentProxy", null);
         String serverId = string(payload, "currentServer", null);
@@ -872,7 +874,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             statement.setObject(1, UUID.randomUUID());
             statement.setObject(2, playerId);
             statement.setString(3, primaryRank);
-            statement.setString(4, command.type().name());
+            statement.setString(4, command.declarationId());
             statement.setString(5, command.actorId());
             statement.setString(6, gson.toJson(payload));
             statement.executeUpdate();
@@ -1068,7 +1070,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?::jsonb, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)
             """)) {
             statement.setObject(1, command.commandId());
-            statement.setString(2, command.type().name());
+            statement.setString(2, command.declarationId());
             statement.setInt(3, command.manifest().schemaVersion());
             statement.setString(4, command.actorId());
             statement.setString(5, command.scope());
@@ -1113,7 +1115,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             statement.setObject(1, originalCommandId);
             statement.setObject(2, command.commandId());
             statement.setString(3, command.idempotencyKey());
-            statement.setString(4, command.type().name());
+            statement.setString(4, command.declarationId());
             statement.setString(5, command.actorId());
             statement.setString(6, command.scope());
             statement.setString(7, expectedFingerprint);
@@ -1161,7 +1163,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             statement.setString(4, aggregate.type());
             statement.setString(5, aggregate.id());
             statement.setLong(6, result.revision());
-            statement.setString(7, command.type().name());
+            statement.setString(7, command.declarationId());
             statement.setString(8, gson.toJson(eventPayload));
             statement.setString(9, gson.toJson(provenancePayload(command)));
             statement.setTimestamp(10, eventCreatedAt);
@@ -1289,7 +1291,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         material.put("aggregateType", aggregate.type());
         material.put("aggregateId", aggregate.id());
         material.put("revision", result.revision());
-        material.put("eventType", command.type().name());
+        material.put("eventType", command.declarationId());
         material.put("eventFingerprint", eventFingerprint);
         material.put("createdAt", eventCreatedAt.toInstant().toString());
         return new EventChainHash(
@@ -1789,8 +1791,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
     }
 
     private AggregateMetadata aggregateMetadata(DataAuthority.AuthorityCommand command) {
-        return switch (command.type()) {
-            case GRANT_RANK, REVOKE_RANK -> {
+        return switch (command.declarationId()) {
+            case "GRANT_RANK", "REVOKE_RANK" -> {
                 UUID playerId = playerId(command);
                 yield new AggregateMetadata(
                     aggregateKey(command),
@@ -1798,7 +1800,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                     playerId == null ? command.scope() : playerId.toString()
                 );
             }
-            case RECORD_MATCH_START, RECORD_MATCH_END -> {
+            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> {
                 UUID matchId = matchId(command);
                 yield new AggregateMetadata(
                     aggregateKey(command),
@@ -1806,7 +1808,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                     matchId == null ? command.scope() : matchId.toString()
                 );
             }
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION -> {
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" -> {
                 UUID playerId = playerId(command);
                 yield new AggregateMetadata(
                     aggregateKey(command),
@@ -1814,6 +1816,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                     playerId == null ? command.scope() : playerId.toString()
                 );
             }
+            default -> throw new IllegalArgumentException(
+                "Unsupported authority command declaration: " + command.declarationId());
         };
     }
 
@@ -1823,11 +1827,13 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         DataAuthority.CommandResult result,
         Map<String, Object> fallback
     ) throws SQLException {
-        return switch (command.type()) {
-            case GRANT_RANK, REVOKE_RANK -> rankStatePayload(connection, playerId(command), result.revision(), fallback);
-            case RECORD_MATCH_START, RECORD_MATCH_END -> matchStatePayload(connection, matchId(command), result.revision(), fallback);
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
+        return switch (command.declarationId()) {
+            case "GRANT_RANK", "REVOKE_RANK" -> rankStatePayload(connection, playerId(command), result.revision(), fallback);
+            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> matchStatePayload(connection, matchId(command), result.revision(), fallback);
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" ->
                 profileStatePayload(connection, playerId(command), result.revision(), fallback);
+            default -> throw new IllegalArgumentException(
+                "Unsupported authority command declaration: " + command.declarationId());
         };
     }
 
@@ -1836,8 +1842,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         DataAuthority.CommandResult result
     ) {
         Map<String, Object> payload = payload(command);
-        return switch (command.type()) {
-            case GRANT_RANK, REVOKE_RANK -> {
+        return switch (command.declarationId()) {
+            case "GRANT_RANK", "REVOKE_RANK" -> {
                 UUID playerId = playerId(command);
                 String primaryRank = string(payload, "primaryRank", "DEFAULT");
                 List<String> ranks = stringList(payload.get("ranks"));
@@ -1851,12 +1857,12 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 state.put("revision", result.revision());
                 yield state;
             }
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION -> {
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" -> {
                 UUID playerId = playerId(command);
                 String username = string(payload, "username", "unknown");
-                boolean online = switch (command.type()) {
-                    case RECORD_PLAYER_LOGIN, START_SESSION, RENEW_SESSION -> true;
-                    case RECORD_PLAYER_LOGOUT, END_SESSION -> false;
+                boolean online = switch (command.declarationId()) {
+                    case "RECORD_PLAYER_LOGIN", "START_SESSION", "RENEW_SESSION" -> true;
+                    case "RECORD_PLAYER_LOGOUT", "END_SESSION" -> false;
                     default -> false;
                 };
                 Map<String, Object> state = new LinkedHashMap<>();
@@ -1871,7 +1877,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 state.put("revision", result.revision());
                 yield state;
             }
-            case RECORD_MATCH_START, RECORD_MATCH_END -> {
+            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> {
                 UUID matchId = matchId(command);
                 Map<String, Object> state = new LinkedHashMap<>();
                 state.put("matchId", matchId == null ? null : matchId.toString());
@@ -1880,7 +1886,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 state.put("serverId", string(payload, "serverId", null));
                 state.put("slotId", string(payload, "slotId", null));
                 state.put("state", string(payload, "state",
-                    command.type() == DataAuthority.CommandType.RECORD_MATCH_END ? "ENDED" : "STARTED"));
+                    "RECORD_MATCH_END".equals(command.declarationId()) ? "ENDED" : "STARTED"));
                 state.put("startedAt", payload.get("startedAt"));
                 state.put("endedAt", payload.get("endedAt"));
                 state.put("metadata", payload.getOrDefault("slotMetadata", Map.of()));
@@ -1888,6 +1894,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 state.put("revision", result.revision());
                 yield state;
             }
+            default -> throw new IllegalArgumentException(
+                "Unsupported authority command declaration: " + command.declarationId());
         };
     }
 
@@ -1997,7 +2005,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("commandId", command.commandId().toString());
-        payload.put("commandType", command.type().name());
+        payload.put("declarationId", command.declarationId());
         payload.put("actorId", command.actorId());
         payload.put("scope", command.scope());
         payload.put("revision", result.revision());

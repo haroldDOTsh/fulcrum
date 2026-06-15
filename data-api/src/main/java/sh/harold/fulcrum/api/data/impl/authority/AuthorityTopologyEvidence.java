@@ -23,7 +23,7 @@ public final class AuthorityTopologyEvidence {
     ) {
         Objects.requireNonNull(command, "command");
         DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contract(command.type());
+            DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId());
         AuthorityCommandRoute effectiveRoute = route == null
             ? AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope())
             : route;

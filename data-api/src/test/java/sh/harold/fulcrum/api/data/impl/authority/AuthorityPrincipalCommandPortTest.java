@@ -90,7 +90,7 @@ class AuthorityPrincipalCommandPortTest {
         return new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 actorId,
                 "rank:player:" + playerId,
                 "rank:" + commandId,

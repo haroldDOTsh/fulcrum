@@ -57,19 +57,19 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         PlayerSnapshot snapshot = PlayerSnapshot.capture(runtime, event.getPlayer(), true);
-        runtime.runAsync("player data join save", () -> submitPlayerCommand(DataAuthority.CommandType.RECORD_PLAYER_LOGIN, snapshot));
+        runtime.runAsync("player data join save", () -> submitPlayerCommand("RECORD_PLAYER_LOGIN", snapshot));
     }
     
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
         PlayerSnapshot snapshot = PlayerSnapshot.capture(runtime, event.getPlayer(), false);
-        runtime.runAsync("player data quit save", () -> submitPlayerCommand(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT, snapshot));
+        runtime.runAsync("player data quit save", () -> submitPlayerCommand("RECORD_PLAYER_LOGOUT", snapshot));
     }
 
-    private void submitPlayerCommand(DataAuthority.CommandType commandType, PlayerSnapshot snapshot) {
+    private void submitPlayerCommand(String declarationId, PlayerSnapshot snapshot) {
         AuthorityCommands.PlayerCommands playerCommands = AuthorityCommands.actor("paper-runtime")
             .player(snapshot.playerId());
-        DataAuthority.PlayerProfileCommand command = commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN
+        DataAuthority.PlayerProfileCommand command = "RECORD_PLAYER_LOGIN".equals(declarationId)
             ? playerCommands.recordLogin(
                 snapshot.username(),
                 snapshot.capturedAtMillis(),
@@ -107,7 +107,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
                 logger.warning("Player command rejected for " + snapshot.username() + ": " + result.rejectionReason()
                     + " " + result.message());
             } else {
-                logger.fine("Submitted " + commandType + " for " + snapshot.username());
+                logger.fine("Submitted " + declarationId + " for " + snapshot.username());
             }
         });
     }
@@ -123,7 +123,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             if (error != null) {
                 logger.log(Level.WARNING, "Failed to durably submit player command for " + username, error);
             } else {
-                logger.fine("Durably submitted " + command.type() + " for " + username
+                logger.fine("Durably submitted " + command.declarationId() + " for " + username
                     + " to " + receipt.commandTopic() + "[" + receipt.partition() + "]@" + receipt.offset());
             }
         });

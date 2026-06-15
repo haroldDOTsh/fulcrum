@@ -269,7 +269,7 @@ public final class PostgresAuthorityStateRestoreDrill {
                 mismatches.add("command.result_payload.settled expected true but was false");
             }
             if (event != null) {
-                requireEqual(mismatches, "command.command_type", event.eventType(), command.commandType());
+                requireEqual(mismatches, "command.command_type", event.eventType(), command.declarationId());
                 requireEqual(mismatches, "command.result_event_type", event.eventType(), command.resultEventType());
             }
         }
@@ -741,7 +741,7 @@ public final class PostgresAuthorityStateRestoreDrill {
 
     private record CommandLineageRow(
         UUID commandId,
-        String commandType,
+        String declarationId,
         boolean accepted,
         UUID resultEventId,
         String resultEventType,

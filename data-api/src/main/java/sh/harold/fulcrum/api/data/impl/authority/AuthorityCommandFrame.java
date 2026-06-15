@@ -45,7 +45,8 @@ record AuthorityCommandFrame(
     static AuthorityCommandFrame fromCommand(DataAuthority.AuthorityCommand command) {
         DataAuthorityCommandContracts.validate(command);
         DataAuthority.CommandManifest manifest = command.manifest();
-        DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contract(manifest.type());
+        DataAuthorityCommandContracts.CommandContract contract =
+            DataAuthorityCommandContracts.contractByDeclarationId(manifest.declarationId());
         return new AuthorityCommandFrame(
             manifest.commandId(),
             contract.declarationId(),
@@ -105,10 +106,10 @@ record AuthorityCommandFrame(
     }
 
     DataAuthority.AuthorityCommand toCommand() {
-        DataAuthority.CommandType type = type();
+        String commandDeclarationId = declarationId;
         DataAuthority.CommandManifest manifest = new DataAuthority.CommandManifest(
             commandId,
-            type,
+            commandDeclarationId,
             actorId,
             scope,
             idempotencyKey,
@@ -118,8 +119,8 @@ record AuthorityCommandFrame(
             schemaVersion,
             provenance
         );
-        DataAuthority.AuthorityCommand command = switch (type) {
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT -> new DataAuthority.PlayerProfileCommand(
+        DataAuthority.AuthorityCommand command = switch (commandDeclarationId) {
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" -> new DataAuthority.PlayerProfileCommand(
                 manifest,
                 uuid(payload.get("playerId")),
                 string(payload.get("username")),
@@ -136,7 +137,7 @@ record AuthorityCommandFrame(
                 nullableInt(payload.get("foodLevel")),
                 string(payload.get("playtimeStartField"))
             );
-            case START_SESSION, RENEW_SESSION, END_SESSION -> new DataAuthority.PlayerSessionCommand(
+            case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> new DataAuthority.PlayerSessionCommand(
                 manifest,
                 uuid(payload.get("playerId")),
                 string(payload.get("username")),
@@ -148,13 +149,13 @@ record AuthorityCommandFrame(
                 nullableInt(payload.get("protocolVersion")),
                 string(payload.get("disconnectReason"))
             );
-            case GRANT_RANK, REVOKE_RANK -> new DataAuthority.PlayerRankCommand(
+            case "GRANT_RANK", "REVOKE_RANK" -> new DataAuthority.PlayerRankCommand(
                 manifest,
                 uuid(payload.get("playerId")),
                 string(payload.get("primaryRank")),
                 stringList(payload.get("ranks"))
             );
-            case RECORD_MATCH_START, RECORD_MATCH_END -> new DataAuthority.MatchCommand(
+            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> new DataAuthority.MatchCommand(
                 manifest,
                 uuid(payload.get("matchId")),
                 string(payload.get("familyId")),
@@ -167,13 +168,10 @@ record AuthorityCommandFrame(
                 stringObjectMap(mapValue(payload.get("slotMetadata"))),
                 participants(payload.get("participants"))
             );
+            default -> throw new IllegalArgumentException("Unsupported authority command declaration: " + commandDeclarationId);
         };
         DataAuthorityCommandContracts.validate(command);
         return command;
-    }
-
-    DataAuthority.CommandType type() {
-        return DataAuthorityCommandContracts.contractByDeclarationId(declarationId).type();
     }
 
     private static DataAuthority.CommandProvenance provenance(Map<?, ?> raw) {

@@ -1075,7 +1075,7 @@ class WatermarkedDataAuthorityCacheTest {
         return new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 "rank-service",
                 "rank:player:" + playerId,
                 commandId.toString(),
@@ -1097,7 +1097,7 @@ class WatermarkedDataAuthorityCacheTest {
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         return new DataAuthority.CommandSubmissionReceipt(
             command.commandId(),
-            command.type(),
+            command.declarationId(),
             command.scope(),
             route.domain(),
             route.commandTopic(),
@@ -1142,7 +1142,7 @@ class WatermarkedDataAuthorityCacheTest {
         return new DataAuthority.PlayerProfileCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
+                "RECORD_PLAYER_LOGIN",
                 "profile-service",
                 "player:" + playerId,
                 commandId.toString(),

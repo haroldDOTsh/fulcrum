@@ -32,7 +32,7 @@ class AuthorityCommandRouteTest {
         DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 UUID.randomUUID(),
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 "rank-service",
                 "rank:player:" + playerId,
                 "rank:" + playerId,
@@ -58,10 +58,10 @@ class AuthorityCommandRouteTest {
             "static AuthorityCommandRoute fromCommand",
             "static AuthorityCommandRoute fromDeclarationId"
         ))
-            .contains("DataAuthorityCommandContracts.contract(command.type())")
+            .contains("DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId())")
             .contains("fromDeclarationId(contract.declarationId(), command.scope())")
-            .doesNotContain("from(command.type(), command.scope())");
-        assertThat(source).doesNotContain("static AuthorityCommandRoute from(DataAuthority.CommandType type");
+            .doesNotContain("from(command.declarationId(), command.scope())");
+        assertThat(source).doesNotContain("static AuthorityCommandRoute from(String type");
     }
 
     @Test

@@ -167,7 +167,7 @@ public final class AuthorityFencingCommandPort implements DataAuthority.CommandP
         DataAuthority.CommandManifest manifest = command.manifest();
         return new DataAuthority.CommandManifest(
             manifest.commandId(),
-            manifest.type(),
+            manifest.declarationId(),
             manifest.actorId(),
             manifest.scope(),
             manifest.idempotencyKey(),

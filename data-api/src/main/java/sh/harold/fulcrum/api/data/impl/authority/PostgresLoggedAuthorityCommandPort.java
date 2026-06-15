@@ -125,7 +125,7 @@ public final class PostgresLoggedAuthorityCommandPort implements AuthorityComman
                  ON CONFLICT (command_id) DO NOTHING
                  """)) {
             statement.setObject(1, command.commandId());
-            statement.setString(2, command.type().name());
+            statement.setString(2, command.declarationId());
             statement.setString(3, command.scope());
             statement.setString(4, command.idempotencyKey());
             statement.setString(5, command.actorId());

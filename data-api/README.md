@@ -23,7 +23,7 @@ long now = System.currentTimeMillis();
 commands.submit(new DataAuthority.PlayerRankCommand(
     DataAuthority.CommandManifest.create(
         UUID.randomUUID(),
-        DataAuthority.CommandType.GRANT_RANK,
+        "GRANT_RANK",
         "rank-admin:" + actorId,
         "player:" + playerId,
         "rank-grant:" + playerId + ":" + now,

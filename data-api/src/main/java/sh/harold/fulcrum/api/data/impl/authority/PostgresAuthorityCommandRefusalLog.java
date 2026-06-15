@@ -101,7 +101,7 @@ public final class PostgresAuthorityCommandRefusalLog {
                  """)) {
             statement.setObject(1, frame.refusalId());
             statement.setObject(2, result.commandId());
-            statement.setString(3, frame.commandType());
+            statement.setString(3, frame.declarationId());
             statement.setString(4, frame.aggregateScope());
             statement.setString(5, frame.idempotencyKey());
             statement.setString(6, frame.claimedActor());
@@ -145,7 +145,7 @@ public final class PostgresAuthorityCommandRefusalLog {
         int contractVersion = intValue(wire.get("schemaVersion"), DataAuthority.COMMAND_SCHEMA_VERSION);
         Map<String, Object> commandPayload = stringObjectMap(mapValue(wire.get("payload")));
         String declarationId = firstKnown(string(wire.get("declarationId")), "unknown");
-        String commandType = commandType(declarationId);
+        String effectiveDeclarationId = declarationId(declarationId);
         String payloadHash = AuthorityCommandFingerprints.hash(
             AuthorityCommandFingerprints.canonicalJson(commandPayload)
         );
@@ -189,7 +189,7 @@ public final class PostgresAuthorityCommandRefusalLog {
 
         return new RefusalFrame(
             UUID.randomUUID(),
-            commandType,
+            effectiveDeclarationId,
             string(manifestPayload.get("scope")),
             string(manifestPayload.get("idempotencyKey")),
             string(manifestPayload.get("actorId")),
@@ -259,9 +259,9 @@ public final class PostgresAuthorityCommandRefusalLog {
         return value == null || value.isBlank() || "unknown".equalsIgnoreCase(value) ? fallback : value;
     }
 
-    private static String commandType(String declarationId) {
+    private static String declarationId(String declarationId) {
         try {
-            return DataAuthorityCommandContracts.contractByDeclarationId(declarationId).type().name();
+            return DataAuthorityCommandContracts.contractByDeclarationId(declarationId).declarationId();
         } catch (RuntimeException ignored) {
             return "unknown";
         }
@@ -276,7 +276,7 @@ public final class PostgresAuthorityCommandRefusalLog {
 
     private record RefusalFrame(
         UUID refusalId,
-        String commandType,
+        String declarationId,
         String aggregateScope,
         String idempotencyKey,
         String claimedActor,

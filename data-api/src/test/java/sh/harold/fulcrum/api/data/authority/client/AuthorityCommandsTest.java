@@ -20,7 +20,7 @@ class AuthorityCommandsTest {
             .grantRank("VIP", List.of("VIP", "DEFAULT"), 42L, 1_000L);
 
         DataAuthorityCommandContracts.validate(command);
-        assertThat(command.type()).isEqualTo(DataAuthority.CommandType.GRANT_RANK);
+        assertThat(command.declarationId()).isEqualTo("GRANT_RANK");
         assertThat(command.actorId()).isEqualTo("rank-service");
         assertThat(command.scope()).isEqualTo("rank:player:" + playerId);
         assertThat(command.idempotencyKey()).isEqualTo("GRANT_RANK:" + playerId + ":1000");
@@ -46,10 +46,10 @@ class AuthorityCommandsTest {
         DataAuthorityCommandContracts.validate(login);
         DataAuthorityCommandContracts.validate(logout);
         assertThat(login.scope()).isEqualTo("player:" + playerId);
-        assertThat(login.type()).isEqualTo(DataAuthority.CommandType.RECORD_PLAYER_LOGIN);
+        assertThat(login.declarationId()).isEqualTo("RECORD_PLAYER_LOGIN");
         assertThat(login.level()).isEqualTo(12);
         assertThat(logout.scope()).isEqualTo("player:" + playerId);
-        assertThat(logout.type()).isEqualTo(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT);
+        assertThat(logout.declarationId()).isEqualTo("RECORD_PLAYER_LOGOUT");
         assertThat(logout.playtimeStartField()).isEqualTo("lastJoin");
     }
 
@@ -64,7 +64,7 @@ class AuthorityCommandsTest {
 
         DataAuthorityCommandContracts.validate(command);
         assertThat(command.scope()).isEqualTo("player:" + playerId);
-        assertThat(command.type()).isEqualTo(DataAuthority.CommandType.END_SESSION);
+        assertThat(command.declarationId()).isEqualTo("END_SESSION");
         assertThat(command.disconnectReason()).isEqualTo("quit");
     }
 

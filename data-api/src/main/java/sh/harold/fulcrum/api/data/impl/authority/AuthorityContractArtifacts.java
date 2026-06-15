@@ -1,6 +1,5 @@
 package sh.harold.fulcrum.api.data.impl.authority;
 
-import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.data.impl.postgres.FulcrumSchemaContract;
 
 import java.nio.charset.StandardCharsets;
@@ -121,7 +120,6 @@ public final class AuthorityContractArtifacts {
         AuthorityLogTopicPolicy statePolicy = requirePolicy(policiesByTopic, route.stateTopic());
         return new CommandRow(
             contract.declarationId(),
-            contract.type(),
             contract.domain(),
             contract.deliveryMode(),
             contract.revisionPolicy(),
@@ -544,7 +542,6 @@ public final class AuthorityContractArtifacts {
 
     public record CommandRow(
         String declarationId,
-        DataAuthority.CommandType type,
         String domain,
         DataAuthorityCommandContracts.CommandDeliveryMode deliveryMode,
         DataAuthorityCommandContracts.CommandRevisionPolicy revisionPolicy,
@@ -568,7 +565,6 @@ public final class AuthorityContractArtifacts {
     ) {
         public CommandRow {
             declarationId = requireText(declarationId, "declarationId");
-            type = Objects.requireNonNull(type, "type");
             domain = requireText(domain, "domain");
             deliveryMode = Objects.requireNonNull(deliveryMode, "deliveryMode");
             revisionPolicy = Objects.requireNonNull(revisionPolicy, "revisionPolicy");

@@ -178,7 +178,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     public CompletableFuture<Void> setPrimaryRank(UUID playerId, Rank rank) {
         return currentRankState(playerId).thenCompose(state -> {
             Set<Rank> newRanks = immutableWith(state.ranks(), rank);
-            return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, rank, newRanks, state.revision())
+            return submitRankCommand("GRANT_RANK", playerId, rank, newRanks, state.revision())
                 .thenAccept(revision -> cacheRanks(playerId, rank, newRanks, revision))
                 .thenCompose(ignored -> updateCommands(playerId, "primary rank change"));
         });
@@ -193,7 +193,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                 ? rank
                 : currentPrimary;
 
-            return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, newPrimary, newRanks, state.revision())
+            return submitRankCommand("GRANT_RANK", playerId, newPrimary, newRanks, state.revision())
                 .thenAccept(revision -> cacheRanks(playerId, newPrimary, newRanks, revision))
                 .thenCompose(ignored -> updateCommands(playerId, "rank addition"));
         });
@@ -207,7 +207,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
                 return CompletableFuture.completedFuture(null);
             }
             Rank newPrimary = getEffectiveRankFromSet(newRanks);
-            return submitRankCommand(DataAuthority.CommandType.REVOKE_RANK, playerId, newPrimary, newRanks, state.revision())
+            return submitRankCommand("REVOKE_RANK", playerId, newPrimary, newRanks, state.revision())
                 .thenAccept(revision -> cacheRanks(playerId, newPrimary, newRanks, revision))
                 .thenCompose(ignored -> updateCommands(playerId, "rank removal"));
         });
@@ -243,7 +243,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     public CompletableFuture<Void> resetRanks(UUID playerId) {
         return currentRankState(playerId).thenCompose(state -> {
             Set<Rank> newRanks = immutableWith(null, Rank.DEFAULT);
-            return submitRankCommand(DataAuthority.CommandType.GRANT_RANK, playerId, Rank.DEFAULT, newRanks, state.revision())
+            return submitRankCommand("GRANT_RANK", playerId, Rank.DEFAULT, newRanks, state.revision())
                 .thenAccept(revision -> cacheRanks(playerId, Rank.DEFAULT, newRanks, revision))
                 .thenCompose(ignored -> updateCommands(playerId, "rank reset"));
         });
@@ -292,7 +292,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     }
     
     private CompletableFuture<Long> submitRankCommand(
-        DataAuthority.CommandType commandType,
+        String declarationId,
         UUID playerId,
         Rank primary,
         Set<Rank> ranks,
@@ -306,10 +306,10 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         long now = System.currentTimeMillis();
         List<String> rankNames = safeRanks.stream().map(Enum::name).collect(Collectors.toList());
         AuthorityCommands.RankCommands rankCommands = AuthorityCommands.actor("rank-service").rank(playerId);
-        DataAuthority.PlayerRankCommand command = switch (commandType) {
-            case GRANT_RANK -> rankCommands.grantRank(safePrimary.name(), rankNames, expectedRevision, now);
-            case REVOKE_RANK -> rankCommands.revokeRank(safePrimary.name(), rankNames, expectedRevision, now);
-            default -> throw new IllegalArgumentException("Unsupported rank command type " + commandType);
+        DataAuthority.PlayerRankCommand command = switch (declarationId) {
+            case "GRANT_RANK" -> rankCommands.grantRank(safePrimary.name(), rankNames, expectedRevision, now);
+            case "REVOKE_RANK" -> rankCommands.revokeRank(safePrimary.name(), rankNames, expectedRevision, now);
+            default -> throw new IllegalArgumentException("Unsupported rank command declaration " + declarationId);
         };
 
         return submitRankCommand(command, playerId);

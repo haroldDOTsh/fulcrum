@@ -25,28 +25,28 @@ class DataAuthorityCommandContractManifestTest {
             AuthorityDomainDeclarations.declarationIds()
         );
         for (DataAuthorityCommandContracts.CommandContract contract : CONTRACTS.values()) {
-            assertThat(contract.declarationId()).as(contract.type() + " declaration id")
+            assertThat(contract.declarationId()).as(contract.declarationId() + " declaration id")
                 .isNotBlank();
             assertThat(contract.allowedPayloadFields())
-                .as(contract.type() + " allowed payload fields")
+                .as(contract.declarationId() + " allowed payload fields")
                 .containsAll(contract.requiredPayloadFields());
             assertThat(contract.domain())
-                .as(contract.type() + " route domain")
+                .as(contract.declarationId() + " route domain")
                 .isEqualTo(AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), "sample").domain());
             assertThat(contract.deliveryMode())
-                .as(contract.type() + " delivery mode")
+                .as(contract.declarationId() + " delivery mode")
                 .isNotNull();
             assertThat(contract.commandLogStore())
-                .as(contract.type() + " command log store")
+                .as(contract.declarationId() + " command log store")
                 .isEqualTo("kafka");
             assertThat(contract.hotProjectionStore())
-                .as(contract.type() + " hot projection store")
+                .as(contract.declarationId() + " hot projection store")
                 .isEqualTo("cassandra");
             assertThat(contract.historyStore())
-                .as(contract.type() + " history store")
+                .as(contract.declarationId() + " history store")
                 .isEqualTo("postgresql");
             assertThat(contract.cacheStore())
-                .as(contract.type() + " cache store")
+                .as(contract.declarationId() + " cache store")
                 .isEqualTo("valkey");
         }
     }
@@ -57,12 +57,12 @@ class DataAuthorityCommandContractManifestTest {
             for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
                 DataAuthorityCommandContracts.CommandContract contract = CONTRACTS.get(command.declarationId());
 
-                assertThat(contract).as(command.type() + " contract").isNotNull();
+                assertThat(contract).as(command.declarationId() + " contract").isNotNull();
                 assertThat(contract.declarationId()).isEqualTo(command.declarationId());
                 assertThat(contract.commandClass()).isEqualTo(command.commandClass());
                 assertThat(contract.domain()).isEqualTo(domain.domain());
-                assertThat(AuthorityDomainDeclarations.command(command.declarationId()).type())
-                    .isEqualTo(command.type());
+                assertThat(AuthorityDomainDeclarations.command(command.declarationId()).declarationId())
+                    .isEqualTo(command.declarationId());
                 assertThat(contract.deliveryMode()).isEqualTo(command.deliveryMode());
                 assertThat(contract.revisionPolicy()).isEqualTo(command.revisionPolicy());
                 assertThat(contract.commandLogStore()).isEqualTo(domain.commandLogStores().get(0));
@@ -156,9 +156,9 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void contractCommandsRoundTripThroughAuthorityLogTransport() {
-        Map<DataAuthority.CommandType, DataAuthority.AuthorityCommand> received = new LinkedHashMap<>();
+        Map<String, DataAuthority.AuthorityCommand> received = new LinkedHashMap<>();
         DataAuthority.CommandPort commandPort = new AuthorityPrincipalCommandPort(command -> {
-            received.put(command.type(), command);
+            received.put(command.declarationId(), command);
             return CompletableFuture.completedFuture(acceptedResult(
                 command,
                 Math.max(1L, command.expectedRevision() + 1L)
@@ -168,17 +168,17 @@ class DataAuthorityCommandContractManifestTest {
         AuthorityLogCommandProcessor processor = new AuthorityLogCommandProcessor(log, commandPort);
 
         for (DataAuthorityCommandContracts.CommandContract contract : CONTRACTS.values()) {
-            DataAuthority.AuthorityCommand command = sampleCommand(contract.type());
+            DataAuthority.AuthorityCommand command = sampleCommand(contract.declarationId());
             AuthorityLogRecord commandRecord = AuthorityLogFrames.appendCommand(log, command);
             DataAuthority.CommandResult result = processor.process(
                 commandRecord,
                 writerClaim(command, contract.domain())
             ).toCompletableFuture().join().commandResult();
-            DataAuthority.AuthorityCommand decoded = received.get(contract.type());
+            DataAuthority.AuthorityCommand decoded = received.get(contract.declarationId());
 
-            assertThat(result.accepted()).as(contract.type() + " result").isTrue();
-            assertThat(decoded).as(contract.type() + " decoded command").isInstanceOf(contract.commandClass());
-            assertThat(decoded.actorId()).as(contract.type() + " actor").isEqualTo("contract-test");
+            assertThat(result.accepted()).as(contract.declarationId() + " result").isTrue();
+            assertThat(decoded).as(contract.declarationId() + " decoded command").isInstanceOf(contract.commandClass());
+            assertThat(decoded.actorId()).as(contract.declarationId() + " actor").isEqualTo("contract-test");
             assertThat(AuthorityCommandRoute.fromCommand(decoded).domain()).isEqualTo(contract.domain());
             AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(decoded);
             assertThat(frame.manifestPayload())
@@ -192,7 +192,7 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void contractRejectsUnknownTopLevelPayloadFields() {
-        DataAuthority.AuthorityCommand command = sampleCommand(DataAuthority.CommandType.GRANT_RANK);
+        DataAuthority.AuthorityCommand command = sampleCommand("GRANT_RANK");
         Map<String, Object> payload = new java.util.LinkedHashMap<>(AuthorityCommandPayloads.payload(command));
         payload.put("legacyCollection", "player_ranks");
 
@@ -214,7 +214,7 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void contractRejectsUnsupportedSchemaVersion() {
-        DataAuthority.AuthorityCommand command = sampleCommand(DataAuthority.CommandType.GRANT_RANK);
+        DataAuthority.AuthorityCommand command = sampleCommand("GRANT_RANK");
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
@@ -234,7 +234,7 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void contractRejectsRouteDomainDrift() {
-        DataAuthority.AuthorityCommand command = sampleCommand(DataAuthority.CommandType.GRANT_RANK);
+        DataAuthority.AuthorityCommand command = sampleCommand("GRANT_RANK");
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
@@ -255,7 +255,7 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void contractRejectsPartitionKeyDrift() {
-        DataAuthority.AuthorityCommand command = sampleCommand(DataAuthority.CommandType.GRANT_RANK);
+        DataAuthority.AuthorityCommand command = sampleCommand("GRANT_RANK");
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
@@ -277,7 +277,7 @@ class DataAuthorityCommandContractManifestTest {
     @Test
     void contractRejectsScopePayloadAggregateDrift() {
         DataAuthority.PlayerRankCommand command = (DataAuthority.PlayerRankCommand)
-            sampleCommand(DataAuthority.CommandType.GRANT_RANK);
+            sampleCommand("GRANT_RANK");
         Map<String, Object> payload = new java.util.LinkedHashMap<>(AuthorityCommandPayloads.payload(command));
         UUID otherPlayerId = UUID.randomUUID();
         payload.put("playerId", otherPlayerId.toString());
@@ -305,7 +305,7 @@ class DataAuthorityCommandContractManifestTest {
     @Test
     void contractRejectsAnyRevisionForCompareRequiredCommands() {
         DataAuthority.AuthorityCommand command =
-            sampleCommand(DataAuthority.CommandType.GRANT_RANK, DataAuthority.ANY_REVISION);
+            sampleCommand("GRANT_RANK", DataAuthority.ANY_REVISION);
 
         assertThatThrownBy(() -> AuthorityCommandFrame.fromCommand(command))
             .isInstanceOf(DataAuthorityCommandContracts.CommandContractViolation.class)
@@ -315,12 +315,12 @@ class DataAuthorityCommandContractManifestTest {
             ).isEqualTo(DataAuthority.RejectionReason.STALE_REVISION));
     }
 
-    private static DataAuthority.AuthorityCommand sampleCommand(DataAuthority.CommandType type) {
+    private static DataAuthority.AuthorityCommand sampleCommand(String type) {
         return sampleCommand(type, expectedRevisionFor(type));
     }
 
     private static DataAuthority.AuthorityCommand sampleCommand(
-        DataAuthority.CommandType type,
+        String type,
         long expectedRevision
     ) {
         UUID commandId = UUID.randomUUID();
@@ -328,7 +328,7 @@ class DataAuthorityCommandContractManifestTest {
         UUID matchId = UUID.randomUUID();
         long now = System.currentTimeMillis();
         return switch (type) {
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT -> new DataAuthority.PlayerProfileCommand(
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" -> new DataAuthority.PlayerProfileCommand(
                 manifest(commandId, type, "player:" + playerId, now, expectedRevision),
                 playerId,
                 "ContractUser",
@@ -345,7 +345,7 @@ class DataAuthorityCommandContractManifestTest {
                 20,
                 "lastProxySession"
             );
-            case START_SESSION, RENEW_SESSION, END_SESSION -> new DataAuthority.PlayerSessionCommand(
+            case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> new DataAuthority.PlayerSessionCommand(
                 manifest(commandId, type, "player:" + playerId, now, expectedRevision),
                 playerId,
                 "ContractUser",
@@ -355,52 +355,53 @@ class DataAuthorityCommandContractManifestTest {
                 "proxy-1",
                 "127.0.0.1",
                 765,
-                type == DataAuthority.CommandType.END_SESSION ? "quit" : null
+                "END_SESSION".equals(type) ? "quit" : null
             );
-            case GRANT_RANK, REVOKE_RANK -> new DataAuthority.PlayerRankCommand(
+            case "GRANT_RANK", "REVOKE_RANK" -> new DataAuthority.PlayerRankCommand(
                 manifest(commandId, type, "rank:player:" + playerId, now, expectedRevision),
                 playerId,
-                type == DataAuthority.CommandType.GRANT_RANK ? "ADMIN" : "DEFAULT",
-                type == DataAuthority.CommandType.GRANT_RANK
+                "GRANT_RANK".equals(type) ? "ADMIN" : "DEFAULT",
+                "GRANT_RANK".equals(type)
                     ? List.of("DEFAULT", "ADMIN")
                     : List.of("DEFAULT")
             );
-            case RECORD_MATCH_START, RECORD_MATCH_END -> new DataAuthority.MatchCommand(
+            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> new DataAuthority.MatchCommand(
                 manifest(commandId, type, "match:" + matchId, now, expectedRevision),
                 matchId,
                 "duels",
                 "arena-1",
                 "server-1",
                 "slot-1",
-                type == DataAuthority.CommandType.RECORD_MATCH_START ? "STARTED" : "ENDED",
+                "RECORD_MATCH_START".equals(type) ? "STARTED" : "ENDED",
                 now,
-                type == DataAuthority.CommandType.RECORD_MATCH_END ? now + 1000L : null,
+                "RECORD_MATCH_END".equals(type) ? now + 1000L : null,
                 Map.of("variant", "standard"),
                 List.of(new DataAuthority.MatchParticipant(
                     playerId,
                     "red",
-                    type == DataAuthority.CommandType.RECORD_MATCH_END ? 1 : null,
+                    "RECORD_MATCH_END".equals(type) ? 1 : null,
                     "ACTIVE",
                     Map.of("kills", 1)
                 ))
             );
+            default -> throw new IllegalArgumentException("Unknown command declaration " + type);
         };
     }
 
-    private static long expectedRevisionFor(DataAuthority.CommandType type) {
+    private static long expectedRevisionFor(String type) {
         return switch (type) {
-            case GRANT_RANK, REVOKE_RANK -> 1L;
+            case "GRANT_RANK", "REVOKE_RANK" -> 1L;
             default -> DataAuthority.ANY_REVISION;
         };
     }
 
     private static String declarationId(DataAuthority.AuthorityCommand command) {
-        return DataAuthorityCommandContracts.contract(command.type()).declarationId();
+        return command.declarationId();
     }
 
     private static DataAuthority.CommandManifest manifest(
         UUID commandId,
-        DataAuthority.CommandType type,
+        String type,
         String scope,
         long now,
         long expectedRevision
@@ -410,7 +411,7 @@ class DataAuthorityCommandContractManifestTest {
             type,
             "contract-test",
             scope,
-            type.name() + ":" + commandId,
+            type + ":" + commandId,
             now + 5000L,
             "1",
             expectedRevision
@@ -453,11 +454,11 @@ class DataAuthorityCommandContractManifestTest {
     ) {
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         Object aggregateId = AuthorityCommandPayloads.payload(command)
-            .get(DataAuthorityCommandContracts.contract(command.type()).aggregateIdField());
+            .get(DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId()).aggregateIdField());
         DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
             "authority-log-test-authority",
             command.scope(),
-            projectionFamily(command.type()),
+            projectionFamily(command.declarationId()),
             aggregateId == null ? command.scope() : aggregateId.toString(),
             route.domain(),
             route.stateTopic(),
@@ -484,12 +485,13 @@ class DataAuthorityCommandContractManifestTest {
         );
     }
 
-    private static String projectionFamily(DataAuthority.CommandType type) {
+    private static String projectionFamily(String type) {
         return switch (type) {
-            case GRANT_RANK, REVOKE_RANK -> "player_rank";
-            case RECORD_MATCH_START, RECORD_MATCH_END -> "match";
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
+            case "GRANT_RANK", "REVOKE_RANK" -> "player_rank";
+            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> "match";
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" ->
                 "player_profile";
+            default -> throw new IllegalArgumentException("Unknown command declaration " + type);
         };
     }
 

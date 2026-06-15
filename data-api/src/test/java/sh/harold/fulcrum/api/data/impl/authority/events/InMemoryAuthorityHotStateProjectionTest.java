@@ -428,7 +428,7 @@ class InMemoryAuthorityHotStateProjectionTest {
         UUID commandId = UUID.randomUUID();
         Map<String, Object> eventPayload = new LinkedHashMap<>();
         eventPayload.put("commandId", commandId.toString());
-        eventPayload.put("commandType", eventType);
+        eventPayload.put("declarationId", eventType);
         eventPayload.put("scope", aggregateScope);
         eventPayload.put("revision", revision);
         eventPayload.put("route", route(aggregateType, aggregateScope));

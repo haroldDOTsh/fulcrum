@@ -1882,7 +1882,7 @@ class PostgresDataAuthorityIntegrationTest {
         return new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 "rank-service",
                 "rank:player:" + playerId,
                 idempotencyKey,
@@ -1905,7 +1905,7 @@ class PostgresDataAuthorityIntegrationTest {
         return new DataAuthority.PlayerProfileCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
+                "RECORD_PLAYER_LOGIN",
                 "profile-service",
                 "player:" + playerId,
                 idempotencyKey,

@@ -68,7 +68,7 @@ class AuthorityContractArtifactsTest {
 
     @Test
     void grantRankRowTiesCommandToRouteStoresAndSchemaTables() {
-        AuthorityContractArtifacts.CommandRow row = command(DataAuthority.CommandType.GRANT_RANK);
+        AuthorityContractArtifacts.CommandRow row = command("GRANT_RANK");
 
         assertThat(row.domain()).isEqualTo("rank");
         assertThat(row.deliveryMode()).isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
@@ -225,16 +225,16 @@ class AuthorityContractArtifactsTest {
     void commandRowsReferenceDocumentedStorePlacements() {
         for (AuthorityContractArtifacts.CommandRow row : AuthorityContractArtifacts.traceabilityManifest().commands()) {
             assertThat(storesFor(AuthorityStorePlacements.COMMAND_AUDIT))
-                .as(row.type() + " command log store")
+                .as(row.declarationId() + " command log store")
                 .contains(row.commandLogStore());
-            assertThat(storesFor(hotConcern(row.type())))
-                .as(row.type() + " hot projection store")
+            assertThat(storesFor(hotConcern(row.declarationId())))
+                .as(row.declarationId() + " hot projection store")
                 .contains(row.hotProjectionStore());
-            assertThat(storesFor(historyConcern(row.type())))
-                .as(row.type() + " history store")
+            assertThat(storesFor(historyConcern(row.declarationId())))
+                .as(row.declarationId() + " history store")
                 .contains(row.historyStore());
             assertThat(storesFor(AuthorityStorePlacements.SNAPSHOT_CACHE))
-                .as(row.type() + " cache store")
+                .as(row.declarationId() + " cache store")
                 .contains(row.cacheStore());
         }
     }
@@ -251,9 +251,9 @@ class AuthorityContractArtifactsTest {
         }
     }
 
-    private static AuthorityContractArtifacts.CommandRow command(DataAuthority.CommandType type) {
+    private static AuthorityContractArtifacts.CommandRow command(String type) {
         return AuthorityContractArtifacts.traceabilityManifest().commands().stream()
-            .filter(row -> row.type() == type)
+            .filter(row -> row.declarationId().equals(type))
             .findFirst()
             .orElseThrow();
     }
@@ -308,22 +308,24 @@ class AuthorityContractArtifactsTest {
         }
     }
 
-    private static String hotConcern(DataAuthority.CommandType type) {
+    private static String hotConcern(String type) {
         return switch (type) {
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" ->
                 AuthorityStorePlacements.PLAYER_PRESENCE;
-            case GRANT_RANK, REVOKE_RANK -> AuthorityStorePlacements.LIVE_EFFECTIVE_RANKS;
-            case RECORD_MATCH_START, RECORD_MATCH_END -> AuthorityStorePlacements.LIVE_MATCH_STATE;
+            case "GRANT_RANK", "REVOKE_RANK" -> AuthorityStorePlacements.LIVE_EFFECTIVE_RANKS;
+            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> AuthorityStorePlacements.LIVE_MATCH_STATE;
+            default -> throw new IllegalArgumentException("Unknown command declaration " + type);
         };
     }
 
-    private static String historyConcern(DataAuthority.CommandType type) {
+    private static String historyConcern(String type) {
         return switch (type) {
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT ->
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" ->
                 AuthorityStorePlacements.PLAYER_PROFILE_OF_RECORD;
-            case START_SESSION, RENEW_SESSION, END_SESSION -> AuthorityStorePlacements.SESSION_HISTORY;
-            case GRANT_RANK, REVOKE_RANK -> AuthorityStorePlacements.RANK_HISTORY_AUDIT;
-            case RECORD_MATCH_START, RECORD_MATCH_END -> AuthorityStorePlacements.MATCH_HISTORY_STATS;
+            case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> AuthorityStorePlacements.SESSION_HISTORY;
+            case "GRANT_RANK", "REVOKE_RANK" -> AuthorityStorePlacements.RANK_HISTORY_AUDIT;
+            case "RECORD_MATCH_START", "RECORD_MATCH_END" -> AuthorityStorePlacements.MATCH_HISTORY_STATS;
+            default -> throw new IllegalArgumentException("Unknown command declaration " + type);
         };
     }
 

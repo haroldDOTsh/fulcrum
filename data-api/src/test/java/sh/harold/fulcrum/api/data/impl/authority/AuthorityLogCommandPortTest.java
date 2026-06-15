@@ -57,9 +57,11 @@ class AuthorityLogCommandPortTest {
             assertThat(record.kind()).isEqualTo(AuthorityLogTopicKind.EVENT);
             assertThat(record.payload())
                 .containsEntry("frameType", "EVENT")
+                .containsEntry("declarationId", declarationId(command))
                 .containsEntry("revision", result.revision())
                 .containsEntry("aggregateScope", command.scope())
-                .containsEntry("sourceCommandOffset", commands.get(0).offset());
+                .containsEntry("sourceCommandOffset", commands.get(0).offset())
+                .doesNotContainKey("commandType");
         });
         AuthorityLogRecord stateRecord = states.get(0);
         assertThat(stateRecord.kind()).isEqualTo(AuthorityLogTopicKind.STATE);
@@ -82,11 +84,13 @@ class AuthorityLogCommandPortTest {
             assertThat(record.kind()).isEqualTo(AuthorityLogTopicKind.RESPONSE);
             assertThat(record.payload())
                 .containsEntry("frameType", "RESPONSE")
+                .containsEntry("declarationId", declarationId(command))
                 .containsEntry("accepted", true)
                 .containsEntry("revision", result.revision())
                 .containsEntry("sourceCommandTopic", commands.get(0).topic())
                 .containsEntry("sourceCommandPartition", commands.get(0).partition())
-                .containsEntry("sourceCommandOffset", commands.get(0).offset());
+                .containsEntry("sourceCommandOffset", commands.get(0).offset())
+                .doesNotContainKey("commandType");
             Map<?, ?> settlement = map(record.payload().get("settlement"));
             Map<?, ?> watermark = map(settlement.get("watermark"));
             assertThat(watermark.get("sourcePartition")).isEqualTo(stateRecord.partition());
@@ -205,7 +209,7 @@ class AuthorityLogCommandPortTest {
             client.submitDurable(command).toCompletableFuture().join();
 
         assertThat(receipt.commandId()).isEqualTo(command.commandId());
-        assertThat(receipt.commandType()).isEqualTo(command.type());
+        assertThat(receipt.declarationId()).isEqualTo(command.declarationId());
         assertThat(receipt.aggregateScope()).isEqualTo(command.scope());
         assertThat(receipt.commandDomain()).isEqualTo(route.domain());
         assertThat(receipt.commandTopic()).isEqualTo(route.commandTopic());
@@ -672,11 +676,16 @@ class AuthorityLogCommandPortTest {
         assertThat(log.records(route.responseTopic(), partition)).singleElement().satisfies(record -> {
             assertThat(record.payload())
                 .containsEntry("frameType", "RESPONSE")
+                .containsEntry("declarationId", declarationId(command))
                 .containsEntry("accepted", false)
                 .containsEntry("rejectionReason", DataAuthority.RejectionReason.STALE_REVISION.name())
                 .containsEntry("sourceCommandTopic", commands.get(0).topic())
                 .containsEntry("sourceCommandOffset", commands.get(0).offset())
-                .containsKey("refusalReceipt");
+                .containsKey("refusalReceipt")
+                .doesNotContainKey("commandType");
+            Map<?, ?> refusalReceipt = map(record.payload().get("refusalReceipt"));
+            assertThat(refusalReceipt.get("declarationId")).isEqualTo(declarationId(command));
+            assertThat(refusalReceipt.containsKey("commandType")).isFalse();
         });
         assertThat(log.records(route.eventTopic(), partition)).isEmpty();
         assertThat(log.records(route.stateTopic(), partition)).isEmpty();
@@ -705,7 +714,7 @@ class AuthorityLogCommandPortTest {
     ) {
         DataAuthority.CommandManifest manifest = new DataAuthority.CommandManifest(
             UUID.randomUUID(),
-            DataAuthority.CommandType.GRANT_RANK,
+            "GRANT_RANK",
             "node:paper-1",
             scope,
             "rank-grant:" + playerId + ":" + expectedRevision,
@@ -803,7 +812,7 @@ class AuthorityLogCommandPortTest {
         DataAuthority.CommandRefusalReceipt receipt = DataAuthority.CommandRefusalReceipt.create(
             "authority-log",
             command.commandId(),
-            command.type().name(),
+            command.declarationId(),
             command.scope(),
             command.provenance().originNode(),
             "authority-rank",
@@ -825,7 +834,7 @@ class AuthorityLogCommandPortTest {
     }
 
     private static String declarationId(DataAuthority.AuthorityCommand command) {
-        return DataAuthorityCommandContracts.contract(command.type()).declarationId();
+        return DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId()).declarationId();
     }
 
     @SuppressWarnings("unchecked")

@@ -27,7 +27,7 @@ public final class AuthorityCommandScopeGuard implements DataAuthority.CommandPo
                 false,
                 command.expectedRevision(),
                 DataAuthority.RejectionReason.INVALID_SCOPE,
-                "Command scope mismatch for " + command.type()
+                "Command scope mismatch for " + command.declarationId()
                     + ": expected " + expectedScope + " but was " + command.scope()
             ));
         }

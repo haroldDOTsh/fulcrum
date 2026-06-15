@@ -154,7 +154,7 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         return new DataAuthority.CommandSubmissionReceipt(
             command.commandId(),
-            command.type(),
+            command.declarationId(),
             command.scope(),
             route.domain(),
             route.commandTopic(),

@@ -71,8 +71,8 @@ class ThreadBoundaryStaticTest {
         assertTrue(minigameFeature.contains("container.get(DataAuthority.CommandPort.class)"));
         assertTrue(minigameFeature.contains("DataAuthority.CommandPort.class"));
         assertFalse(minigameFeature.contains("minigame match logs will not be persisted"));
-        assertTrue(minigameEngine.contains("DataAuthority.CommandType.RECORD_MATCH_START"));
-        assertTrue(minigameEngine.contains("DataAuthority.CommandType.RECORD_MATCH_END"));
+        assertTrue(minigameEngine.contains("\"RECORD_MATCH_START\""));
+        assertTrue(minigameEngine.contains("\"RECORD_MATCH_END\""));
     }
 
     private List<String> managedPaperHotPaths() {

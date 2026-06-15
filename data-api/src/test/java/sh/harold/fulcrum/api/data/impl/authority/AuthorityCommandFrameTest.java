@@ -18,7 +18,7 @@ class AuthorityCommandFrameTest {
         DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 "rank-service",
                 "rank:player:" + playerId,
                 "rank:" + commandId,
@@ -53,7 +53,7 @@ class AuthorityCommandFrameTest {
         ).toCommand();
 
         assertThat(restored.commandId()).isEqualTo(commandId);
-        assertThat(restored.type()).isEqualTo(DataAuthority.CommandType.GRANT_RANK);
+        assertThat(restored.declarationId()).isEqualTo("GRANT_RANK");
         assertThat(restored.provenance().originNode()).isEqualTo("paper-1");
         assertThat(restored.provenance().verifiedPrincipal()).isEqualTo("node:paper-1");
         assertThat(AuthorityCommandPayloads.payload(restored)).isEqualTo(AuthorityCommandPayloads.payload(command));
@@ -68,7 +68,7 @@ class AuthorityCommandFrameTest {
         DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 "rank-service",
                 "rank:player:" + playerId,
                 "rank:" + commandId,
@@ -97,7 +97,7 @@ class AuthorityCommandFrameTest {
         DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.REVOKE_RANK,
+                "REVOKE_RANK",
                 "rank-service",
                 "rank:player:" + playerId,
                 "rank:" + commandId,

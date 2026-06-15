@@ -346,7 +346,7 @@ class KafkaAuthorityLogTest {
         UUID playerId = UUID.randomUUID();
         DataAuthority.CommandManifest manifest = new DataAuthority.CommandManifest(
             UUID.randomUUID(),
-            DataAuthority.CommandType.GRANT_RANK,
+            "GRANT_RANK",
             "node:paper-1",
             "rank:player:" + playerId,
             "rank-grant:" + playerId + ":" + expectedRevision,

@@ -87,7 +87,7 @@ interface AuthorityCommandJournal {
     interface Entry {
         UUID commandId();
 
-        DataAuthority.CommandType commandType();
+        String declarationId();
 
         String aggregateScope();
 

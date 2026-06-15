@@ -64,7 +64,7 @@ public final class AuthorityCommands {
             Integer foodLevel
         ) {
             return profileCommand(
-                DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
+                "RECORD_PLAYER_LOGIN",
                 username,
                 timestampEpochMillis,
                 currentServer,
@@ -93,7 +93,7 @@ public final class AuthorityCommands {
             String playtimeStartField
         ) {
             return profileCommand(
-                DataAuthority.CommandType.RECORD_PLAYER_LOGOUT,
+                "RECORD_PLAYER_LOGOUT",
                 username,
                 timestampEpochMillis,
                 currentServer,
@@ -111,7 +111,7 @@ public final class AuthorityCommands {
         }
 
         private DataAuthority.PlayerProfileCommand profileCommand(
-            DataAuthority.CommandType type,
+            String declarationId,
             String username,
             long timestampEpochMillis,
             String currentServer,
@@ -128,7 +128,7 @@ public final class AuthorityCommands {
         ) {
             return new DataAuthority.PlayerProfileCommand(
                 manifest(
-                    type,
+                    declarationId,
                     actorId,
                     playerId,
                     timestampEpochMillis,
@@ -172,7 +172,7 @@ public final class AuthorityCommands {
             Integer protocolVersion
         ) {
             return sessionCommand(
-                DataAuthority.CommandType.START_SESSION,
+                "START_SESSION",
                 username,
                 sessionId,
                 timestampEpochMillis,
@@ -194,7 +194,7 @@ public final class AuthorityCommands {
             Integer protocolVersion
         ) {
             return sessionCommand(
-                DataAuthority.CommandType.RENEW_SESSION,
+                "RENEW_SESSION",
                 username,
                 sessionId,
                 timestampEpochMillis,
@@ -217,7 +217,7 @@ public final class AuthorityCommands {
             String disconnectReason
         ) {
             return sessionCommand(
-                DataAuthority.CommandType.END_SESSION,
+                "END_SESSION",
                 username,
                 sessionId,
                 timestampEpochMillis,
@@ -230,7 +230,7 @@ public final class AuthorityCommands {
         }
 
         private DataAuthority.PlayerSessionCommand sessionCommand(
-            DataAuthority.CommandType type,
+            String declarationId,
             String username,
             UUID sessionId,
             long timestampEpochMillis,
@@ -242,7 +242,7 @@ public final class AuthorityCommands {
         ) {
             return new DataAuthority.PlayerSessionCommand(
                 manifest(
-                    type,
+                    declarationId,
                     actorId,
                     playerId,
                     timestampEpochMillis,
@@ -278,7 +278,7 @@ public final class AuthorityCommands {
             long timestampEpochMillis
         ) {
             return rankCommand(
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 primaryRank,
                 ranks,
                 expectedRevision,
@@ -293,7 +293,7 @@ public final class AuthorityCommands {
             long timestampEpochMillis
         ) {
             return rankCommand(
-                DataAuthority.CommandType.REVOKE_RANK,
+                "REVOKE_RANK",
                 primaryRank,
                 ranks,
                 expectedRevision,
@@ -302,7 +302,7 @@ public final class AuthorityCommands {
         }
 
         private DataAuthority.PlayerRankCommand rankCommand(
-            DataAuthority.CommandType type,
+            String declarationId,
             String primaryRank,
             List<String> ranks,
             long expectedRevision,
@@ -310,7 +310,7 @@ public final class AuthorityCommands {
         ) {
             return new DataAuthority.PlayerRankCommand(
                 manifest(
-                    type,
+                    declarationId,
                     actorId,
                     playerId,
                     timestampEpochMillis,
@@ -345,7 +345,7 @@ public final class AuthorityCommands {
             long timestampEpochMillis
         ) {
             return matchCommand(
-                DataAuthority.CommandType.RECORD_MATCH_START,
+                "RECORD_MATCH_START",
                 familyId,
                 mapId,
                 serverId,
@@ -372,7 +372,7 @@ public final class AuthorityCommands {
             long timestampEpochMillis
         ) {
             return matchCommand(
-                DataAuthority.CommandType.RECORD_MATCH_END,
+                "RECORD_MATCH_END",
                 familyId,
                 mapId,
                 serverId,
@@ -387,7 +387,7 @@ public final class AuthorityCommands {
         }
 
         private DataAuthority.MatchCommand matchCommand(
-            DataAuthority.CommandType type,
+            String declarationId,
             String familyId,
             String mapId,
             String serverId,
@@ -400,14 +400,14 @@ public final class AuthorityCommands {
             long timestampEpochMillis
         ) {
             long idempotencyEpochMillis = matchIdempotencyEpochMillis(
-                type,
+                declarationId,
                 startedAtEpochMillis,
                 endedAtEpochMillis,
                 timestampEpochMillis
             );
             return new DataAuthority.MatchCommand(
                 manifest(
-                    type,
+                    declarationId,
                     actorId,
                     matchId,
                     idempotencyEpochMillis,
@@ -428,7 +428,7 @@ public final class AuthorityCommands {
         }
 
         private static long matchIdempotencyEpochMillis(
-            DataAuthority.CommandType type,
+            String declarationId,
             Long startedAtEpochMillis,
             Long endedAtEpochMillis,
             long timestampEpochMillis
@@ -436,7 +436,7 @@ public final class AuthorityCommands {
             if (startedAtEpochMillis != null) {
                 return startedAtEpochMillis;
             }
-            if (type == DataAuthority.CommandType.RECORD_MATCH_END && endedAtEpochMillis != null) {
+            if ("RECORD_MATCH_END".equals(declarationId) && endedAtEpochMillis != null) {
                 return endedAtEpochMillis;
             }
             return timestampEpochMillis;
@@ -444,7 +444,7 @@ public final class AuthorityCommands {
     }
 
     private static DataAuthority.CommandManifest manifest(
-        DataAuthority.CommandType type,
+        String declarationId,
         String actorId,
         UUID aggregateId,
         long idempotencyEpochMillis,
@@ -453,20 +453,21 @@ public final class AuthorityCommands {
     ) {
         return DataAuthority.CommandManifest.create(
             UUID.randomUUID(),
-            type,
+            declarationId,
             actorId,
-            scope(type, aggregateId),
-            type.name() + ":" + aggregateId + ":" + idempotencyEpochMillis,
+            scope(declarationId, aggregateId),
+            declarationId + ":" + aggregateId + ":" + idempotencyEpochMillis,
             deadlineEpochMillis,
             "",
             expectedRevision
         );
     }
 
-    private static String scope(DataAuthority.CommandType type, UUID aggregateId) {
-        Objects.requireNonNull(type, "type");
+    private static String scope(String declarationId, UUID aggregateId) {
+        Objects.requireNonNull(declarationId, "declarationId");
         Objects.requireNonNull(aggregateId, "aggregateId");
-        return DataAuthorityCommandContracts.contract(type).aggregateScopePrefix() + aggregateId;
+        return DataAuthorityCommandContracts.contractByDeclarationId(declarationId).aggregateScopePrefix()
+            + aggregateId;
     }
 
     private static String requireText(String value, String field) {

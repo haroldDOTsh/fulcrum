@@ -27,7 +27,7 @@ class DataAuthorityTest {
         UUID commandId = UUID.randomUUID();
         DataAuthority.AuthorityCommand command = new DeclaredCommand(DataAuthority.CommandManifest.create(
             commandId,
-            DataAuthority.CommandType.GRANT_RANK,
+            "GRANT_RANK",
             "rank-service",
             "rank:player:" + UUID.randomUUID(),
             commandId.toString(),
@@ -48,7 +48,7 @@ class DataAuthorityTest {
         DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
             DataAuthority.CommandManifest.create(
                 commandId,
-                DataAuthority.CommandType.GRANT_RANK,
+                "GRANT_RANK",
                 "rank-service",
                 "rank:player:" + playerId,
                 commandId.toString(),
@@ -74,7 +74,7 @@ class DataAuthorityTest {
     void manifestSupportsExplicitAnyRevision() {
         DataAuthority.CommandManifest manifest = DataAuthority.CommandManifest.create(
             UUID.randomUUID(),
-            DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
+            "RECORD_PLAYER_LOGIN",
             "paper-runtime",
             "player:" + UUID.randomUUID(),
             UUID.randomUUID().toString(),
@@ -92,7 +92,7 @@ class DataAuthorityTest {
     void manifestCarriesOptionalProvenance() {
         DataAuthority.CommandManifest manifest = DataAuthority.CommandManifest.create(
             UUID.randomUUID(),
-            DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
+            "RECORD_PLAYER_LOGIN",
             "paper-runtime",
             "player:" + UUID.randomUUID(),
             UUID.randomUUID().toString(),
@@ -119,7 +119,7 @@ class DataAuthorityTest {
     void commandManifestRequiresAuthorityFields() {
         assertThatThrownBy(() -> DataAuthority.CommandManifest.create(
             UUID.randomUUID(),
-            DataAuthority.CommandType.START_SESSION,
+            "START_SESSION",
             "",
             "player:" + UUID.randomUUID(),
             "session-1",
