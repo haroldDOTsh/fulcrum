@@ -59,12 +59,13 @@ public final class DataAuthority {
         EXPIRED,
         UNWATERMARKED,
         SCOPE_MISMATCH,
+        VISIBILITY_TOKEN_MISMATCH,
         REVISION_MISMATCH,
         STALE_REVISION;
 
         public boolean retryable() {
             return switch (this) {
-                case UNKNOWN_OR_STALE, EXPIRED, STALE_REVISION -> true;
+                case UNKNOWN_OR_STALE, EXPIRED, VISIBILITY_TOKEN_MISMATCH, STALE_REVISION -> true;
                 default -> false;
             };
         }
@@ -77,6 +78,7 @@ public final class DataAuthority {
                 case EXPIRED -> "snapshot watermark is older than the required maximum age";
                 case UNWATERMARKED -> "snapshot is not authority-watermarked";
                 case SCOPE_MISMATCH -> "snapshot watermark scope does not match the requested aggregate";
+                case VISIBILITY_TOKEN_MISMATCH -> "snapshot watermark does not satisfy the requested visibility token";
                 case REVISION_MISMATCH -> "snapshot revision does not match the watermark revision";
                 case STALE_REVISION -> "snapshot is older than the required revision";
             };
@@ -86,6 +88,7 @@ public final class DataAuthority {
     public enum ReadSourceTier {
         UNKNOWN,
         AUTHORITY,
+        HOT_STATE,
         CACHE
     }
 
@@ -165,10 +168,114 @@ public final class DataAuthority {
         }
     }
 
-    public record ReadRequirement(long minimumRevision, long maxAgeMillis) {
+    public record ReadVisibilityToken(
+        String aggregateScope,
+        String stateTopic,
+        String partitionKey,
+        int sourcePartition,
+        long sourceOffset,
+        long sourceRevision,
+        String eventChainHash
+    ) {
+        private static final String UNKNOWN = "unknown";
+
+        public ReadVisibilityToken {
+            aggregateScope = normalize(aggregateScope);
+            stateTopic = normalize(stateTopic);
+            partitionKey = normalize(partitionKey);
+            sourcePartition = sourcePartition < 0 ? -1 : sourcePartition;
+            sourceOffset = sourceOffset < 0L ? -1L : sourceOffset;
+            sourceRevision = Math.max(0L, sourceRevision);
+            eventChainHash = normalize(eventChainHash);
+        }
+
+        public static ReadVisibilityToken fromWatermark(SnapshotWatermark watermark) {
+            return watermark == null ? null : watermark.visibilityToken();
+        }
+
+        public static ReadVisibilityToken fromPayload(Map<?, ?> raw, ReadVisibilityToken fallback) {
+            if (raw == null || raw.isEmpty()) {
+                return fallback;
+            }
+            return new ReadVisibilityToken(
+                string(raw.get("aggregateScope")),
+                string(raw.get("stateTopic")),
+                string(raw.get("partitionKey")),
+                intValue(raw.get("sourcePartition"), -1),
+                longValue(raw.get("sourceOffset"), -1L),
+                longValue(raw.get("sourceRevision"), 0L),
+                string(raw.get("eventChainHash"))
+            );
+        }
+
+        public boolean known() {
+            return known(aggregateScope)
+                && known(stateTopic)
+                && known(partitionKey)
+                && sourceRevision > 0L;
+        }
+
+        public boolean logPositioned() {
+            return sourcePartition >= 0 && sourceOffset >= 0L;
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("aggregateScope", aggregateScope);
+            values.put("stateTopic", stateTopic);
+            values.put("partitionKey", partitionKey);
+            values.put("sourcePartition", sourcePartition);
+            values.put("sourceOffset", sourceOffset);
+            values.put("sourceRevision", sourceRevision);
+            values.put("eventChainHash", eventChainHash);
+            values.put("known", known());
+            values.put("logPositioned", logPositioned());
+            return Map.copyOf(values);
+        }
+
+        private static boolean known(String value) {
+            return value != null && !value.isBlank() && !UNKNOWN.equalsIgnoreCase(value);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? UNKNOWN : value.trim();
+        }
+
+        private static String string(Object value) {
+            return value == null ? null : value.toString();
+        }
+
+        private static int intValue(Object value, int fallback) {
+            if (value instanceof Number number) {
+                return number.intValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Integer.parseInt(value.toString());
+        }
+
+        private static long longValue(Object value, long fallback) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+    }
+
+    public record ReadRequirement(
+        long minimumRevision,
+        long maxAgeMillis,
+        ReadVisibilityToken visibilityToken
+    ) {
+        public ReadRequirement(long minimumRevision, long maxAgeMillis) {
+            this(minimumRevision, maxAgeMillis, null);
+        }
+
         public ReadRequirement {
             minimumRevision = Math.max(0L, minimumRevision);
             maxAgeMillis = maxAgeMillis < 0L ? -1L : maxAgeMillis;
+            visibilityToken = visibilityToken == null || !visibilityToken.known() ? null : visibilityToken;
+            if (visibilityToken != null) {
+                minimumRevision = Math.max(minimumRevision, visibilityToken.sourceRevision());
+            }
         }
 
         public static ReadRequirement eventual() {
@@ -181,6 +288,14 @@ public final class DataAuthority {
 
         public static ReadRequirement freshAtLeast(long minimumRevision, long maxAgeMillis) {
             return new ReadRequirement(minimumRevision, maxAgeMillis);
+        }
+
+        public static ReadRequirement after(ReadVisibilityToken visibilityToken) {
+            return new ReadRequirement(0L, -1L, visibilityToken);
+        }
+
+        public static ReadRequirement freshAfter(ReadVisibilityToken visibilityToken, long maxAgeMillis) {
+            return new ReadRequirement(0L, maxAgeMillis, visibilityToken);
         }
 
         public static ReadRequirement orEventual(ReadRequirement requirement) {
@@ -240,6 +355,14 @@ public final class DataAuthority {
 
         public static ReadProvenance authority(AuthorityBootIdentity authorityBoot) {
             return new ReadProvenance(ReadSourceTier.AUTHORITY, 0L, 0L, -1L, -1L, authorityBoot);
+        }
+
+        public static ReadProvenance hotState() {
+            return hotState(AuthorityBootIdentity.unknown());
+        }
+
+        public static ReadProvenance hotState(AuthorityBootIdentity authorityBoot) {
+            return new ReadProvenance(ReadSourceTier.HOT_STATE, 0L, 0L, -1L, -1L, authorityBoot);
         }
 
         public static ReadProvenance cache(long cachedAtEpochMillis, long observedAtEpochMillis, long maxAgeMillis) {
@@ -359,10 +482,38 @@ public final class DataAuthority {
         UUID sourceEventId,
         long deliveredRevision,
         long deliveredAtEpochMillis,
+        int sourcePartition,
+        long sourceOffset,
         String outputFingerprint,
         String lineageFingerprint
     ) {
         private static final String UNKNOWN = "unknown";
+
+        public ProjectionDeliveryReceipt(
+            String sourceProvider,
+            String projectionName,
+            String aggregateScope,
+            String stateTopic,
+            UUID sourceEventId,
+            long deliveredRevision,
+            long deliveredAtEpochMillis,
+            String outputFingerprint,
+            String lineageFingerprint
+        ) {
+            this(
+                sourceProvider,
+                projectionName,
+                aggregateScope,
+                stateTopic,
+                sourceEventId,
+                deliveredRevision,
+                deliveredAtEpochMillis,
+                -1,
+                -1L,
+                outputFingerprint,
+                lineageFingerprint
+            );
+        }
 
         public ProjectionDeliveryReceipt {
             sourceProvider = normalize(sourceProvider);
@@ -371,6 +522,8 @@ public final class DataAuthority {
             stateTopic = normalize(stateTopic);
             deliveredRevision = Math.max(0L, deliveredRevision);
             deliveredAtEpochMillis = Math.max(0L, deliveredAtEpochMillis);
+            sourcePartition = sourcePartition < 0 ? -1 : sourcePartition;
+            sourceOffset = sourceOffset < 0L ? -1L : sourceOffset;
             outputFingerprint = normalize(outputFingerprint);
             lineageFingerprint = normalize(lineageFingerprint);
         }
@@ -390,6 +543,8 @@ public final class DataAuthority {
                 watermark.sourceEventId(),
                 watermark.sourceRevision(),
                 watermark.eventCreatedEpochMillis(),
+                watermark.sourcePartition(),
+                watermark.sourceOffset(),
                 watermark.stateFingerprint(),
                 watermark.eventChainHash()
             );
@@ -407,6 +562,8 @@ public final class DataAuthority {
                 uuid(raw.get("sourceEventId")),
                 longValue(raw.get("deliveredRevision"), 0L),
                 longValue(raw.get("deliveredAtEpochMillis"), 0L),
+                intValue(raw.get("sourcePartition"), -1),
+                longValue(raw.get("sourceOffset"), -1L),
                 string(raw.get("outputFingerprint")),
                 string(raw.get("lineageFingerprint"))
             );
@@ -417,6 +574,10 @@ public final class DataAuthority {
                 && deliveredRevision > 0L
                 && known(outputFingerprint)
                 && known(lineageFingerprint);
+        }
+
+        public boolean logPositioned() {
+            return sourcePartition >= 0 && sourceOffset >= 0L;
         }
 
         public boolean satisfies(String expectedProjectionName, String expectedAggregateScope, long minimumRevision) {
@@ -437,9 +598,12 @@ public final class DataAuthority {
             }
             values.put("deliveredRevision", deliveredRevision);
             values.put("deliveredAtEpochMillis", deliveredAtEpochMillis);
+            values.put("sourcePartition", sourcePartition);
+            values.put("sourceOffset", sourceOffset);
             values.put("outputFingerprint", outputFingerprint);
             values.put("lineageFingerprint", lineageFingerprint);
             values.put("delivered", delivered());
+            values.put("logPositioned", logPositioned());
             return Map.copyOf(values);
         }
 
@@ -460,6 +624,13 @@ public final class DataAuthority {
                 return number.longValue();
             }
             return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+
+        private static int intValue(Object value, int fallback) {
+            if (value instanceof Number number) {
+                return number.intValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Integer.parseInt(value.toString());
         }
 
         private static UUID uuid(Object value) {
@@ -646,6 +817,10 @@ public final class DataAuthority {
         CompletionStage<CommandResult> submit(AuthorityCommand command);
     }
 
+    public interface CommandSubmissionPort {
+        CompletionStage<CommandSubmissionReceipt> submitDurable(AuthorityCommand command);
+    }
+
     public interface PlayerProfileReader {
         CompletionStage<Optional<PlayerProfileSnapshot>> findProfile(UUID playerId);
 
@@ -728,6 +903,9 @@ public final class DataAuthority {
             status = ReadQuoteStatus.UNWATERMARKED;
         } else if (!aggregateScope.equals(snapshotWatermark.aggregateScope())) {
             status = ReadQuoteStatus.SCOPE_MISMATCH;
+        } else if (effectiveRequirement.visibilityToken() != null
+            && !snapshotWatermark.satisfies(effectiveRequirement.visibilityToken())) {
+            status = ReadQuoteStatus.VISIBILITY_TOKEN_MISMATCH;
         } else if (snapshotWatermark.sourceRevision() != snapshotRevision) {
             status = ReadQuoteStatus.REVISION_MISMATCH;
         } else if (snapshotRevision < requiredRevision || snapshotWatermark.sourceRevision() < requiredRevision) {
@@ -793,6 +971,9 @@ public final class DataAuthority {
             status = ReadQuoteStatus.UNWATERMARKED;
         } else if (!aggregateScope.equals(snapshotWatermark.aggregateScope())) {
             status = ReadQuoteStatus.SCOPE_MISMATCH;
+        } else if (effectiveRequirement.visibilityToken() != null
+            && !snapshotWatermark.satisfies(effectiveRequirement.visibilityToken())) {
+            status = ReadQuoteStatus.VISIBILITY_TOKEN_MISMATCH;
         } else if (snapshotWatermark.sourceRevision() != snapshotRevision) {
             status = ReadQuoteStatus.REVISION_MISMATCH;
         } else if (snapshotRevision < requiredRevision || snapshotWatermark.sourceRevision() < requiredRevision) {
@@ -1241,6 +1422,71 @@ public final class DataAuthority {
         }
     }
 
+    public record CommandSubmissionReceipt(
+        UUID commandId,
+        CommandType commandType,
+        String aggregateScope,
+        String commandDomain,
+        String commandTopic,
+        String responseTopic,
+        String eventTopic,
+        String stateTopic,
+        String partitionKey,
+        int partition,
+        long offset,
+        long appendedAtEpochMillis,
+        CommandProvenance provenance
+    ) {
+        public CommandSubmissionReceipt {
+            if (commandId == null) {
+                throw new IllegalArgumentException("commandId is required");
+            }
+            if (commandType == null) {
+                throw new IllegalArgumentException("commandType is required");
+            }
+            aggregateScope = requireText(aggregateScope, "aggregateScope");
+            commandDomain = requireText(commandDomain, "commandDomain");
+            commandTopic = requireText(commandTopic, "commandTopic");
+            responseTopic = requireText(responseTopic, "responseTopic");
+            eventTopic = requireText(eventTopic, "eventTopic");
+            stateTopic = requireText(stateTopic, "stateTopic");
+            partitionKey = requireText(partitionKey, "partitionKey");
+            if (partition < 0) {
+                throw new IllegalArgumentException("partition must be non-negative");
+            }
+            if (offset < 0L) {
+                throw new IllegalArgumentException("offset must be non-negative");
+            }
+            appendedAtEpochMillis = Math.max(0L, appendedAtEpochMillis);
+            provenance = provenance == null ? CommandProvenance.unknown() : provenance;
+        }
+
+        public Map<String, Object> payload() {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("commandId", commandId.toString());
+            values.put("commandType", commandType.name());
+            values.put("aggregateScope", aggregateScope);
+            values.put("commandDomain", commandDomain);
+            values.put("commandTopic", commandTopic);
+            values.put("responseTopic", responseTopic);
+            values.put("eventTopic", eventTopic);
+            values.put("stateTopic", stateTopic);
+            values.put("partitionKey", partitionKey);
+            values.put("partition", partition);
+            values.put("offset", offset);
+            values.put("appendedAtEpochMillis", appendedAtEpochMillis);
+            values.put("provenance", provenance.payload());
+            return Map.copyOf(values);
+        }
+
+        private static String requireText(String value, String field) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return value;
+        }
+    }
+
     public record CommandResult(
         UUID commandId,
         boolean accepted,
@@ -1630,20 +1876,80 @@ public final class DataAuthority {
         String sourceProvider,
         String commandDomain,
         String commandTopic,
+        String responseTopic,
         String eventTopic,
         String stateTopic,
         String partitionKey,
         String fencingToken,
         String idempotencyKey,
         long expectedRevision,
-        SnapshotWatermark watermark
+        SnapshotWatermark watermark,
+        Map<String, Object> statePayload
     ) {
         private static final String UNKNOWN = "unknown";
+
+        public CommandSettlement(
+            String sourceProvider,
+            String commandDomain,
+            String commandTopic,
+            String responseTopic,
+            String eventTopic,
+            String stateTopic,
+            String partitionKey,
+            String fencingToken,
+            String idempotencyKey,
+            long expectedRevision,
+            SnapshotWatermark watermark
+        ) {
+            this(
+                sourceProvider,
+                commandDomain,
+                commandTopic,
+                responseTopic,
+                eventTopic,
+                stateTopic,
+                partitionKey,
+                fencingToken,
+                idempotencyKey,
+                expectedRevision,
+                watermark,
+                Map.of()
+            );
+        }
+
+        public CommandSettlement(
+            String sourceProvider,
+            String commandDomain,
+            String commandTopic,
+            String eventTopic,
+            String stateTopic,
+            String partitionKey,
+            String fencingToken,
+            String idempotencyKey,
+            long expectedRevision,
+            SnapshotWatermark watermark
+        ) {
+            this(
+                sourceProvider,
+                commandDomain,
+                commandTopic,
+                responseTopicFor(commandDomain),
+                eventTopic,
+                stateTopic,
+                partitionKey,
+                fencingToken,
+                idempotencyKey,
+                expectedRevision,
+                watermark,
+                Map.of()
+            );
+        }
 
         public CommandSettlement {
             sourceProvider = normalize(sourceProvider);
             commandDomain = normalize(commandDomain);
             commandTopic = normalize(commandTopic);
+            responseTopic = normalize(responseTopic);
             eventTopic = normalize(eventTopic);
             stateTopic = normalize(stateTopic);
             partitionKey = normalize(partitionKey);
@@ -1656,6 +1962,7 @@ public final class DataAuthority {
                 UNKNOWN,
                 0L
             ) : watermark;
+            statePayload = immutablePayloadCopy(statePayload);
         }
 
         public static CommandSettlement unsettled(long revision) {
@@ -1668,8 +1975,10 @@ public final class DataAuthority {
                 UNKNOWN,
                 UNKNOWN,
                 UNKNOWN,
+                UNKNOWN,
                 ANY_REVISION,
-                SnapshotWatermark.unwatermarked(UNKNOWN, UNKNOWN, UNKNOWN, revision)
+                SnapshotWatermark.unwatermarked(UNKNOWN, UNKNOWN, UNKNOWN, revision),
+                Map.of()
             );
         }
 
@@ -1682,17 +1991,20 @@ public final class DataAuthority {
                 map(raw.get("watermark")),
                 effectiveFallback.watermark()
             );
+            String commandDomain = string(raw.get("commandDomain"));
             return new CommandSettlement(
                 string(raw.get("sourceProvider")),
-                string(raw.get("commandDomain")),
+                commandDomain,
                 string(raw.get("commandTopic")),
+                string(raw.get("responseTopic"), responseTopicFor(commandDomain)),
                 string(raw.get("eventTopic")),
                 string(raw.get("stateTopic")),
                 string(raw.get("partitionKey")),
                 string(raw.get("fencingToken")),
                 string(raw.get("idempotencyKey")),
                 longValue(raw.get("expectedRevision"), ANY_REVISION),
-                watermark
+                watermark,
+                payloadMap(raw.get("statePayload"))
             );
         }
 
@@ -1700,6 +2012,7 @@ public final class DataAuthority {
             return known(sourceProvider)
                 && known(commandDomain)
                 && known(commandTopic)
+                && known(responseTopic)
                 && known(eventTopic)
                 && known(stateTopic)
                 && known(partitionKey)
@@ -1711,6 +2024,7 @@ public final class DataAuthority {
             values.put("sourceProvider", sourceProvider);
             values.put("commandDomain", commandDomain);
             values.put("commandTopic", commandTopic);
+            values.put("responseTopic", responseTopic);
             values.put("eventTopic", eventTopic);
             values.put("stateTopic", stateTopic);
             values.put("partitionKey", partitionKey);
@@ -1718,6 +2032,7 @@ public final class DataAuthority {
             values.put("idempotencyKey", idempotencyKey);
             values.put("expectedRevision", expectedRevision);
             values.put("watermark", watermark.payload());
+            values.put("statePayload", statePayload);
             values.put("settled", settled());
             return Map.copyOf(values);
         }
@@ -1736,6 +2051,61 @@ public final class DataAuthority {
 
         private static String string(Object value) {
             return value == null ? null : value.toString();
+        }
+
+        private static String string(Object value, String fallback) {
+            return value == null || value.toString().isBlank() ? fallback : value.toString();
+        }
+
+        private static String responseTopicFor(String commandDomain) {
+            String normalized = normalize(commandDomain);
+            return known(normalized) ? "rsp." + normalized : UNKNOWN;
+        }
+
+        private static Map<String, Object> immutablePayloadCopy(Map<String, Object> values) {
+            if (values == null || values.isEmpty()) {
+                return Map.of();
+            }
+            return java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(values));
+        }
+
+        private static Map<String, Object> payloadMap(Object value) {
+            if (!(value instanceof Map<?, ?> map) || map.isEmpty()) {
+                return Map.of();
+            }
+            java.util.LinkedHashMap<String, Object> result = new java.util.LinkedHashMap<>();
+            map.forEach((key, child) -> {
+                if (key != null) {
+                    result.put(key.toString(), normalizePayloadValue(child));
+                }
+            });
+            return java.util.Collections.unmodifiableMap(result);
+        }
+
+        private static Object normalizePayloadValue(Object value) {
+            if (value instanceof Map<?, ?> map) {
+                java.util.LinkedHashMap<String, Object> result = new java.util.LinkedHashMap<>();
+                map.forEach((key, child) -> {
+                    if (key != null) {
+                        result.put(key.toString(), normalizePayloadValue(child));
+                    }
+                });
+                return java.util.Collections.unmodifiableMap(result);
+            }
+            if (value instanceof Iterable<?> iterable) {
+                java.util.ArrayList<Object> result = new java.util.ArrayList<>();
+                for (Object child : iterable) {
+                    result.add(normalizePayloadValue(child));
+                }
+                return List.copyOf(result);
+            }
+            if (value instanceof Double number && Math.rint(number) == number) {
+                return number.longValue();
+            }
+            if (value instanceof Float number && Math.rint(number) == number) {
+                return number.longValue();
+            }
+            return value;
         }
 
         private static long longValue(Object value, long fallback) {
@@ -1758,10 +2128,46 @@ public final class DataAuthority {
         UUID sourceEventId,
         long sourceRevision,
         long eventCreatedEpochMillis,
+        int sourcePartition,
+        long sourceOffset,
         String stateFingerprint,
         String eventChainHash
     ) {
         private static final String UNKNOWN = "unknown";
+
+        public SnapshotWatermark(
+            String sourceProvider,
+            String aggregateScope,
+            String aggregateType,
+            String aggregateId,
+            String commandDomain,
+            String stateTopic,
+            String partitionKey,
+            UUID sourceCommandId,
+            UUID sourceEventId,
+            long sourceRevision,
+            long eventCreatedEpochMillis,
+            String stateFingerprint,
+            String eventChainHash
+        ) {
+            this(
+                sourceProvider,
+                aggregateScope,
+                aggregateType,
+                aggregateId,
+                commandDomain,
+                stateTopic,
+                partitionKey,
+                sourceCommandId,
+                sourceEventId,
+                sourceRevision,
+                eventCreatedEpochMillis,
+                -1,
+                -1L,
+                stateFingerprint,
+                eventChainHash
+            );
+        }
 
         public SnapshotWatermark {
             sourceProvider = normalize(sourceProvider);
@@ -1773,6 +2179,8 @@ public final class DataAuthority {
             partitionKey = normalize(partitionKey);
             sourceRevision = Math.max(0L, sourceRevision);
             eventCreatedEpochMillis = Math.max(0L, eventCreatedEpochMillis);
+            sourcePartition = sourcePartition < 0 ? -1 : sourcePartition;
+            sourceOffset = sourceOffset < 0L ? -1L : sourceOffset;
             stateFingerprint = normalize(stateFingerprint);
             eventChainHash = normalize(eventChainHash);
         }
@@ -1795,6 +2203,8 @@ public final class DataAuthority {
                 null,
                 sourceRevision,
                 0L,
+                -1,
+                -1L,
                 UNKNOWN,
                 UNKNOWN
             );
@@ -1816,6 +2226,8 @@ public final class DataAuthority {
                 uuid(raw.get("sourceEventId")),
                 longValue(raw.get("sourceRevision"), 0L),
                 longValue(raw.get("eventCreatedEpochMillis"), 0L),
+                intValue(raw.get("sourcePartition"), fallback == null ? -1 : fallback.sourcePartition()),
+                longValue(raw.get("sourceOffset"), fallback == null ? -1L : fallback.sourceOffset()),
                 string(raw.get("stateFingerprint")),
                 string(raw.get("eventChainHash"))
             );
@@ -1829,6 +2241,41 @@ public final class DataAuthority {
                 && known(eventChainHash)
                 && known(stateTopic)
                 && known(partitionKey);
+        }
+
+        public boolean logPositioned() {
+            return sourcePartition >= 0 && sourceOffset >= 0L;
+        }
+
+        public ReadVisibilityToken visibilityToken() {
+            return new ReadVisibilityToken(
+                aggregateScope,
+                stateTopic,
+                partitionKey,
+                sourcePartition,
+                sourceOffset,
+                sourceRevision,
+                eventChainHash
+            );
+        }
+
+        public boolean satisfies(ReadVisibilityToken token) {
+            if (token == null || !token.known() || !watermarked()) {
+                return token == null;
+            }
+            if (!aggregateScope.equals(token.aggregateScope())
+                || !stateTopic.equals(token.stateTopic())
+                || !partitionKey.equals(token.partitionKey())) {
+                return false;
+            }
+            if (sourceRevision < token.sourceRevision()) {
+                return false;
+            }
+            if (token.logPositioned()
+                && (sourcePartition != token.sourcePartition() || sourceOffset < token.sourceOffset())) {
+                return false;
+            }
+            return !known(token.eventChainHash()) || eventChainHash.equals(token.eventChainHash());
         }
 
         public boolean staleAt(long nowEpochMillis, long maxAgeMillis) {
@@ -1855,9 +2302,13 @@ public final class DataAuthority {
             }
             values.put("sourceRevision", sourceRevision);
             values.put("eventCreatedEpochMillis", eventCreatedEpochMillis);
+            values.put("sourcePartition", sourcePartition);
+            values.put("sourceOffset", sourceOffset);
             values.put("stateFingerprint", stateFingerprint);
             values.put("eventChainHash", eventChainHash);
             values.put("watermarked", watermarked());
+            values.put("logPositioned", logPositioned());
+            values.put("visibilityToken", visibilityToken().payload());
             return Map.copyOf(values);
         }
 
@@ -1878,6 +2329,13 @@ public final class DataAuthority {
                 return number.longValue();
             }
             return value == null || value.toString().isBlank() ? fallback : Long.parseLong(value.toString());
+        }
+
+        private static int intValue(Object value, int fallback) {
+            if (value instanceof Number number) {
+                return number.intValue();
+            }
+            return value == null || value.toString().isBlank() ? fallback : Integer.parseInt(value.toString());
         }
 
         private static UUID uuid(Object value) {

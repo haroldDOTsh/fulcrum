@@ -20,9 +20,9 @@ class AuthorityCommandLaneTest {
         AuthorityCommandLane second = AuthorityCommandLane.fromRoute(route, 32);
 
         assertThat(first.lane()).isEqualTo(second.lane());
-        assertThat(first.fencingScope()).isEqualTo("player_rank:lane:" + first.lane());
+        assertThat(first.fencingScope()).isEqualTo("rank:lane:" + first.lane());
         assertThat(first.payload())
-            .containsEntry("domain", "player_rank")
+            .containsEntry("domain", "rank")
             .containsEntry("partitionKey", "rank:player:00000000-0000-0000-0000-000000000001")
             .containsEntry("laneCount", 32)
             .containsEntry("fencingScope", first.fencingScope());
@@ -37,25 +37,25 @@ class AuthorityCommandLaneTest {
 
         AuthorityCommandLane lane = AuthorityCommandLane.fromRoute(route, 256);
 
-        assertThat(lane.lane()).isEqualTo(171);
+        assertThat(lane.lane()).isEqualTo(70);
         assertThat(lane.laneKeyFingerprint())
-            .isEqualTo("e2b450a29955faab499a8daf24374c3f61248972aae48f824d4559a27e25100a");
+            .isEqualTo("627411449d4343469e417b841b07a362868e16d7e8857a9a98f7c5765a8fbb1f");
     }
 
     @Test
     void separatesDomainsWhenPartitionKeysMatch() {
         AuthorityCommandRoute profileRoute = new AuthorityCommandRoute(
-            "player_profile",
-            "cmd.player_profile",
-            "evt.player_profile",
-            "state.player_profile",
+            "player",
+            "cmd.player",
+            "evt.player",
+            "state.player",
             "player:00000000-0000-0000-0000-000000000003"
         );
         AuthorityCommandRoute rankRoute = new AuthorityCommandRoute(
-            "player_rank",
-            "cmd.player_rank",
-            "evt.player_rank",
-            "state.player_rank",
+            "rank",
+            "cmd.rank",
+            "evt.rank",
+            "state.rank",
             "player:00000000-0000-0000-0000-000000000003"
         );
 
@@ -63,8 +63,8 @@ class AuthorityCommandLaneTest {
         AuthorityCommandLane rankLane = AuthorityCommandLane.fromRoute(rankRoute, 128);
 
         assertThat(profileLane.laneKeyFingerprint()).isNotEqualTo(rankLane.laneKeyFingerprint());
-        assertThat(profileLane.fencingScope()).startsWith("player_profile:lane:");
-        assertThat(rankLane.fencingScope()).startsWith("player_rank:lane:");
+        assertThat(profileLane.fencingScope()).startsWith("player:lane:");
+        assertThat(rankLane.fencingScope()).startsWith("rank:lane:");
     }
 
     @Test

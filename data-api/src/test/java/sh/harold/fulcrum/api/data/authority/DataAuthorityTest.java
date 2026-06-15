@@ -155,16 +155,25 @@ class DataAuthorityTest {
             eventId,
             4L,
             1234L,
+            17,
+            3L,
             "state-fingerprint",
             "event-chain-hash"
         );
 
         assertThat(watermark.watermarked()).isTrue();
+        assertThat(watermark.logPositioned()).isTrue();
         assertThat(watermark.staleAt(1235L, 1000L)).isFalse();
+        assertThat(watermark.visibilityToken().payload())
+            .containsEntry("sourcePartition", 17)
+            .containsEntry("sourceOffset", 3L)
+            .containsEntry("sourceRevision", 4L);
         assertThat(watermark.payload())
             .containsEntry("sourceCommandId", commandId.toString())
             .containsEntry("sourceEventId", eventId.toString())
             .containsEntry("stateTopic", "state.player_rank")
+            .containsEntry("sourcePartition", 17)
+            .containsEntry("sourceOffset", 3L)
             .containsEntry("watermarked", true);
 
         DataAuthority.SnapshotWatermark roundTrip = DataAuthority.SnapshotWatermark.fromPayload(
@@ -172,6 +181,43 @@ class DataAuthorityTest {
             DataAuthority.SnapshotWatermark.unwatermarked("rank:player:" + playerId, "player_rank", playerId.toString(), 0L)
         );
         assertThat(roundTrip).isEqualTo(watermark);
+    }
+
+    @Test
+    void readVisibilityTokenBindsScopeTopicPartitionOffsetAndLineage() {
+        UUID playerId = UUID.randomUUID();
+        DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
+            "postgres-authority-state",
+            "rank:player:" + playerId,
+            "player_rank",
+            playerId.toString(),
+            "player_rank",
+            "state.player_rank",
+            "rank:player:" + playerId,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            4L,
+            1234L,
+            17,
+            3L,
+            "state-fingerprint",
+            "event-chain-hash"
+        );
+
+        DataAuthority.ReadVisibilityToken exact = watermark.visibilityToken();
+        DataAuthority.ReadVisibilityToken laterOffset = new DataAuthority.ReadVisibilityToken(
+            exact.aggregateScope(),
+            exact.stateTopic(),
+            exact.partitionKey(),
+            exact.sourcePartition(),
+            exact.sourceOffset() + 1L,
+            exact.sourceRevision(),
+            exact.eventChainHash()
+        );
+
+        assertThat(watermark.satisfies(exact)).isTrue();
+        assertThat(watermark.satisfies(laterOffset)).isFalse();
+        assertThat(DataAuthority.ReadRequirement.after(exact).minimumRevision()).isEqualTo(4L);
     }
 
     @Test
@@ -190,6 +236,8 @@ class DataAuthorityTest {
             eventId,
             4L,
             1234L,
+            9,
+            3L,
             "state-fingerprint",
             "event-chain-hash"
         );
@@ -201,8 +249,11 @@ class DataAuthorityTest {
         assertThat(receipt.satisfies("player_rank", "rank:player:" + playerId, 4L)).isTrue();
         assertThat(receipt.payload())
             .containsEntry("sourceEventId", eventId.toString())
+            .containsEntry("sourcePartition", 9)
+            .containsEntry("sourceOffset", 3L)
             .containsEntry("outputFingerprint", "state-fingerprint")
             .containsEntry("lineageFingerprint", "event-chain-hash");
+        assertThat(receipt.logPositioned()).isTrue();
 
         DataAuthority.ProjectionDeliveryReceipt roundTrip =
             DataAuthority.ProjectionDeliveryReceipt.fromPayload(receipt.payload(), null);
@@ -245,6 +296,7 @@ class DataAuthorityTest {
         assertThat(settlement.settled()).isTrue();
         assertThat(settlement.payload())
             .containsEntry("commandTopic", "cmd.player_rank")
+            .containsEntry("responseTopic", "rsp.player_rank")
             .containsEntry("fencingToken", "12")
             .containsEntry("idempotencyKey", "rank:" + commandId)
             .containsEntry("settled", true);
@@ -339,6 +391,55 @@ class DataAuthorityTest {
         assertThat(read.quote().deliveryReceipt()).isNotNull();
         assertThat(read.quote().deliveryReceipt().satisfies("player_rank", "rank:player:" + playerId, 4L))
             .isTrue();
+    }
+
+    @Test
+    void rankReaderDefaultQuoteRejectsUnsatisfiedVisibilityToken() {
+        UUID playerId = UUID.randomUUID();
+        DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
+            "postgres-authority-state",
+            "rank:player:" + playerId,
+            "player_rank",
+            playerId.toString(),
+            "player_rank",
+            "state.player_rank",
+            "rank:player:" + playerId,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            4L,
+            1234L,
+            17,
+            3L,
+            "state-fingerprint",
+            "event-chain-hash"
+        );
+        DataAuthority.PlayerRankSnapshot snapshot = new DataAuthority.PlayerRankSnapshot(
+            playerId,
+            "ADMIN",
+            List.of("DEFAULT", "ADMIN"),
+            4L,
+            watermark
+        );
+        DataAuthority.ReadVisibilityToken laterOffset = new DataAuthority.ReadVisibilityToken(
+            watermark.aggregateScope(),
+            watermark.stateTopic(),
+            watermark.partitionKey(),
+            watermark.sourcePartition(),
+            watermark.sourceOffset() + 1L,
+            watermark.sourceRevision(),
+            watermark.eventChainHash()
+        );
+        DataAuthority.PlayerRankReader reader = id ->
+            CompletableFuture.completedFuture(id.equals(playerId) ? Optional.of(snapshot) : Optional.empty());
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> read = reader
+            .quoteRanks(playerId, DataAuthority.ReadRequirement.after(laterOffset))
+            .toCompletableFuture()
+            .join();
+
+        assertThat(read.satisfied()).isFalse();
+        assertThat(read.snapshot()).isEmpty();
+        assertThat(read.quote().status()).isEqualTo(DataAuthority.ReadQuoteStatus.VISIBILITY_TOKEN_MISMATCH);
     }
 
     @Test

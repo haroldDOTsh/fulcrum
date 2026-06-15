@@ -793,6 +793,85 @@ CREATE INDEX IF NOT EXISTS idx_authority_writer_claims_partition_epoch
 CREATE INDEX IF NOT EXISTS idx_authority_writer_claims_owner_time
     ON authority_writer_claims (owner_node, claimed_at DESC);
 
+CREATE TABLE IF NOT EXISTS authority_command_consumer_cursors (
+    command_domain TEXT NOT NULL,
+    command_partition INTEGER NOT NULL,
+    command_topic TEXT NOT NULL,
+    committed_offset BIGINT NOT NULL DEFAULT -1,
+    partition_key TEXT NOT NULL,
+    last_command_id UUID NOT NULL,
+    last_result_revision BIGINT NOT NULL,
+    last_result_accepted BOOLEAN NOT NULL,
+    last_rejection_reason TEXT NOT NULL,
+    writer_claim_id UUID NOT NULL,
+    writer_claim_epoch BIGINT NOT NULL,
+    writer_claim_fingerprint TEXT NOT NULL,
+    owner_node TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (command_domain, command_partition),
+    CONSTRAINT chk_authority_command_consumer_cursors_domain
+        CHECK (command_domain <> ''),
+    CONSTRAINT chk_authority_command_consumer_cursors_partition
+        CHECK (command_partition >= 0),
+    CONSTRAINT chk_authority_command_consumer_cursors_command_topic
+        CHECK (command_topic <> ''),
+    CONSTRAINT chk_authority_command_consumer_cursors_offset
+        CHECK (committed_offset >= -1),
+    CONSTRAINT chk_authority_command_consumer_cursors_partition_key
+        CHECK (partition_key <> ''),
+    CONSTRAINT chk_authority_command_consumer_cursors_revision
+        CHECK (last_result_revision >= 0),
+    CONSTRAINT chk_authority_command_consumer_cursors_writer_epoch
+        CHECK (writer_claim_epoch > 0),
+    CONSTRAINT chk_authority_command_consumer_cursors_claim_fingerprint
+        CHECK (writer_claim_fingerprint ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT chk_authority_command_consumer_cursors_owner
+        CHECK (owner_node <> '')
+);
+CREATE INDEX IF NOT EXISTS idx_authority_command_consumer_cursors_owner
+    ON authority_command_consumer_cursors (owner_node, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_authority_command_consumer_cursors_claim
+    ON authority_command_consumer_cursors (writer_claim_id);
+
+CREATE TABLE IF NOT EXISTS authority_state_projection_cursors (
+    projection_name TEXT NOT NULL,
+    projection_version TEXT NOT NULL,
+    command_domain TEXT NOT NULL,
+    state_topic TEXT NOT NULL,
+    state_partition INTEGER NOT NULL,
+    committed_offset BIGINT NOT NULL DEFAULT -1,
+    partition_key TEXT NOT NULL,
+    last_command_id UUID NOT NULL,
+    last_event_id UUID NOT NULL,
+    last_revision BIGINT NOT NULL,
+    last_restore_applied BOOLEAN NOT NULL,
+    last_restore_message TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (projection_name, projection_version, command_domain, state_partition),
+    CONSTRAINT chk_authority_state_projection_cursors_projection
+        CHECK (projection_name <> ''),
+    CONSTRAINT chk_authority_state_projection_cursors_version
+        CHECK (projection_version <> ''),
+    CONSTRAINT chk_authority_state_projection_cursors_domain
+        CHECK (command_domain <> ''),
+    CONSTRAINT chk_authority_state_projection_cursors_topic
+        CHECK (state_topic <> ''),
+    CONSTRAINT chk_authority_state_projection_cursors_partition
+        CHECK (state_partition >= 0),
+    CONSTRAINT chk_authority_state_projection_cursors_offset
+        CHECK (committed_offset >= -1),
+    CONSTRAINT chk_authority_state_projection_cursors_partition_key
+        CHECK (partition_key <> ''),
+    CONSTRAINT chk_authority_state_projection_cursors_revision
+        CHECK (last_revision > 0),
+    CONSTRAINT chk_authority_state_projection_cursors_message
+        CHECK (last_restore_message <> '')
+);
+CREATE INDEX IF NOT EXISTS idx_authority_state_projection_cursors_projection_time
+    ON authority_state_projection_cursors (projection_name, projection_version, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_authority_state_projection_cursors_topic_partition
+    ON authority_state_projection_cursors (state_topic, state_partition, committed_offset DESC);
+
 INSERT INTO authority_lifecycle_policies (
     table_name,
     lifecycle_timestamp_column,

@@ -22,10 +22,11 @@ class AuthorityCommandGuardEvidenceTest {
             "accepted",
             new DataAuthority.CommandSettlement(
                 "postgres-data-authority",
-                "player_rank",
-                "cmd.player_rank",
-                "evt.player_rank",
-                "state.player_rank",
+                "rank",
+                "cmd.rank",
+                "rsp.rank",
+                "evt.rank",
+                "state.rank",
                 command.scope(),
                 command.fencingToken(),
                 command.idempotencyKey(),
@@ -51,12 +52,23 @@ class AuthorityCommandGuardEvidenceTest {
             .containsEntry("receivedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
             .containsEntry("deliveryMode", DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE.name());
         assertThat(map(evidence.payload().get("route")))
-            .containsEntry("commandTopic", "cmd.player_rank")
+            .containsEntry("commandTopic", "cmd.rank")
             .containsEntry("partitionKey", command.scope());
         assertThat(map(evidence.payload().get("writerLane")))
-            .containsEntry("domain", "player_rank")
+            .containsEntry("domain", "rank")
             .containsEntry("partitionKey", command.scope())
             .containsEntry("laneCount", AuthorityCommandLane.DEFAULT_LANE_COUNT);
+        assertThat(map(evidence.payload().get("topology")))
+            .containsEntry("commandContractFingerprint", DataAuthorityCommandContracts.fingerprint())
+            .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
+            .containsEntry("readContractFingerprint", DataAuthorityReadContracts.fingerprint())
+            .containsEntry("authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint())
+            .containsEntry("authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint())
+            .containsEntry("authorityLogTopologyFingerprint", AuthorityTopologyEvidence.logTopologyFingerprint())
+            .containsEntry("domain", "rank")
+            .containsEntry("authorityService", "authority-rank")
+            .containsEntry("consumerGroup", "authority-rank")
+            .containsEntry("partitionCount", AuthorityCommandLane.DEFAULT_LANE_COUNT);
         assertThat(map(evidence.payload().get("result")))
             .containsEntry("accepted", true)
             .containsEntry("rejectionReason", "NONE")
@@ -127,6 +139,11 @@ class AuthorityCommandGuardEvidenceTest {
             .containsEntry("receivedRouteManifestFingerprint", "1111111111111111111111111111111111111111111111111111111111111111");
         assertThat(map(evidence.payload().get("route")))
             .containsEntry("partitionKey", "rank:player:" + scopedPlayerId);
+        assertThat(map(evidence.payload().get("topology")))
+            .containsEntry("commandContractFingerprint", DataAuthorityCommandContracts.fingerprint())
+            .containsEntry("authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint())
+            .containsEntry("authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint())
+            .containsEntry("domain", "rank");
         assertThat(map(evidence.payload().get("result")))
             .containsEntry("accepted", false)
             .containsEntry("rejectionReason", "VALIDATION_FAILED")
@@ -137,6 +154,51 @@ class AuthorityCommandGuardEvidenceTest {
             .containsEntry("verdict", "FAILED");
         assertThat(decision(evidence.payload(), "terminalOutcome"))
             .containsEntry("verdict", "FAILED");
+    }
+
+    @Test
+    void replayTopologyEvidenceMustMatchCurrentAuthorityTopology() {
+        DataAuthority.PlayerRankCommand command = rankCommand(UUID.randomUUID(), UUID.randomUUID());
+        DataAuthority.CommandResult result = new DataAuthority.CommandResult(
+            command.commandId(),
+            true,
+            3L,
+            DataAuthority.RejectionReason.NONE,
+            "accepted",
+            new DataAuthority.CommandSettlement(
+                "postgres-data-authority",
+                "rank",
+                "cmd.rank",
+                "rsp.rank",
+                "evt.rank",
+                "state.rank",
+                command.scope(),
+                command.fencingToken(),
+                command.idempotencyKey(),
+                command.expectedRevision(),
+                DataAuthority.SnapshotWatermark.unwatermarked("postgres-data-authority", "player_rank", command.scope(), 3L)
+            )
+        );
+        AuthorityCommandGuardEvidence.GuardEvidence evidence =
+            AuthorityCommandGuardEvidence.terminal(command, result, "NOT_REPLAYABLE");
+
+        assertThat(AuthorityTopologyEvidence.replayMismatch(command, evidence.payload())).isNull();
+
+        Map<String, Object> legacyEvidence = new LinkedHashMap<>(evidence.payload());
+        legacyEvidence.remove("topology");
+        assertThat(AuthorityTopologyEvidence.replayMismatch(command, legacyEvidence))
+            .isEqualTo("Stored command topology evidence is missing");
+
+        Map<String, Object> driftedEvidence = new LinkedHashMap<>(evidence.payload());
+        Map<String, Object> driftedTopology = new LinkedHashMap<>(map(driftedEvidence.get("topology")));
+        driftedTopology.put(
+            "authorityDomainTopologyFingerprint",
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        driftedEvidence.put("topology", driftedTopology);
+
+        assertThat(AuthorityTopologyEvidence.replayMismatch(command, driftedEvidence))
+            .contains("authorityDomainTopologyFingerprint");
     }
 
     private static DataAuthority.PlayerRankCommand rankCommand(UUID commandId, UUID playerId) {

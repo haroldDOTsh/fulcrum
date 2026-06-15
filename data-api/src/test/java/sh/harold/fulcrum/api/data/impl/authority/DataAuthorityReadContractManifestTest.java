@@ -48,18 +48,29 @@ class DataAuthorityReadContractManifestTest {
 
     @Test
     void readContractPayloadCarriesSchemaAndFingerprint() {
+        DataAuthority.ReadVisibilityToken visibilityToken = new DataAuthority.ReadVisibilityToken(
+            "rank:player:test",
+            "state.rank",
+            "rank:player:test",
+            12,
+            4L,
+            5L,
+            "1".repeat(64)
+        );
         Map<String, Object> payload = DataAuthorityReadContracts.payload(
             DataAuthorityReadContracts.ReadType.PLAYER_RANK,
             Map.of(
                 "playerId", UUID.randomUUID().toString(),
                 "minimumRevision", 3L,
-                "maxAgeMillis", 250L
+                "maxAgeMillis", 250L,
+                "visibilityToken", visibilityToken.payload()
             )
         );
 
         assertThat(payload).containsEntry("readType", DataAuthorityReadContracts.ReadType.PLAYER_RANK.name());
         assertThat(payload).containsEntry("schemaVersion", DataAuthorityReadContracts.schemaVersion());
         assertThat(payload).containsEntry("contractFingerprint", DataAuthorityReadContracts.fingerprint());
+        assertThat(payload).containsEntry("visibilityToken", visibilityToken.payload());
         assertThat(DataAuthorityReadContracts.rejection(
             DataAuthorityReadContracts.ReadType.PLAYER_RANK,
             payload
@@ -77,6 +88,26 @@ class DataAuthorityReadContractManifestTest {
         assertThat(requirement.maxAgeMillis()).isEqualTo(250L);
         assertThat(DataAuthorityReadContracts.defaultCacheMaxAgeMillis())
             .isEqualTo(DataAuthorityReadContracts.DEFAULT_CACHE_MAX_AGE_MILLIS);
+    }
+
+    @Test
+    void readContractPreservesVisibilityToken() {
+        DataAuthority.ReadVisibilityToken visibilityToken = new DataAuthority.ReadVisibilityToken(
+            "rank:player:test",
+            "state.rank",
+            "rank:player:test",
+            12,
+            4L,
+            5L,
+            "1".repeat(64)
+        );
+        DataAuthority.ReadRequirement requirement = DataAuthorityReadContracts.effectiveRequirement(
+            DataAuthorityReadContracts.ReadType.PLAYER_RANK,
+            DataAuthority.ReadRequirement.after(visibilityToken)
+        );
+
+        assertThat(requirement.minimumRevision()).isEqualTo(5L);
+        assertThat(requirement.visibilityToken()).isEqualTo(visibilityToken);
     }
 
     @Test

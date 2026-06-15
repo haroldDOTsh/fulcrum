@@ -251,8 +251,8 @@ class DataAuthorityCommandContractManifestTest {
             command.fencingToken(),
             command.expectedRevision(),
             DataAuthority.COMMAND_SCHEMA_VERSION,
-            new AuthorityCommandRoute("player_rank", "cmd.player_rank", "evt.player_rank",
-                "state.player_rank", "rank:player:" + UUID.randomUUID()),
+            new AuthorityCommandRoute("rank", "cmd.rank", "evt.rank",
+                "state.rank", "rank:player:" + UUID.randomUUID()),
             command.provenance(),
             command.payload()
         )).hasMessageContaining("partition key");
@@ -421,7 +421,7 @@ class DataAuthorityCommandContractManifestTest {
         DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
             "message-bus-test-authority",
             command.scope(),
-            route.domain(),
+            projectionFamily(command.type()),
             aggregateId == null ? command.scope() : aggregateId.toString(),
             route.domain(),
             route.stateTopic(),
@@ -437,6 +437,7 @@ class DataAuthorityCommandContractManifestTest {
             "message-bus-test-authority",
             route.domain(),
             route.commandTopic(),
+            route.responseTopic(),
             route.eventTopic(),
             route.stateTopic(),
             route.partitionKey(),
@@ -445,6 +446,15 @@ class DataAuthorityCommandContractManifestTest {
             command.expectedRevision(),
             watermark
         );
+    }
+
+    private static String projectionFamily(DataAuthority.CommandType type) {
+        return switch (type) {
+            case GRANT_RANK, REVOKE_RANK -> "player_rank";
+            case RECORD_MATCH_START, RECORD_MATCH_END -> "match";
+            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
+                "player_profile";
+        };
     }
 
     private static String goldenFingerprint(String path) throws Exception {

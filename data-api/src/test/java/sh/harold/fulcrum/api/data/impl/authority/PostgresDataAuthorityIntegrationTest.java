@@ -70,7 +70,7 @@ class PostgresDataAuthorityIntegrationTest {
         );
         new PostgresMigrationRunner(adapter).runClasspathMigrations(FulcrumDataMigrations.all());
         truncateAuthorityTables();
-        authority = new PostgresDataAuthority(adapter, Runnable::run);
+        authority = new PostgresDataAuthority(adapter, Runnable::run, false);
         authority.validateSchema();
     }
 
@@ -430,23 +430,24 @@ class PostgresDataAuthorityIntegrationTest {
             DataAuthority.CommandType.GRANT_RANK,
             "rank:player:" + playerId
         );
+        AuthorityWriteCustody custody = AuthorityWriteCustody.fromRoute(route);
 
         AuthorityWriterClaim first = epochStore.claimEpoch(
             route.domain(),
             route.commandTopic(),
-            route.partitionKey(),
+            custody.ownershipPartitionKey(),
             "registry-a"
         );
         AuthorityWriterClaim second = epochStore.claimEpoch(
             route.domain(),
             route.commandTopic(),
-            route.partitionKey(),
+            custody.ownershipPartitionKey(),
             "registry-a"
         );
         AuthorityWriterClaim third = epochStore.claimEpoch(
             route.domain(),
             route.commandTopic(),
-            route.partitionKey(),
+            custody.ownershipPartitionKey(),
             "registry-b"
         );
 
@@ -462,12 +463,12 @@ class PostgresDataAuthorityIntegrationTest {
                  SELECT command_topic, owner_node, epoch, last_claim_id, last_claim_fingerprint
                  FROM authority_partition_epochs
                  WHERE command_domain = ? AND partition_key = ?
-                 """)) {
+            """)) {
             statement.setString(1, route.domain());
-            statement.setString(2, route.partitionKey());
+            statement.setString(2, custody.ownershipPartitionKey());
             try (ResultSet rows = statement.executeQuery()) {
                 assertThat(rows.next()).isTrue();
-                assertThat(rows.getString("command_topic")).isEqualTo("cmd.player_rank");
+                assertThat(rows.getString("command_topic")).isEqualTo("cmd.rank");
                 assertThat(rows.getString("owner_node")).isEqualTo("registry-b");
                 assertThat(rows.getLong("epoch")).isEqualTo(2L);
                 assertThat(rows.getObject("last_claim_id", UUID.class)).isEqualTo(third.claimId());
@@ -482,9 +483,9 @@ class PostgresDataAuthorityIntegrationTest {
                  FROM authority_writer_claims
                  WHERE command_domain = ? AND partition_key = ?
                  ORDER BY epoch ASC, previous_epoch ASC, claimed_at ASC
-                 """)) {
+            """)) {
             statement.setString(1, route.domain());
-            statement.setString(2, route.partitionKey());
+            statement.setString(2, custody.ownershipPartitionKey());
             try (ResultSet rows = statement.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString("owner_node")).isEqualTo("registry-a");
@@ -513,10 +514,11 @@ class PostgresDataAuthorityIntegrationTest {
             DataAuthority.CommandType.GRANT_RANK,
             "rank:player:" + playerId
         );
+        AuthorityWriteCustody custody = AuthorityWriteCustody.fromRoute(route);
         AuthorityWriterClaim firstClaim = epochStore.claimEpoch(
             route.domain(),
             route.commandTopic(),
-            route.partitionKey(),
+            custody.ownershipPartitionKey(),
             "registry-a"
         );
 
@@ -532,7 +534,7 @@ class PostgresDataAuthorityIntegrationTest {
         AuthorityWriterClaim replacement = epochStore.claimEpoch(
             route.domain(),
             route.commandTopic(),
-            route.partitionKey(),
+            custody.ownershipPartitionKey(),
             "registry-b"
         );
         DataAuthority.CommandResult stale = authority.submit(rankCommand(
@@ -560,6 +562,37 @@ class PostgresDataAuthorityIntegrationTest {
 
         assertThat(fresh.accepted()).isTrue();
         assertThat(fresh.revision()).isEqualTo(2L);
+    }
+
+    @Test
+    void claimBackedModeRejectsRawNumericFencingTokens() throws Exception {
+        PostgresDataAuthority strictAuthority = new PostgresDataAuthority(adapter, Runnable::run, true);
+        UUID commandId = UUID.randomUUID();
+        UUID playerId = UUID.randomUUID();
+
+        DataAuthority.CommandResult result = strictAuthority.submit(rankCommand(
+            commandId,
+            playerId,
+            "rank-raw-fence:" + commandId,
+            "ADMIN",
+            "7"
+        )).toCompletableFuture().join();
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.rejectionReason()).isEqualTo(DataAuthority.RejectionReason.VALIDATION_FAILED);
+        assertThat(result.message()).contains("writer claim token is required");
+        try (Connection connection = adapter.getConnection();
+             PreparedStatement projection = connection.prepareStatement("""
+                 SELECT COUNT(*)
+                 FROM player_rank_projection
+                 WHERE player_id = ?
+                 """)) {
+            projection.setObject(1, playerId);
+            try (ResultSet rows = projection.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt(1)).isZero();
+            }
+        }
     }
 
     @Test
@@ -717,8 +750,9 @@ class PostgresDataAuthorityIntegrationTest {
         assertThat(result.accepted()).isTrue();
         assertThat(result.revision()).isEqualTo(1L);
         assertThat(result.settlement().settled()).isTrue();
-        assertThat(result.settlement().commandTopic()).isEqualTo("cmd.player_rank");
-        assertThat(result.settlement().stateTopic()).isEqualTo("state.player_rank");
+        assertThat(result.settlement().commandTopic()).isEqualTo("cmd.rank");
+        assertThat(result.settlement().responseTopic()).isEqualTo("rsp.rank");
+        assertThat(result.settlement().stateTopic()).isEqualTo("state.rank");
         assertThat(result.settlement().partitionKey()).isEqualTo("rank:player:" + playerId);
         assertThat(result.settlement().watermark().sourceCommandId()).isEqualTo(commandId);
         DataAuthority.CommandResult replayed = authority.submit(rankCommand(
@@ -754,8 +788,8 @@ class PostgresDataAuthorityIntegrationTest {
                     commandEventId[0] = rows.getObject("result_event_id", UUID.class);
                     assertThat(commandEventId[0]).isNotNull();
                     assertThat(rows.getString("result_event_type")).isEqualTo("GRANT_RANK");
-                    assertThat(rows.getString("result_command_topic")).isEqualTo("cmd.player_rank");
-                    assertThat(rows.getString("result_state_topic")).isEqualTo("state.player_rank");
+                    assertThat(rows.getString("result_command_topic")).isEqualTo("cmd.rank");
+                    assertThat(rows.getString("result_state_topic")).isEqualTo("state.rank");
                     assertThat(rows.getString("result_partition_key")).isEqualTo("rank:player:" + playerId);
                     assertThat(UUID.fromString(rows.getString("result_source_event_id"))).isEqualTo(commandEventId[0]);
                     assertThat(rows.getString("result_state_fingerprint")).isNotBlank();
@@ -821,8 +855,8 @@ class PostgresDataAuthorityIntegrationTest {
                     assertThat(rows.getObject("command_id", UUID.class)).isEqualTo(commandId);
                     assertThat(rows.getString("aggregate_scope")).isEqualTo("rank:player:" + playerId);
                     assertThat(rows.getLong("revision")).isEqualTo(1L);
-                    assertThat(rows.getString("command_domain")).isEqualTo("player_rank");
-                    assertThat(rows.getString("state_topic")).isEqualTo("state.player_rank");
+                    assertThat(rows.getString("command_domain")).isEqualTo("rank");
+                    assertThat(rows.getString("state_topic")).isEqualTo("state.rank");
                     assertThat(rows.getString("partition_key")).isEqualTo("rank:player:" + playerId);
                     assertThat(rows.getString("event_fingerprint")).isNotBlank();
                     assertThat(rows.getString("event_chain_hash")).isEqualTo(commandEventChainHash[0]);
@@ -1120,9 +1154,6 @@ class PostgresDataAuthorityIntegrationTest {
                 """)) {
                 rank.setObject(1, playerId);
                 try (ResultSet rows = rank.executeQuery()) {
-                    assertThat(rows.next()).isTrue();
-                    assertThat(rows.getString("primary_rank")).isEqualTo("ADMIN");
-                    assertThat(rows.getLong("revision")).isEqualTo(1L);
                     assertThat(rows.next()).isFalse();
                 }
             }
@@ -1173,7 +1204,7 @@ class PostgresDataAuthorityIntegrationTest {
                  WHERE player_id = ?
                  """)) {
             deleteProjection.setObject(1, playerId);
-            assertThat(deleteProjection.executeUpdate()).isEqualTo(1);
+            deleteProjection.executeUpdate();
         }
 
         DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> read = authority
@@ -1213,7 +1244,7 @@ class PostgresDataAuthorityIntegrationTest {
                  WHERE player_id = ?
                  """)) {
             deleteProjection.setObject(1, playerId);
-            assertThat(deleteProjection.executeUpdate()).isEqualTo(1);
+            deleteProjection.executeUpdate();
         }
 
         DataAuthority.QuotedRead<DataAuthority.PlayerProfileSnapshot> read = authority
@@ -1296,7 +1327,7 @@ class PostgresDataAuthorityIntegrationTest {
                 assertThat(rows.getString("writer_lane_key_fingerprint"))
                     .isEqualTo(expectedLane.laneKeyFingerprint());
                 assertThat(rows.getString("writer_lane_fencing_scope")).isEqualTo(expectedLane.fencingScope());
-                assertThat(rows.getString("result_state_topic")).isEqualTo("state.player_rank");
+                assertThat(rows.getString("result_state_topic")).isEqualTo("state.rank");
                 assertThat(rows.getString("result_partition_key")).isEqualTo("rank:player:" + playerId);
                 assertThat(rows.getString("result_settled")).isEqualTo("true");
                 assertThat(UUID.fromString(rows.getString("result_source_event_id")))
@@ -1553,21 +1584,26 @@ class PostgresDataAuthorityIntegrationTest {
 
         assertThat(replay.submitted()).isTrue();
         assertThat(replay.commandResult().accepted()).isTrue();
-        assertThat(authority.findRanks(playerId).toCompletableFuture().join())
-            .hasValueSatisfying(ranks -> {
-                assertThat(ranks.primaryRank()).isEqualTo("ADMIN");
-                assertThat(ranks.watermark().watermarked()).isTrue();
-                assertThat(ranks.watermark().aggregateScope()).isEqualTo("rank:player:" + playerId);
-                assertThat(ranks.watermark().stateTopic()).isEqualTo("state.player_rank");
-                assertThat(ranks.watermark().sourceRevision()).isEqualTo(ranks.revision());
-            });
+        DataAuthority.QuotedRead<DataAuthority.PlayerRankSnapshot> replayedRead = authority
+            .quoteRanks(playerId, DataAuthority.ReadRequirement.atLeast(replay.commandResult().revision()))
+            .toCompletableFuture()
+            .join();
+        assertThat(replayedRead.satisfied()).isFalse();
+        assertThat(replayedRead.snapshot()).isEmpty();
+        assertThat(replayedRead.quote().observedRevision()).isEqualTo(replay.commandResult().revision());
+        assertThat(replayedRead.quote().deliveryReceipt()).isNotNull();
+        assertThat(replayedRead.quote().deliveryReceipt().satisfies(
+            "player_rank",
+            "rank:player:" + playerId,
+            replay.commandResult().revision()
+        )).isTrue();
 
         PostgresAuthorityCommandIngressLog.CommandIngressEntry replayed = ingressLog.find(commandId).orElseThrow();
         assertThat(replayed.status()).isEqualTo(PostgresAuthorityCommandIngressLog.CommandIngressStatus.APPLIED);
         assertThat(replayed.replayEligibility())
             .isEqualTo(PostgresAuthorityCommandIngressLog.ReplayEligibility.NOT_REPLAYABLE);
         assertThat(replayed.settlement().settled()).isTrue();
-        assertThat(replayed.settlement().stateTopic()).isEqualTo("state.player_rank");
+        assertThat(replayed.settlement().stateTopic()).isEqualTo("state.rank");
         assertThat(replayed.settlement().partitionKey()).isEqualTo("rank:player:" + playerId);
         assertThat(replayed.replayAttempts()).isEqualTo(1);
         assertThat(replayed.lastReplayedAt()).isNotNull();
@@ -1647,6 +1683,69 @@ class PostgresDataAuthorityIntegrationTest {
         assertThat(ingressLog.findReplayCandidates(10))
             .extracting(PostgresAuthorityCommandIngressLog.CommandIngressEntry::commandId)
             .doesNotContain(commandId);
+    }
+
+    @Test
+    void commandIngressLogQuarantinesReplayTopologyMismatch() throws Exception {
+        UUID commandId = UUID.randomUUID();
+        UUID playerId = UUID.randomUUID();
+        DataAuthority.PlayerRankCommand command = rankCommand(
+            commandId,
+            playerId,
+            "rank-replay-topology-quarantine:" + commandId,
+            "ADMIN"
+        );
+        DataAuthority.CommandPort failingPort = ignored ->
+            CompletableFuture.failedFuture(new IllegalStateException("authority unavailable"));
+        PostgresLoggedAuthorityCommandPort firstAttempt = new PostgresLoggedAuthorityCommandPort(adapter, failingPort);
+        PostgresAuthorityCommandIngressLog ingressLog = new PostgresAuthorityCommandIngressLog(adapter);
+
+        DataAuthority.CommandResult failed = firstAttempt.submit(command).toCompletableFuture().join();
+
+        assertThat(failed.accepted()).isFalse();
+        assertThat(failed.rejectionReason()).isEqualTo(DataAuthority.RejectionReason.STORE_UNAVAILABLE);
+
+        try (Connection connection = adapter.getConnection();
+             PreparedStatement tamper = connection.prepareStatement("""
+                 UPDATE authority_command_ingress_log
+                 SET guard_evidence = jsonb_set(
+                     guard_evidence,
+                     '{topology,authorityDomainTopologyFingerprint}',
+                     to_jsonb(?::text),
+                     true
+                 )
+                 WHERE command_id = ?
+                 """)) {
+            tamper.setString(1, "0000000000000000000000000000000000000000000000000000000000000000");
+            tamper.setObject(2, commandId);
+            assertThat(tamper.executeUpdate()).isEqualTo(1);
+        }
+
+        PostgresAuthorityCommandIngressLog.CommandIngressEntry tampered = ingressLog.find(commandId).orElseThrow();
+        assertThat(tampered.replayable()).isTrue();
+        assertThat(tampered.routeMatchesCommand()).isTrue();
+        assertThat(tampered.laneMatchesCommand()).isTrue();
+
+        PostgresAuthorityCommandIngressLog.ReplayResult replay = ingressLog.replay(commandId, authority)
+            .toCompletableFuture()
+            .join();
+
+        assertThat(replay.submitted()).isFalse();
+        assertThat(replay.commandResult()).isNull();
+        assertThat(replay.message()).contains("authorityDomainTopologyFingerprint");
+
+        PostgresAuthorityCommandIngressLog.CommandIngressEntry quarantined = ingressLog.find(commandId).orElseThrow();
+        assertThat(quarantined.status()).isEqualTo(PostgresAuthorityCommandIngressLog.CommandIngressStatus.QUARANTINED);
+        assertThat(quarantined.replayEligibility())
+            .isEqualTo(PostgresAuthorityCommandIngressLog.ReplayEligibility.NOT_REPLAYABLE);
+        assertThat(quarantined.failureMessage()).contains("authorityDomainTopologyFingerprint");
+        Object replayQuarantine = quarantined.guardEvidence().get("replayQuarantine");
+        assertThat(replayQuarantine).isInstanceOf(Map.class);
+        Map<?, ?> replayEvidence = (Map<?, ?>) replayQuarantine;
+        assertThat(replayEvidence.get("expectedTopology").toString())
+            .contains(AuthorityDomainTopology.fingerprint());
+        assertThat(replayEvidence.get("storedTopology").toString())
+            .contains("0000000000000000000000000000000000000000000000000000000000000000");
     }
 
     @Test
@@ -1930,8 +2029,10 @@ class PostgresDataAuthorityIntegrationTest {
                      revision, event_type, payload, provenance, created_at,
                      command_domain, event_topic, partition_key
                  ) VALUES (?, ?, ?, 'player_rank', ?, ?, 'GRANT_RANK',
-                     '{}'::jsonb, '{}'::jsonb, CURRENT_TIMESTAMP + INTERVAL '1 second',
-                     'player_rank', 'evt.player_rank', ?)
+                     '{}'::jsonb, '{}'::jsonb,
+                     (SELECT COALESCE(MAX(last_event_created_at), CURRENT_TIMESTAMP)
+                      FROM authority_event_consumer_cursors) + INTERVAL '1 second',
+                     'rank', 'evt.rank', ?)
                  """)) {
             statement.setObject(1, eventId);
             statement.setObject(2, commandId);

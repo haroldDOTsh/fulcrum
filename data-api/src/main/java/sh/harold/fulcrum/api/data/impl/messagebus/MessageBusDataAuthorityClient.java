@@ -1,6 +1,7 @@
 package sh.harold.fulcrum.api.data.impl.messagebus;
 
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityTopologyEvidence;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
@@ -41,7 +42,8 @@ public final class MessageBusDataAuthorityClient implements DataAuthority.Comman
     @Override
     public CompletionStage<DataAuthority.CommandResult> submit(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
-        return messageBus.request(authorityServerId, MessageBusAuthorityChannels.COMMAND, commandPayload(command), timeout)
+        Map<String, Object> route = DataAuthorityCommandContracts.routePayload(command);
+        return messageBus.request(authorityServerId, commandTopic(route), commandPayload(command, route), timeout)
             .thenApply(response -> commandResult(command, response));
     }
 
@@ -91,7 +93,7 @@ public final class MessageBusDataAuthorityClient implements DataAuthority.Comman
             .thenApply(response -> quotedRankSnapshot(playerId, effectiveRequirement, response));
     }
 
-    private Map<String, Object> commandPayload(DataAuthority.AuthorityCommand command) {
+    private Map<String, Object> commandPayload(DataAuthority.AuthorityCommand command, Map<String, Object> route) {
         DataAuthority.CommandManifest manifest = command.manifest();
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("commandId", manifest.commandId().toString());
@@ -105,10 +107,19 @@ public final class MessageBusDataAuthorityClient implements DataAuthority.Comman
         values.put("schemaVersion", manifest.schemaVersion());
         values.put("contractFingerprint", DataAuthorityCommandContracts.fingerprint());
         values.put("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
-        values.put("route", DataAuthorityCommandContracts.routePayload(command));
+        values.putAll(AuthorityTopologyEvidence.commandWirePayload(manifest.type(), manifest.scope(), route));
+        values.put("route", route);
         values.put("provenance", clientProvenance(manifest.provenance()).payload());
         values.put("payload", command.payload());
         return Map.copyOf(values);
+    }
+
+    private static String commandTopic(Map<String, Object> route) {
+        Object commandTopic = route.get("commandTopic");
+        if (commandTopic == null || commandTopic.toString().isBlank()) {
+            throw new IllegalArgumentException("Authority command route is missing commandTopic");
+        }
+        return commandTopic.toString();
     }
 
     private DataAuthority.CommandProvenance clientProvenance(DataAuthority.CommandProvenance submitted) {
@@ -130,6 +141,9 @@ public final class MessageBusDataAuthorityClient implements DataAuthority.Comman
         values.put("playerId", playerId.toString());
         values.put("minimumRevision", requirement.minimumRevision());
         values.put("maxAgeMillis", requirement.maxAgeMillis());
+        if (requirement.visibilityToken() != null) {
+            values.put("visibilityToken", requirement.visibilityToken().payload());
+        }
         return DataAuthorityReadContracts.payload(DataAuthorityReadContracts.ReadType.PLAYER_PROFILE, values);
     }
 
@@ -138,6 +152,9 @@ public final class MessageBusDataAuthorityClient implements DataAuthority.Comman
         values.put("playerId", playerId.toString());
         values.put("minimumRevision", requirement.minimumRevision());
         values.put("maxAgeMillis", requirement.maxAgeMillis());
+        if (requirement.visibilityToken() != null) {
+            values.put("visibilityToken", requirement.visibilityToken().payload());
+        }
         return DataAuthorityReadContracts.payload(DataAuthorityReadContracts.ReadType.PLAYER_RANK, values);
     }
 

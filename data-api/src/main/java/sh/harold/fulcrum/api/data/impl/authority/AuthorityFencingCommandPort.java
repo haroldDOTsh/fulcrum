@@ -30,41 +30,49 @@ public final class AuthorityFencingCommandPort implements DataAuthority.CommandP
     @Override
     public CompletionStage<DataAuthority.CommandResult> submit(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
-        AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
+        AuthorityWriteCustody custody = AuthorityWriteCustody.fromCommand(command);
         AuthorityWriterClaim claim;
         try {
             claim = epochStore.claimEpoch(
-                route.domain(),
-                route.commandTopic(),
-                route.partitionKey(),
+                custody.commandDomain(),
+                custody.commandTopic(),
+                custody.ownershipPartitionKey(),
                 ownerNode
             );
         } catch (RuntimeException exception) {
             return CompletableFuture.completedFuture(rejected(command, exception.getMessage()));
         }
-        String invalidClaim = invalidClaim(route, claim, ownerNode);
+        String invalidClaim = invalidClaim(custody, claim, ownerNode);
         if (invalidClaim != null) {
             return CompletableFuture.completedFuture(rejected(command, invalidClaim));
         }
         return delegate.submit(stamp(command, claim.fencingToken()));
     }
 
+    static DataAuthority.AuthorityCommand stampWithClaim(
+        DataAuthority.AuthorityCommand command,
+        AuthorityWriterClaim claim
+    ) {
+        Objects.requireNonNull(claim, "claim");
+        return stamp(command, claim.fencingToken());
+    }
+
     private static String invalidClaim(
-        AuthorityCommandRoute route,
+        AuthorityWriteCustody custody,
         AuthorityWriterClaim claim,
         String ownerNode
     ) {
         if (claim == null) {
             return "Authority fencing claim is missing";
         }
-        if (!route.domain().equals(claim.commandDomain())) {
+        if (!custody.commandDomain().equals(claim.commandDomain())) {
             return "Authority fencing claim domain does not match command route";
         }
-        if (!route.commandTopic().equals(claim.commandTopic())) {
+        if (!custody.commandTopic().equals(claim.commandTopic())) {
             return "Authority fencing claim command topic does not match command route";
         }
-        if (!route.partitionKey().equals(claim.partitionKey())) {
-            return "Authority fencing claim partition key does not match command route";
+        if (!custody.ownershipPartitionKey().equals(claim.partitionKey())) {
+            return "Authority fencing claim partition key does not match authority lane";
         }
         if (!ownerNode.equals(claim.ownerNode())) {
             return "Authority fencing claim owner does not match authority node";

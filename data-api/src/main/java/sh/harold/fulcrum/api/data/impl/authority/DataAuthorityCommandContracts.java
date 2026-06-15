@@ -7,9 +7,11 @@ import java.security.MessageDigest;
 import java.util.EnumMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Executable command contract manifest for authority command frames.
@@ -19,6 +21,15 @@ public final class DataAuthorityCommandContracts {
     private static final String FINGERPRINT = fingerprint(CONTRACTS);
     private static final String ROUTE_MANIFEST_FINGERPRINT = routeManifestFingerprint(CONTRACTS);
     private static final Map<String, String> ROUTE_PARTITION_KEY_VECTORS = routePartitionKeyVectors(CONTRACTS);
+    private static final Map<String, String> COMMAND_TOPICS_BY_TYPE = routeVectors(CONTRACTS,
+        AuthorityCommandRoute::commandTopic);
+    private static final Map<String, String> RESPONSE_TOPICS_BY_TYPE = routeVectors(CONTRACTS,
+        AuthorityCommandRoute::responseTopic);
+    private static final Map<String, String> EVENT_TOPICS_BY_TYPE = routeVectors(CONTRACTS,
+        AuthorityCommandRoute::eventTopic);
+    private static final Map<String, String> STATE_TOPICS_BY_TYPE = routeVectors(CONTRACTS,
+        AuthorityCommandRoute::stateTopic);
+    private static final Set<String> COMMAND_TOPICS = commandTopics(CONTRACTS);
 
     private DataAuthorityCommandContracts() {
     }
@@ -55,6 +66,26 @@ public final class DataAuthorityCommandContracts {
         return ROUTE_PARTITION_KEY_VECTORS;
     }
 
+    public static Map<String, String> commandTopicsByType() {
+        return COMMAND_TOPICS_BY_TYPE;
+    }
+
+    public static Map<String, String> responseTopicsByType() {
+        return RESPONSE_TOPICS_BY_TYPE;
+    }
+
+    public static Map<String, String> eventTopicsByType() {
+        return EVENT_TOPICS_BY_TYPE;
+    }
+
+    public static Map<String, String> stateTopicsByType() {
+        return STATE_TOPICS_BY_TYPE;
+    }
+
+    public static Set<String> commandTopics() {
+        return COMMAND_TOPICS;
+    }
+
     public static Map<String, Object> routePayload(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
         validate(command);
@@ -82,6 +113,7 @@ public final class DataAuthorityCommandContracts {
         }
         requireRouteField(type, rawRoute, "domain");
         requireRouteField(type, rawRoute, "commandTopic");
+        requireRouteField(type, rawRoute, "responseTopic");
         requireRouteField(type, rawRoute, "eventTopic");
         requireRouteField(type, rawRoute, "stateTopic");
         requireRouteField(type, rawRoute, "partitionKey");
@@ -121,6 +153,7 @@ public final class DataAuthorityCommandContracts {
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         requireSettlementField("commandDomain", route.domain(), settlement.commandDomain());
         requireSettlementField("commandTopic", route.commandTopic(), settlement.commandTopic());
+        requireSettlementField("responseTopic", route.responseTopic(), settlement.responseTopic());
         requireSettlementField("eventTopic", route.eventTopic(), settlement.eventTopic());
         requireSettlementField("stateTopic", route.stateTopic(), settlement.stateTopic());
         requireSettlementField("partitionKey", route.partitionKey(), settlement.partitionKey());
@@ -130,7 +163,7 @@ public final class DataAuthorityCommandContracts {
         DataAuthority.SnapshotWatermark watermark = settlement.watermark();
         requireSettlementField("watermark.sourceProvider", settlement.sourceProvider(), watermark.sourceProvider());
         requireSettlementField("watermark.aggregateScope", command.scope(), watermark.aggregateScope());
-        requireSettlementField("watermark.aggregateType", route.domain(), watermark.aggregateType());
+        requireSettlementField("watermark.aggregateType", projectionFamily(command.type()), watermark.aggregateType());
         requireSettlementField("watermark.commandDomain", route.domain(), watermark.commandDomain());
         requireSettlementField("watermark.stateTopic", route.stateTopic(), watermark.stateTopic());
         requireSettlementField("watermark.partitionKey", route.partitionKey(), watermark.partitionKey());
@@ -227,6 +260,9 @@ public final class DataAuthorityCommandContracts {
         }
         if (route != null && !expectedRoute.commandTopic().equals(route.commandTopic())) {
             throw new IllegalArgumentException("Command " + type + " command topic does not match contract route");
+        }
+        if (route != null && !expectedRoute.responseTopic().equals(route.responseTopic())) {
+            throw new IllegalArgumentException("Command " + type + " response topic does not match contract route");
         }
         if (route != null && !expectedRoute.eventTopic().equals(route.eventTopic())) {
             throw new IllegalArgumentException("Command " + type + " event topic does not match contract route");
@@ -386,6 +422,7 @@ public final class DataAuthorityCommandContracts {
                     .append(contract.aggregateScopePrefix()).append('|')
                     .append(route.domain()).append('|')
                     .append(route.commandTopic()).append('|')
+                    .append(route.responseTopic()).append('|')
                     .append(route.eventTopic()).append('|')
                     .append(route.stateTopic()).append('|')
                     .append(route.partitionKey())
@@ -413,6 +450,32 @@ public final class DataAuthorityCommandContracts {
         return Map.copyOf(values);
     }
 
+    private static Map<String, String> routeVectors(
+        Map<DataAuthority.CommandType, CommandContract> contracts,
+        Function<AuthorityCommandRoute, String> extractor
+    ) {
+        Map<String, String> values = new LinkedHashMap<>();
+        contracts.values().stream()
+            .sorted((left, right) -> left.type().name().compareTo(right.type().name()))
+            .forEach(contract -> {
+                String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
+                AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), sampleScope);
+                values.put(contract.type().name(), extractor.apply(route));
+            });
+        return Map.copyOf(values);
+    }
+
+    private static Set<String> commandTopics(Map<DataAuthority.CommandType, CommandContract> contracts) {
+        Set<String> values = new LinkedHashSet<>();
+        contracts.values().stream()
+            .sorted((left, right) -> left.type().name().compareTo(right.type().name()))
+            .forEach(contract -> {
+                String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
+                values.add(AuthorityCommandRoute.from(contract.type(), sampleScope).commandTopic());
+            });
+        return Set.copyOf(values);
+    }
+
     private static void requireRouteField(DataAuthority.CommandType type, Map<?, ?> rawRoute, String field) {
         Object value = rawRoute.get(field);
         if (value == null || value.toString().isBlank()) {
@@ -434,7 +497,7 @@ public final class DataAuthorityCommandContracts {
         contracts.put(type, new CommandContract(
             type,
             DataAuthority.PlayerProfileCommand.class,
-            "player_profile",
+            "player",
             CommandDeliveryMode.ASYNC_DURABLE,
             CommandRevisionPolicy.BLIND_ALLOWED,
             "kafka",
@@ -459,7 +522,7 @@ public final class DataAuthorityCommandContracts {
         contracts.put(type, new CommandContract(
             type,
             DataAuthority.PlayerSessionCommand.class,
-            "player_profile",
+            "session",
             CommandDeliveryMode.SYNC_INTERACTIVE,
             CommandRevisionPolicy.BLIND_ALLOWED,
             "kafka",
@@ -484,7 +547,7 @@ public final class DataAuthorityCommandContracts {
         contracts.put(type, new CommandContract(
             type,
             DataAuthority.PlayerRankCommand.class,
-            "player_rank",
+            "rank",
             CommandDeliveryMode.SYNC_INTERACTIVE,
             CommandRevisionPolicy.COMPARE_REQUIRED,
             "kafka",
@@ -520,6 +583,15 @@ public final class DataAuthorityCommandContracts {
                 "startedAt", "endedAt", "slotMetadata", "variant", "targetWorld", "participants"
             )
         ));
+    }
+
+    private static String projectionFamily(DataAuthority.CommandType type) {
+        return switch (type) {
+            case GRANT_RANK, REVOKE_RANK -> "player_rank";
+            case RECORD_MATCH_START, RECORD_MATCH_END -> "match";
+            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
+                "player_profile";
+        };
     }
 
     public enum CommandDeliveryMode {

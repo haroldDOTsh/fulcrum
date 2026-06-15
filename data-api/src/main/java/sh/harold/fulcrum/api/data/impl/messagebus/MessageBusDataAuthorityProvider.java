@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipals;
 import sh.harold.fulcrum.api.data.impl.authority.AuthoritySnapshotInvalidation;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityTopologyEvidence;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.messagebus.MessageBus;
@@ -98,14 +99,16 @@ public final class MessageBusDataAuthorityProvider implements AutoCloseable {
     }
 
     public void start() {
-        messageBus.subscribeRequest(MessageBusAuthorityChannels.COMMAND, commandHandler);
+        DataAuthorityCommandContracts.commandTopics()
+            .forEach(topic -> messageBus.subscribeRequest(topic, commandHandler));
         messageBus.subscribeRequest(MessageBusAuthorityChannels.PROFILE_READ, profileReadHandler);
         messageBus.subscribeRequest(MessageBusAuthorityChannels.RANK_READ, rankReadHandler);
     }
 
     @Override
     public void close() {
-        messageBus.unsubscribeRequest(MessageBusAuthorityChannels.COMMAND, commandHandler);
+        DataAuthorityCommandContracts.commandTopics()
+            .forEach(topic -> messageBus.unsubscribeRequest(topic, commandHandler));
         messageBus.unsubscribeRequest(MessageBusAuthorityChannels.PROFILE_READ, profileReadHandler);
         messageBus.unsubscribeRequest(MessageBusAuthorityChannels.RANK_READ, rankReadHandler);
     }
@@ -158,7 +161,8 @@ public final class MessageBusDataAuthorityProvider implements AutoCloseable {
             DataAuthorityReadContracts.ReadType.PLAYER_PROFILE,
             new DataAuthority.ReadRequirement(
                 longValue(payload.get("minimumRevision"), 0L),
-                longValue(payload.get("maxAgeMillis"), -1L)
+                longValue(payload.get("maxAgeMillis"), -1L),
+                DataAuthority.ReadVisibilityToken.fromPayload(mapValue(payload.get("visibilityToken")), null)
             )
         );
         return profileReader.quoteProfile(playerId, requirement).thenApply(this::profileResponse);
@@ -178,7 +182,8 @@ public final class MessageBusDataAuthorityProvider implements AutoCloseable {
             DataAuthorityReadContracts.ReadType.PLAYER_RANK,
             new DataAuthority.ReadRequirement(
                 longValue(payload.get("minimumRevision"), 0L),
-                longValue(payload.get("maxAgeMillis"), -1L)
+                longValue(payload.get("maxAgeMillis"), -1L),
+                DataAuthority.ReadVisibilityToken.fromPayload(mapValue(payload.get("visibilityToken")), null)
             )
         );
         return rankReader.quoteRanks(playerId, requirement).thenApply(this::rankResponse);
@@ -201,6 +206,15 @@ public final class MessageBusDataAuthorityProvider implements AutoCloseable {
             mapValue(wire.get("route")),
             string(wire.get("routeManifestFingerprint"))
         );
+        String topologyRejection = AuthorityTopologyEvidence.commandWireRejection(
+            type,
+            scope,
+            mapValue(wire.get("route")),
+            wire
+        );
+        if (topologyRejection != null) {
+            throw new IllegalArgumentException(topologyRejection);
+        }
         DataAuthority.CommandManifest manifest = new DataAuthority.CommandManifest(
             uuid(wire.get("commandId")),
             type,

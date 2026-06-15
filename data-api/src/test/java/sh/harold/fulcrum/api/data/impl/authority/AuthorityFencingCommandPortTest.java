@@ -16,7 +16,8 @@ class AuthorityFencingCommandPortTest {
     @Test
     void stampsAuthorityEpochBeforeDelegating() {
         AtomicReference<DataAuthority.AuthorityCommand> received = new AtomicReference<>();
-        AtomicReference<AuthorityCommandRoute> claimedRoute = new AtomicReference<>();
+        AtomicReference<String> claimedDomain = new AtomicReference<>();
+        AtomicReference<String> claimedPartitionKey = new AtomicReference<>();
         AtomicReference<AuthorityWriterClaim> writerClaim = new AtomicReference<>();
         DataAuthority.CommandPort delegate = command -> {
             received.set(command);
@@ -31,13 +32,8 @@ class AuthorityFencingCommandPortTest {
         AuthorityFencingCommandPort port = new AuthorityFencingCommandPort(
             delegate,
             (commandDomain, commandTopic, partitionKey, ownerNode) -> {
-                claimedRoute.set(new AuthorityCommandRoute(
-                    commandDomain,
-                    commandTopic,
-                    null,
-                    null,
-                    partitionKey
-                ));
+                claimedDomain.set(commandDomain);
+                claimedPartitionKey.set(partitionKey);
                 assertThat(ownerNode).isEqualTo("registry-service");
                 AuthorityWriterClaim claim = AuthorityWriterClaim.mint(
                     commandDomain,
@@ -68,8 +64,10 @@ class AuthorityFencingCommandPortTest {
         assertThat(token.claimFingerprint()).isEqualTo(writerClaim.get().claimFingerprint());
         assertThat(received.get().commandId()).isEqualTo(command.commandId());
         assertThat(received.get().expectedRevision()).isEqualTo(command.expectedRevision());
-        assertThat(claimedRoute.get().domain()).isEqualTo("player_rank");
-        assertThat(claimedRoute.get().partitionKey()).isEqualTo(command.scope());
+        AuthorityWriteCustody expectedCustody = AuthorityWriteCustody.fromCommand(command);
+        assertThat(claimedDomain.get()).isEqualTo("rank");
+        assertThat(claimedPartitionKey.get()).isEqualTo(expectedCustody.ownershipPartitionKey());
+        assertThat(expectedCustody.routePartitionKey()).isEqualTo(command.scope());
     }
 
     @Test
@@ -104,6 +102,44 @@ class AuthorityFencingCommandPortTest {
         assertThat(result.accepted()).isFalse();
         assertThat(result.rejectionReason()).isEqualTo(DataAuthority.RejectionReason.STORE_UNAVAILABLE);
         assertThat(result.message()).contains("claim domain does not match");
+        assertThat(delegated).isFalse();
+    }
+
+    @Test
+    void rejectsWhenClaimUsesAggregateKeyInsteadOfAuthorityLane() {
+        AtomicBoolean delegated = new AtomicBoolean(false);
+        AuthorityFencingCommandPort port = new AuthorityFencingCommandPort(
+            command -> {
+                delegated.set(true);
+                return CompletableFuture.completedFuture(new DataAuthority.CommandResult(
+                    command.commandId(),
+                    true,
+                    1L,
+                    DataAuthority.RejectionReason.NONE,
+                    "accepted"
+                ));
+            },
+            (commandDomain, commandTopic, partitionKey, ownerNode) -> {
+                DataAuthority.PlayerRankCommand command = rankCommand("");
+                return AuthorityWriterClaim.mint(
+                    commandDomain,
+                    commandTopic,
+                    command.scope(),
+                    ownerNode,
+                    42L,
+                    null,
+                    0L,
+                    Instant.EPOCH
+                );
+            },
+            "registry-service"
+        );
+
+        DataAuthority.CommandResult result = port.submit(rankCommand("")).toCompletableFuture().join();
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.rejectionReason()).isEqualTo(DataAuthority.RejectionReason.STORE_UNAVAILABLE);
+        assertThat(result.message()).contains("authority lane");
         assertThat(delegated).isFalse();
     }
 

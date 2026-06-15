@@ -39,8 +39,8 @@ class AuthorityCommandFrameTest {
         );
 
         AuthorityCommandFrame storedFrame = AuthorityCommandFrame.fromCommand(command);
-        assertThat(storedFrame.route().domain()).isEqualTo("player_rank");
-        assertThat(storedFrame.route().commandTopic()).isEqualTo("cmd.player_rank");
+        assertThat(storedFrame.route().domain()).isEqualTo("rank");
+        assertThat(storedFrame.route().commandTopic()).isEqualTo("cmd.rank");
         assertThat(storedFrame.route().partitionKey()).isEqualTo("rank:player:" + playerId);
         assertThat(storedFrame.manifestPayload())
             .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());

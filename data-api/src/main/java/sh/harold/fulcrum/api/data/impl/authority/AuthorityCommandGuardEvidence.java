@@ -103,6 +103,7 @@ final class AuthorityCommandGuardEvidence {
         evidence.put("targetNode", firstKnown(targetNode, "authority"));
         evidence.put("contract", contract);
         evidence.put("route", stringObjectMap(mapValue(safeWire.get("route"))));
+        attachPreSubmitTopology(evidence, safeWire);
         evidence.put("deadline", Map.of(
             "deadlineEpochMillis", longValue(safeWire.get("deadlineEpochMillis"), 0L),
             "declared", longValue(safeWire.get("deadlineEpochMillis"), 0L) > 0L
@@ -162,6 +163,7 @@ final class AuthorityCommandGuardEvidence {
         evidence.put("contract", contract);
         evidence.put("route", route.payload());
         evidence.put("writerLane", writerLane.payload());
+        AuthorityTopologyEvidence.attach(evidence, command, route);
         evidence.put("deadline", Map.of(
             "deadlineEpochMillis", command.deadlineEpochMillis(),
             "declared", command.deadlineEpochMillis() > 0L
@@ -327,6 +329,32 @@ final class AuthorityCommandGuardEvidence {
             )
         ));
         return List.copyOf(decisions);
+    }
+
+    private static void attachPreSubmitTopology(Map<String, Object> evidence, Map<String, Object> wire) {
+        try {
+            DataAuthority.CommandType type = DataAuthority.CommandType.valueOf(
+                firstKnown(string(wire.get("commandType")), "unknown")
+            );
+            AuthorityTopologyEvidence.attach(
+                evidence,
+                type,
+                string(wire.get("scope")),
+                mapValue(wire.get("route"))
+            );
+        } catch (RuntimeException ignored) {
+            evidence.put("topology", Map.of(
+                "topologyEvidenceVersion", 1,
+                "status", "UNRESOLVED",
+                "reason", "command type could not be resolved",
+                "commandContractFingerprint", DataAuthorityCommandContracts.fingerprint(),
+                "routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint(),
+                "readContractFingerprint", DataAuthorityReadContracts.fingerprint(),
+                "authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint(),
+                "authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint(),
+                "authorityLogTopologyFingerprint", AuthorityTopologyEvidence.logTopologyFingerprint()
+            ));
+        }
     }
 
     private static String revisionVerdict(DataAuthority.AuthorityCommand command) {

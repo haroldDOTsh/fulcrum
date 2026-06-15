@@ -13,6 +13,15 @@ repositories {
 dependencies {
     implementation(project(":message-bus-api"))
 
+    // Kafka-compatible authority command/event/state/response log
+    implementation("org.apache.kafka:kafka-clients:3.7.1")
+
+    // Cassandra-compatible hot-state projections
+    implementation("com.datastax.oss:java-driver-core:4.17.0")
+
+    // Valkey-compatible snapshot cache
+    implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
+
     // PostgreSQL Driver
     implementation("org.postgresql:postgresql:42.7.1")
     
@@ -39,6 +48,8 @@ dependencies {
     
     testImplementation("org.testcontainers:testcontainers:1.19.3")
     testImplementation("org.testcontainers:postgresql:1.19.3")
+    testImplementation("org.testcontainers:kafka:1.19.3")
+    testImplementation("org.testcontainers:cassandra:1.19.3")
     testImplementation("org.testcontainers:junit-jupiter:1.19.3")
     
     // AssertJ for fluent assertions

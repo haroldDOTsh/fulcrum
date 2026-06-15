@@ -93,7 +93,12 @@ record AuthorityCommandFrame(
         values.put("fencingToken", fencingToken);
         values.put("expectedRevision", expectedRevision);
         values.put("schemaVersion", schemaVersion);
+        values.put("contractFingerprint", DataAuthorityCommandContracts.fingerprint());
         values.put("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+        values.put("readContractFingerprint", DataAuthorityReadContracts.fingerprint());
+        values.put("authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint());
+        values.put("authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint());
+        values.put("authorityLogTopologyFingerprint", AuthorityTopologyEvidence.logTopologyFingerprint());
         values.put("route", route.payload());
         values.put("provenance", provenance.payload());
         return Map.copyOf(values);

@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Objects;
 import java.util.Properties;
 
 /**
@@ -18,6 +19,7 @@ public class PostgresConnectionAdapter {
     private static final long DEFAULT_CONNECTION_TIMEOUT_MS = 5000L;
     private static final long DEFAULT_MAX_LIFETIME_MS = 1800000L;
     private static final long DEFAULT_LEAK_DETECTION_THRESHOLD_MS = 60000L;
+    private static final boolean DEFAULT_PGBOUNCER_TRANSACTION_POOLING = true;
     
     private final HikariDataSource dataSource;
     private final String databaseName;
@@ -68,12 +70,7 @@ public class PostgresConnectionAdapter {
         config.setLeakDetectionThreshold(longProperty(additionalProperties, DEFAULT_LEAK_DETECTION_THRESHOLD_MS,
             "leakDetectionThreshold", "leak-detection-threshold"));
         
-        // PostgreSQL specific settings
-        config.addDataSourceProperty("cachePrepStmts", "true");
-        config.addDataSourceProperty("prepStmtCacheSize", "250");
-        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
-        config.addDataSourceProperty("useServerPrepStmts", "true");
-        config.addDataSourceProperty("reWriteBatchedInserts", "true");
+        configurePostgresDataSourceProperties(config, additionalProperties);
         
         // Connection test query
         config.setConnectionTestQuery("SELECT 1");
@@ -84,7 +81,7 @@ public class PostgresConnectionAdapter {
         // Apply additional properties if provided
         if (additionalProperties != null) {
             additionalProperties.forEach((key, value) -> {
-                if (key instanceof String && value instanceof String && !isPoolProperty((String) key)) {
+                if (key instanceof String && value instanceof String && !isAdapterProperty((String) key)) {
                     config.addDataSourceProperty((String) key, (String) value);
                 }
             });
@@ -103,6 +100,55 @@ public class PostgresConnectionAdapter {
         return value == null || value.isBlank() ? fallback : Long.parseLong(value);
     }
 
+    private static boolean booleanProperty(Properties properties, boolean fallback, String... names) {
+        String value = property(properties, names);
+        return value == null || value.isBlank() ? fallback : Boolean.parseBoolean(value);
+    }
+
+    static void configurePostgresDataSourceProperties(HikariConfig config, Properties additionalProperties) {
+        Objects.requireNonNull(config, "config");
+        boolean transactionPooling = booleanProperty(
+            additionalProperties,
+            DEFAULT_PGBOUNCER_TRANSACTION_POOLING,
+            "pgbouncerTransactionPooling",
+            "pgbouncer-transaction-pooling"
+        );
+
+        config.addDataSourceProperty("reWriteBatchedInserts", "true");
+        if (transactionPooling) {
+            requireTransactionPoolingCompatible(additionalProperties);
+            config.addDataSourceProperty("prepareThreshold", "0");
+            config.addDataSourceProperty("preparedStatementCacheQueries", "0");
+            return;
+        }
+
+        config.addDataSourceProperty("cachePrepStmts", "true");
+        config.addDataSourceProperty("prepStmtCacheSize", "250");
+        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+        config.addDataSourceProperty("useServerPrepStmts", "true");
+    }
+
+    private static void requireTransactionPoolingCompatible(Properties properties) {
+        String prepareThreshold = property(properties, "prepareThreshold");
+        if (prepareThreshold != null && !"0".equals(prepareThreshold.trim())) {
+            throw new IllegalArgumentException(
+                "PgBouncer transaction pooling requires PostgreSQL prepareThreshold=0"
+            );
+        }
+        String preparedStatementCacheQueries = property(properties, "preparedStatementCacheQueries");
+        if (preparedStatementCacheQueries != null && !"0".equals(preparedStatementCacheQueries.trim())) {
+            throw new IllegalArgumentException(
+                "PgBouncer transaction pooling requires preparedStatementCacheQueries=0"
+            );
+        }
+        String useServerPrepStmts = property(properties, "useServerPrepStmts");
+        if (Boolean.parseBoolean(useServerPrepStmts)) {
+            throw new IllegalArgumentException(
+                "PgBouncer transaction pooling does not allow useServerPrepStmts=true"
+            );
+        }
+    }
+
     private static String property(Properties properties, String... names) {
         if (properties == null) {
             return null;
@@ -116,14 +162,15 @@ public class PostgresConnectionAdapter {
         return null;
     }
 
-    private static boolean isPoolProperty(String key) {
+    private static boolean isAdapterProperty(String key) {
         return switch (key) {
             case "maximumPoolSize", "maximum-pool-size",
                  "minimumIdle", "minimum-idle",
                  "idleTimeout", "idle-timeout",
                  "connectionTimeout", "connection-timeout",
                  "maxLifetime", "max-lifetime",
-                 "leakDetectionThreshold", "leak-detection-threshold" -> true;
+                 "leakDetectionThreshold", "leak-detection-threshold",
+                 "pgbouncerTransactionPooling", "pgbouncer-transaction-pooling" -> true;
             default -> false;
         };
     }

@@ -63,6 +63,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         "match_participant_stats",
         "analytics_events",
         "authority_lifecycle_policies",
+        "authority_command_consumer_cursors",
+        "authority_state_projection_cursors",
         "authority_partition_epochs",
         "authority_writer_claims"
     );
@@ -89,6 +91,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
 
     private final PostgresConnectionAdapter connectionAdapter;
     private final Executor executor;
+    private final boolean requireClaimBackedFencing;
     private final Gson gson = new Gson();
 
     public PostgresDataAuthority(PostgresConnectionAdapter connectionAdapter) {
@@ -96,8 +99,21 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
     }
 
     public PostgresDataAuthority(PostgresConnectionAdapter connectionAdapter, Executor executor) {
+        this(connectionAdapter, executor, true);
+    }
+
+    public static PostgresDataAuthority claimBacked(PostgresConnectionAdapter connectionAdapter, Executor executor) {
+        return new PostgresDataAuthority(connectionAdapter, executor, true);
+    }
+
+    PostgresDataAuthority(
+        PostgresConnectionAdapter connectionAdapter,
+        Executor executor,
+        boolean requireClaimBackedFencing
+    ) {
         this.connectionAdapter = Objects.requireNonNull(connectionAdapter, "connectionAdapter");
         this.executor = executor != null ? executor : ForkJoinPool.commonPool();
+        this.requireClaimBackedFencing = requireClaimBackedFencing;
     }
 
     public void validateSchema() {
@@ -503,8 +519,11 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             status = DataAuthority.ReadQuoteStatus.UNWATERMARKED;
         } else if (!aggregateScope.equals(snapshotWatermark.aggregateScope())) {
             status = DataAuthority.ReadQuoteStatus.SCOPE_MISMATCH;
-        } else if (!expectedStateTopic("player_profile").equals(snapshotWatermark.stateTopic())) {
+        } else if (!stateTopicMatches("player_profile", snapshotWatermark.stateTopic())) {
             status = DataAuthority.ReadQuoteStatus.UNKNOWN_OR_STALE;
+        } else if (effectiveRequirement.visibilityToken() != null
+            && !snapshotWatermark.satisfies(effectiveRequirement.visibilityToken())) {
+            status = DataAuthority.ReadQuoteStatus.VISIBILITY_TOKEN_MISMATCH;
         } else if (snapshotWatermark.sourceRevision() != snapshotRevision) {
             status = DataAuthority.ReadQuoteStatus.REVISION_MISMATCH;
         } else if (snapshotRevision < requiredRevision || snapshotWatermark.sourceRevision() < requiredRevision) {
@@ -581,8 +600,11 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             status = DataAuthority.ReadQuoteStatus.UNWATERMARKED;
         } else if (!aggregateScope.equals(snapshotWatermark.aggregateScope())) {
             status = DataAuthority.ReadQuoteStatus.SCOPE_MISMATCH;
-        } else if (!expectedStateTopic("player_rank").equals(snapshotWatermark.stateTopic())) {
+        } else if (!stateTopicMatches("player_rank", snapshotWatermark.stateTopic())) {
             status = DataAuthority.ReadQuoteStatus.UNKNOWN_OR_STALE;
+        } else if (effectiveRequirement.visibilityToken() != null
+            && !snapshotWatermark.satisfies(effectiveRequirement.visibilityToken())) {
+            status = DataAuthority.ReadQuoteStatus.VISIBILITY_TOKEN_MISMATCH;
         } else if (snapshotWatermark.sourceRevision() != snapshotRevision) {
             status = DataAuthority.ReadQuoteStatus.REVISION_MISMATCH;
         } else if (snapshotRevision < requiredRevision || snapshotWatermark.sourceRevision() < requiredRevision) {
@@ -620,11 +642,11 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
     ) {
         return receipt != null
             && receipt.satisfies(projectionFamily, aggregateScope, requiredRevision)
-            && expectedStateTopic(projectionFamily).equals(receipt.stateTopic());
+            && stateTopicMatches(projectionFamily, receipt.stateTopic());
     }
 
-    private static String expectedStateTopic(String projectionFamily) {
-        return "state." + projectionFamily;
+    private static boolean stateTopicMatches(String projectionFamily, String stateTopic) {
+        return DataAuthorityReadContracts.stateTopicMatches(projectionFamily, stateTopic);
     }
 
     private DataAuthority.SnapshotWatermark snapshotWatermark(
@@ -648,21 +670,32 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             sourceRevision = fallbackRevision;
         }
         Timestamp eventCreatedAt = resultSet.getTimestamp("watermark_event_created_at");
+        String commandDomain = resultSet.getString("watermark_command_domain");
+        String partitionKey = resultSet.getString("watermark_partition_key");
         return new DataAuthority.SnapshotWatermark(
             "postgres-authority-state",
             aggregateScope,
             resultSet.getString("watermark_aggregate_type"),
             resultSet.getString("watermark_aggregate_id"),
-            resultSet.getString("watermark_command_domain"),
+            commandDomain,
             resultSet.getString("watermark_state_topic"),
-            resultSet.getString("watermark_partition_key"),
+            partitionKey,
             resultSet.getObject("watermark_command_id", UUID.class),
             resultSet.getObject("watermark_event_id", UUID.class),
             sourceRevision,
             eventCreatedAt == null ? 0L : eventCreatedAt.toInstant().toEpochMilli(),
+            sourcePartition(commandDomain, partitionKey),
+            Math.max(0L, sourceRevision - 1L),
             resultSet.getString("watermark_state_fingerprint"),
             resultSet.getString("watermark_event_chain_hash")
         );
+    }
+
+    private static int sourcePartition(String commandDomain, String partitionKey) {
+        if (commandDomain == null || commandDomain.isBlank() || partitionKey == null || partitionKey.isBlank()) {
+            return -1;
+        }
+        return AuthorityLogTopology.partition(commandDomain, partitionKey);
     }
 
     private DataAuthority.CommandResult execute(DataAuthority.AuthorityCommand command) {
@@ -752,50 +785,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             return claim.rejection();
         }
 
-        Map<String, Object> payload = command.payload();
-        String username = string(payload, "username", "unknown");
-        if (username.length() > 16) {
-            username = username.substring(0, 16);
-        }
-
-        String normalizedUsername = username.toLowerCase(Locale.ROOT);
-        Timestamp timestamp = timestamp(longValue(payload, "timestamp", System.currentTimeMillis()));
-        String currentServer = online ? string(payload, "currentServer", null) : null;
-        String currentProxy = online ? string(payload, "currentProxy", null) : null;
-        String lastIp = string(payload, "lastIp", null);
-        String profileJson = gson.toJson(payload);
-
-        try (PreparedStatement statement = connection.prepareStatement("""
-            INSERT INTO player_profiles (
-                player_id, username, normalized_username, first_seen, last_seen, online,
-                current_server, current_proxy, last_ip, profile_data, revision, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
-            ON CONFLICT (player_id) DO UPDATE SET
-                username = EXCLUDED.username,
-                normalized_username = EXCLUDED.normalized_username,
-                last_seen = EXCLUDED.last_seen,
-                online = EXCLUDED.online,
-                current_server = EXCLUDED.current_server,
-                current_proxy = EXCLUDED.current_proxy,
-                last_ip = COALESCE(EXCLUDED.last_ip, player_profiles.last_ip),
-                profile_data = player_profiles.profile_data || EXCLUDED.profile_data,
-                revision = EXCLUDED.revision,
-                updated_at = EXCLUDED.updated_at
-            """)) {
-            statement.setObject(1, playerId);
-            statement.setString(2, username);
-            statement.setString(3, normalizedUsername);
-            statement.setTimestamp(4, timestamp);
-            statement.setTimestamp(5, timestamp);
-            statement.setBoolean(6, online);
-            setNullableString(statement, 7, currentServer);
-            setNullableString(statement, 8, currentProxy);
-            setNullableString(statement, 9, lastIp);
-            statement.setString(10, profileJson);
-            statement.setLong(11, claim.revision());
-            statement.setTimestamp(12, timestamp);
-            statement.executeUpdate();
-        }
+        Timestamp timestamp = timestamp(longValue(command.payload(), "timestamp", System.currentTimeMillis()));
 
         if (command.type() == DataAuthority.CommandType.START_SESSION
             || command.type() == DataAuthority.CommandType.RENEW_SESSION
@@ -804,7 +794,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         }
 
         return accepted(command, claim.revision(),
-            online ? "Player profile/session updated" : "Player profile/session closed");
+            online ? "Player presence/session state emitted" : "Player presence/session state closed");
     }
 
     private void persistPlayerSession(
@@ -871,26 +861,6 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         }
 
         String primaryRank = string(command.payload(), "primaryRank", "DEFAULT");
-        List<String> ranks = stringList(command.payload().get("ranks"));
-        if (ranks.isEmpty()) {
-            ranks = List.of(primaryRank);
-        }
-
-        try (PreparedStatement statement = connection.prepareStatement("""
-            INSERT INTO player_rank_projection (player_id, primary_rank, ranks, revision, updated_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT (player_id) DO UPDATE SET
-                primary_rank = EXCLUDED.primary_rank,
-                ranks = EXCLUDED.ranks,
-                revision = EXCLUDED.revision,
-                updated_at = CURRENT_TIMESTAMP
-            """)) {
-            statement.setObject(1, playerId);
-            statement.setString(2, primaryRank);
-            statement.setArray(3, connection.createArrayOf("text", ranks.toArray(String[]::new)));
-            statement.setLong(4, claim.revision());
-            statement.executeUpdate();
-        }
 
         try (PreparedStatement statement = connection.prepareStatement("""
             INSERT INTO player_rank_audit (audit_id, player_id, rank, action, actor, metadata)
@@ -905,7 +875,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             statement.executeUpdate();
         }
 
-        return accepted(command, claim.revision(), "Rank projection updated");
+        return accepted(command, claim.revision(), "Rank history/audit recorded");
     }
 
     private DataAuthority.CommandResult persistMatchStart(
@@ -922,37 +892,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             return claim.rejection();
         }
 
-        Map<String, Object> payload = command.payload();
-        Timestamp startedAt = timestamp(longValue(payload, "startedAt",
-            longValue(payload, "timestamp", System.currentTimeMillis())));
-
-        try (PreparedStatement statement = connection.prepareStatement("""
-            INSERT INTO match_records (
-                match_id, family_id, map_id, server_id, slot_id, state, started_at, metadata, revision
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
-            ON CONFLICT (match_id) DO UPDATE SET
-                family_id = EXCLUDED.family_id,
-                map_id = COALESCE(EXCLUDED.map_id, match_records.map_id),
-                server_id = COALESCE(EXCLUDED.server_id, match_records.server_id),
-                slot_id = COALESCE(EXCLUDED.slot_id, match_records.slot_id),
-                state = EXCLUDED.state,
-                started_at = COALESCE(match_records.started_at, EXCLUDED.started_at),
-                metadata = match_records.metadata || EXCLUDED.metadata,
-                revision = EXCLUDED.revision
-            """)) {
-            statement.setObject(1, matchId);
-            statement.setString(2, string(payload, "familyId", "unknown"));
-            setNullableString(statement, 3, string(payload, "mapId", null));
-            setNullableString(statement, 4, string(payload, "serverId", null));
-            setNullableString(statement, 5, string(payload, "slotId", null));
-            statement.setString(6, string(payload, "state", "STARTED"));
-            statement.setTimestamp(7, startedAt);
-            statement.setString(8, gson.toJson(payload));
-            statement.setLong(9, claim.revision());
-            statement.executeUpdate();
-        }
-
-        return accepted(command, claim.revision(), "Match record started");
+        return accepted(command, claim.revision(), "Live match state emitted");
     }
 
     private DataAuthority.CommandResult persistMatchEnd(
@@ -1190,7 +1130,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         UUID eventId = UUID.randomUUID();
         Map<String, Object> eventPayload = authorityPayload(command, result);
-        Map<String, Object> statePayload = statePayload(connection, command, result, eventPayload);
+        Map<String, Object> statePayload = statePayload(connection, command, result, stateFallbackPayload(command, result));
         Timestamp eventCreatedAt = Timestamp.from(Instant.now());
         String eventFingerprint = hash(canonicalJson(eventPayload));
         String stateFingerprint = hash(canonicalJson(statePayload));
@@ -1306,6 +1246,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             eventId,
             result.revision(),
             eventCreatedAt.toInstant().toEpochMilli(),
+            AuthorityLogTopology.partition(route.domain(), route.partitionKey()),
+            Math.max(0L, result.revision() - 1L),
             stateFingerprint,
             chainHash.chainHash()
         );
@@ -1313,13 +1255,15 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             "postgres-authority-state",
             route.domain(),
             route.commandTopic(),
+            route.responseTopic(),
             route.eventTopic(),
             route.stateTopic(),
             route.partitionKey(),
             command.fencingToken(),
             command.idempotencyKey(),
             command.expectedRevision(),
-            watermark
+            watermark,
+            statePayload
         );
     }
 
@@ -1421,6 +1365,12 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             if (writerClaimRejection != null) {
                 return writerClaimRejection;
             }
+        } else if (requireClaimBackedFencing) {
+            return AggregateClaim.rejected(rejected(
+                command,
+                DataAuthority.RejectionReason.VALIDATION_FAILED,
+                "Authority writer claim token is required"
+            ));
         }
 
         try (PreparedStatement statement = connection.prepareStatement("""
@@ -1465,7 +1415,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         DataAuthority.AuthorityCommand command,
         AuthorityWriterClaimToken writerClaimToken
     ) throws SQLException {
-        AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
+        AuthorityWriteCustody custody = AuthorityWriteCustody.fromCommand(command);
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT c.command_domain,
                    c.command_topic,
@@ -1524,13 +1474,13 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                         "Authority writer claim receipt fingerprint failed verification"
                     ));
                 }
-                if (!route.domain().equals(commandDomain)
-                    || !route.commandTopic().equals(commandTopic)
-                    || !route.partitionKey().equals(partitionKey)) {
+                if (!custody.commandDomain().equals(commandDomain)
+                    || !custody.commandTopic().equals(commandTopic)
+                    || !custody.ownershipPartitionKey().equals(partitionKey)) {
                     return AggregateClaim.rejected(rejected(
                         command,
                         DataAuthority.RejectionReason.INVALID_SCOPE,
-                        "Authority writer claim receipt route does not match command route"
+                        "Authority writer claim receipt route does not match authority lane"
                     ));
                 }
                 String currentOwnerNode = resultSet.getString("current_owner_node");
@@ -1875,6 +1825,66 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             case RECORD_MATCH_START, RECORD_MATCH_END -> matchStatePayload(connection, matchId(command), result.revision(), fallback);
             case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
                 profileStatePayload(connection, playerId(command), result.revision(), fallback);
+        };
+    }
+
+    private Map<String, Object> stateFallbackPayload(
+        DataAuthority.AuthorityCommand command,
+        DataAuthority.CommandResult result
+    ) {
+        Map<String, Object> payload = command.payload();
+        return switch (command.type()) {
+            case GRANT_RANK, REVOKE_RANK -> {
+                UUID playerId = playerId(command);
+                String primaryRank = string(payload, "primaryRank", "DEFAULT");
+                List<String> ranks = stringList(payload.get("ranks"));
+                if (ranks.isEmpty()) {
+                    ranks = List.of(primaryRank);
+                }
+                Map<String, Object> state = new LinkedHashMap<>();
+                state.put("playerId", playerId == null ? null : playerId.toString());
+                state.put("primaryRank", primaryRank);
+                state.put("ranks", ranks);
+                state.put("revision", result.revision());
+                yield state;
+            }
+            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION -> {
+                UUID playerId = playerId(command);
+                String username = string(payload, "username", "unknown");
+                boolean online = switch (command.type()) {
+                    case RECORD_PLAYER_LOGIN, START_SESSION, RENEW_SESSION -> true;
+                    case RECORD_PLAYER_LOGOUT, END_SESSION -> false;
+                    default -> false;
+                };
+                Map<String, Object> state = new LinkedHashMap<>();
+                state.put("playerId", playerId == null ? null : playerId.toString());
+                state.put("username", username);
+                state.put("normalizedUsername", username.toLowerCase(Locale.ROOT));
+                state.put("online", online);
+                state.put("currentServer", online ? string(payload, "currentServer", null) : null);
+                state.put("currentProxy", online ? string(payload, "currentProxy", null) : null);
+                state.put("totalPlaytimeMs", 0L);
+                state.put("profileData", payload);
+                state.put("revision", result.revision());
+                yield state;
+            }
+            case RECORD_MATCH_START, RECORD_MATCH_END -> {
+                UUID matchId = matchId(command);
+                Map<String, Object> state = new LinkedHashMap<>();
+                state.put("matchId", matchId == null ? null : matchId.toString());
+                state.put("familyId", string(payload, "familyId", "unknown"));
+                state.put("mapId", string(payload, "mapId", null));
+                state.put("serverId", string(payload, "serverId", null));
+                state.put("slotId", string(payload, "slotId", null));
+                state.put("state", string(payload, "state",
+                    command.type() == DataAuthority.CommandType.RECORD_MATCH_END ? "ENDED" : "STARTED"));
+                state.put("startedAt", payload.get("startedAt"));
+                state.put("endedAt", payload.get("endedAt"));
+                state.put("metadata", payload.getOrDefault("slotMetadata", Map.of()));
+                state.put("participants", payload.getOrDefault("participants", List.of()));
+                state.put("revision", result.revision());
+                yield state;
+            }
         };
     }
 

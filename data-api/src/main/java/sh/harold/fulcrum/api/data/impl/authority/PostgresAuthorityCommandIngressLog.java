@@ -168,6 +168,11 @@ public final class PostgresAuthorityCommandIngressLog implements AuthorityComman
             recordReplayQuarantine(entry, message);
             return CompletableFuture.completedFuture(ReplayResult.notReplayable(entry, message));
         }
+        String topologyMismatch = AuthorityTopologyEvidence.replayMismatch(entry.command(), entry.guardEvidence());
+        if (topologyMismatch != null) {
+            recordReplayQuarantine(entry, topologyMismatch);
+            return CompletableFuture.completedFuture(ReplayResult.notReplayable(entry, topologyMismatch));
+        }
         recordReplayAttempt(commandId);
         return commandPort.submit(entry.command())
             .thenApply(result -> ReplayResult.submitted(entry, result));
@@ -280,32 +285,34 @@ public final class PostgresAuthorityCommandIngressLog implements AuthorityComman
         Map<String, Object> evidence = new LinkedHashMap<>(entry.guardEvidence());
         AuthorityCommandRoute expectedRoute = AuthorityCommandRoute.fromCommand(entry.command());
         AuthorityCommandLane expectedLane = AuthorityCommandLane.fromRoute(expectedRoute, entry.writerLaneCount());
-        evidence.put("phase", "REPLAY_QUARANTINE");
-        evidence.put("replayQuarantine", Map.of(
-            "reason", firstKnown(message, "Stored command cannot be replayed safely"),
-            "status", CommandIngressStatus.QUARANTINED.name(),
-            "replayEligibility", ReplayEligibility.NOT_REPLAYABLE.name(),
-            "expectedRoute", expectedRoute.payload(),
-            "storedRoute", Map.of(
-                "domain", firstKnown(entry.commandDomain(), "unknown"),
-                "commandTopic", firstKnown(entry.commandTopic(), "unknown"),
-                "partitionKey", firstKnown(entry.partitionKey(), "unknown")
-            ),
-            "expectedWriterLane", expectedLane.payload(),
-            "storedWriterLane", Map.of(
-                "laneCount", entry.writerLaneCount(),
-                "lane", entry.writerLane(),
-                "laneKeyFingerprint", firstKnown(entry.writerLaneKeyFingerprint(), "missing"),
-                "fencingScope", firstKnown(entry.writerLaneFencingScope(), "unknown")
-            ),
-            "storedWriterClaim", Map.of(
-                "epoch", entry.writerClaimEpoch(),
-                "claimId", entry.writerClaimId() == null ? "missing" : entry.writerClaimId().toString(),
-                "claimFingerprint", firstKnown(entry.writerClaimFingerprint(), "missing")
-            ),
-            "commandFingerprint", firstKnown(entry.commandFingerprint(), "missing"),
-            "replayAttempts", entry.replayAttempts()
+        Map<String, Object> replayQuarantine = new LinkedHashMap<>();
+        replayQuarantine.put("reason", firstKnown(message, "Stored command cannot be replayed safely"));
+        replayQuarantine.put("status", CommandIngressStatus.QUARANTINED.name());
+        replayQuarantine.put("replayEligibility", ReplayEligibility.NOT_REPLAYABLE.name());
+        replayQuarantine.put("expectedRoute", expectedRoute.payload());
+        replayQuarantine.put("storedRoute", Map.of(
+            "domain", firstKnown(entry.commandDomain(), "unknown"),
+            "commandTopic", firstKnown(entry.commandTopic(), "unknown"),
+            "partitionKey", firstKnown(entry.partitionKey(), "unknown")
         ));
+        replayQuarantine.put("expectedWriterLane", expectedLane.payload());
+        replayQuarantine.put("storedWriterLane", Map.of(
+            "laneCount", entry.writerLaneCount(),
+            "lane", entry.writerLane(),
+            "laneKeyFingerprint", firstKnown(entry.writerLaneKeyFingerprint(), "missing"),
+            "fencingScope", firstKnown(entry.writerLaneFencingScope(), "unknown")
+        ));
+        replayQuarantine.put("storedWriterClaim", Map.of(
+            "epoch", entry.writerClaimEpoch(),
+            "claimId", entry.writerClaimId() == null ? "missing" : entry.writerClaimId().toString(),
+            "claimFingerprint", firstKnown(entry.writerClaimFingerprint(), "missing")
+        ));
+        replayQuarantine.put("expectedTopology", AuthorityTopologyEvidence.forCommand(entry.command(), expectedRoute));
+        replayQuarantine.put("storedTopology", AuthorityTopologyEvidence.storedTopology(entry.guardEvidence()));
+        replayQuarantine.put("commandFingerprint", firstKnown(entry.commandFingerprint(), "missing"));
+        replayQuarantine.put("replayAttempts", entry.replayAttempts());
+        evidence.put("phase", "REPLAY_QUARANTINE");
+        evidence.put("replayQuarantine", Map.copyOf(replayQuarantine));
         return Map.copyOf(evidence);
     }
 

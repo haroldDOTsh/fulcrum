@@ -13,10 +13,11 @@ class AuthorityCommandRouteTest {
             "rank:player:00000000-0000-0000-0000-000000000001"
         );
 
-        assertThat(route.domain()).isEqualTo("player_rank");
-        assertThat(route.commandTopic()).isEqualTo("cmd.player_rank");
-        assertThat(route.eventTopic()).isEqualTo("evt.player_rank");
-        assertThat(route.stateTopic()).isEqualTo("state.player_rank");
+        assertThat(route.domain()).isEqualTo("rank");
+        assertThat(route.commandTopic()).isEqualTo("cmd.rank");
+        assertThat(route.responseTopic()).isEqualTo("rsp.rank");
+        assertThat(route.eventTopic()).isEqualTo("evt.rank");
+        assertThat(route.stateTopic()).isEqualTo("state.rank");
         assertThat(route.partitionKey()).isEqualTo("rank:player:00000000-0000-0000-0000-000000000001");
     }
 
@@ -31,7 +32,7 @@ class AuthorityCommandRouteTest {
     }
 
     @Test
-    void profileAndSessionCommandsSharePlayerProfileRoute() {
+    void profileAndSessionCommandsUseDocumentedPublicRoutes() {
         AuthorityCommandRoute login = AuthorityCommandRoute.from(
             DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
             "player:00000000-0000-0000-0000-000000000002"
@@ -41,8 +42,19 @@ class AuthorityCommandRouteTest {
             "player:00000000-0000-0000-0000-000000000002"
         );
 
-        assertThat(login.domain()).isEqualTo("player_profile");
-        assertThat(session).isEqualTo(login);
+        assertThat(login.domain()).isEqualTo("player");
+        assertThat(login.commandTopic()).isEqualTo("cmd.player");
+        assertThat(login.responseTopic()).isEqualTo("rsp.player");
+        assertThat(login.eventTopic()).isEqualTo("evt.player");
+        assertThat(login.stateTopic()).isEqualTo("state.player");
+        assertThat(login.partitionKey()).isEqualTo("player:00000000-0000-0000-0000-000000000002");
+
+        assertThat(session.domain()).isEqualTo("session");
+        assertThat(session.commandTopic()).isEqualTo("cmd.session");
+        assertThat(session.responseTopic()).isEqualTo("rsp.session");
+        assertThat(session.eventTopic()).isEqualTo("evt.session");
+        assertThat(session.stateTopic()).isEqualTo("state.session");
+        assertThat(session.partitionKey()).isEqualTo(login.partitionKey());
     }
 
     @Test

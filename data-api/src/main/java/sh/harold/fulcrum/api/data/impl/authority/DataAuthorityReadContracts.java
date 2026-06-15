@@ -7,6 +7,7 @@ import java.security.MessageDigest;
 import java.util.EnumMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -51,6 +52,24 @@ public final class DataAuthorityReadContracts {
         return contract;
     }
 
+    public static List<String> expectedStateTopics(ReadType type) {
+        return expectedStateTopics(contract(type).projectionFamily());
+    }
+
+    public static boolean stateTopicMatches(String projectionName, String stateTopic) {
+        return expectedStateTopics(projectionName).contains(stateTopic);
+    }
+
+    public static List<String> expectedStateTopics(String projectionName) {
+        if ("player_profile".equals(projectionName)) {
+            return List.of("state.player_profile", "state.player", "state.session");
+        }
+        if ("player_rank".equals(projectionName)) {
+            return List.of("state.player_rank", "state.rank");
+        }
+        return List.of("state." + projectionName);
+    }
+
     public static DataAuthority.ReadRequirement effectiveRequirement(
         ReadType type,
         DataAuthority.ReadRequirement requirement
@@ -59,7 +78,8 @@ public final class DataAuthorityReadContracts {
         DataAuthority.ReadRequirement requested = DataAuthority.ReadRequirement.orEventual(requirement);
         return new DataAuthority.ReadRequirement(
             Math.max(requested.minimumRevision(), contract.minimumRevisionFloor()),
-            requested.maxAgeMillis()
+            requested.maxAgeMillis(),
+            requested.visibilityToken()
         );
     }
 
@@ -91,6 +111,13 @@ public final class DataAuthorityReadContracts {
                 "Authority read quote requiredRevision is below request: expected at least "
                     + minimumRevision + " but received " + quote.requiredRevision()
             );
+        }
+        DataAuthority.ReadVisibilityToken visibilityToken =
+            DataAuthority.ReadRequirement.orEventual(requirement).visibilityToken();
+        if (visibilityToken != null
+            && quote.satisfied()
+            && (quote.watermark() == null || !quote.watermark().satisfies(visibilityToken))) {
+            throw new IllegalStateException("Authority read quote watermark does not satisfy visibility token");
         }
 
         long receiptMinimumRevision = Math.max(minimumRevision, quote.requiredRevision());
@@ -153,7 +180,12 @@ public final class DataAuthorityReadContracts {
     ) {
         requireQuoteField("deliveryReceipt.projectionName", expectedProjectionName, receipt.projectionName());
         requireQuoteField("deliveryReceipt.aggregateScope", expectedAggregateScope, receipt.aggregateScope());
-        requireQuoteField("deliveryReceipt.stateTopic", expectedStateTopic(expectedProjectionName), receipt.stateTopic());
+        if (!stateTopicMatches(expectedProjectionName, receipt.stateTopic())) {
+            throw new IllegalStateException(
+                "Authority read quote deliveryReceipt.stateTopic mismatch: expected one of "
+                    + expectedStateTopics(expectedProjectionName) + " but received " + receipt.stateTopic()
+            );
+        }
         if (!receipt.delivered()) {
             throw new IllegalStateException("Authority read deliveryReceipt is not delivered");
         }
@@ -184,7 +216,15 @@ public final class DataAuthorityReadContracts {
             0L,
             DEFAULT_CACHE_MAX_AGE_MILLIS,
             Set.of("readType", "schemaVersion", "contractFingerprint", "playerId", "minimumRevision", "maxAgeMillis"),
-            Set.of("readType", "schemaVersion", "contractFingerprint", "playerId", "minimumRevision", "maxAgeMillis")
+            Set.of(
+                "readType",
+                "schemaVersion",
+                "contractFingerprint",
+                "playerId",
+                "minimumRevision",
+                "maxAgeMillis",
+                "visibilityToken"
+            )
         ));
         values.put(ReadType.PLAYER_RANK, new ReadContract(
             ReadType.PLAYER_RANK,
@@ -194,7 +234,15 @@ public final class DataAuthorityReadContracts {
             0L,
             DEFAULT_CACHE_MAX_AGE_MILLIS,
             Set.of("readType", "schemaVersion", "contractFingerprint", "playerId", "minimumRevision", "maxAgeMillis"),
-            Set.of("readType", "schemaVersion", "contractFingerprint", "playerId", "minimumRevision", "maxAgeMillis")
+            Set.of(
+                "readType",
+                "schemaVersion",
+                "contractFingerprint",
+                "playerId",
+                "minimumRevision",
+                "maxAgeMillis",
+                "visibilityToken"
+            )
         ));
         return Map.copyOf(values);
     }
@@ -222,10 +270,6 @@ public final class DataAuthorityReadContracts {
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to fingerprint authority read contracts", exception);
         }
-    }
-
-    private static String expectedStateTopic(String projectionName) {
-        return "state." + projectionName;
     }
 
     private static int intValue(Object value, int fallback) {

@@ -8,15 +8,27 @@ import java.util.Map;
 record AuthorityCommandRoute(
     String domain,
     String commandTopic,
+    String responseTopic,
     String eventTopic,
     String stateTopic,
     String partitionKey
 ) {
     private static final String UNKNOWN = "unknown";
 
+    AuthorityCommandRoute(
+        String domain,
+        String commandTopic,
+        String eventTopic,
+        String stateTopic,
+        String partitionKey
+    ) {
+        this(domain, commandTopic, null, eventTopic, stateTopic, partitionKey);
+    }
+
     AuthorityCommandRoute {
         domain = known(domain) ? domain : UNKNOWN;
         commandTopic = known(commandTopic) ? commandTopic : "cmd." + domain;
+        responseTopic = known(responseTopic) ? responseTopic : "rsp." + domain;
         eventTopic = known(eventTopic) ? eventTopic : "evt." + domain;
         stateTopic = known(stateTopic) ? stateTopic : "state." + domain;
         partitionKey = known(partitionKey) ? partitionKey : UNKNOWN;
@@ -28,14 +40,15 @@ record AuthorityCommandRoute(
 
     static AuthorityCommandRoute from(DataAuthority.CommandType type, String scope) {
         String domain = switch (type) {
-            case GRANT_RANK, REVOKE_RANK -> "player_rank";
+            case GRANT_RANK, REVOKE_RANK -> "rank";
             case RECORD_MATCH_START, RECORD_MATCH_END -> "match";
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
-                "player_profile";
+            case START_SESSION, RENEW_SESSION, END_SESSION -> "session";
+            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT -> "player";
         };
         return new AuthorityCommandRoute(
             domain,
             "cmd." + domain,
+            "rsp." + domain,
             "evt." + domain,
             "state." + domain,
             partitionKey(type, scope)
@@ -54,6 +67,7 @@ record AuthorityCommandRoute(
         return new AuthorityCommandRoute(
             string(raw.get("domain"), fallback.domain()),
             string(raw.get("commandTopic"), fallback.commandTopic()),
+            string(raw.get("responseTopic"), fallback.responseTopic()),
             string(raw.get("eventTopic"), fallback.eventTopic()),
             string(raw.get("stateTopic"), fallback.stateTopic()),
             string(raw.get("partitionKey"), fallback.partitionKey())
@@ -64,6 +78,7 @@ record AuthorityCommandRoute(
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("domain", domain);
         values.put("commandTopic", commandTopic);
+        values.put("responseTopic", responseTopic);
         values.put("eventTopic", eventTopic);
         values.put("stateTopic", stateTopic);
         values.put("partitionKey", partitionKey);
