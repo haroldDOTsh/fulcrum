@@ -280,6 +280,76 @@ class AuthorityLogCommandPortTest {
     }
 
     @Test
+    void domainScopedCommandPortDelegatesMatchingDomain() {
+        DataAuthority.PlayerRankCommand command = rankCommand(14L);
+        AtomicReference<DataAuthority.AuthorityCommand> applied = new AtomicReference<>();
+        AuthorityDomainScopedCommandPort port = new AuthorityDomainScopedCommandPort(
+            "rank",
+            appliedCommand -> {
+                applied.set(appliedCommand);
+                return CompletableFuture.completedFuture(acceptedResult(appliedCommand, 15L));
+            }
+        );
+
+        DataAuthority.CommandResult result = port.submit(command).toCompletableFuture().join();
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(applied.get()).isEqualTo(command);
+    }
+
+    @Test
+    void partitionWorkerRejectsCommandsOutsideMaterializedDelegateDomain() {
+        InMemoryAuthorityLog log = new InMemoryAuthorityLog();
+        DataAuthority.PlayerRankCommand command = rankCommand(16L);
+        AuthorityLogRecord commandRecord = AuthorityLogFrames.appendCommand(log, command);
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
+        int partition = AuthorityLogTopology.partition(route);
+        AtomicBoolean applied = new AtomicBoolean(false);
+
+        AuthorityLogCommandWorker worker = new AuthorityLogCommandWorker(
+            log,
+            new AuthorityDomainScopedCommandPort(
+                "player",
+                ignored -> {
+                    applied.set(true);
+                    return CompletableFuture.completedFuture(acceptedResult(command, 17L));
+                }
+            ),
+            (commandDomain, commandTopic, partitionKey, ownerNode) -> AuthorityWriterClaim.mint(
+                commandDomain,
+                commandTopic,
+                partitionKey,
+                ownerNode,
+                6L,
+                null,
+                0L,
+                Instant.EPOCH
+            ),
+            "authority-rank-1"
+        );
+
+        AuthorityLogCommandWorker.PartitionResult result =
+            worker.processPartition("rank", partition, -1L, 10).toCompletableFuture().join();
+
+        assertThat(applied.get()).isFalse();
+        assertThat(result.processedCount()).isEqualTo(1);
+        assertThat(result.lastProcessedOffset()).isEqualTo(commandRecord.offset());
+        assertThat(result.processed()).singleElement().satisfies(processed -> {
+            assertThat(processed.commandResult().accepted()).isFalse();
+            assertThat(processed.commandResult().rejectionReason())
+                .isEqualTo(DataAuthority.RejectionReason.VALIDATION_FAILED);
+        });
+        assertThat(log.records(route.eventTopic(), partition)).isEmpty();
+        assertThat(log.records(route.stateTopic(), partition)).isEmpty();
+        assertThat(log.records(route.responseTopic(), partition)).singleElement().satisfies(response ->
+            assertThat(response.payload())
+                .containsEntry("accepted", false)
+                .containsEntry("rejectionReason", DataAuthority.RejectionReason.VALIDATION_FAILED.name())
+                .containsEntry("sourceCommandOffset", commandRecord.offset())
+        );
+    }
+
+    @Test
     void partitionWorkerResumesAfterLastProcessedOffset() {
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();
         DataAuthority.PlayerRankCommand first = rankCommand(15L);

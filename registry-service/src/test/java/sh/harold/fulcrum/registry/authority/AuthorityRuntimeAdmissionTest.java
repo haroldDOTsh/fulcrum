@@ -104,6 +104,26 @@ class AuthorityRuntimeAdmissionTest {
             .doesNotContain("getOrDefault(\"snapshot-cache\", Map.of())");
     }
 
+    @Test
+    void registryMaterializesCommandWorkersWithDomainScopedDelegates() throws Exception {
+        String source = Files.readString(registryServicePath());
+
+        assertThat(source).doesNotContain("AuthorityLogCommandWorker worker = new AuthorityLogCommandWorker");
+        assertThat(methodSlice(
+            source,
+            "private static List<AuthorityCommandWorkerRuntime> authorityCommandWorkerRuntimes",
+            "private static List<AuthorityCommandWorkerRuntime> kafkaAuthorityCommandWorkers"
+        ))
+            .contains("new AuthorityDomainScopedCommandPort(topology.domain(), delegate)");
+        assertThat(methodSlice(
+            source,
+            "private static List<AuthorityCommandWorkerRuntime> kafkaAuthorityCommandWorkers",
+            "private static List<Integer> partitions"
+        ))
+            .contains("new AuthorityDomainScopedCommandPort(topology.domain(), delegate)");
+        assertThat(source).doesNotContain("DataAuthorityCommandContracts");
+    }
+
     private static Path registryServicePath() {
         Path fromModule = Path.of(
             "src",

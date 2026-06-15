@@ -19,6 +19,7 @@ import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipalCommandPort;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionCursorStore;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionWorker;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityStateProjectionWorkerLoop;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainScopedCommandPort;
 import sh.harold.fulcrum.api.data.impl.authority.CachedAuthorityCommandPort;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCustodyPreflight;
 import sh.harold.fulcrum.api.data.impl.authority.InMemoryAuthorityLog;
@@ -1487,12 +1488,6 @@ public class RegistryService {
         );
         if ("in-memory".equals(commandLog) || "memory".equals(commandLog)) {
             InMemoryAuthorityLog log = new InMemoryAuthorityLog();
-            AuthorityLogCommandWorker worker = new AuthorityLogCommandWorker(
-                log,
-                delegate,
-                epochStore,
-                messageBusAdapter.getServerId()
-            );
             authorityLogResource = null;
             LOGGER.info("Central authority command log using in-memory compatibility substrate");
             return new AuthorityCommandLogRuntime(
@@ -1500,7 +1495,10 @@ public class RegistryService {
                 new AuthorityLogDataAuthorityClient(log, clientTimeout),
                 new AuthorityLogCommandPort(log, delegate, epochStore, messageBusAdapter.getServerId()),
                 authorityCommandWorkerRuntimes(
-                    worker,
+                    log,
+                    delegate,
+                    epochStore,
+                    messageBusAdapter.getServerId(),
                     maxRecordsPerPartition,
                     AuthorityCommandConsumerCursorStore.inMemory()
                 )
@@ -1529,7 +1527,10 @@ public class RegistryService {
     }
 
     private static List<AuthorityCommandWorkerRuntime> authorityCommandWorkerRuntimes(
-        AuthorityLogCommandWorker worker,
+        InMemoryAuthorityLog log,
+        DataAuthority.CommandPort delegate,
+        PostgresAuthorityPartitionEpochStore epochStore,
+        String ownerNode,
         int maxRecordsPerPartition,
         AuthorityCommandConsumerCursorStore cursorStore
     ) {
@@ -1538,7 +1539,12 @@ public class RegistryService {
             .sorted((left, right) -> left.domain().compareTo(right.domain()))
             .forEach(topology -> workers.add(new PartitionLoopAuthorityCommandWorkerRuntime(
                 new AuthorityLogCommandWorkerLoop(
-                    worker,
+                    new AuthorityLogCommandWorker(
+                        log,
+                        new AuthorityDomainScopedCommandPort(topology.domain(), delegate),
+                        epochStore,
+                        ownerNode
+                    ),
                     topology.domain(),
                     partitions(topology.partitionCount()),
                     maxRecordsPerPartition,
@@ -1560,7 +1566,14 @@ public class RegistryService {
         AuthorityDomainTopology.all().values().stream()
             .sorted((left, right) -> left.domain().compareTo(right.domain()))
             .forEach(topology -> workers.add(new KafkaAuthorityCommandWorkerRuntime(
-                new KafkaAuthorityCommandWorker(log, delegate, epochStore, cursorStore, ownerNode, topology.domain()),
+                new KafkaAuthorityCommandWorker(
+                    log,
+                    new AuthorityDomainScopedCommandPort(topology.domain(), delegate),
+                    epochStore,
+                    cursorStore,
+                    ownerNode,
+                    topology.domain()
+                ),
                 pollTimeout
             )));
         return List.copyOf(workers);
