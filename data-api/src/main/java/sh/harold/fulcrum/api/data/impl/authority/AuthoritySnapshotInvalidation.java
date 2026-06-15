@@ -81,16 +81,6 @@ public record AuthoritySnapshotInvalidation(
                 revision
             );
         }
-        if (command instanceof DataAuthority.PlayerSessionCommand sessionCommand) {
-            String playerId = sessionCommand.playerId().toString();
-            return revisionFloor(
-                PLAYER_PROFILE,
-                "player:" + playerId,
-                PLAYER_PROFILE,
-                playerId,
-                revision
-            );
-        }
         return Optional.empty();
     }
 

@@ -28,6 +28,24 @@ public final class DataAuthority {
     private DataAuthority() {
     }
 
+    public record Subject(UUID subjectId) {
+        public static final String SCOPE_PREFIX = "subject:";
+
+        public Subject {
+            if (subjectId == null) {
+                throw new IllegalArgumentException("subjectId is required");
+            }
+        }
+
+        public static Subject player(UUID playerId) {
+            return new Subject(playerId);
+        }
+
+        public String scope() {
+            return SCOPE_PREFIX + subjectId;
+        }
+    }
+
     public enum RejectionReason {
         NONE,
         STALE_FENCING_TOKEN,
@@ -1210,6 +1228,10 @@ public final class DataAuthority {
             }
             username = username == null ? "unknown" : username;
         }
+
+        public Subject subject() {
+            return Subject.player(playerId);
+        }
     }
 
     public record PlayerSessionCommand(
@@ -1230,6 +1252,10 @@ public final class DataAuthority {
                 throw new IllegalArgumentException("playerId is required");
             }
             username = username == null ? "unknown" : username;
+        }
+
+        public Subject subject() {
+            return Subject.player(playerId);
         }
     }
 

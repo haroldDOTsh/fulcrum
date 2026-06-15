@@ -1267,6 +1267,48 @@ class PostgresDataAuthorityIntegrationTest {
     }
 
     @Test
+    void sessionCommandSettlesPresenceOnSubjectScope() throws Exception {
+        UUID commandId = UUID.randomUUID();
+        UUID playerId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        String subjectScope = "subject:" + playerId;
+
+        DataAuthority.CommandResult result = authority.submit(sessionStartCommand(
+            commandId,
+            playerId,
+            sessionId,
+            "session-subject:" + commandId
+        )).toCompletableFuture().join();
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.settlement().partitionKey()).isEqualTo(subjectScope);
+        assertThat(result.settlement().watermark().aggregateScope()).isEqualTo(subjectScope);
+        assertThat(result.settlement().watermark().aggregateType()).isEqualTo("presence");
+        assertThat(result.settlement().statePayload())
+            .containsEntry("subjectId", playerId.toString())
+            .containsEntry("playerId", playerId.toString())
+            .containsEntry("sessionId", sessionId.toString())
+            .containsEntry("online", true);
+
+        try (Connection connection = adapter.getConnection();
+             PreparedStatement session = connection.prepareStatement("""
+                 SELECT player_id, proxy_id, server_id, state
+                 FROM player_sessions
+                 WHERE session_id = ?
+                 """)) {
+            session.setObject(1, sessionId);
+            try (ResultSet rows = session.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getObject("player_id", UUID.class)).isEqualTo(playerId);
+                assertThat(rows.getString("proxy_id")).isEqualTo("proxy-1");
+                assertThat(rows.getString("server_id")).isEqualTo("lobby-1");
+                assertThat(rows.getString("state")).isEqualTo("ACTIVE");
+                assertThat(rows.next()).isFalse();
+            }
+        }
+    }
+
+    @Test
     void loggedCommandPortRecordsIngressAndTerminalOutcome() throws Exception {
         UUID commandId = UUID.randomUUID();
         UUID playerId = UUID.randomUUID();
@@ -1927,6 +1969,36 @@ class PostgresDataAuthorityIntegrationTest {
             20.0D,
             20,
             "lastProxySession"
+        );
+    }
+
+    private static DataAuthority.PlayerSessionCommand sessionStartCommand(
+        UUID commandId,
+        UUID playerId,
+        UUID sessionId,
+        String idempotencyKey
+    ) {
+        long now = System.currentTimeMillis();
+        return new DataAuthority.PlayerSessionCommand(
+            DataAuthority.CommandManifest.create(
+                commandId,
+                "START_SESSION",
+                "session-service",
+                "subject:" + playerId,
+                idempotencyKey,
+                now + 60_000L,
+                "7",
+                DataAuthority.ANY_REVISION
+            ),
+            playerId,
+            "SessionUser",
+            sessionId,
+            now,
+            "lobby-1",
+            "proxy-1",
+            "127.0.0.1",
+            765,
+            null
         );
     }
 

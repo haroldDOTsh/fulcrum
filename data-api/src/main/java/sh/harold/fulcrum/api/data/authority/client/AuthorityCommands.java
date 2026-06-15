@@ -25,11 +25,19 @@ public final class AuthorityCommands {
     }
 
     public PlayerCommands player(UUID playerId) {
-        return new PlayerCommands(actorId, playerId);
+        return player(DataAuthority.Subject.player(playerId));
+    }
+
+    public PlayerCommands player(DataAuthority.Subject subject) {
+        return new PlayerCommands(actorId, subject);
     }
 
     public SessionCommands session(UUID playerId) {
-        return new SessionCommands(actorId, playerId);
+        return session(DataAuthority.Subject.player(playerId));
+    }
+
+    public SessionCommands session(DataAuthority.Subject subject) {
+        return new SessionCommands(actorId, subject);
     }
 
     public RankCommands rank(UUID playerId) {
@@ -42,11 +50,11 @@ public final class AuthorityCommands {
 
     public static final class PlayerCommands {
         private final String actorId;
-        private final UUID playerId;
+        private final DataAuthority.Subject subject;
 
-        private PlayerCommands(String actorId, UUID playerId) {
+        private PlayerCommands(String actorId, DataAuthority.Subject subject) {
             this.actorId = actorId;
-            this.playerId = Objects.requireNonNull(playerId, "playerId");
+            this.subject = Objects.requireNonNull(subject, "subject");
         }
 
         public DataAuthority.PlayerProfileCommand recordLogin(
@@ -130,12 +138,12 @@ public final class AuthorityCommands {
                 manifest(
                     declarationId,
                     actorId,
-                    playerId,
+                    subject.subjectId(),
                     timestampEpochMillis,
                     timestampEpochMillis + DEFAULT_DEADLINE_MILLIS,
                     DataAuthority.ANY_REVISION
                 ),
-                playerId,
+                subject.subjectId(),
                 username,
                 timestampEpochMillis,
                 currentServer,
@@ -155,11 +163,11 @@ public final class AuthorityCommands {
 
     public static final class SessionCommands {
         private final String actorId;
-        private final UUID playerId;
+        private final DataAuthority.Subject subject;
 
-        private SessionCommands(String actorId, UUID playerId) {
+        private SessionCommands(String actorId, DataAuthority.Subject subject) {
             this.actorId = actorId;
-            this.playerId = Objects.requireNonNull(playerId, "playerId");
+            this.subject = Objects.requireNonNull(subject, "subject");
         }
 
         public DataAuthority.PlayerSessionCommand startSession(
@@ -244,12 +252,12 @@ public final class AuthorityCommands {
                 manifest(
                     declarationId,
                     actorId,
-                    playerId,
+                    subject.subjectId(),
                     timestampEpochMillis,
                     timestampEpochMillis + DEFAULT_DEADLINE_MILLIS,
                     DataAuthority.ANY_REVISION
                 ),
-                playerId,
+                subject.subjectId(),
                 username,
                 sessionId,
                 timestampEpochMillis,

@@ -67,7 +67,7 @@ class AuthorityCommandScopeGuardTest {
 
         assertThat(result.accepted()).isFalse();
         assertThat(result.rejectionReason()).isEqualTo(DataAuthority.RejectionReason.INVALID_SCOPE);
-        assertThat(result.message()).contains("expected player:" + playerId);
+        assertThat(result.message()).contains("expected subject:" + playerId);
         assertThat(delegated).isFalse();
     }
 

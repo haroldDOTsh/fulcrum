@@ -144,6 +144,7 @@ class DataAuthorityCommandContractManifestTest {
         assertThat(vectors)
             .containsEntry("GRANT_RANK", "rank:player:{aggregateId}=>rank:player:{aggregateId}")
             .containsEntry("RECORD_PLAYER_LOGIN", "player:{aggregateId}=>player:{aggregateId}")
+            .containsEntry("START_SESSION", "subject:{aggregateId}=>subject:{aggregateId}")
             .containsEntry("RECORD_MATCH_START", "match:{aggregateId}=>match:{aggregateId}");
     }
 
@@ -346,7 +347,7 @@ class DataAuthorityCommandContractManifestTest {
                 "lastProxySession"
             );
             case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> new DataAuthority.PlayerSessionCommand(
-                manifest(commandId, type, "player:" + playerId, now, expectedRevision),
+                manifest(commandId, type, "subject:" + playerId, now, expectedRevision),
                 playerId,
                 "ContractUser",
                 UUID.randomUUID(),
@@ -489,8 +490,9 @@ class DataAuthorityCommandContractManifestTest {
         return switch (type) {
             case "GRANT_RANK", "REVOKE_RANK" -> "player_rank";
             case "RECORD_MATCH_START", "RECORD_MATCH_END" -> "match";
-            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" ->
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" ->
                 "player_profile";
+            case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> "presence";
             default -> throw new IllegalArgumentException("Unknown command declaration " + type);
         };
     }

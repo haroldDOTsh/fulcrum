@@ -116,7 +116,7 @@ final class AuthorityDomainDeclarations {
             "player_profile",
             Set.of("playerId", "username", "timestamp"),
             Set.of(
-                "playerId", "username", "timestamp", "online", "currentServer", "currentProxy",
+                "playerId", "subjectId", "username", "timestamp", "online", "currentServer", "currentProxy",
                 "lastIp", "lastWorld", "lastLocation", "gamemode", "level", "exp", "health",
                 "foodLevel", "playtimeStartField"
             ),
@@ -132,13 +132,13 @@ final class AuthorityDomainDeclarations {
             "session",
             AuthorityCommandManifest.CommandDeliveryMode.SYNC_INTERACTIVE,
             AuthorityCommandManifest.CommandRevisionPolicy.BLIND_ALLOWED,
-            "player:",
+            DataAuthority.Subject.SCOPE_PREFIX,
             "",
-            "playerId",
-            "player_profile",
-            Set.of("playerId", "username", "timestamp"),
+            "subjectId",
+            "presence",
+            Set.of("subjectId", "playerId", "username", "timestamp"),
             Set.of(
-                "playerId", "username", "sessionId", "timestamp", "online", "currentServer",
+                "subjectId", "playerId", "username", "sessionId", "timestamp", "online", "currentServer",
                 "currentProxy", "lastIp", "protocolVersion", "disconnectReason",
                 "lastProxySession", "lastServerSwitch", "playtimeStartField", "clearCurrentServer"
             ),

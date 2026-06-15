@@ -37,11 +37,8 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     private static final String PLAYER_RANK = "player_rank";
     private static final String UNKNOWN = "unknown";
     private static final List<String> PROFILE_EVENT_TYPES = List.of(
-        "END_SESSION",
         "RECORD_PLAYER_LOGIN",
-        "RECORD_PLAYER_LOGOUT",
-        "RENEW_SESSION",
-        "START_SESSION"
+        "RECORD_PLAYER_LOGOUT"
     );
     private static final List<String> RANK_EVENT_TYPES = List.of("GRANT_RANK", "REVOKE_RANK");
     private static final AuthorityProjectionManifest MANIFEST = AuthorityProjectionManifest.of(
@@ -181,8 +178,8 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
 
         Map<?, ?> payload = commandPayload(event);
         boolean online = switch (eventType) {
-            case "RECORD_PLAYER_LOGIN", "START_SESSION", "RENEW_SESSION" -> true;
-            case "RECORD_PLAYER_LOGOUT", "END_SESSION" -> false;
+            case "RECORD_PLAYER_LOGIN" -> true;
+            case "RECORD_PLAYER_LOGOUT" -> false;
             default -> throw new IllegalArgumentException("Unsupported profile event type " + eventType);
         };
         String username = boundedUsername(string(payload.get("username"), current == null ? UNKNOWN : current.username()));

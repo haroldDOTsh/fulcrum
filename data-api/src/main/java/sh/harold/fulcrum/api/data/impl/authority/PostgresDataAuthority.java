@@ -1574,6 +1574,20 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         return uuid(value);
     }
 
+    private UUID subjectId(DataAuthority.AuthorityCommand command) {
+        String value = string(payload(command), "subjectId", null);
+        if (value == null || value.isBlank()) {
+            String scope = command.scope();
+            if (scope != null && scope.startsWith(DataAuthority.Subject.SCOPE_PREFIX)) {
+                value = scope.substring(DataAuthority.Subject.SCOPE_PREFIX.length());
+            }
+        }
+        if (value == null || value.isBlank()) {
+            return playerId(command);
+        }
+        return uuid(value);
+    }
+
     private UUID matchId(DataAuthority.AuthorityCommand command) {
         String value = string(payload(command), "matchId", null);
         if (value == null || value.isBlank()) {
@@ -1808,12 +1822,20 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                     matchId == null ? command.scope() : matchId.toString()
                 );
             }
-            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" -> {
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" -> {
                 UUID playerId = playerId(command);
                 yield new AggregateMetadata(
                     aggregateKey(command),
                     "player_profile",
                     playerId == null ? command.scope() : playerId.toString()
+                );
+            }
+            case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> {
+                UUID subjectId = subjectId(command);
+                yield new AggregateMetadata(
+                    aggregateKey(command),
+                    "presence",
+                    subjectId == null ? command.scope() : subjectId.toString()
                 );
             }
             default -> throw new IllegalArgumentException(
@@ -1830,8 +1852,9 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         return switch (command.declarationId()) {
             case "GRANT_RANK", "REVOKE_RANK" -> rankStatePayload(connection, playerId(command), result.revision(), fallback);
             case "RECORD_MATCH_START", "RECORD_MATCH_END" -> matchStatePayload(connection, matchId(command), result.revision(), fallback);
-            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" ->
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" ->
                 profileStatePayload(connection, playerId(command), result.revision(), fallback);
+            case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> fallback;
             default -> throw new IllegalArgumentException(
                 "Unsupported authority command declaration: " + command.declarationId());
         };
@@ -1857,14 +1880,10 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 state.put("revision", result.revision());
                 yield state;
             }
-            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "START_SESSION", "RENEW_SESSION", "END_SESSION" -> {
+            case "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT" -> {
                 UUID playerId = playerId(command);
                 String username = string(payload, "username", "unknown");
-                boolean online = switch (command.declarationId()) {
-                    case "RECORD_PLAYER_LOGIN", "START_SESSION", "RENEW_SESSION" -> true;
-                    case "RECORD_PLAYER_LOGOUT", "END_SESSION" -> false;
-                    default -> false;
-                };
+                boolean online = "RECORD_PLAYER_LOGIN".equals(command.declarationId());
                 Map<String, Object> state = new LinkedHashMap<>();
                 state.put("playerId", playerId == null ? null : playerId.toString());
                 state.put("username", username);
@@ -1874,6 +1893,25 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 state.put("currentProxy", online ? string(payload, "currentProxy", null) : null);
                 state.put("totalPlaytimeMs", 0L);
                 state.put("profileData", payload);
+                state.put("revision", result.revision());
+                yield state;
+            }
+            case "START_SESSION", "RENEW_SESSION", "END_SESSION" -> {
+                UUID subjectId = subjectId(command);
+                UUID playerId = playerId(command);
+                boolean online = !"END_SESSION".equals(command.declarationId());
+                Map<String, Object> state = new LinkedHashMap<>();
+                state.put("subjectId", subjectId == null ? null : subjectId.toString());
+                state.put("playerId", playerId == null ? null : playerId.toString());
+                state.put("username", string(payload, "username", "unknown"));
+                state.put("online", online);
+                state.put("currentServer", online ? string(payload, "currentServer", null) : null);
+                state.put("currentProxy", online ? string(payload, "currentProxy", null) : null);
+                state.put("sessionId", string(payload, "sessionId", null));
+                state.put("lastIp", string(payload, "lastIp", null));
+                state.put("protocolVersion", payload.get("protocolVersion"));
+                state.put("disconnectReason", string(payload, "disconnectReason", null));
+                state.put("observedAt", payload.get("timestamp"));
                 state.put("revision", result.revision());
                 yield state;
             }

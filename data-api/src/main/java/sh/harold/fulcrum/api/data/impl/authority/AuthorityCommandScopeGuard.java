@@ -42,7 +42,7 @@ public final class AuthorityCommandScopeGuard implements DataAuthority.CommandPo
             return playerScope(profile.playerId());
         }
         if (command instanceof DataAuthority.PlayerSessionCommand session) {
-            return playerScope(session.playerId());
+            return session.subject().scope();
         }
         if (command instanceof DataAuthority.MatchCommand match) {
             return matchScope(match.matchId());

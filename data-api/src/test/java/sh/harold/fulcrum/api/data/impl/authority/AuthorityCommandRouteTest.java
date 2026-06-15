@@ -82,7 +82,7 @@ class AuthorityCommandRouteTest {
         );
         AuthorityCommandRoute session = AuthorityCommandRoute.fromDeclarationId(
             "RENEW_SESSION",
-            "player:00000000-0000-0000-0000-000000000002"
+            "subject:00000000-0000-0000-0000-000000000002"
         );
 
         assertThat(login.domain()).isEqualTo("player");
@@ -97,7 +97,7 @@ class AuthorityCommandRouteTest {
         assertThat(session.responseTopic()).isEqualTo("rsp.session");
         assertThat(session.eventTopic()).isEqualTo("evt.session");
         assertThat(session.stateTopic()).isEqualTo("state.session");
-        assertThat(session.partitionKey()).isEqualTo(login.partitionKey());
+        assertThat(session.partitionKey()).isEqualTo("subject:00000000-0000-0000-0000-000000000002");
     }
 
     @Test

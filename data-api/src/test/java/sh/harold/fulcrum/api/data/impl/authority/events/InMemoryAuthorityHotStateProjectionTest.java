@@ -25,49 +25,35 @@ class InMemoryAuthorityHotStateProjectionTest {
         assertThat(restoreTarget.projectionName()).isEqualTo(InMemoryAuthorityHotStateProjection.PROJECTION_NAME);
         assertThat(restoreTarget.projectionVersion()).isEqualTo(InMemoryAuthorityHotStateProjection.PROJECTION_VERSION);
         assertThat(manifest.acceptedEventTypes()).containsExactly(
-            "END_SESSION",
             "GRANT_RANK",
             "RECORD_PLAYER_LOGIN",
             "RECORD_PLAYER_LOGOUT",
-            "RENEW_SESSION",
-            "REVOKE_RANK",
-            "START_SESSION"
+            "REVOKE_RANK"
         );
         assertThat(manifest.acceptsEventType("RECORD_MATCH_START")).isFalse();
+        assertThat(manifest.acceptsEventType("START_SESSION")).isFalse();
     }
 
     @Test
-    void profileEventsProjectPresenceWithDeliveryReceipt() {
+    void profileEventsProjectProfileWithDeliveryReceipt() {
         UUID playerId = UUID.randomUUID();
         InMemoryAuthorityHotStateProjection projection = new InMemoryAuthorityHotStateProjection();
 
         AuthorityEventDispatchResult login = projection.dispatch(profileEvent(
             playerId,
-            "START_SESSION",
+            "RECORD_PLAYER_LOGIN",
             1L,
             payload(
                 "playerId", playerId.toString(),
                 "username", "Richa",
                 "currentServer", "lobby",
-                "currentProxy", "proxy-a",
-                "sessionId", UUID.randomUUID().toString()
-            )
-        ));
-        AuthorityEventDispatchResult renewal = projection.dispatch(profileEvent(
-            playerId,
-            "RENEW_SESSION",
-            2L,
-            payload(
-                "playerId", playerId.toString(),
-                "username", "Richa",
-                "currentServer", "survival",
                 "currentProxy", "proxy-a"
             )
         ));
         AuthorityEventDispatchResult logout = projection.dispatch(profileEvent(
             playerId,
-            "END_SESSION",
-            3L,
+            "RECORD_PLAYER_LOGOUT",
+            2L,
             payload(
                 "playerId", playerId.toString(),
                 "username", "Richa",
@@ -76,12 +62,11 @@ class InMemoryAuthorityHotStateProjectionTest {
         ));
 
         DataAuthority.QuotedRead<DataAuthority.PlayerProfileSnapshot> read =
-            projection.quoteProfile(playerId, DataAuthority.ReadRequirement.atLeast(3L))
+            projection.quoteProfile(playerId, DataAuthority.ReadRequirement.atLeast(2L))
                 .toCompletableFuture()
                 .join();
 
         assertThat(login.successful()).isTrue();
-        assertThat(renewal.successful()).isTrue();
         assertThat(logout.successful()).isTrue();
         assertThat(read.satisfied()).isTrue();
         assertThat(read.snapshot()).hasValueSatisfying(snapshot -> {
@@ -90,7 +75,7 @@ class InMemoryAuthorityHotStateProjectionTest {
             assertThat(snapshot.currentServer()).isNull();
             assertThat(snapshot.currentProxy()).isNull();
             assertThat(snapshot.profileData()).containsEntry("disconnectReason", "quit");
-            assertThat(snapshot.revision()).isEqualTo(3L);
+            assertThat(snapshot.revision()).isEqualTo(2L);
             assertThat(snapshot.watermark().stateTopic()).isEqualTo("state.player_profile");
         });
         assertThat(read.quote().deliveryReceipt()).isNotNull();
@@ -100,7 +85,7 @@ class InMemoryAuthorityHotStateProjectionTest {
             read.quote(),
             "player:" + playerId,
             "player_profile",
-            DataAuthority.ReadRequirement.atLeast(3L)
+            DataAuthority.ReadRequirement.atLeast(2L)
         );
     }
 

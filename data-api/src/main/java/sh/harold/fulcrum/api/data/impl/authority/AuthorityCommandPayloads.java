@@ -22,6 +22,7 @@ final class AuthorityCommandPayloads {
         DataAuthority.PlayerProfileCommand profile = (DataAuthority.PlayerProfileCommand) command;
         return new MapBuilder()
             .put("playerId", profile.playerId().toString())
+            .put("subjectId", profile.subject().subjectId().toString())
             .put("username", profile.username())
             .put("timestamp", profile.timestampEpochMillis())
             .put("online", "RECORD_PLAYER_LOGIN".equals(profile.declarationId()))
@@ -65,6 +66,7 @@ final class AuthorityCommandPayloads {
     static Map<String, Object> sessionPayload(DataAuthority.AuthorityCommand command) {
         DataAuthority.PlayerSessionCommand session = (DataAuthority.PlayerSessionCommand) command;
         MapBuilder payload = new MapBuilder()
+            .put("subjectId", session.subject().subjectId().toString())
             .put("playerId", session.playerId().toString())
             .put("username", session.username())
             .put("sessionId", session.sessionId() == null ? null : session.sessionId().toString())
@@ -94,7 +96,7 @@ final class AuthorityCommandPayloads {
     ) {
         return new DataAuthority.PlayerSessionCommand(
             manifest,
-            uuid(payload.get("playerId")),
+            uuid(payload.getOrDefault("playerId", payload.get("subjectId"))),
             string(payload.get("username")),
             nullableUuid(payload.get("sessionId")),
             longValue(payload.get("timestamp"), System.currentTimeMillis()),

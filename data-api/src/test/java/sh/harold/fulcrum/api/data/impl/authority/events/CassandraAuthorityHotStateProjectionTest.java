@@ -111,7 +111,8 @@ class CassandraAuthorityHotStateProjectionTest {
         assertThat(restoreTarget.projectionName()).isEqualTo(CassandraAuthorityHotStateProjection.PROJECTION_NAME);
         assertThat(restoreTarget.projectionVersion()).isEqualTo(CassandraAuthorityHotStateProjection.PROJECTION_VERSION);
         assertThat(projection.projectionManifest().acceptedEventTypes())
-            .contains("RECORD_PLAYER_LOGIN", "END_SESSION", "GRANT_RANK", "REVOKE_RANK", "RECORD_MATCH_START");
+            .contains("RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "GRANT_RANK", "REVOKE_RANK", "RECORD_MATCH_START")
+            .doesNotContain("START_SESSION", "RENEW_SESSION", "END_SESSION");
     }
 
     @Test

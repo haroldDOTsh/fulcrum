@@ -12,6 +12,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthorityCommandsTest {
     @Test
+    void subjectProvidesThinRoutableIdentityScope() {
+        UUID playerId = UUID.fromString("00000000-0000-0000-0000-000000000010");
+
+        DataAuthority.Subject subject = DataAuthority.Subject.player(playerId);
+
+        assertThat(subject.subjectId()).isEqualTo(playerId);
+        assertThat(subject.scope()).isEqualTo("subject:" + playerId);
+    }
+
+    @Test
     void rankCommandOwnsScopeIdempotencyAndExpectedRevision() {
         UUID playerId = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
@@ -45,6 +55,7 @@ class AuthorityCommandsTest {
 
         AuthorityCommandManifest.validate(login);
         AuthorityCommandManifest.validate(logout);
+        assertThat(login.subject()).isEqualTo(DataAuthority.Subject.player(playerId));
         assertThat(login.scope()).isEqualTo("player:" + playerId);
         assertThat(login.declarationId()).isEqualTo("RECORD_PLAYER_LOGIN");
         assertThat(login.level()).isEqualTo(12);
@@ -54,7 +65,7 @@ class AuthorityCommandsTest {
     }
 
     @Test
-    void sessionCommandsUsePlayerAggregateScope() {
+    void sessionCommandsUseSubjectAggregateScope() {
         UUID playerId = UUID.fromString("33333333-3333-3333-3333-333333333333");
         UUID sessionId = UUID.fromString("44444444-4444-4444-4444-444444444444");
 
@@ -63,7 +74,8 @@ class AuthorityCommandsTest {
             .endSession("Richa", sessionId, 4_000L, "survival", "proxy-a", "127.0.0.1", 772, "quit");
 
         AuthorityCommandManifest.validate(command);
-        assertThat(command.scope()).isEqualTo("player:" + playerId);
+        assertThat(command.subject()).isEqualTo(DataAuthority.Subject.player(playerId));
+        assertThat(command.scope()).isEqualTo("subject:" + playerId);
         assertThat(command.declarationId()).isEqualTo("END_SESSION");
         assertThat(command.disconnectReason()).isEqualTo("quit");
     }

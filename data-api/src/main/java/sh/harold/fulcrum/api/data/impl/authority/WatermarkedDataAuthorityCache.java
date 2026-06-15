@@ -519,9 +519,6 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         if (command instanceof DataAuthority.PlayerProfileCommand profileCommand) {
             return profileScope(profileCommand.playerId());
         }
-        if (command instanceof DataAuthority.PlayerSessionCommand sessionCommand) {
-            return profileScope(sessionCommand.playerId());
-        }
         return null;
     }
 

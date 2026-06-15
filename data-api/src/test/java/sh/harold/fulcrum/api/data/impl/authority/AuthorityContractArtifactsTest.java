@@ -111,7 +111,7 @@ class AuthorityContractArtifactsTest {
         assertThat(profile.projectionFamily()).isEqualTo("player_profile");
         assertThat(profile.servingStore()).isEqualTo("postgresql-read-replica");
         assertThat(profile.cacheStore()).isEqualTo("valkey");
-        assertThat(profile.expectedStateTopics()).containsExactly("state.player_profile", "state.player", "state.session");
+        assertThat(profile.expectedStateTopics()).containsExactly("state.player_profile", "state.player");
         assertThat(tableNames(profile.schemaTables()))
             .containsExactlyInAnyOrder("player_profiles", "authority_state_snapshots");
 

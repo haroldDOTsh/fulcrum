@@ -62,7 +62,7 @@ public final class DataAuthorityReadContracts {
 
     public static List<String> expectedStateTopics(String projectionName) {
         if ("player_profile".equals(projectionName)) {
-            return List.of("state.player_profile", "state.player", "state.session");
+            return List.of("state.player_profile", "state.player");
         }
         if ("player_rank".equals(projectionName)) {
             return List.of("state.player_rank", "state.rank");
