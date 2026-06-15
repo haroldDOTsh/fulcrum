@@ -19,6 +19,7 @@ import java.util.function.ToLongFunction;
 public final class WatermarkedDataAuthorityCache implements DataAuthority.CommandPort,
     DataAuthority.CommandSubmissionPort,
     DataAuthority.PlayerProfileReader,
+    DataAuthority.PlayerPresenceReader,
     DataAuthority.PlayerRankReader {
 
     public static final Duration DEFAULT_MAX_AGE = Duration.ofMillis(
@@ -27,6 +28,7 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
 
     private final DataAuthority.CommandPort commandPort;
     private final DataAuthority.PlayerProfileReader profileReader;
+    private final DataAuthority.PlayerPresenceReader presenceReader;
     private final DataAuthority.PlayerRankReader rankReader;
     private final AuthoritySnapshotCacheStore snapshotCacheStore;
     private final long maxAgeMillis;
@@ -38,7 +40,16 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         DataAuthority.PlayerProfileReader profileReader,
         DataAuthority.PlayerRankReader rankReader
     ) {
-        this(commandPort, profileReader, rankReader, DEFAULT_MAX_AGE);
+        this(commandPort, profileReader, missingPresenceReader(), rankReader, DEFAULT_MAX_AGE);
+    }
+
+    public WatermarkedDataAuthorityCache(
+        DataAuthority.CommandPort commandPort,
+        DataAuthority.PlayerProfileReader profileReader,
+        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PlayerRankReader rankReader
+    ) {
+        this(commandPort, profileReader, presenceReader, rankReader, DEFAULT_MAX_AGE);
     }
 
     public WatermarkedDataAuthorityCache(
@@ -47,7 +58,17 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         DataAuthority.PlayerRankReader rankReader,
         Duration maxAge
     ) {
-        this(commandPort, profileReader, rankReader, maxAge, Clock.systemUTC());
+        this(commandPort, profileReader, missingPresenceReader(), rankReader, maxAge, Clock.systemUTC());
+    }
+
+    public WatermarkedDataAuthorityCache(
+        DataAuthority.CommandPort commandPort,
+        DataAuthority.PlayerProfileReader profileReader,
+        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PlayerRankReader rankReader,
+        Duration maxAge
+    ) {
+        this(commandPort, profileReader, presenceReader, rankReader, maxAge, Clock.systemUTC());
     }
 
     public WatermarkedDataAuthorityCache(
@@ -57,7 +78,34 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         Duration maxAge,
         Clock clock
     ) {
-        this(commandPort, profileReader, rankReader, maxAge, clock, new InMemoryAuthoritySnapshotCacheStore());
+        this(
+            commandPort,
+            profileReader,
+            missingPresenceReader(),
+            rankReader,
+            maxAge,
+            clock,
+            new InMemoryAuthoritySnapshotCacheStore()
+        );
+    }
+
+    public WatermarkedDataAuthorityCache(
+        DataAuthority.CommandPort commandPort,
+        DataAuthority.PlayerProfileReader profileReader,
+        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PlayerRankReader rankReader,
+        Duration maxAge,
+        Clock clock
+    ) {
+        this(
+            commandPort,
+            profileReader,
+            presenceReader,
+            rankReader,
+            maxAge,
+            clock,
+            new InMemoryAuthoritySnapshotCacheStore()
+        );
     }
 
     public WatermarkedDataAuthorityCache(
@@ -68,8 +116,21 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         Clock clock,
         AuthoritySnapshotCacheStore snapshotCacheStore
     ) {
+        this(commandPort, profileReader, missingPresenceReader(), rankReader, maxAge, clock, snapshotCacheStore);
+    }
+
+    public WatermarkedDataAuthorityCache(
+        DataAuthority.CommandPort commandPort,
+        DataAuthority.PlayerProfileReader profileReader,
+        DataAuthority.PlayerPresenceReader presenceReader,
+        DataAuthority.PlayerRankReader rankReader,
+        Duration maxAge,
+        Clock clock,
+        AuthoritySnapshotCacheStore snapshotCacheStore
+    ) {
         this.commandPort = Objects.requireNonNull(commandPort, "commandPort");
         this.profileReader = Objects.requireNonNull(profileReader, "profileReader");
+        this.presenceReader = Objects.requireNonNull(presenceReader, "presenceReader");
         this.rankReader = Objects.requireNonNull(rankReader, "rankReader");
         this.snapshotCacheStore = Objects.requireNonNull(snapshotCacheStore, "snapshotCacheStore");
         Duration effectiveMaxAge = maxAge == null ? DEFAULT_MAX_AGE : maxAge;
@@ -135,6 +196,38 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
     }
 
     @Override
+    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID subjectId) {
+        return quotePresence(subjectId, DataAuthority.ReadRequirement.eventual())
+            .thenApply(read -> read.satisfied() ? read.snapshot() : Optional.empty());
+    }
+
+    @Override
+    public CompletionStage<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
+        UUID subjectId,
+        DataAuthority.ReadRequirement requirement
+    ) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        DataAuthority.ReadRequirement effectiveRequirement = DataAuthorityReadContracts.effectiveRequirement(
+            DataAuthorityReadContracts.ReadType.PLAYER_PRESENCE,
+            requirement
+        );
+        String scope = presenceScope(subjectId);
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> cached = readPresenceCache(
+            scope,
+            effectiveRequirement
+        );
+        if (cached != null) {
+            return CompletableFuture.completedFuture(cached);
+        }
+        return presenceReader.quotePresence(subjectId, effectiveRequirement)
+            .thenApply(read -> acceptFetchedPresence(
+                scope,
+                read,
+                effectiveRequirement
+            ));
+    }
+
+    @Override
     public CompletionStage<Optional<DataAuthority.PlayerRankSnapshot>> findRanks(UUID playerId) {
         return quoteRanks(playerId, DataAuthority.ReadRequirement.eventual())
             .thenApply(read -> read.satisfied() ? read.snapshot() : Optional.empty());
@@ -180,6 +273,8 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         observe(scope, revision);
         if (AuthoritySnapshotInvalidation.PLAYER_PROFILE.equals(invalidation.projectionFamily())) {
             snapshotCacheStore.invalidateProfile(scope, revision, clock.millis());
+        } else if (AuthoritySnapshotInvalidation.PLAYER_PRESENCE.equals(invalidation.projectionFamily())) {
+            snapshotCacheStore.invalidatePresence(scope, revision, clock.millis());
         } else if (AuthoritySnapshotInvalidation.PLAYER_RANK.equals(invalidation.projectionFamily())) {
             snapshotCacheStore.invalidateRank(scope, revision, clock.millis());
         }
@@ -219,6 +314,46 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         );
         if (!quote.satisfied()) {
             snapshotCacheStore.invalidateRank(scope, line.revision(), clock.millis());
+            return null;
+        }
+        observe(scope, line.snapshot().watermark().sourceRevision());
+        return quote;
+    }
+
+    private DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> readPresenceCache(
+        String scope,
+        DataAuthority.ReadRequirement requirement
+    ) {
+        Optional<AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerPresenceSnapshot>> cached =
+            snapshotCacheStore.readPresence(scope);
+        if (cached.isEmpty()) {
+            return null;
+        }
+        AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerPresenceSnapshot> line = cached.get();
+        if (!serveableLine(scope, AuthoritySnapshotInvalidation.PLAYER_PRESENCE, line)) {
+            snapshotCacheStore.invalidatePresence(scope, line.revision(), clock.millis());
+            return null;
+        }
+        if (expired(line)) {
+            snapshotCacheStore.invalidatePresence(scope, line.revision(), clock.millis());
+            return null;
+        }
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> quote = quoteSnapshot(
+            scope,
+            AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
+            Optional.of(line.snapshot()),
+            requirement,
+            DataAuthority.ReadProvenance.cacheFrom(
+                line.provenance(),
+                line.cachedAtEpochMillis(),
+                clock.millis(),
+                maxAgeMillis
+            ),
+            DataAuthority.PlayerPresenceSnapshot::revision,
+            DataAuthority.PlayerPresenceSnapshot::watermark
+        );
+        if (!quote.satisfied()) {
+            snapshotCacheStore.invalidatePresence(scope, line.revision(), clock.millis());
             return null;
         }
         observe(scope, line.snapshot().watermark().sourceRevision());
@@ -305,6 +440,56 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         observe(scope, snapshot.watermark().sourceRevision());
         snapshotCacheStore.writeRank(AuthoritySnapshotCacheStore.SnapshotLine.snapshot(
             AuthoritySnapshotInvalidation.PLAYER_RANK,
+            scope,
+            snapshot.revision(),
+            snapshot.watermark(),
+            snapshot,
+            clock.millis(),
+            provenance
+        ));
+        return quote;
+    }
+
+    private DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> acceptFetchedPresence(
+        String scope,
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> fetched,
+        DataAuthority.ReadRequirement requirement
+    ) {
+        DataAuthority.ReadProvenance provenance = fetched == null
+            ? DataAuthority.ReadProvenance.authority()
+            : fetched.quote().provenance();
+        if (fetched != null && !fetched.satisfied()) {
+            if (requiresLocalMissingQuote(scope, requirement, fetched.quote())) {
+                return quoteSnapshot(
+                    scope,
+                    AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
+                    Optional.empty(),
+                    requirement,
+                    provenance,
+                    DataAuthority.PlayerPresenceSnapshot::revision,
+                    DataAuthority.PlayerPresenceSnapshot::watermark
+                );
+            }
+            snapshotCacheStore.invalidatePresence(scope, upstreamRevision(scope, fetched.quote()), clock.millis());
+            return fetched;
+        }
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> quote = quoteSnapshot(
+            scope,
+            AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
+            fetched == null ? Optional.empty() : fetched.snapshot(),
+            requirement,
+            provenance,
+            DataAuthority.PlayerPresenceSnapshot::revision,
+            DataAuthority.PlayerPresenceSnapshot::watermark
+        );
+        if (!quote.satisfied()) {
+            snapshotCacheStore.invalidatePresence(scope, quote.quote().observedRevision(), clock.millis());
+            return quote;
+        }
+        DataAuthority.PlayerPresenceSnapshot snapshot = quote.snapshot().orElseThrow();
+        observe(scope, snapshot.watermark().sourceRevision());
+        snapshotCacheStore.writePresence(AuthoritySnapshotCacheStore.SnapshotLine.snapshot(
+            AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
             scope,
             snapshot.revision(),
             snapshot.watermark(),
@@ -502,8 +687,14 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             return;
         }
         observe(scope, revision);
-        snapshotCacheStore.invalidateProfile(scope, revision, clock.millis());
-        snapshotCacheStore.invalidateRank(scope, revision, clock.millis());
+        String projectionFamily = projectionFamilyForScope(scope);
+        if (AuthoritySnapshotInvalidation.PLAYER_PROFILE.equals(projectionFamily)) {
+            snapshotCacheStore.invalidateProfile(scope, revision, clock.millis());
+        } else if (AuthoritySnapshotInvalidation.PLAYER_PRESENCE.equals(projectionFamily)) {
+            snapshotCacheStore.invalidatePresence(scope, revision, clock.millis());
+        } else if (AuthoritySnapshotInvalidation.PLAYER_RANK.equals(projectionFamily)) {
+            snapshotCacheStore.invalidateRank(scope, revision, clock.millis());
+        }
     }
 
     private void observe(String scope, long revision) {
@@ -519,6 +710,9 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         if (command instanceof DataAuthority.PlayerProfileCommand profileCommand) {
             return profileScope(profileCommand.playerId());
         }
+        if (command instanceof DataAuthority.PlayerSessionCommand sessionCommand) {
+            return presenceScope(sessionCommand.subject().subjectId());
+        }
         return null;
     }
 
@@ -528,6 +722,10 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
 
     private static String rankScope(UUID playerId) {
         return "rank:player:" + playerId;
+    }
+
+    private static String presenceScope(UUID subjectId) {
+        return DataAuthority.Subject.SCOPE_PREFIX + subjectId;
     }
 
     private static boolean stateTopicMatches(String projectionFamily, String stateTopic) {
@@ -544,6 +742,9 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         if (scope.startsWith("player:")) {
             return AuthoritySnapshotInvalidation.PLAYER_PROFILE;
         }
+        if (scope.startsWith(DataAuthority.Subject.SCOPE_PREFIX)) {
+            return AuthoritySnapshotInvalidation.PLAYER_PRESENCE;
+        }
         return null;
     }
 
@@ -552,5 +753,11 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
             return revisionFloors.getOrDefault(scope, 0L);
         }
         return Math.max(upstreamQuote.observedRevision(), upstreamQuote.requiredRevision());
+    }
+
+    private static DataAuthority.PlayerPresenceReader missingPresenceReader() {
+        return subjectId -> CompletableFuture.failedFuture(new UnsupportedOperationException(
+            "Wrapped Data Authority presence reader is not configured"
+        ));
     }
 }

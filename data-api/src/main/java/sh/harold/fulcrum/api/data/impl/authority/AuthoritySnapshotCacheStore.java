@@ -17,13 +17,19 @@ public interface AuthoritySnapshotCacheStore {
 
     Optional<SnapshotLine<DataAuthority.PlayerProfileSnapshot>> readProfile(String aggregateScope);
 
+    Optional<SnapshotLine<DataAuthority.PlayerPresenceSnapshot>> readPresence(String aggregateScope);
+
     Optional<SnapshotLine<DataAuthority.PlayerRankSnapshot>> readRank(String aggregateScope);
 
     void writeProfile(SnapshotLine<DataAuthority.PlayerProfileSnapshot> line);
 
+    void writePresence(SnapshotLine<DataAuthority.PlayerPresenceSnapshot> line);
+
     void writeRank(SnapshotLine<DataAuthority.PlayerRankSnapshot> line);
 
     void invalidateProfile(String aggregateScope, long revision, long invalidatedAtEpochMillis);
+
+    void invalidatePresence(String aggregateScope, long revision, long invalidatedAtEpochMillis);
 
     void invalidateRank(String aggregateScope, long revision, long invalidatedAtEpochMillis);
 

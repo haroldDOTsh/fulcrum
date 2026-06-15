@@ -66,10 +66,10 @@ public final class AuthorityStorePlacements {
             PLAYER_PRESENCE,
             List.of("cassandra"),
             List.of(),
-            "player_id",
-            "authority-player",
+            "subject_id",
+            "authority-session",
             List.of("fleet-read-only", "services"),
-            "Per-login route churn with TTL liveness."
+            "Per-session route churn with TTL liveness under subject scope."
         ));
         put(values, new StorePlacement(
             LIVE_EFFECTIVE_RANKS,

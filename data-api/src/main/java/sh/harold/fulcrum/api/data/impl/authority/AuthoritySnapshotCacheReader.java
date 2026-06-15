@@ -16,6 +16,7 @@ import java.util.function.ToLongFunction;
  * Read-only Valkey snapshot-cache adapter for game-node hot reads.
  */
 public final class AuthoritySnapshotCacheReader implements DataAuthority.PlayerProfileReader,
+    DataAuthority.PlayerPresenceReader,
     DataAuthority.PlayerRankReader {
 
     private final SnapshotCacheStore store;
@@ -85,6 +86,34 @@ public final class AuthoritySnapshotCacheReader implements DataAuthority.PlayerP
             requirement,
             DataAuthority.PlayerRankSnapshot::revision,
             DataAuthority.PlayerRankSnapshot::watermark
+        ));
+    }
+
+    @Override
+    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID subjectId) {
+        return quotePresence(subjectId, DataAuthority.ReadRequirement.eventual())
+            .thenApply(read -> read.satisfied() ? read.snapshot() : Optional.empty());
+    }
+
+    @Override
+    public CompletionStage<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
+        UUID subjectId,
+        DataAuthority.ReadRequirement requirement
+    ) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        String scope = DataAuthority.Subject.SCOPE_PREFIX + subjectId;
+        Optional<DataAuthority.PlayerPresenceSnapshot> snapshot = read(
+            "presence",
+            scope,
+            AuthoritySnapshotCacheCodec::presenceSnapshot
+        );
+        return CompletableFuture.completedFuture(quoteSnapshot(
+            scope,
+            "presence",
+            snapshot,
+            requirement,
+            DataAuthority.PlayerPresenceSnapshot::revision,
+            DataAuthority.PlayerPresenceSnapshot::watermark
         ));
     }
 

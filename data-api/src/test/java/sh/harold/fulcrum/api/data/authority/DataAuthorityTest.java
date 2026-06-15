@@ -623,6 +623,57 @@ class DataAuthorityTest {
         assertThat(reader.profileExists(UUID.randomUUID()).toCompletableFuture().join()).isFalse();
     }
 
+    @Test
+    void presenceReaderDefaultQuoteReportsReadStatus() {
+        UUID subjectId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
+            "cassandra-authority-hot-state",
+            DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+            "presence",
+            subjectId.toString(),
+            "session",
+            "state.session",
+            DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            6L,
+            1234L,
+            "state-fingerprint",
+            "event-chain-hash"
+        );
+        DataAuthority.PlayerPresenceSnapshot snapshot = new DataAuthority.PlayerPresenceSnapshot(
+            subjectId,
+            subjectId,
+            "Notch",
+            true,
+            "paper-1",
+            "proxy-1",
+            sessionId,
+            1234L,
+            6L,
+            watermark
+        );
+
+        DataAuthority.PlayerPresenceReader reader = id ->
+            CompletableFuture.completedFuture(id.equals(subjectId) ? Optional.of(snapshot) : Optional.empty());
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> read = reader
+            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(6L))
+            .toCompletableFuture()
+            .join();
+
+        assertThat(read.satisfied()).isTrue();
+        assertThat(read.snapshot()).contains(snapshot);
+        assertThat(read.quote().status()).isEqualTo(DataAuthority.ReadQuoteStatus.SATISFIED);
+        assertThat(read.quote().requiredRevision()).isEqualTo(6L);
+        assertThat(read.quote().observedRevision()).isEqualTo(6L);
+        assertThat(read.quote().deliveryReceipt()).isNotNull();
+        assertThat(read.quote().deliveryReceipt()
+            .satisfies("presence", DataAuthority.Subject.SCOPE_PREFIX + subjectId, 6L))
+            .isTrue();
+    }
+
     private static DataAuthority.CommandManifest manifest(String declarationId, String scope) {
         UUID commandId = UUID.randomUUID();
         return DataAuthority.CommandManifest.create(

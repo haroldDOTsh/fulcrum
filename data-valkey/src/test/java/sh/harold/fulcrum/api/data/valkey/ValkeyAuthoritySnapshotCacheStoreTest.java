@@ -71,6 +71,37 @@ class ValkeyAuthoritySnapshotCacheStoreTest {
     }
 
     @Test
+    void presenceLineRoundTripsThroughHashFields() {
+        UUID subjectId = UUID.randomUUID();
+        String scope = DataAuthority.Subject.SCOPE_PREFIX + subjectId;
+        FakeHashCommands commands = new FakeHashCommands();
+        ValkeyAuthoritySnapshotCacheStore store = new ValkeyAuthoritySnapshotCacheStore(
+            commands,
+            Duration.ofSeconds(2)
+        );
+        DataAuthority.PlayerPresenceSnapshot snapshot = presenceSnapshot(subjectId, 4L, 1_000L);
+
+        store.writePresence(AuthoritySnapshotCacheStore.SnapshotLine.snapshot(
+            AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
+            scope,
+            snapshot.revision(),
+            snapshot.watermark(),
+            snapshot,
+            1_250L,
+            DataAuthority.ReadProvenance.hotState()
+        ));
+
+        Optional<AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerPresenceSnapshot>> read =
+            store.readPresence(scope);
+
+        assertThat(read).isPresent();
+        assertThat(read.get().snapshot()).isEqualTo(snapshot);
+        assertThat(read.get().cachedAtEpochMillis()).isEqualTo(1_250L);
+        assertThat(read.get().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.CACHE);
+        assertThat(commands.ttlMillis()).isEqualTo(2_000L);
+    }
+
+    @Test
     void olderWriteCannotReplaceNewerLine() {
         UUID playerId = UUID.randomUUID();
         String scope = "rank:player:" + playerId;
@@ -244,6 +275,41 @@ class ValkeyAuthoritySnapshotCacheStoreTest {
                 "rank",
                 "state.rank",
                 "rank:player:" + playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                revision,
+                eventCreatedEpochMillis,
+                0,
+                revision,
+                "state-fingerprint-" + revision,
+                "event-chain-hash-" + revision
+            )
+        );
+    }
+
+    private static DataAuthority.PlayerPresenceSnapshot presenceSnapshot(
+        UUID subjectId,
+        long revision,
+        long eventCreatedEpochMillis
+    ) {
+        return new DataAuthority.PlayerPresenceSnapshot(
+            subjectId,
+            subjectId,
+            "Richa",
+            true,
+            "lobby",
+            "proxy-a",
+            UUID.randomUUID(),
+            eventCreatedEpochMillis,
+            revision,
+            new DataAuthority.SnapshotWatermark(
+                AuthoritySnapshotCacheCodec.PROJECTION_NAME,
+                DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+                AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
+                subjectId.toString(),
+                "session",
+                "state.session",
+                DataAuthority.Subject.SCOPE_PREFIX + subjectId,
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 revision,

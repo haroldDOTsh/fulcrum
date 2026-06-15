@@ -60,6 +60,7 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
     private DataAuthority.CommandPort commandPort;
     private DataAuthority.CommandSubmissionPort commandSubmissionPort;
     private DataAuthority.PlayerProfileReader profileReader;
+    private DataAuthority.PlayerPresenceReader presenceReader;
     private DataAuthority.PlayerRankReader rankReader;
     private RuntimeDataAuthorityAttestation dataAuthorityAttestation;
     private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest;
@@ -122,6 +123,7 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
             serviceLocator.unregister(DataAuthority.CommandPort.class);
             serviceLocator.unregister(DataAuthority.CommandSubmissionPort.class);
             serviceLocator.unregister(DataAuthority.PlayerProfileReader.class);
+            serviceLocator.unregister(DataAuthority.PlayerPresenceReader.class);
             serviceLocator.unregister(DataAuthority.PlayerRankReader.class);
             serviceLocator.unregister(RuntimeDataAuthorityAttestation.class);
             serviceLocator.unregister(RuntimeAuthorityDeliveryManifest.class);
@@ -132,6 +134,7 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
         commandPort = null;
         commandSubmissionPort = null;
         profileReader = null;
+        presenceReader = null;
         rankReader = null;
         dataAuthorityAttestation = null;
         authorityDeliveryManifest = null;
@@ -165,6 +168,7 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
         WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
             commandClient,
             hotRead.profileReader(),
+            hotRead.presenceReader(),
             hotRead.rankReader(),
             Duration.ofMillis(snapshotCacheMaxAgeMs),
             java.time.Clock.systemUTC(),
@@ -175,6 +179,7 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
         commandPort = cache;
         commandSubmissionPort = commandClient instanceof DataAuthority.CommandSubmissionPort ? cache : null;
         profileReader = cache;
+        presenceReader = cache;
         rankReader = cache;
         logger.info(
             "Using remote Data Authority via {} command transport and cache/Cassandra hot reads through authority server {} "
@@ -301,6 +306,7 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
             return new HotReadResource(
                 hotStateReader,
                 hotStateReader,
+                hotStateReader,
                 snapshotCacheStore,
                 new CompositeHotReadResource(redisClient, redisConnection, cassandraSession)
             );
@@ -417,6 +423,7 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
 
     private record HotReadResource(
         DataAuthority.PlayerProfileReader profileReader,
+        DataAuthority.PlayerPresenceReader presenceReader,
         DataAuthority.PlayerRankReader rankReader,
         AuthoritySnapshotCacheStore cacheStore,
         AutoCloseable resource
@@ -592,6 +599,7 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
             serviceLocator.register(DataAuthority.CommandSubmissionPort.class, commandSubmissionPort);
         }
         serviceLocator.register(DataAuthority.PlayerProfileReader.class, profileReader);
+        serviceLocator.register(DataAuthority.PlayerPresenceReader.class, presenceReader);
         serviceLocator.register(DataAuthority.PlayerRankReader.class, rankReader);
         serviceLocator.register(RuntimeDataAuthorityAttestation.class, dataAuthorityAttestation);
         serviceLocator.register(RuntimeAuthorityDeliveryManifest.class, authorityDeliveryManifest);

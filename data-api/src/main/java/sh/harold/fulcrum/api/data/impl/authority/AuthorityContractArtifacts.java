@@ -353,6 +353,8 @@ public final class AuthorityContractArtifacts {
             new EnumMap<>(DataAuthorityReadContracts.ReadType.class);
         values.put(DataAuthorityReadContracts.ReadType.PLAYER_PROFILE,
             List.of("player_profiles", "authority_state_snapshots"));
+        values.put(DataAuthorityReadContracts.ReadType.PLAYER_PRESENCE,
+            List.of("authority_state_snapshots"));
         values.put(DataAuthorityReadContracts.ReadType.PLAYER_RANK,
             List.of("authority_state_snapshots"));
         return Map.copyOf(values);

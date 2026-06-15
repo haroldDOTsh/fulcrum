@@ -25,13 +25,16 @@ class InMemoryAuthorityHotStateProjectionTest {
         assertThat(restoreTarget.projectionName()).isEqualTo(InMemoryAuthorityHotStateProjection.PROJECTION_NAME);
         assertThat(restoreTarget.projectionVersion()).isEqualTo(InMemoryAuthorityHotStateProjection.PROJECTION_VERSION);
         assertThat(manifest.acceptedEventTypes()).containsExactly(
+            "END_SESSION",
             "GRANT_RANK",
             "RECORD_PLAYER_LOGIN",
             "RECORD_PLAYER_LOGOUT",
-            "REVOKE_RANK"
+            "RENEW_SESSION",
+            "REVOKE_RANK",
+            "START_SESSION"
         );
         assertThat(manifest.acceptsEventType("RECORD_MATCH_START")).isFalse();
-        assertThat(manifest.acceptsEventType("START_SESSION")).isFalse();
+        assertThat(manifest.acceptsEventType("START_SESSION")).isTrue();
     }
 
     @Test
@@ -132,6 +135,53 @@ class InMemoryAuthorityHotStateProjectionTest {
             "rank:player:" + playerId,
             "player_rank",
             DataAuthority.ReadRequirement.atLeast(1L)
+        );
+    }
+
+    @Test
+    void sessionEventsProjectPresenceWithDeliveryReceipt() {
+        UUID subjectId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        InMemoryAuthorityHotStateProjection projection = new InMemoryAuthorityHotStateProjection();
+
+        AuthorityEventDispatchResult start = projection.dispatch(presenceEvent(
+            subjectId,
+            "START_SESSION",
+            3L,
+            payload(
+                "subjectId", subjectId.toString(),
+                "playerId", subjectId.toString(),
+                "username", "Richa",
+                "sessionId", sessionId.toString(),
+                "currentServer", "lobby",
+                "currentProxy", "proxy-a",
+                "timestamp", 1234L
+            )
+        ));
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> read =
+            projection.quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(3L))
+                .toCompletableFuture()
+                .join();
+
+        assertThat(start.successful()).isTrue();
+        assertThat(read.satisfied()).isTrue();
+        assertThat(read.snapshot()).hasValueSatisfying(snapshot -> {
+            assertThat(snapshot.subjectId()).isEqualTo(subjectId);
+            assertThat(snapshot.playerId()).isEqualTo(subjectId);
+            assertThat(snapshot.online()).isTrue();
+            assertThat(snapshot.currentServer()).isEqualTo("lobby");
+            assertThat(snapshot.currentProxy()).isEqualTo("proxy-a");
+            assertThat(snapshot.sessionId()).isEqualTo(sessionId);
+            assertThat(snapshot.observedAtEpochMillis()).isEqualTo(1234L);
+            assertThat(snapshot.watermark().aggregateScope()).isEqualTo(DataAuthority.Subject.SCOPE_PREFIX + subjectId);
+            assertThat(snapshot.watermark().stateTopic()).isEqualTo("state.session");
+        });
+        DataAuthorityReadContracts.validateQuote(
+            read.quote(),
+            DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+            "presence",
+            DataAuthority.ReadRequirement.atLeast(3L)
         );
     }
 
@@ -402,6 +452,15 @@ class InMemoryAuthorityHotStateProjectionTest {
         return event(playerId, eventType, revision, "player_rank", "rank:player:" + playerId, payload);
     }
 
+    private static AuthorityEventEnvelope presenceEvent(
+        UUID subjectId,
+        String eventType,
+        long revision,
+        Map<String, Object> payload
+    ) {
+        return event(subjectId, eventType, revision, "presence", DataAuthority.Subject.SCOPE_PREFIX + subjectId, payload);
+    }
+
     private static AuthorityEventEnvelope event(
         UUID playerId,
         String eventType,
@@ -433,11 +492,13 @@ class InMemoryAuthorityHotStateProjectionTest {
     }
 
     private static Map<String, Object> route(String aggregateType, String aggregateScope) {
+        String domain = "presence".equals(aggregateType) ? "session" : aggregateType;
+        String stateTopic = "presence".equals(aggregateType) ? "state.session" : "state." + aggregateType;
         return payload(
-            "domain", aggregateType,
-            "commandTopic", "cmd." + aggregateType,
-            "eventTopic", "evt." + aggregateType,
-            "stateTopic", "state." + aggregateType,
+            "domain", domain,
+            "commandTopic", "cmd." + domain,
+            "eventTopic", "evt." + domain,
+            "stateTopic", stateTopic,
             "partitionKey", aggregateScope
         );
     }

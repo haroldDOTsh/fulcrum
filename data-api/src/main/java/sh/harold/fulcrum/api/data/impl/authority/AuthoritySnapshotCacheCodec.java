@@ -114,6 +114,34 @@ public final class AuthoritySnapshotCacheCodec {
         );
     }
 
+    public static Map<String, String> presenceFields(
+        AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerPresenceSnapshot> line
+    ) {
+        AuthoritySnapshotCacheStore.SnapshotLine<DataAuthority.PlayerPresenceSnapshot> snapshotLine =
+            requireLine(line, "presence");
+        DataAuthority.PlayerPresenceSnapshot snapshot = snapshotLine.snapshot();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("subjectId", snapshot.subjectId().toString());
+        payload.put("playerId", snapshot.playerId() == null ? null : snapshot.playerId().toString());
+        payload.put("username", snapshot.username());
+        payload.put("online", snapshot.online());
+        payload.put("currentServer", snapshot.currentServer());
+        payload.put("currentProxy", snapshot.currentProxy());
+        payload.put("sessionId", snapshot.sessionId() == null ? null : snapshot.sessionId().toString());
+        payload.put("observedAt", snapshot.observedAtEpochMillis());
+        payload.put("revision", snapshot.revision());
+        return fields(
+            snapshotLine.projectionFamily(),
+            snapshotLine.aggregateScope(),
+            "presence",
+            snapshot.subjectId().toString(),
+            snapshot.revision(),
+            snapshot.watermark(),
+            payload,
+            snapshotLine.cachedAtEpochMillis()
+        );
+    }
+
     public static long cachedAtEpochMillis(Map<String, String> fields) {
         return longValue(safeFields(fields).get("cachedAtEpochMillis"), 0L);
     }
@@ -159,6 +187,33 @@ public final class AuthoritySnapshotCacheCodec {
             playerId,
             primaryRank,
             ranks.isEmpty() ? List.of(primaryRank) : ranks,
+            longValue(first(payload.get("revision"), safeFields.get("revision")), 0L),
+            watermark(safeFields)
+        ));
+    }
+
+    public static Optional<DataAuthority.PlayerPresenceSnapshot> presenceSnapshot(Map<String, String> fields) {
+        Map<String, String> safeFields = safeFields(fields);
+        if (safeFields.isEmpty() || !"presence".equals(safeFields.get("projectionFamily"))) {
+            return Optional.empty();
+        }
+        Map<String, Object> payload = statePayload(safeFields);
+        UUID subjectId = uuid(first(payload.get("subjectId"), safeFields.get("aggregateId")));
+        if (subjectId == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new DataAuthority.PlayerPresenceSnapshot(
+            subjectId,
+            uuid(payload.get("playerId")),
+            string(payload.get("username"), "unknown"),
+            booleanValue(payload.get("online")),
+            string(payload.get("currentServer"), null),
+            string(payload.get("currentProxy"), null),
+            uuid(payload.get("sessionId")),
+            longValue(
+                first(payload.get("observedAt"), payload.get("timestamp"), safeFields.get("eventCreatedEpochMillis")),
+                0L
+            ),
             longValue(first(payload.get("revision"), safeFields.get("revision")), 0L),
             watermark(safeFields)
         ));

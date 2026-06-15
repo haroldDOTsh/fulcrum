@@ -13,12 +13,19 @@ import java.util.concurrent.ConcurrentMap;
 public final class InMemoryAuthoritySnapshotCacheStore implements AuthoritySnapshotCacheStore {
     private final ConcurrentMap<String, SnapshotLine<DataAuthority.PlayerProfileSnapshot>> profileSnapshots =
         new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, SnapshotLine<DataAuthority.PlayerPresenceSnapshot>> presenceSnapshots =
+        new ConcurrentHashMap<>();
     private final ConcurrentMap<String, SnapshotLine<DataAuthority.PlayerRankSnapshot>> rankSnapshots =
         new ConcurrentHashMap<>();
 
     @Override
     public Optional<SnapshotLine<DataAuthority.PlayerProfileSnapshot>> readProfile(String aggregateScope) {
         return Optional.ofNullable(profileSnapshots.get(requireScope(aggregateScope)));
+    }
+
+    @Override
+    public Optional<SnapshotLine<DataAuthority.PlayerPresenceSnapshot>> readPresence(String aggregateScope) {
+        return Optional.ofNullable(presenceSnapshots.get(requireScope(aggregateScope)));
     }
 
     @Override
@@ -32,6 +39,11 @@ public final class InMemoryAuthoritySnapshotCacheStore implements AuthoritySnaps
     }
 
     @Override
+    public void writePresence(SnapshotLine<DataAuthority.PlayerPresenceSnapshot> line) {
+        putIfNewer(presenceSnapshots, requireServeable(line));
+    }
+
+    @Override
     public void writeRank(SnapshotLine<DataAuthority.PlayerRankSnapshot> line) {
         putIfNewer(rankSnapshots, requireServeable(line));
     }
@@ -39,6 +51,11 @@ public final class InMemoryAuthoritySnapshotCacheStore implements AuthoritySnaps
     @Override
     public void invalidateProfile(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
         evictAtOrBelow(profileSnapshots, requireScope(aggregateScope), revision);
+    }
+
+    @Override
+    public void invalidatePresence(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
+        evictAtOrBelow(presenceSnapshots, requireScope(aggregateScope), revision);
     }
 
     @Override

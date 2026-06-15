@@ -60,6 +60,7 @@ public class DataAuthorityFeature implements PluginFeature {
     private DataAuthority.CommandPort commandPort;
     private DataAuthority.CommandSubmissionPort commandSubmissionPort;
     private DataAuthority.PlayerProfileReader profileReader;
+    private DataAuthority.PlayerPresenceReader presenceReader;
     private DataAuthority.PlayerRankReader rankReader;
     private RuntimeDataAuthorityAttestation dataAuthorityAttestation;
     private RuntimeAuthorityDeliveryManifest authorityDeliveryManifest;
@@ -112,6 +113,7 @@ public class DataAuthorityFeature implements PluginFeature {
             ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.CommandPort.class);
             ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.CommandSubmissionPort.class);
             ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.PlayerProfileReader.class);
+            ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.PlayerPresenceReader.class);
             ServiceLocatorImpl.getInstance().unregisterService(DataAuthority.PlayerRankReader.class);
             ServiceLocatorImpl.getInstance().unregisterService(RuntimeDataAuthorityAttestation.class);
             ServiceLocatorImpl.getInstance().unregisterService(RuntimeAuthorityDeliveryManifest.class);
@@ -122,6 +124,7 @@ public class DataAuthorityFeature implements PluginFeature {
         commandPort = null;
         commandSubmissionPort = null;
         profileReader = null;
+        presenceReader = null;
         rankReader = null;
         dataAuthorityAttestation = null;
         authorityDeliveryManifest = null;
@@ -155,6 +158,7 @@ public class DataAuthorityFeature implements PluginFeature {
         WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
             commandClient,
             hotRead.profileReader(),
+            hotRead.presenceReader(),
             hotRead.rankReader(),
             Duration.ofMillis(snapshotCacheMaxAgeMs),
             java.time.Clock.systemUTC(),
@@ -165,6 +169,7 @@ public class DataAuthorityFeature implements PluginFeature {
         commandPort = cache;
         commandSubmissionPort = commandClient instanceof DataAuthority.CommandSubmissionPort ? cache : null;
         profileReader = cache;
+        presenceReader = cache;
         rankReader = cache;
         logger.info(
             "Using remote Data Authority via "
@@ -291,6 +296,7 @@ public class DataAuthorityFeature implements PluginFeature {
             return new HotReadResource(
                 hotStateReader,
                 hotStateReader,
+                hotStateReader,
                 snapshotCacheStore,
                 new CompositeHotReadResource(redisClient, redisConnection, cassandraSession)
             );
@@ -404,6 +410,7 @@ public class DataAuthorityFeature implements PluginFeature {
 
     private record HotReadResource(
         DataAuthority.PlayerProfileReader profileReader,
+        DataAuthority.PlayerPresenceReader presenceReader,
         DataAuthority.PlayerRankReader rankReader,
         AuthoritySnapshotCacheStore cacheStore,
         AutoCloseable resource
@@ -579,6 +586,7 @@ public class DataAuthorityFeature implements PluginFeature {
             container.register(DataAuthority.CommandSubmissionPort.class, commandSubmissionPort);
         }
         container.register(DataAuthority.PlayerProfileReader.class, profileReader);
+        container.register(DataAuthority.PlayerPresenceReader.class, presenceReader);
         container.register(DataAuthority.PlayerRankReader.class, rankReader);
         container.register(RuntimeDataAuthorityAttestation.class, dataAuthorityAttestation);
         container.register(RuntimeAuthorityDeliveryManifest.class, authorityDeliveryManifest);
@@ -592,6 +600,7 @@ public class DataAuthorityFeature implements PluginFeature {
                 );
             }
             ServiceLocatorImpl.getInstance().registerService(DataAuthority.PlayerProfileReader.class, profileReader);
+            ServiceLocatorImpl.getInstance().registerService(DataAuthority.PlayerPresenceReader.class, presenceReader);
             ServiceLocatorImpl.getInstance().registerService(DataAuthority.PlayerRankReader.class, rankReader);
             ServiceLocatorImpl.getInstance().registerService(RuntimeDataAuthorityAttestation.class, dataAuthorityAttestation);
             ServiceLocatorImpl.getInstance().registerService(RuntimeAuthorityDeliveryManifest.class, authorityDeliveryManifest);

@@ -132,6 +132,11 @@ class DataLayerStorePlacementArchitectureTest {
         );
         assertReadPlacement(
             placements,
+            DataAuthorityReadContracts.ReadType.PLAYER_PRESENCE,
+            "Player presence (online, current proxy/server/slot, session id, last-seen)"
+        );
+        assertReadPlacement(
+            placements,
             DataAuthorityReadContracts.ReadType.PLAYER_RANK,
             "Live effective ranks (for permission checks)"
         );

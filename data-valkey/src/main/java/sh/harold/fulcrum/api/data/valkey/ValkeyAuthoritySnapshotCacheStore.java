@@ -80,6 +80,15 @@ public final class ValkeyAuthoritySnapshotCacheStore implements AuthoritySnapsho
     }
 
     @Override
+    public Optional<SnapshotLine<DataAuthority.PlayerPresenceSnapshot>> readPresence(String aggregateScope) {
+        return read(
+            AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
+            aggregateScope,
+            AuthoritySnapshotCacheCodec::presenceSnapshot
+        );
+    }
+
+    @Override
     public void writeProfile(SnapshotLine<DataAuthority.PlayerProfileSnapshot> line) {
         write(line, AuthoritySnapshotCacheCodec.profileFields(line));
     }
@@ -90,6 +99,11 @@ public final class ValkeyAuthoritySnapshotCacheStore implements AuthoritySnapsho
     }
 
     @Override
+    public void writePresence(SnapshotLine<DataAuthority.PlayerPresenceSnapshot> line) {
+        write(line, AuthoritySnapshotCacheCodec.presenceFields(line));
+    }
+
+    @Override
     public void invalidateProfile(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
         commands.invalidateAtOrBelow(cacheKey(AuthoritySnapshotInvalidation.PLAYER_PROFILE, aggregateScope), revision);
     }
@@ -97,6 +111,11 @@ public final class ValkeyAuthoritySnapshotCacheStore implements AuthoritySnapsho
     @Override
     public void invalidateRank(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
         commands.invalidateAtOrBelow(cacheKey(AuthoritySnapshotInvalidation.PLAYER_RANK, aggregateScope), revision);
+    }
+
+    @Override
+    public void invalidatePresence(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
+        commands.invalidateAtOrBelow(cacheKey(AuthoritySnapshotInvalidation.PLAYER_PRESENCE, aggregateScope), revision);
     }
 
     public static String cacheKey(String projectionFamily, String aggregateScope) {
@@ -140,7 +159,12 @@ public final class ValkeyAuthoritySnapshotCacheStore implements AuthoritySnapsho
     }
 
     private void write(SnapshotLine<?> line, Map<String, String> fields) {
-        commands.writeIfNewer(cacheKey(line.projectionFamily(), line.aggregateScope()), line.revision(), fields, ttlMillis);
+        commands.writeIfNewer(
+            cacheKey(line.projectionFamily(), line.aggregateScope()),
+            line.revision(),
+            fields,
+            ttlMillis
+        );
     }
 
     private static long revision(Object snapshot) {
@@ -149,6 +173,9 @@ public final class ValkeyAuthoritySnapshotCacheStore implements AuthoritySnapsho
         }
         if (snapshot instanceof DataAuthority.PlayerRankSnapshot rank) {
             return rank.revision();
+        }
+        if (snapshot instanceof DataAuthority.PlayerPresenceSnapshot presence) {
+            return presence.revision();
         }
         return 0L;
     }
@@ -159,6 +186,9 @@ public final class ValkeyAuthoritySnapshotCacheStore implements AuthoritySnapsho
         }
         if (snapshot instanceof DataAuthority.PlayerRankSnapshot rank) {
             return rank.watermark();
+        }
+        if (snapshot instanceof DataAuthority.PlayerPresenceSnapshot presence) {
+            return presence.watermark();
         }
         return null;
     }

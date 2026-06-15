@@ -28,17 +28,24 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     AuthorityEventReplayTarget,
     AuthorityStateRestoreTarget,
     DataAuthority.PlayerProfileReader,
+    DataAuthority.PlayerPresenceReader,
     DataAuthority.PlayerRankReader {
     public static final String PROJECTION_NAME = "authority-hot-state";
     public static final String PROJECTION_VERSION = "authority-hot-state-v1";
 
     private static final Gson GSON = new Gson();
     private static final String PLAYER_PROFILE = "player_profile";
+    private static final String PRESENCE = "presence";
     private static final String PLAYER_RANK = "player_rank";
     private static final String UNKNOWN = "unknown";
     private static final List<String> PROFILE_EVENT_TYPES = List.of(
         "RECORD_PLAYER_LOGIN",
         "RECORD_PLAYER_LOGOUT"
+    );
+    private static final List<String> SESSION_EVENT_TYPES = List.of(
+        "END_SESSION",
+        "RENEW_SESSION",
+        "START_SESSION"
     );
     private static final List<String> RANK_EVENT_TYPES = List.of("GRANT_RANK", "REVOKE_RANK");
     private static final AuthorityProjectionManifest MANIFEST = AuthorityProjectionManifest.of(
@@ -48,6 +55,7 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     );
 
     private final ConcurrentMap<UUID, DataAuthority.PlayerProfileSnapshot> profiles = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, DataAuthority.PlayerPresenceSnapshot> presences = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, DataAuthority.PlayerRankSnapshot> ranks = new ConcurrentHashMap<>();
 
     @Override
@@ -76,6 +84,10 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
             ProjectionChange change = reduce(event);
             change.profileSnapshot().ifPresent(snapshot -> profiles.compute(
                 snapshot.playerId(),
+                (ignored, current) -> newerSnapshot(current, snapshot) ? snapshot : current
+            ));
+            change.presenceSnapshot().ifPresent(snapshot -> presences.compute(
+                snapshot.subjectId(),
                 (ignored, current) -> newerSnapshot(current, snapshot) ? snapshot : current
             ));
             change.rankSnapshot().ifPresent(snapshot -> ranks.compute(
@@ -115,6 +127,26 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     }
 
     @Override
+    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID subjectId) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        return CompletableFuture.completedFuture(Optional.ofNullable(presences.get(subjectId)));
+    }
+
+    @Override
+    public CompletionStage<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
+        UUID subjectId,
+        DataAuthority.ReadRequirement requirement
+    ) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        return CompletableFuture.completedFuture(quotePresenceSnapshot(
+            subjectId,
+            DataAuthority.ReadRequirement.orEventual(requirement),
+            Optional.ofNullable(presences.get(subjectId)),
+            System.currentTimeMillis()
+        ));
+    }
+
+    @Override
     public CompletionStage<Optional<DataAuthority.PlayerRankSnapshot>> findRanks(UUID playerId) {
         Objects.requireNonNull(playerId, "playerId");
         return CompletableFuture.completedFuture(Optional.ofNullable(ranks.get(playerId)));
@@ -145,6 +177,7 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         }
         return switch (record.aggregateType()) {
             case PLAYER_PROFILE -> restoreProfile(record);
+            case PRESENCE -> restorePresence(record);
             case PLAYER_RANK -> restoreRank(record);
             default -> AuthorityStateRestoreResult.skipped(
                 PROJECTION_VERSION,
@@ -164,6 +197,10 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         if (RANK_EVENT_TYPES.contains(eventType)) {
             DataAuthority.PlayerRankSnapshot snapshot = projectRank(event);
             return ProjectionChange.rank(snapshot, outputFingerprint(RANK_EVENT_TYPES, snapshotPayload(snapshot)));
+        }
+        if (SESSION_EVENT_TYPES.contains(eventType)) {
+            DataAuthority.PlayerPresenceSnapshot snapshot = projectPresence(event, eventType);
+            return ProjectionChange.presence(snapshot, outputFingerprint(SESSION_EVENT_TYPES, snapshotPayload(snapshot)));
         }
         return ProjectionChange.noop(outputFingerprint(List.of(eventType), Map.of("eventId", event.eventId().toString())));
     }
@@ -245,6 +282,55 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         );
     }
 
+    private DataAuthority.PlayerPresenceSnapshot projectPresence(AuthorityEventEnvelope event, String eventType) {
+        requireAggregateType(event, PRESENCE);
+        UUID subjectId = subjectId(event);
+        DataAuthority.PlayerPresenceSnapshot current = presences.get(subjectId);
+        if (current != null && current.revision() > event.revision()) {
+            return current;
+        }
+
+        Map<?, ?> payload = commandPayload(event);
+        boolean online = !"END_SESSION".equals(eventType);
+        UUID playerId = uuid(payload.get("playerId"));
+        String username = boundedUsername(string(
+            payload.get("username"),
+            current == null ? UNKNOWN : current.username()
+        ));
+        UUID sessionId = uuid(payload.get("sessionId"));
+        long observedAt = longValue(
+            payload.get("observedAt"),
+            longValue(payload.get("timestamp"), event.createdAt().toEpochMilli())
+        );
+        DataAuthority.SnapshotWatermark watermark = watermark(
+            event,
+            PRESENCE,
+            outputFingerprint(SESSION_EVENT_TYPES, presencePayload(
+                subjectId,
+                playerId,
+                username,
+                online,
+                online ? string(payload.get("currentServer"), null) : null,
+                online ? string(payload.get("currentProxy"), null) : null,
+                sessionId,
+                observedAt,
+                event.revision()
+            ))
+        );
+        return new DataAuthority.PlayerPresenceSnapshot(
+            subjectId,
+            playerId,
+            username,
+            online,
+            online ? string(payload.get("currentServer"), null) : null,
+            online ? string(payload.get("currentProxy"), null) : null,
+            sessionId,
+            observedAt,
+            event.revision(),
+            watermark
+        );
+    }
+
     private AuthorityStateRestoreResult restoreProfile(AuthorityStateRecord record) {
         Map<String, Object> payload = record.statePayload();
         UUID playerId = uuid(payload.get("playerId"));
@@ -295,6 +381,31 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         return AuthorityStateRestoreResult.restored(PROJECTION_VERSION, record);
     }
 
+    private AuthorityStateRestoreResult restorePresence(AuthorityStateRecord record) {
+        Map<String, Object> payload = record.statePayload();
+        UUID subjectId = uuid(payload.get("subjectId"));
+        if (subjectId == null) {
+            subjectId = uuid(record.aggregateId());
+        }
+        if (subjectId == null) {
+            return AuthorityStateRestoreResult.skipped(PROJECTION_VERSION, record, "state record is missing subjectId");
+        }
+        DataAuthority.PlayerPresenceSnapshot snapshot = new DataAuthority.PlayerPresenceSnapshot(
+            subjectId,
+            uuid(payload.get("playerId")),
+            boundedUsername(string(payload.get("username"), UNKNOWN)),
+            booleanValue(payload.get("online")),
+            string(payload.get("currentServer"), null),
+            string(payload.get("currentProxy"), null),
+            uuid(payload.get("sessionId")),
+            longValue(payload.get("observedAt"), record.eventCreatedAt().toEpochMilli()),
+            longValue(payload.get("revision"), record.revision()),
+            watermark(record)
+        );
+        presences.compute(subjectId, (ignored, current) -> newerSnapshot(current, snapshot) ? snapshot : current);
+        return AuthorityStateRestoreResult.restored(PROJECTION_VERSION, record);
+    }
+
     private DataAuthority.QuotedRead<DataAuthority.PlayerProfileSnapshot> quoteProfileSnapshot(
         UUID playerId,
         DataAuthority.ReadRequirement requirement,
@@ -319,6 +430,21 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         return quoteSnapshot(
             "rank:player:" + playerId,
             PLAYER_RANK,
+            requirement,
+            snapshot,
+            nowEpochMillis
+        );
+    }
+
+    private DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> quotePresenceSnapshot(
+        UUID subjectId,
+        DataAuthority.ReadRequirement requirement,
+        Optional<DataAuthority.PlayerPresenceSnapshot> snapshot,
+        long nowEpochMillis
+    ) {
+        return quoteSnapshot(
+            DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+            PRESENCE,
             requirement,
             snapshot,
             nowEpochMillis
@@ -398,6 +524,9 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         }
         if (snapshot instanceof DataAuthority.PlayerRankSnapshot rank) {
             return new ProjectedSnapshot(rank.revision(), rank.watermark());
+        }
+        if (snapshot instanceof DataAuthority.PlayerPresenceSnapshot presence) {
+            return new ProjectedSnapshot(presence.revision(), presence.watermark());
         }
         throw new IllegalArgumentException("Unsupported hot snapshot " + snapshot.getClass().getName());
     }
@@ -489,6 +618,30 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         return values;
     }
 
+    private static Map<String, Object> presencePayload(
+        UUID subjectId,
+        UUID playerId,
+        String username,
+        boolean online,
+        String currentServer,
+        String currentProxy,
+        UUID sessionId,
+        long observedAt,
+        long revision
+    ) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("subjectId", subjectId.toString());
+        values.put("playerId", playerId == null ? null : playerId.toString());
+        values.put("username", username);
+        values.put("online", online);
+        values.put("currentServer", currentServer);
+        values.put("currentProxy", currentProxy);
+        values.put("sessionId", sessionId == null ? null : sessionId.toString());
+        values.put("observedAt", observedAt);
+        values.put("revision", revision);
+        return values;
+    }
+
     private static Map<String, Object> snapshotPayload(DataAuthority.PlayerProfileSnapshot snapshot) {
         return profilePayload(
             snapshot.playerId(),
@@ -505,6 +658,20 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
 
     private static Map<String, Object> snapshotPayload(DataAuthority.PlayerRankSnapshot snapshot) {
         return rankPayload(snapshot.playerId(), snapshot.primaryRank(), snapshot.ranks(), snapshot.revision());
+    }
+
+    private static Map<String, Object> snapshotPayload(DataAuthority.PlayerPresenceSnapshot snapshot) {
+        return presencePayload(
+            snapshot.subjectId(),
+            snapshot.playerId(),
+            snapshot.username(),
+            snapshot.online(),
+            snapshot.currentServer(),
+            snapshot.currentProxy(),
+            snapshot.sessionId(),
+            snapshot.observedAtEpochMillis(),
+            snapshot.revision()
+        );
     }
 
     private static Map<String, Object> mergeProfileData(
@@ -549,6 +716,22 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
         throw new IllegalArgumentException("Authority hot-state event is missing playerId");
     }
 
+    private static UUID subjectId(AuthorityEventEnvelope event) {
+        UUID aggregateId = uuid(event.aggregateId());
+        if (aggregateId != null) {
+            return aggregateId;
+        }
+        UUID payloadSubjectId = uuid(commandPayload(event).get("subjectId"));
+        if (payloadSubjectId != null) {
+            return payloadSubjectId;
+        }
+        UUID payloadPlayerId = uuid(commandPayload(event).get("playerId"));
+        if (payloadPlayerId != null) {
+            return payloadPlayerId;
+        }
+        throw new IllegalArgumentException("Authority hot-state event is missing subjectId");
+    }
+
     private static void requireAggregateType(AuthorityEventEnvelope event, String expectedAggregateType) {
         if (!expectedAggregateType.equals(event.aggregateType())) {
             throw new IllegalArgumentException(
@@ -563,6 +746,13 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
     }
 
     private static boolean newerSnapshot(DataAuthority.PlayerRankSnapshot current, DataAuthority.PlayerRankSnapshot next) {
+        return current == null || next.revision() >= current.revision();
+    }
+
+    private static boolean newerSnapshot(
+        DataAuthority.PlayerPresenceSnapshot current,
+        DataAuthority.PlayerPresenceSnapshot next
+    ) {
         return current == null || next.revision() >= current.revision();
     }
 
@@ -669,12 +859,14 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
 
     private static List<String> acceptedEventTypes() {
         List<String> values = new ArrayList<>(PROFILE_EVENT_TYPES);
+        values.addAll(SESSION_EVENT_TYPES);
         values.addAll(RANK_EVENT_TYPES);
         return Collections.unmodifiableList(values);
     }
 
     private record ProjectionChange(
         Optional<DataAuthority.PlayerProfileSnapshot> profileSnapshot,
+        Optional<DataAuthority.PlayerPresenceSnapshot> presenceSnapshot,
         Optional<DataAuthority.PlayerRankSnapshot> rankSnapshot,
         String outputFingerprint
     ) {
@@ -682,18 +874,25 @@ public final class InMemoryAuthorityHotStateProjection implements AuthorityEvent
             DataAuthority.PlayerProfileSnapshot snapshot,
             String outputFingerprint
         ) {
-            return new ProjectionChange(Optional.of(snapshot), Optional.empty(), outputFingerprint);
+            return new ProjectionChange(Optional.of(snapshot), Optional.empty(), Optional.empty(), outputFingerprint);
+        }
+
+        private static ProjectionChange presence(
+            DataAuthority.PlayerPresenceSnapshot snapshot,
+            String outputFingerprint
+        ) {
+            return new ProjectionChange(Optional.empty(), Optional.of(snapshot), Optional.empty(), outputFingerprint);
         }
 
         private static ProjectionChange rank(
             DataAuthority.PlayerRankSnapshot snapshot,
             String outputFingerprint
         ) {
-            return new ProjectionChange(Optional.empty(), Optional.of(snapshot), outputFingerprint);
+            return new ProjectionChange(Optional.empty(), Optional.empty(), Optional.of(snapshot), outputFingerprint);
         }
 
         private static ProjectionChange noop(String outputFingerprint) {
-            return new ProjectionChange(Optional.empty(), Optional.empty(), outputFingerprint);
+            return new ProjectionChange(Optional.empty(), Optional.empty(), Optional.empty(), outputFingerprint);
         }
     }
 

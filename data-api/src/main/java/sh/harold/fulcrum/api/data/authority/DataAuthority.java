@@ -871,6 +871,26 @@ public final class DataAuthority {
         }
     }
 
+    public interface PlayerPresenceReader {
+        CompletionStage<Optional<PlayerPresenceSnapshot>> findPresence(UUID subjectId);
+
+        default CompletionStage<QuotedRead<PlayerPresenceSnapshot>> quotePresence(
+            UUID subjectId,
+            ReadRequirement requirement
+        ) {
+            Objects.requireNonNull(subjectId, "subjectId");
+            ReadRequirement effectiveRequirement = ReadRequirement.orEventual(requirement);
+            return findPresence(subjectId)
+                .thenApply(snapshot -> quotePresenceSnapshot(
+                    subjectId,
+                    effectiveRequirement,
+                    snapshot,
+                    0L,
+                    System.currentTimeMillis()
+                ));
+        }
+    }
+
     private static QuotedRead<PlayerProfileSnapshot> quoteProfileSnapshot(
         UUID playerId,
         ReadRequirement requirement,
@@ -1004,6 +1024,74 @@ public final class DataAuthority {
         );
         return status == ReadQuoteStatus.SATISFIED
             ? QuotedRead.satisfied(rankSnapshot, quote)
+            : QuotedRead.unsatisfied(quote);
+    }
+
+    private static QuotedRead<PlayerPresenceSnapshot> quotePresenceSnapshot(
+        UUID subjectId,
+        ReadRequirement requirement,
+        Optional<PlayerPresenceSnapshot> snapshot,
+        long revisionFloor,
+        long nowEpochMillis
+    ) {
+        String aggregateScope = Subject.SCOPE_PREFIX + subjectId;
+        ReadRequirement effectiveRequirement = ReadRequirement.orEventual(requirement);
+        long requiredRevision = Math.max(effectiveRequirement.minimumRevision(), Math.max(0L, revisionFloor));
+        Optional<PlayerPresenceSnapshot> effectiveSnapshot = snapshot == null ? Optional.empty() : snapshot;
+        if (effectiveSnapshot.isEmpty()) {
+            ReadQuoteStatus status = requiredRevision > 0L
+                ? ReadQuoteStatus.UNKNOWN_OR_STALE
+                : ReadQuoteStatus.NOT_FOUND;
+            return QuotedRead.unsatisfied(new ReadQuote(
+                aggregateScope,
+                "presence",
+                requiredRevision,
+                0L,
+                status,
+                null,
+                null,
+                ReadProvenance.authority()
+            ));
+        }
+
+        PlayerPresenceSnapshot presenceSnapshot = effectiveSnapshot.get();
+        SnapshotWatermark snapshotWatermark = presenceSnapshot.watermark();
+        long snapshotRevision = Math.max(0L, presenceSnapshot.revision());
+        long observedRevision = snapshotWatermark == null
+            ? snapshotRevision
+            : Math.max(snapshotRevision, snapshotWatermark.sourceRevision());
+        ReadQuoteStatus status;
+        if (snapshotWatermark == null || !snapshotWatermark.watermarked()) {
+            status = ReadQuoteStatus.UNWATERMARKED;
+        } else if (!aggregateScope.equals(snapshotWatermark.aggregateScope())) {
+            status = ReadQuoteStatus.SCOPE_MISMATCH;
+        } else if (effectiveRequirement.visibilityToken() != null
+            && !snapshotWatermark.satisfies(effectiveRequirement.visibilityToken())) {
+            status = ReadQuoteStatus.VISIBILITY_TOKEN_MISMATCH;
+        } else if (snapshotWatermark.sourceRevision() != snapshotRevision) {
+            status = ReadQuoteStatus.REVISION_MISMATCH;
+        } else if (snapshotRevision < requiredRevision || snapshotWatermark.sourceRevision() < requiredRevision) {
+            status = ReadQuoteStatus.STALE_REVISION;
+        } else if (effectiveRequirement.hasMaxAge()
+            && snapshotWatermark.staleAt(nowEpochMillis, effectiveRequirement.maxAgeMillis())) {
+            status = ReadQuoteStatus.EXPIRED;
+        } else {
+            status = ReadQuoteStatus.SATISFIED;
+        }
+
+        ReadQuote quote = new ReadQuote(
+            aggregateScope,
+            "presence",
+            requiredRevision,
+            observedRevision,
+            status,
+            snapshotWatermark,
+            null,
+            ReadProvenance.authority(),
+            ProjectionDeliveryReceipt.fromWatermark("presence", snapshotWatermark)
+        );
+        return status == ReadQuoteStatus.SATISFIED
+            ? QuotedRead.satisfied(presenceSnapshot, quote)
             : QuotedRead.unsatisfied(quote);
     }
 
@@ -2339,6 +2427,65 @@ public final class DataAuthority {
             ranks = ranks == null || ranks.isEmpty() ? List.of(primaryRank) : List.copyOf(ranks);
             watermark = watermark == null
                 ? SnapshotWatermark.unwatermarked("rank:player:" + playerId, "player_rank", playerId.toString(), revision)
+                : watermark;
+        }
+    }
+
+    public record PlayerPresenceSnapshot(
+        UUID subjectId,
+        UUID playerId,
+        String username,
+        boolean online,
+        String currentServer,
+        String currentProxy,
+        UUID sessionId,
+        long observedAtEpochMillis,
+        long revision,
+        SnapshotWatermark watermark
+    ) {
+        public PlayerPresenceSnapshot(
+            UUID subjectId,
+            UUID playerId,
+            String username,
+            boolean online,
+            String currentServer,
+            String currentProxy,
+            UUID sessionId,
+            long observedAtEpochMillis,
+            long revision
+        ) {
+            this(
+                subjectId,
+                playerId,
+                username,
+                online,
+                currentServer,
+                currentProxy,
+                sessionId,
+                observedAtEpochMillis,
+                revision,
+                SnapshotWatermark.unwatermarked(
+                    Subject.SCOPE_PREFIX + subjectId,
+                    "presence",
+                    subjectId == null ? null : subjectId.toString(),
+                    revision
+                )
+            );
+        }
+
+        public PlayerPresenceSnapshot {
+            if (subjectId == null) {
+                throw new IllegalArgumentException("subjectId is required");
+            }
+            username = username == null ? "unknown" : username;
+            observedAtEpochMillis = Math.max(0L, observedAtEpochMillis);
+            watermark = watermark == null
+                ? SnapshotWatermark.unwatermarked(
+                    Subject.SCOPE_PREFIX + subjectId,
+                    "presence",
+                    subjectId.toString(),
+                    revision
+                )
                 : watermark;
         }
     }

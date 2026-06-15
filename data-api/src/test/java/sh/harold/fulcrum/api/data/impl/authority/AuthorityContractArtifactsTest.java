@@ -105,6 +105,8 @@ class AuthorityContractArtifactsTest {
     void readRowsExposeServingStoresStateTopicsAndSchemaTables() {
         AuthorityContractArtifacts.ReadRow profile =
             read(DataAuthorityReadContracts.ReadType.PLAYER_PROFILE);
+        AuthorityContractArtifacts.ReadRow presence =
+            read(DataAuthorityReadContracts.ReadType.PLAYER_PRESENCE);
         AuthorityContractArtifacts.ReadRow rank =
             read(DataAuthorityReadContracts.ReadType.PLAYER_RANK);
 
@@ -114,6 +116,13 @@ class AuthorityContractArtifactsTest {
         assertThat(profile.expectedStateTopics()).containsExactly("state.player_profile", "state.player");
         assertThat(tableNames(profile.schemaTables()))
             .containsExactlyInAnyOrder("player_profiles", "authority_state_snapshots");
+
+        assertThat(presence.projectionFamily()).isEqualTo("presence");
+        assertThat(presence.servingStore()).isEqualTo("cassandra");
+        assertThat(presence.cacheStore()).isEqualTo("valkey");
+        assertThat(presence.expectedStateTopics()).containsExactly("state.presence", "state.session");
+        assertThat(tableNames(presence.schemaTables()))
+            .containsExactlyInAnyOrder("authority_state_snapshots");
 
         assertThat(rank.projectionFamily()).isEqualTo("player_rank");
         assertThat(rank.servingStore()).isEqualTo("cassandra");
@@ -332,6 +341,7 @@ class AuthorityContractArtifactsTest {
     private static String readConcern(DataAuthorityReadContracts.ReadType type) {
         return switch (type) {
             case PLAYER_PROFILE -> AuthorityStorePlacements.PLAYER_PROFILE_OF_RECORD;
+            case PLAYER_PRESENCE -> AuthorityStorePlacements.PLAYER_PRESENCE;
             case PLAYER_RANK -> AuthorityStorePlacements.LIVE_EFFECTIVE_RANKS;
         };
     }

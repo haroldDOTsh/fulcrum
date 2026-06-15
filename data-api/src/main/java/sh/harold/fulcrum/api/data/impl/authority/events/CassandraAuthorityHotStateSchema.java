@@ -55,6 +55,10 @@ public final class CassandraAuthorityHotStateSchema {
                 "player_id"
             ),
             new CassandraAuthorityHotStateProjection.CassandraProjectionTable(
+                CassandraAuthorityHotStateProjection.PRESENCE_TABLE,
+                "subject_id"
+            ),
+            new CassandraAuthorityHotStateProjection.CassandraProjectionTable(
                 CassandraAuthorityHotStateProjection.RANK_TABLE,
                 "player_id"
             ),

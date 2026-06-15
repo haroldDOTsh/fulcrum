@@ -34,6 +34,8 @@ class DataAuthorityReadContractManifestTest {
         }
         assertThat(CONTRACTS.get(DataAuthorityReadContracts.ReadType.PLAYER_PROFILE).servingStore())
             .isEqualTo("postgresql-read-replica");
+        assertThat(CONTRACTS.get(DataAuthorityReadContracts.ReadType.PLAYER_PRESENCE).servingStore())
+            .isEqualTo("cassandra");
         assertThat(CONTRACTS.get(DataAuthorityReadContracts.ReadType.PLAYER_RANK).servingStore())
             .isEqualTo("cassandra");
     }

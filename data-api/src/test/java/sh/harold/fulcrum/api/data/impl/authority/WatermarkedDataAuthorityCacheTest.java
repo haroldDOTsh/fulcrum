@@ -235,6 +235,59 @@ class WatermarkedDataAuthorityCacheTest {
     }
 
     @Test
+    void presenceMissReadsHotStateThenFillsSnapshotCache() {
+        UUID subjectId = UUID.randomUUID();
+        String scope = DataAuthority.Subject.SCOPE_PREFIX + subjectId;
+        MutableClock clock = new MutableClock(1_000L);
+        DataAuthority.PlayerPresenceSnapshot snapshot = presenceSnapshot(subjectId, 4L, clock.millis());
+        List<String> events = new ArrayList<>();
+        RecordingSnapshotCacheStore snapshotStore = new RecordingSnapshotCacheStore(events);
+        DataAuthority.PlayerPresenceReader presenceReader = new DataAuthority.PlayerPresenceReader() {
+            @Override
+            public CompletableFuture<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID id) {
+                return CompletableFuture.failedFuture(new AssertionError("findPresence was not expected"));
+            }
+
+            @Override
+            public CompletableFuture<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
+                UUID id,
+                DataAuthority.ReadRequirement requirement
+            ) {
+                events.add("hot:quotePresence:" + scope);
+                return CompletableFuture.completedFuture(hotStatePresenceRead(scope, snapshot, requirement));
+            }
+        };
+        WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
+            unusedCommandPort(),
+            unusedProfileReader(),
+            presenceReader,
+            unusedRankReader(),
+            Duration.ofSeconds(5),
+            clock,
+            snapshotStore
+        );
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> first = cache
+            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(4L))
+            .toCompletableFuture()
+            .join();
+        clock.advanceMillis(250L);
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> second = cache
+            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(4L))
+            .toCompletableFuture()
+            .join();
+
+        assertThat(first.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.HOT_STATE);
+        assertThat(second.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.CACHE);
+        assertThat(events).containsExactly(
+            "cache:readPresence:" + scope,
+            "hot:quotePresence:" + scope,
+            "cache:writePresence:" + scope + ":4",
+            "cache:readPresence:" + scope
+        );
+    }
+
+    @Test
     void staleSnapshotCacheStoreLineFallsThroughToHotState() {
         UUID playerId = UUID.randomUUID();
         String scope = "rank:player:" + playerId;
@@ -716,6 +769,39 @@ class WatermarkedDataAuthorityCacheTest {
     }
 
     @Test
+    void sessionRevisionFloorInvalidationFailsClosedUntilPresenceProjectionCatchesUp() {
+        UUID subjectId = UUID.randomUUID();
+        AtomicReference<Optional<DataAuthority.PlayerPresenceSnapshot>> snapshot = new AtomicReference<>(
+            Optional.of(presenceSnapshot(subjectId, 2L, 1_000L))
+        );
+        WatermarkedDataAuthorityCache cache = new WatermarkedDataAuthorityCache(
+            unusedCommandPort(),
+            unusedProfileReader(),
+            id -> CompletableFuture.completedFuture(snapshot.get()),
+            unusedRankReader()
+        );
+
+        assertThat(cache.findPresence(subjectId).toCompletableFuture().join())
+            .get()
+            .extracting(DataAuthority.PlayerPresenceSnapshot::revision)
+            .isEqualTo(2L);
+
+        AuthoritySnapshotInvalidation floor = AuthoritySnapshotInvalidation
+            .revisionFloorFor(sessionCommand(UUID.randomUUID(), subjectId, 2L), 3L)
+            .orElseThrow();
+        cache.handleInvalidation(floor);
+
+        assertThat(cache.findPresence(subjectId).toCompletableFuture().join()).isEmpty();
+
+        snapshot.set(Optional.empty());
+        assertThat(cache.findPresence(subjectId).toCompletableFuture().join()).isEmpty();
+
+        DataAuthority.PlayerPresenceSnapshot updated = presenceSnapshot(subjectId, 3L, 1_001L);
+        snapshot.set(Optional.of(updated));
+        assertThat(cache.findPresence(subjectId).toCompletableFuture().join()).contains(updated);
+    }
+
+    @Test
     void profileRevisionFloorInvalidationFailsClosedUntilProjectionCatchesUp() {
         UUID playerId = UUID.randomUUID();
         AtomicReference<Optional<DataAuthority.PlayerProfileSnapshot>> snapshot = new AtomicReference<>(
@@ -1002,6 +1088,25 @@ class WatermarkedDataAuthorityCacheTest {
         );
     }
 
+    private static DataAuthority.PlayerPresenceSnapshot presenceSnapshot(
+        UUID subjectId,
+        long revision,
+        long eventCreatedEpochMillis
+    ) {
+        return new DataAuthority.PlayerPresenceSnapshot(
+            subjectId,
+            subjectId,
+            "Notch",
+            true,
+            "paper-1",
+            "proxy-1",
+            UUID.randomUUID(),
+            eventCreatedEpochMillis,
+            revision,
+            presenceWatermark(subjectId, revision, eventCreatedEpochMillis)
+        );
+    }
+
     private static DataAuthority.SnapshotWatermark rankWatermark(
         UUID playerId,
         long revision,
@@ -1029,6 +1134,22 @@ class WatermarkedDataAuthorityCacheTest {
             playerId.toString(),
             "player_profile",
             "state.player_profile",
+            revision,
+            eventCreatedEpochMillis
+        );
+    }
+
+    private static DataAuthority.SnapshotWatermark presenceWatermark(
+        UUID subjectId,
+        long revision,
+        long eventCreatedEpochMillis
+    ) {
+        return watermark(
+            DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+            AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
+            subjectId.toString(),
+            "session",
+            "state.session",
             revision,
             eventCreatedEpochMillis
         );
@@ -1089,6 +1210,34 @@ class WatermarkedDataAuthorityCacheTest {
         );
     }
 
+    private static DataAuthority.PlayerSessionCommand sessionCommand(
+        UUID commandId,
+        UUID subjectId,
+        long expectedRevision
+    ) {
+        return new DataAuthority.PlayerSessionCommand(
+            DataAuthority.CommandManifest.create(
+                commandId,
+                "START_SESSION",
+                "session-service",
+                DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+                commandId.toString(),
+                System.currentTimeMillis() + 1_000L,
+                "",
+                expectedRevision
+            ),
+            subjectId,
+            "Notch",
+            UUID.randomUUID(),
+            System.currentTimeMillis(),
+            "paper-1",
+            "proxy-1",
+            "127.0.0.1",
+            765,
+            null
+        );
+    }
+
     private static DataAuthority.CommandSubmissionReceipt submissionReceipt(
         DataAuthority.AuthorityCommand command,
         int partition,
@@ -1128,6 +1277,28 @@ class WatermarkedDataAuthorityCacheTest {
             DataAuthority.ReadProvenance.hotState(),
             DataAuthority.ProjectionDeliveryReceipt.fromWatermark(
                 AuthoritySnapshotInvalidation.PLAYER_RANK,
+                snapshot.watermark()
+            )
+        );
+        return DataAuthority.QuotedRead.satisfied(snapshot, quote);
+    }
+
+    private static DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> hotStatePresenceRead(
+        String scope,
+        DataAuthority.PlayerPresenceSnapshot snapshot,
+        DataAuthority.ReadRequirement requirement
+    ) {
+        DataAuthority.ReadQuote quote = new DataAuthority.ReadQuote(
+            scope,
+            AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
+            requirement.minimumRevision(),
+            snapshot.revision(),
+            DataAuthority.ReadQuoteStatus.SATISFIED,
+            snapshot.watermark(),
+            null,
+            DataAuthority.ReadProvenance.hotState(),
+            DataAuthority.ProjectionDeliveryReceipt.fromWatermark(
+                AuthoritySnapshotInvalidation.PLAYER_PRESENCE,
                 snapshot.watermark()
             )
         );
@@ -1194,6 +1365,12 @@ class WatermarkedDataAuthorityCacheTest {
         }
 
         @Override
+        public Optional<SnapshotLine<DataAuthority.PlayerPresenceSnapshot>> readPresence(String aggregateScope) {
+            events.add("cache:readPresence:" + aggregateScope);
+            return delegate.readPresence(aggregateScope);
+        }
+
+        @Override
         public Optional<SnapshotLine<DataAuthority.PlayerRankSnapshot>> readRank(String aggregateScope) {
             events.add("cache:readRank:" + aggregateScope);
             return delegate.readRank(aggregateScope);
@@ -1206,6 +1383,12 @@ class WatermarkedDataAuthorityCacheTest {
         }
 
         @Override
+        public void writePresence(SnapshotLine<DataAuthority.PlayerPresenceSnapshot> line) {
+            events.add("cache:writePresence:" + line.aggregateScope() + ":" + line.revision());
+            delegate.writePresence(line);
+        }
+
+        @Override
         public void writeRank(SnapshotLine<DataAuthority.PlayerRankSnapshot> line) {
             events.add("cache:writeRank:" + line.aggregateScope() + ":" + line.revision());
             delegate.writeRank(line);
@@ -1215,6 +1398,12 @@ class WatermarkedDataAuthorityCacheTest {
         public void invalidateProfile(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
             events.add("cache:invalidateProfile:" + aggregateScope + ":" + revision);
             delegate.invalidateProfile(aggregateScope, revision, invalidatedAtEpochMillis);
+        }
+
+        @Override
+        public void invalidatePresence(String aggregateScope, long revision, long invalidatedAtEpochMillis) {
+            events.add("cache:invalidatePresence:" + aggregateScope + ":" + revision);
+            delegate.invalidatePresence(aggregateScope, revision, invalidatedAtEpochMillis);
         }
 
         @Override

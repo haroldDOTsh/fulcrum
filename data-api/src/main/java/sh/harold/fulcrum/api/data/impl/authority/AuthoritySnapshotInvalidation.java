@@ -27,6 +27,7 @@ public record AuthoritySnapshotInvalidation(
 ) {
     public static final int SCHEMA_VERSION = 1;
     public static final String PLAYER_PROFILE = "player_profile";
+    public static final String PLAYER_PRESENCE = "presence";
     public static final String PLAYER_RANK = "player_rank";
 
     private static final Gson GSON = new Gson();
@@ -51,6 +52,13 @@ public record AuthoritySnapshotInvalidation(
     ) {
         Objects.requireNonNull(snapshot, "snapshot");
         return fromSnapshot(PLAYER_RANK, snapshot.watermark());
+    }
+
+    public static Optional<AuthoritySnapshotInvalidation> fromPresenceSnapshot(
+        DataAuthority.PlayerPresenceSnapshot snapshot
+    ) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        return fromSnapshot(PLAYER_PRESENCE, snapshot.watermark());
     }
 
     public static Optional<AuthoritySnapshotInvalidation> revisionFloorFor(
@@ -78,6 +86,16 @@ public record AuthoritySnapshotInvalidation(
                 "player:" + playerId,
                 PLAYER_PROFILE,
                 playerId,
+                revision
+            );
+        }
+        if (command instanceof DataAuthority.PlayerSessionCommand sessionCommand) {
+            String subjectId = sessionCommand.subject().subjectId().toString();
+            return revisionFloor(
+                PLAYER_PRESENCE,
+                DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+                PLAYER_PRESENCE,
+                subjectId,
                 revision
             );
         }
@@ -151,7 +169,9 @@ public record AuthoritySnapshotInvalidation(
     }
 
     private boolean knownProjectionFamily() {
-        return PLAYER_PROFILE.equals(projectionFamily) || PLAYER_RANK.equals(projectionFamily);
+        return PLAYER_PROFILE.equals(projectionFamily)
+            || PLAYER_PRESENCE.equals(projectionFamily)
+            || PLAYER_RANK.equals(projectionFamily);
     }
 
     private static Optional<AuthoritySnapshotInvalidation> fromSnapshot(
@@ -195,6 +215,9 @@ public record AuthoritySnapshotInvalidation(
         }
         if (PLAYER_RANK.equals(projectionFamily)) {
             return "rank:player:" + aggregateId;
+        }
+        if (PLAYER_PRESENCE.equals(projectionFamily)) {
+            return DataAuthority.Subject.SCOPE_PREFIX + aggregateId;
         }
         return "";
     }

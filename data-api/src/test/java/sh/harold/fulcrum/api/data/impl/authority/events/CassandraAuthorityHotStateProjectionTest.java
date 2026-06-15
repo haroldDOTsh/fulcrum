@@ -36,6 +36,10 @@ class CassandraAuthorityHotStateProjectionTest {
                     "player_id"
                 ),
                 new CassandraAuthorityHotStateProjection.CassandraProjectionTable(
+                    CassandraAuthorityHotStateProjection.PRESENCE_TABLE,
+                    "subject_id"
+                ),
+                new CassandraAuthorityHotStateProjection.CassandraProjectionTable(
                     CassandraAuthorityHotStateProjection.RANK_TABLE,
                     "player_id"
                 ),
@@ -52,6 +56,7 @@ class CassandraAuthorityHotStateProjectionTest {
 
         assertThat(schema)
             .contains("CREATE TABLE IF NOT EXISTS " + CassandraAuthorityHotStateProjection.PROFILE_TABLE)
+            .contains("CREATE TABLE IF NOT EXISTS " + CassandraAuthorityHotStateProjection.PRESENCE_TABLE)
             .contains("CREATE TABLE IF NOT EXISTS " + CassandraAuthorityHotStateProjection.RANK_TABLE)
             .contains("CREATE TABLE IF NOT EXISTS " + CassandraAuthorityHotStateProjection.MATCH_TABLE)
             .contains("WITH default_time_to_live = 900")
@@ -63,7 +68,7 @@ class CassandraAuthorityHotStateProjectionTest {
     void schemaApplicatorQualifiesDeclaredTablesWithConfiguredKeyspace() {
         List<SimpleStatement> statements = CassandraAuthorityHotStateSchema.statements("fulcrum_authority");
 
-        assertThat(statements).hasSize(3);
+        assertThat(statements).hasSize(4);
         assertThat(statements)
             .extracting(SimpleStatement::getQuery)
             .allSatisfy(query -> assertThat(query).doesNotContain("--"));
@@ -72,8 +77,11 @@ class CassandraAuthorityHotStateProjectionTest {
                 + CassandraAuthorityHotStateProjection.PROFILE_TABLE);
         assertThat(statements.get(1).getQuery())
             .contains("CREATE TABLE IF NOT EXISTS fulcrum_authority."
-                + CassandraAuthorityHotStateProjection.RANK_TABLE);
+                + CassandraAuthorityHotStateProjection.PRESENCE_TABLE);
         assertThat(statements.get(2).getQuery())
+            .contains("CREATE TABLE IF NOT EXISTS fulcrum_authority."
+                + CassandraAuthorityHotStateProjection.RANK_TABLE);
+        assertThat(statements.get(3).getQuery())
             .contains("CREATE TABLE IF NOT EXISTS fulcrum_authority."
                 + CassandraAuthorityHotStateProjection.MATCH_TABLE);
     }
@@ -86,7 +94,7 @@ class CassandraAuthorityHotStateProjectionTest {
 
         org.mockito.ArgumentCaptor<SimpleStatement> statement =
             org.mockito.ArgumentCaptor.forClass(SimpleStatement.class);
-        verify(session, times(3)).execute(statement.capture());
+        verify(session, times(4)).execute(statement.capture());
         assertThat(statement.getAllValues())
             .extracting(SimpleStatement::getQuery)
             .allSatisfy(query -> assertThat(query).contains("fulcrum_authority."));
@@ -111,8 +119,16 @@ class CassandraAuthorityHotStateProjectionTest {
         assertThat(restoreTarget.projectionName()).isEqualTo(CassandraAuthorityHotStateProjection.PROJECTION_NAME);
         assertThat(restoreTarget.projectionVersion()).isEqualTo(CassandraAuthorityHotStateProjection.PROJECTION_VERSION);
         assertThat(projection.projectionManifest().acceptedEventTypes())
-            .contains("RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT", "GRANT_RANK", "REVOKE_RANK", "RECORD_MATCH_START")
-            .doesNotContain("START_SESSION", "RENEW_SESSION", "END_SESSION");
+            .contains(
+                "RECORD_PLAYER_LOGIN",
+                "RECORD_PLAYER_LOGOUT",
+                "GRANT_RANK",
+                "REVOKE_RANK",
+                "RECORD_MATCH_START",
+                "START_SESSION",
+                "RENEW_SESSION",
+                "END_SESSION"
+            );
     }
 
     @Test
@@ -141,6 +157,34 @@ class CassandraAuthorityHotStateProjectionTest {
             .contains("rank:player:" + playerId, "state.rank");
         assertThat(statement.getAllValues().get(1).getPositionalValues())
             .anySatisfy(value -> assertThat(value.toString()).contains("\"primaryRank\":\"ADMIN\""));
+    }
+
+    @Test
+    void dispatchSessionEventWritesPresenceStateRecord() {
+        CqlSession session = mock(CqlSession.class);
+        ResultSet missing = empty();
+        ResultSet inserted = result(true);
+        when(session.execute(any(SimpleStatement.class))).thenReturn(missing, inserted);
+        CassandraAuthorityHotStateProjection projection =
+            new CassandraAuthorityHotStateProjection(session, "fulcrum_authority");
+        UUID subjectId = UUID.randomUUID();
+
+        AuthorityEventDispatchResult result = projection.dispatch(presenceEvent(subjectId, 8L));
+
+        assertThat(result.successful()).isTrue();
+        org.mockito.ArgumentCaptor<SimpleStatement> statement =
+            org.mockito.ArgumentCaptor.forClass(SimpleStatement.class);
+        verify(session, times(2)).execute(statement.capture());
+        assertThat(statement.getAllValues().get(0).getQuery())
+            .contains("SELECT subject_id")
+            .contains(CassandraAuthorityHotStateProjection.PRESENCE_TABLE);
+        assertThat(statement.getAllValues().get(1).getQuery())
+            .contains("INSERT INTO fulcrum_authority.authority_player_presence_by_subject")
+            .contains("subject_id");
+        assertThat(statement.getAllValues().get(1).getPositionalValues())
+            .contains(DataAuthority.Subject.SCOPE_PREFIX + subjectId, "state.session");
+        assertThat(statement.getAllValues().get(1).getPositionalValues())
+            .anySatisfy(value -> assertThat(value.toString()).contains("\"online\":true"));
     }
 
     @Test
@@ -249,6 +293,33 @@ class CassandraAuthorityHotStateProjectionTest {
             .isEqualTo(CassandraAuthorityHotStateProjection.PROJECTION_NAME);
     }
 
+    @Test
+    void quotedPresenceReadReportsHotStateProvenance() {
+        CqlSession session = mock(CqlSession.class);
+        UUID subjectId = UUID.randomUUID();
+        ResultSet presence = rowResult(presenceRow(subjectId, 8L));
+        when(session.execute(any(SimpleStatement.class))).thenReturn(presence);
+        CassandraAuthorityHotStateProjection projection =
+            new CassandraAuthorityHotStateProjection(session, "fulcrum_authority");
+
+        DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot> read = projection
+            .quotePresence(subjectId, DataAuthority.ReadRequirement.atLeast(8L))
+            .toCompletableFuture()
+            .join();
+
+        assertThat(read.satisfied()).isTrue();
+        assertThat(read.snapshot()).hasValueSatisfying(snapshot -> {
+            assertThat(snapshot.subjectId()).isEqualTo(subjectId);
+            assertThat(snapshot.online()).isTrue();
+            assertThat(snapshot.currentServer()).isEqualTo("lobby");
+            assertThat(snapshot.revision()).isEqualTo(8L);
+        });
+        assertThat(read.quote().provenance().sourceTier()).isEqualTo(DataAuthority.ReadSourceTier.HOT_STATE);
+        assertThat(read.quote().deliveryReceipt()).isNotNull();
+        assertThat(read.quote().deliveryReceipt().sourceProvider())
+            .isEqualTo(CassandraAuthorityHotStateProjection.PROJECTION_NAME);
+    }
+
     private static String resource(String path) throws Exception {
         try (var input = CassandraAuthorityHotStateProjectionTest.class.getClassLoader()
             .getResourceAsStream(path)) {
@@ -294,6 +365,31 @@ class CassandraAuthorityHotStateProjectionTest {
         return row;
     }
 
+    private static Row presenceRow(UUID subjectId, long revision) {
+        UUID commandId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        Row row = mock(Row.class);
+        when(row.getUuid("subject_id")).thenReturn(subjectId);
+        when(row.getString("state_payload")).thenReturn("""
+            {"subjectId":"%s","playerId":"%s","username":"Richa","online":true,"currentServer":"lobby","currentProxy":"proxy-a","revision":%d}
+            """.formatted(subjectId, subjectId, revision));
+        when(row.getString("aggregate_scope")).thenReturn(DataAuthority.Subject.SCOPE_PREFIX + subjectId);
+        when(row.getString("aggregate_type")).thenReturn("presence");
+        when(row.getString("aggregate_id")).thenReturn(subjectId.toString());
+        when(row.getString("command_domain")).thenReturn("session");
+        when(row.getString("state_topic")).thenReturn("state.session");
+        when(row.getString("partition_key")).thenReturn(DataAuthority.Subject.SCOPE_PREFIX + subjectId);
+        when(row.getUuid("source_command_id")).thenReturn(commandId);
+        when(row.getUuid("source_event_id")).thenReturn(eventId);
+        when(row.getLong("revision")).thenReturn(revision);
+        when(row.getInstant("event_created_at")).thenReturn(Instant.ofEpochMilli(1_000L));
+        when(row.getInt("source_partition")).thenReturn(3);
+        when(row.getLong("source_offset")).thenReturn(80L);
+        when(row.getString("state_fingerprint")).thenReturn("state-fingerprint");
+        when(row.getString("event_chain_hash")).thenReturn("event-chain-hash");
+        return row;
+    }
+
     private static ResultSet result(boolean applied) {
         Row row = mock(Row.class);
         when(row.getBoolean("[applied]")).thenReturn(applied);
@@ -324,6 +420,37 @@ class CassandraAuthorityHotStateProjectionTest {
                 )
             ),
             Map.of("actorId", "rank-service"),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            Instant.now()
+        );
+    }
+
+    private static AuthorityEventEnvelope presenceEvent(UUID subjectId, long revision) {
+        return new AuthorityEventEnvelope(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            DataAuthority.Subject.SCOPE_PREFIX + subjectId,
+            "presence",
+            subjectId.toString(),
+            revision,
+            "START_SESSION",
+            Map.of(
+                "route", Map.of(
+                    "domain", "session",
+                    "stateTopic", "state.session",
+                    "partitionKey", DataAuthority.Subject.SCOPE_PREFIX + subjectId
+                ),
+                "payload", Map.of(
+                    "subjectId", subjectId.toString(),
+                    "playerId", subjectId.toString(),
+                    "username", "Richa",
+                    "sessionId", UUID.randomUUID().toString(),
+                    "currentServer", "lobby",
+                    "currentProxy", "proxy-a",
+                    "timestamp", 1234L
+                )
+            ),
+            Map.of("actorId", "paper-runtime"),
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             Instant.now()
         );

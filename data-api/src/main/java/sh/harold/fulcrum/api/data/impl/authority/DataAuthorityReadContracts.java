@@ -67,6 +67,9 @@ public final class DataAuthorityReadContracts {
         if ("player_rank".equals(projectionName)) {
             return List.of("state.player_rank", "state.rank");
         }
+        if ("presence".equals(projectionName)) {
+            return List.of("state.presence", "state.session");
+        }
         return List.of("state." + projectionName);
     }
 
@@ -244,6 +247,24 @@ public final class DataAuthorityReadContracts {
                 "visibilityToken"
             )
         ));
+        values.put(ReadType.PLAYER_PRESENCE, new ReadContract(
+            ReadType.PLAYER_PRESENCE,
+            "presence",
+            "cassandra",
+            "valkey",
+            0L,
+            DEFAULT_CACHE_MAX_AGE_MILLIS,
+            Set.of("readType", "schemaVersion", "contractFingerprint", "subjectId", "minimumRevision", "maxAgeMillis"),
+            Set.of(
+                "readType",
+                "schemaVersion",
+                "contractFingerprint",
+                "subjectId",
+                "minimumRevision",
+                "maxAgeMillis",
+                "visibilityToken"
+            )
+        ));
         return Map.copyOf(values);
     }
 
@@ -292,6 +313,7 @@ public final class DataAuthorityReadContracts {
 
     public enum ReadType {
         PLAYER_PROFILE,
+        PLAYER_PRESENCE,
         PLAYER_RANK
     }
 

@@ -24,6 +24,7 @@ import java.util.concurrent.CompletionStage;
  * Cassandra-backed hot state projection for authority profile and rank reads.
  */
 public final class CassandraAuthorityHotStateProjection implements DataAuthority.PlayerProfileReader,
+    DataAuthority.PlayerPresenceReader,
     DataAuthority.PlayerRankReader,
     AuthorityEventDispatchTarget,
     AuthorityStateRestoreTarget {
@@ -31,10 +32,12 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
     public static final String PROJECTION_VERSION = "cassandra-authority-hot-state-v1";
     public static final String SCHEMA_RESOURCE = "cassandra/001_create_authority_hot_state.cql";
     public static final String PROFILE_TABLE = "authority_player_profiles_by_player";
+    public static final String PRESENCE_TABLE = "authority_player_presence_by_subject";
     public static final String RANK_TABLE = "authority_player_ranks_by_player";
     public static final String MATCH_TABLE = "authority_live_matches_by_match";
 
     private static final String PLAYER_PROFILE = "player_profile";
+    private static final String PRESENCE = "presence";
     private static final String PLAYER_RANK = "player_rank";
     private static final String MATCH = "match";
     private static final String UNKNOWN = "unknown";
@@ -42,6 +45,7 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         "RECORD_PLAYER_LOGIN",
         "RECORD_PLAYER_LOGOUT"
     );
+    private static final List<String> SESSION_EVENT_TYPES = List.of("END_SESSION", "RENEW_SESSION", "START_SESSION");
     private static final List<String> RANK_EVENT_TYPES = List.of("GRANT_RANK", "REVOKE_RANK");
     private static final List<String> MATCH_EVENT_TYPES = List.of("RECORD_MATCH_START", "RECORD_MATCH_END");
     private static final AuthorityProjectionManifest MANIFEST = AuthorityProjectionManifest.of(
@@ -63,6 +67,7 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
 
     public void validateSchema() {
         validateReadable(PROFILE_TABLE);
+        validateReadable(PRESENCE_TABLE);
         validateReadable(RANK_TABLE);
         validateReadable(MATCH_TABLE);
     }
@@ -108,6 +113,7 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         }
         return switch (record.aggregateType()) {
             case PLAYER_PROFILE -> restoreProfile(record);
+            case PRESENCE -> restorePresence(record);
             case PLAYER_RANK -> restoreRank(record);
             case MATCH -> restoreMatch(record);
             default -> AuthorityStateRestoreResult.skipped(
@@ -150,9 +156,26 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
             .thenApply(this::withHotStateProvenance);
     }
 
+    @Override
+    public CompletionStage<Optional<DataAuthority.PlayerPresenceSnapshot>> findPresence(UUID subjectId) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        return CompletableFuture.completedFuture(loadPresence(subjectId));
+    }
+
+    @Override
+    public CompletionStage<DataAuthority.QuotedRead<DataAuthority.PlayerPresenceSnapshot>> quotePresence(
+        UUID subjectId,
+        DataAuthority.ReadRequirement requirement
+    ) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        return DataAuthority.PlayerPresenceReader.super.quotePresence(subjectId, requirement)
+            .thenApply(this::withHotStateProvenance);
+    }
+
     public List<CassandraProjectionTable> tables() {
         return List.of(
             new CassandraProjectionTable(PROFILE_TABLE, "player_id"),
+            new CassandraProjectionTable(PRESENCE_TABLE, "subject_id"),
             new CassandraProjectionTable(RANK_TABLE, "player_id"),
             new CassandraProjectionTable(MATCH_TABLE, "match_id")
         );
@@ -182,6 +205,8 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         Map<String, Object> statePayload;
         if (PROFILE_EVENT_TYPES.contains(eventType)) {
             statePayload = profileStatePayload(event, eventType);
+        } else if (SESSION_EVENT_TYPES.contains(eventType)) {
+            statePayload = presenceStatePayload(event, eventType);
         } else if (RANK_EVENT_TYPES.contains(eventType)) {
             statePayload = rankStatePayload(event);
         } else if (MATCH_EVENT_TYPES.contains(eventType)) {
@@ -261,6 +286,36 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         return rankPayload(playerId, primaryRank, projectedRanks, event.revision());
     }
 
+    private Map<String, Object> presenceStatePayload(AuthorityEventEnvelope event, String eventType) {
+        requireAggregateType(event, PRESENCE);
+        UUID subjectId = subjectId(event);
+        DataAuthority.PlayerPresenceSnapshot current = loadPresence(subjectId).orElse(null);
+        if (current != null && current.revision() > event.revision()) {
+            return presencePayload(current);
+        }
+
+        Map<?, ?> payload = commandPayload(event);
+        boolean online = !"END_SESSION".equals(eventType);
+        String username = boundedUsername(string(
+            payload.get("username"),
+            current == null ? UNKNOWN : current.username()
+        ));
+        return presencePayload(
+            subjectId,
+            uuid(payload.get("playerId")),
+            username,
+            online,
+            online ? string(payload.get("currentServer"), null) : null,
+            online ? string(payload.get("currentProxy"), null) : null,
+            uuid(payload.get("sessionId")),
+            longValue(
+                payload.get("observedAt"),
+                longValue(payload.get("timestamp"), event.createdAt().toEpochMilli())
+            ),
+            event.revision()
+        );
+    }
+
     private Map<String, Object> matchStatePayload(AuthorityEventEnvelope event) {
         requireAggregateType(event, MATCH);
         UUID matchId = matchId(event);
@@ -302,6 +357,16 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
             return AuthorityStateRestoreResult.skipped(PROJECTION_VERSION, record, "state record is missing playerId");
         }
         return writeGuarded(RANK_TABLE, "player_id", playerId, record)
+            ? AuthorityStateRestoreResult.restored(PROJECTION_VERSION, record)
+            : AuthorityStateRestoreResult.skipped(PROJECTION_VERSION, record, "existing projection is newer or equal");
+    }
+
+    private AuthorityStateRestoreResult restorePresence(AuthorityStateRecord record) {
+        UUID subjectId = subjectId(record);
+        if (subjectId == null) {
+            return AuthorityStateRestoreResult.skipped(PROJECTION_VERSION, record, "state record is missing subjectId");
+        }
+        return writeGuarded(PRESENCE_TABLE, "subject_id", subjectId, record)
             ? AuthorityStateRestoreResult.restored(PROJECTION_VERSION, record)
             : AuthorityStateRestoreResult.skipped(PROJECTION_VERSION, record, "existing projection is newer or equal");
     }
@@ -401,6 +466,10 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         return selectByKey(table, "player_id", playerId);
     }
 
+    private SimpleStatement selectBySubject(String table, UUID subjectId) {
+        return selectByKey(table, "subject_id", subjectId);
+    }
+
     private SimpleStatement selectByKey(String table, String keyColumn, UUID keyValue) {
         return SimpleStatement.newInstance("""
             SELECT %s, aggregate_scope, aggregate_type, aggregate_id, revision,
@@ -413,7 +482,12 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
     }
 
     private void validateReadable(String table) {
-        validateReadable(table, table.equals(MATCH_TABLE) ? "match_id" : "player_id");
+        String keyColumn = switch (table) {
+            case MATCH_TABLE -> "match_id";
+            case PRESENCE_TABLE -> "subject_id";
+            default -> "player_id";
+        };
+        validateReadable(table, keyColumn);
     }
 
     private void validateReadable(String table, String keyColumn) {
@@ -430,6 +504,11 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
     private Optional<DataAuthority.PlayerRankSnapshot> loadRanks(UUID playerId) {
         Row row = session.execute(selectByPlayer(RANK_TABLE, playerId)).one();
         return row == null ? Optional.empty() : Optional.of(rankSnapshot(row));
+    }
+
+    private Optional<DataAuthority.PlayerPresenceSnapshot> loadPresence(UUID subjectId) {
+        Row row = session.execute(selectBySubject(PRESENCE_TABLE, subjectId)).one();
+        return row == null ? Optional.empty() : Optional.of(presenceSnapshot(row));
     }
 
     private Optional<Map<String, Object>> loadStatePayload(String table, String keyColumn, UUID keyValue) {
@@ -450,6 +529,23 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
             string(payload.get("currentProxy"), null),
             longValue(payload.get("totalPlaytimeMs"), 0L),
             stringObjectMap(payload.get("profileData")),
+            longValue(payload.get("revision"), row.getLong("revision")),
+            watermark(row)
+        );
+    }
+
+    private DataAuthority.PlayerPresenceSnapshot presenceSnapshot(Row row) {
+        Map<String, Object> payload = statePayload(row);
+        UUID subjectId = row.getUuid("subject_id");
+        return new DataAuthority.PlayerPresenceSnapshot(
+            subjectId,
+            uuid(payload.get("playerId")),
+            string(payload.get("username"), "unknown"),
+            booleanValue(payload.get("online")),
+            string(payload.get("currentServer"), null),
+            string(payload.get("currentProxy"), null),
+            uuid(payload.get("sessionId")),
+            longValue(payload.get("observedAt"), instant(row, "event_created_at").toEpochMilli()),
             longValue(payload.get("revision"), row.getLong("revision")),
             watermark(row)
         );
@@ -545,6 +641,44 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         return rankPayload(snapshot.playerId(), snapshot.primaryRank(), snapshot.ranks(), snapshot.revision());
     }
 
+    private static Map<String, Object> presencePayload(
+        UUID subjectId,
+        UUID playerId,
+        String username,
+        boolean online,
+        String currentServer,
+        String currentProxy,
+        UUID sessionId,
+        long observedAt,
+        long revision
+    ) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("subjectId", subjectId.toString());
+        values.put("playerId", playerId == null ? null : playerId.toString());
+        values.put("username", username);
+        values.put("online", online);
+        values.put("currentServer", currentServer);
+        values.put("currentProxy", currentProxy);
+        values.put("sessionId", sessionId == null ? null : sessionId.toString());
+        values.put("observedAt", observedAt);
+        values.put("revision", revision);
+        return java.util.Collections.unmodifiableMap(values);
+    }
+
+    private static Map<String, Object> presencePayload(DataAuthority.PlayerPresenceSnapshot snapshot) {
+        return presencePayload(
+            snapshot.subjectId(),
+            snapshot.playerId(),
+            snapshot.username(),
+            snapshot.online(),
+            snapshot.currentServer(),
+            snapshot.currentProxy(),
+            snapshot.sessionId(),
+            snapshot.observedAtEpochMillis(),
+            snapshot.revision()
+        );
+    }
+
     private static Map<String, Object> matchPayload(
         UUID matchId,
         String familyId,
@@ -600,6 +734,17 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
         return UUID.fromString(record.aggregateId());
     }
 
+    private UUID subjectId(AuthorityStateRecord record) {
+        Object rawSubjectId = record.statePayload().get("subjectId");
+        if (rawSubjectId != null && !rawSubjectId.toString().isBlank()) {
+            return UUID.fromString(rawSubjectId.toString());
+        }
+        if (record.aggregateId() == null || record.aggregateId().isBlank()) {
+            return null;
+        }
+        return UUID.fromString(record.aggregateId());
+    }
+
     private UUID matchId(AuthorityStateRecord record) {
         Object rawMatchId = record.statePayload().get("matchId");
         if (rawMatchId != null && !rawMatchId.toString().isBlank()) {
@@ -621,6 +766,22 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
             return payloadPlayerId;
         }
         throw new IllegalArgumentException("Cassandra hot-state event is missing playerId");
+    }
+
+    private static UUID subjectId(AuthorityEventEnvelope event) {
+        UUID aggregateId = uuid(event.aggregateId());
+        if (aggregateId != null) {
+            return aggregateId;
+        }
+        UUID payloadSubjectId = uuid(commandPayload(event).get("subjectId"));
+        if (payloadSubjectId != null) {
+            return payloadSubjectId;
+        }
+        UUID payloadPlayerId = uuid(commandPayload(event).get("playerId"));
+        if (payloadPlayerId != null) {
+            return payloadPlayerId;
+        }
+        throw new IllegalArgumentException("Cassandra hot-state event is missing subjectId");
     }
 
     private static UUID matchId(AuthorityEventEnvelope event) {
@@ -756,6 +917,7 @@ public final class CassandraAuthorityHotStateProjection implements DataAuthority
 
     private static List<String> acceptedEventTypes() {
         java.util.ArrayList<String> values = new java.util.ArrayList<>(PROFILE_EVENT_TYPES);
+        values.addAll(SESSION_EVENT_TYPES);
         values.addAll(RANK_EVENT_TYPES);
         values.addAll(MATCH_EVENT_TYPES);
         return List.copyOf(values);
