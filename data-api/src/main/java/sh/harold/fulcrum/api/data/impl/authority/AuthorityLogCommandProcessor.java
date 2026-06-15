@@ -131,12 +131,12 @@ public final class AuthorityLogCommandProcessor {
         requireEqual("aggregateScope", command.scope(), string(commandRecord.payload().get("aggregateScope")));
         requireEqual(
             "contractFingerprint",
-            DataAuthorityCommandContracts.fingerprint(),
+            AuthorityCommandManifest.fingerprint(),
             string(commandRecord.payload().get("contractFingerprint"))
         );
         requireEqual(
             "routeManifestFingerprint",
-            DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityCommandManifest.routeManifestFingerprint(),
             string(commandRecord.payload().get("routeManifestFingerprint"))
         );
         String topologyRejection = AuthorityTopologyEvidence.commandWireRejection(

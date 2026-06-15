@@ -27,7 +27,7 @@ public final class CachedAuthorityCommandPort implements DataAuthority.CommandPo
         Objects.requireNonNull(command, "command");
         String idempotencyKey = command.idempotencyKey();
         AuthorityCommandFingerprints.Fingerprint fingerprint = AuthorityCommandFingerprints.fingerprint(command);
-        String contractFingerprint = DataAuthorityCommandContracts.fingerprint();
+        String contractFingerprint = AuthorityCommandManifest.fingerprint();
         Optional<CachedCommandResult> cached = read(idempotencyKey);
         if (cached.isPresent()
             && cached.get().commandFingerprint().equals(fingerprint.commandFingerprint())

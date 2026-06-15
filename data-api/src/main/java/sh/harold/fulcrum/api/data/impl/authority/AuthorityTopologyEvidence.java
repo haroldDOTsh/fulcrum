@@ -23,7 +23,7 @@ public final class AuthorityTopologyEvidence {
     ) {
         Objects.requireNonNull(command, "command");
         DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId());
+            AuthorityCommandManifest.declaration(command.declarationId());
         AuthorityCommandRoute effectiveRoute = route == null
             ? AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope())
             : route;
@@ -36,15 +36,15 @@ public final class AuthorityTopologyEvidence {
     ) {
         AuthorityCommandRoute effectiveRoute = Objects.requireNonNull(route, "route");
         DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
+            AuthorityCommandManifest.declaration(declarationId);
         AuthorityDomainTopology.DomainTopology domainTopology =
             AuthorityDomainTopology.domain(contract.domain());
 
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("topologyEvidenceVersion", EVIDENCE_VERSION);
         values.put("schemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
-        values.put("commandContractFingerprint", DataAuthorityCommandContracts.fingerprint());
-        values.put("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+        values.put("commandContractFingerprint", AuthorityCommandManifest.fingerprint());
+        values.put("routeManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint());
         values.put("readContractFingerprint", DataAuthorityReadContracts.fingerprint());
         values.put("authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint());
         values.put("authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint());
@@ -76,7 +76,7 @@ public final class AuthorityTopologyEvidence {
         Map<?, ?> routePayload
     ) {
         DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
+            AuthorityCommandManifest.declaration(declarationId);
         Map<String, Object> topology = forCommandDeclaration(
             declarationId,
             AuthorityCommandRoute.fromPayload(routePayload, declarationId, fallbackScope(contract, scope))
@@ -125,7 +125,7 @@ public final class AuthorityTopologyEvidence {
         Map<?, ?> routePayload
     ) {
         DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
+            AuthorityCommandManifest.declaration(declarationId);
         AuthorityCommandRoute route = AuthorityCommandRoute.fromPayload(
             routePayload,
             declarationId,

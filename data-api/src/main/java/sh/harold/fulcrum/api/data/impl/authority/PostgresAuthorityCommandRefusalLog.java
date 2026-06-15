@@ -138,9 +138,9 @@ public final class PostgresAuthorityCommandRefusalLog {
         String originNode = firstKnown(rawOriginNode, "unknown");
         String targetNode = firstKnown(rawTargetNode, "authority");
         String verifiedPrincipal = AuthorityPrincipals.nodePrincipal(originNode);
-        String expectedContractFingerprint = DataAuthorityCommandContracts.fingerprint();
+        String expectedContractFingerprint = AuthorityCommandManifest.fingerprint();
         String receivedContractFingerprint = firstKnown(string(wire.get("contractFingerprint")), "missing");
-        String expectedRouteManifestFingerprint = DataAuthorityCommandContracts.routeManifestFingerprint();
+        String expectedRouteManifestFingerprint = AuthorityCommandManifest.routeManifestFingerprint();
         String receivedRouteManifestFingerprint = firstKnown(string(wire.get("routeManifestFingerprint")), "missing");
         int contractVersion = intValue(wire.get("schemaVersion"), DataAuthority.COMMAND_SCHEMA_VERSION);
         Map<String, Object> commandPayload = stringObjectMap(mapValue(wire.get("payload")));
@@ -261,7 +261,7 @@ public final class PostgresAuthorityCommandRefusalLog {
 
     private static String declarationId(String declarationId) {
         try {
-            return DataAuthorityCommandContracts.contractByDeclarationId(declarationId).declarationId();
+            return AuthorityCommandManifest.declaration(declarationId).declarationId();
         } catch (RuntimeException ignored) {
             return "unknown";
         }

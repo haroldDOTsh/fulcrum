@@ -85,9 +85,9 @@ final class AuthorityCommandGuardEvidence {
         Map<String, Object> contract = new LinkedHashMap<>();
         contract.put("expectedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
         contract.put("receivedSchemaVersion", receivedSchemaVersion);
-        contract.put("expectedFingerprint", DataAuthorityCommandContracts.fingerprint());
+        contract.put("expectedFingerprint", AuthorityCommandManifest.fingerprint());
         contract.put("receivedFingerprint", receivedContractFingerprint);
-        contract.put("expectedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+        contract.put("expectedRouteManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint());
         contract.put("receivedRouteManifestFingerprint", receivedRouteManifestFingerprint);
 
         Map<String, Object> evidence = new LinkedHashMap<>();
@@ -140,14 +140,14 @@ final class AuthorityCommandGuardEvidence {
             AuthorityCommandLane.DEFAULT_LANE_COUNT
         );
         DataAuthorityCommandContracts.CommandContract commandContract =
-            DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId());
+            AuthorityCommandManifest.declaration(command.declarationId());
         Map<String, Object> contract = new LinkedHashMap<>();
         contract.put("expectedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
         contract.put("receivedSchemaVersion", command.manifest().schemaVersion());
-        contract.put("expectedFingerprint", DataAuthorityCommandContracts.fingerprint());
-        contract.put("receivedFingerprint", DataAuthorityCommandContracts.fingerprint());
-        contract.put("expectedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
-        contract.put("receivedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+        contract.put("expectedFingerprint", AuthorityCommandManifest.fingerprint());
+        contract.put("receivedFingerprint", AuthorityCommandManifest.fingerprint());
+        contract.put("expectedRouteManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint());
+        contract.put("receivedRouteManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint());
         contract.put("deliveryMode", commandContract.deliveryMode().name());
 
         Map<String, Object> evidence = new LinkedHashMap<>();
@@ -198,7 +198,7 @@ final class AuthorityCommandGuardEvidence {
             Map.of(
                 "expectedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION,
                 "receivedSchemaVersion", command.manifest().schemaVersion(),
-                "contractFingerprint", DataAuthorityCommandContracts.fingerprint()
+                "contractFingerprint", AuthorityCommandManifest.fingerprint()
             )
         ));
         decisions.add(decision(
@@ -206,7 +206,7 @@ final class AuthorityCommandGuardEvidence {
             PASSED,
             "command route policy manifest used by executable authority route contract",
             Map.of(
-                "routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint(),
+                "routeManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint(),
                 "route", AuthorityCommandRoute.fromCommand(command).payload()
             )
         ));
@@ -286,25 +286,25 @@ final class AuthorityCommandGuardEvidence {
         decisions.add(decision(
             "schemaContract",
             receivedSchemaVersion == DataAuthority.COMMAND_SCHEMA_VERSION
-                && DataAuthorityCommandContracts.fingerprint().equals(receivedContractFingerprint)
+                && AuthorityCommandManifest.fingerprint().equals(receivedContractFingerprint)
                 ? PASSED
                 : FAILED,
             "pre-submit wire contract compared with executable authority contract",
             Map.of(
                 "expectedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION,
                 "receivedSchemaVersion", receivedSchemaVersion,
-                "expectedFingerprint", DataAuthorityCommandContracts.fingerprint(),
+                "expectedFingerprint", AuthorityCommandManifest.fingerprint(),
                 "receivedFingerprint", receivedContractFingerprint
             )
         ));
         decisions.add(decision(
             "routeManifest",
-            DataAuthorityCommandContracts.routeManifestFingerprint().equals(receivedRouteManifestFingerprint)
+            AuthorityCommandManifest.routeManifestFingerprint().equals(receivedRouteManifestFingerprint)
                 ? PASSED
                 : FAILED,
             "pre-submit route policy manifest compared with executable authority route contract",
             Map.of(
-                "expectedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint(),
+                "expectedRouteManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint(),
                 "receivedRouteManifestFingerprint", receivedRouteManifestFingerprint
             )
         ));
@@ -336,7 +336,7 @@ final class AuthorityCommandGuardEvidence {
     private static void attachPreSubmitTopology(Map<String, Object> evidence, Map<String, Object> wire) {
         try {
             DataAuthorityCommandContracts.CommandContract contract =
-                DataAuthorityCommandContracts.contractByDeclarationId(
+                AuthorityCommandManifest.declaration(
                     firstKnown(string(wire.get("declarationId")), "unknown")
                 );
             AuthorityTopologyEvidence.attach(
@@ -350,8 +350,8 @@ final class AuthorityCommandGuardEvidence {
                 "topologyEvidenceVersion", 1,
                 "status", "UNRESOLVED",
                 "reason", "declaration id could not be resolved",
-                "commandContractFingerprint", DataAuthorityCommandContracts.fingerprint(),
-                "routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint(),
+                "commandContractFingerprint", AuthorityCommandManifest.fingerprint(),
+                "routeManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint(),
                 "readContractFingerprint", DataAuthorityReadContracts.fingerprint(),
                 "authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint(),
                 "authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint(),

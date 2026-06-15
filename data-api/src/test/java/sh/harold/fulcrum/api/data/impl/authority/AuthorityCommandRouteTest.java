@@ -58,7 +58,7 @@ class AuthorityCommandRouteTest {
             "static AuthorityCommandRoute fromCommand",
             "static AuthorityCommandRoute fromDeclarationId"
         ))
-            .contains("DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId())")
+            .contains("AuthorityCommandManifest.declaration(command.declarationId())")
             .contains("fromDeclarationId(contract.declarationId(), command.scope())")
             .doesNotContain("from(command.declarationId(), command.scope())");
         assertThat(source).doesNotContain("static AuthorityCommandRoute from(String type");

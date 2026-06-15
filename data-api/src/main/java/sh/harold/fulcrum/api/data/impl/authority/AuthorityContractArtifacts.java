@@ -50,8 +50,8 @@ public final class AuthorityContractArtifacts {
         return new TraceabilityManifest(
             schema.version(),
             schema.fingerprint(),
-            DataAuthorityCommandContracts.fingerprint(),
-            DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityCommandManifest.fingerprint(),
+            AuthorityCommandManifest.routeManifestFingerprint(),
             AuthorityDomainTopology.fingerprint(),
             DataAuthorityReadContracts.fingerprint(),
             AuthorityStorePlacements.fingerprint(),
@@ -103,7 +103,7 @@ public final class AuthorityContractArtifacts {
 
     private static List<CommandRow> commandRows(FulcrumSchemaContract schema) {
         Map<String, AuthorityLogTopicPolicy> policiesByTopic = AuthorityLogTopology.policiesByTopic();
-        return DataAuthorityCommandContracts.allByDeclarationId().values().stream()
+        return AuthorityCommandManifest.allByDeclarationId().values().stream()
             .sorted(Comparator.comparing(DataAuthorityCommandContracts.CommandContract::declarationId))
             .map(contract -> commandRow(schema, policiesByTopic, contract))
             .toList();
@@ -191,7 +191,7 @@ public final class AuthorityContractArtifacts {
             GeneratedArtifactKind.TYPED_CLIENT,
             "command:" + command.declarationId(),
             "generated/authority/client/commands/" + command.declarationId() + ".java",
-            DataAuthorityCommandContracts.fingerprint(),
+            AuthorityCommandManifest.fingerprint(),
             List.of(
                 "command-contract:" + command.declarationId(),
                 "route:" + command.commandTopic(),
@@ -208,7 +208,7 @@ public final class AuthorityContractArtifacts {
             GeneratedArtifactKind.COMMAND_SERIALIZER,
             "command:" + command.declarationId(),
             "generated/authority/serializers/" + command.declarationId() + "Serializer.java",
-            DataAuthorityCommandContracts.fingerprint(),
+            AuthorityCommandManifest.fingerprint(),
             List.of(
                 "command-contract:" + command.declarationId(),
                 "command-class:" + command.commandClassName(),
@@ -225,7 +225,7 @@ public final class AuthorityContractArtifacts {
             GeneratedArtifactKind.PROJECTION_WRITER,
             "command:" + command.declarationId(),
             "generated/authority/projections/" + command.domain() + "/" + command.declarationId() + "ProjectionWriter.java",
-            DataAuthorityCommandContracts.fingerprint(),
+            AuthorityCommandManifest.fingerprint(),
             List.of(
                 "command-contract:" + command.declarationId(),
                 "event-topic:" + command.eventTopic(),

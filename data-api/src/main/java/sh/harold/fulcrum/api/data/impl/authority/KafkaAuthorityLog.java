@@ -259,7 +259,7 @@ public final class KafkaAuthorityLog implements AuthorityLog, AutoCloseable {
         headers.put("authority-partition", Integer.toString(partition));
         headers.put("authority-retention-class", policy.retentionClass());
         headers.put("authority-key-rule", policy.keyRule());
-        headers.put("authority-route-manifest-fingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+        headers.put("authority-route-manifest-fingerprint", AuthorityCommandManifest.routeManifestFingerprint());
         return Map.copyOf(headers);
     }
 

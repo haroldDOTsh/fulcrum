@@ -36,7 +36,7 @@ public final class DataAuthorityCustodyPreflight {
         return new Report(
             normalize(ownerNode, "ownerNode"),
             normalize(principalSource, "principalSource"),
-            DataAuthorityCommandContracts.fingerprint(),
+            AuthorityCommandManifest.fingerprint(),
             DataAuthorityReadContracts.fingerprint(),
             results
         );

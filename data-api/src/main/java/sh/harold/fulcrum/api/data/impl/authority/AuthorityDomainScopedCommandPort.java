@@ -24,7 +24,7 @@ public final class AuthorityDomainScopedCommandPort implements DataAuthority.Com
     @Override
     public CompletionStage<DataAuthority.CommandResult> submit(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
-        String commandDomain = DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId()).domain();
+        String commandDomain = AuthorityCommandManifest.declaration(command.declarationId()).domain();
         if (!domain.equals(commandDomain)) {
             return CompletableFuture.completedFuture(new DataAuthority.CommandResult(
                 command.commandId(),

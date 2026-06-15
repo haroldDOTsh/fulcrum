@@ -25,7 +25,7 @@ record AuthorityCommandFrame(
             throw new IllegalArgumentException("commandId is required");
         }
         DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
+            AuthorityCommandManifest.declaration(declarationId);
         route = route == null ? AuthorityCommandRoute.fromDeclarationId(declarationId, scope) : route;
         provenance = provenance == null ? DataAuthority.CommandProvenance.unknown() : provenance;
         payload = payload == null ? Map.of() : Map.copyOf(payload);
@@ -44,7 +44,7 @@ record AuthorityCommandFrame(
         DataAuthorityCommandContracts.validate(command);
         DataAuthority.CommandManifest manifest = command.manifest();
         DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contractByDeclarationId(manifest.declarationId());
+            AuthorityCommandManifest.declaration(manifest.declarationId());
         return new AuthorityCommandFrame(
             manifest.commandId(),
             contract.declarationId(),
@@ -92,8 +92,8 @@ record AuthorityCommandFrame(
         values.put("fencingToken", fencingToken);
         values.put("expectedRevision", expectedRevision);
         values.put("schemaVersion", schemaVersion);
-        values.put("contractFingerprint", DataAuthorityCommandContracts.fingerprint());
-        values.put("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+        values.put("contractFingerprint", AuthorityCommandManifest.fingerprint());
+        values.put("routeManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint());
         values.put("readContractFingerprint", DataAuthorityReadContracts.fingerprint());
         values.put("authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint());
         values.put("authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint());
