@@ -49,8 +49,9 @@ class AuthorityLogCommandPortTest {
             assertThat(record.key()).isEqualTo(command.scope());
             assertThat(record.payload())
                 .containsEntry("frameType", "COMMAND")
-                .containsEntry("commandType", command.type().name())
-                .containsKey("commandFingerprint");
+                .containsEntry("declarationId", declarationId(command))
+                .containsKey("commandFingerprint")
+                .doesNotContainKey("commandType");
         });
         assertThat(events).singleElement().satisfies(record -> {
             assertThat(record.kind()).isEqualTo(AuthorityLogTopicKind.EVENT);
@@ -708,6 +709,10 @@ class AuthorityLogCommandPortTest {
             DataAuthority.RejectionReason.STALE_REVISION,
             "stale revision"
         ).withRefusalReceipt(receipt);
+    }
+
+    private static String declarationId(DataAuthority.AuthorityCommand command) {
+        return DataAuthorityCommandContracts.contract(command.type()).declarationId();
     }
 
     @SuppressWarnings("unchecked")

@@ -62,7 +62,7 @@ class AuthorityLogTopologyTest {
         AuthorityLogRecord record = log.append(
             route,
             AuthorityLogTopicKind.COMMAND,
-            payload("commandType", "GRANT_RANK")
+            payload("declarationId", "GRANT_RANK")
         );
 
         assertThat(record.topic()).isEqualTo("cmd.rank");

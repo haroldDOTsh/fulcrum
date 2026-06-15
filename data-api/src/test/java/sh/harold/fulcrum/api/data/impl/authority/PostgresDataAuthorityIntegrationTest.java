@@ -1334,7 +1334,9 @@ class PostgresDataAuthorityIntegrationTest {
                     .isEqualTo(result.settlement().watermark().sourceEventId());
                 assertThat(rows.getString("payload_hash")).isNotBlank();
                 assertThat(rows.getString("command_fingerprint")).isNotBlank();
-                assertThat(rows.getString("manifest_payload")).contains("\"commandType\": \"GRANT_RANK\"");
+                assertThat(rows.getString("manifest_payload"))
+                    .contains("\"declarationId\": \"GRANT_RANK\"")
+                    .doesNotContain("\"commandType\"");
                 assertThat(rows.getString("command_payload")).contains("\"primaryRank\": \"ADMIN\"");
                 assertThat(rows.getTimestamp("completed_at")).isNotNull();
                 assertThat(rows.next()).isFalse();
@@ -1421,7 +1423,7 @@ class PostgresDataAuthorityIntegrationTest {
 
         Map<String, Object> wire = new LinkedHashMap<>();
         wire.put("commandId", commandId.toString());
-        wire.put("commandType", DataAuthority.CommandType.GRANT_RANK.name());
+        wire.put("declarationId", "GRANT_RANK");
         wire.put("actorId", "rank-service");
         wire.put("scope", "rank:player:" + scopedPlayerId);
         wire.put("idempotencyKey", "rank-refusal:" + commandId);

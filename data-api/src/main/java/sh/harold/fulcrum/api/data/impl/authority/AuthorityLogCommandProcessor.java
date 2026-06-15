@@ -126,7 +126,7 @@ public final class AuthorityLogCommandProcessor {
             );
         }
         requireEqual("commandId", command.commandId().toString(), string(commandRecord.payload().get("commandId")));
-        requireEqual("commandType", command.type().name(), string(commandRecord.payload().get("commandType")));
+        requireEqual("declarationId", frame.declarationId(), string(commandRecord.payload().get("declarationId")));
         requireEqual("aggregateScope", command.scope(), string(commandRecord.payload().get("aggregateScope")));
         requireEqual(
             "contractFingerprint",

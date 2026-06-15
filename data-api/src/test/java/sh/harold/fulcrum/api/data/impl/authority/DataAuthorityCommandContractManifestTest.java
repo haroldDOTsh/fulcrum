@@ -26,7 +26,7 @@ class DataAuthorityCommandContractManifestTest {
         );
         for (DataAuthorityCommandContracts.CommandContract contract : CONTRACTS.values()) {
             assertThat(contract.declarationId()).as(contract.type() + " declaration id")
-                .isEqualTo(contract.type().name());
+                .isNotBlank();
             assertThat(contract.allowedPayloadFields())
                 .as(contract.type() + " allowed payload fields")
                 .containsAll(contract.requiredPayloadFields());
@@ -180,7 +180,9 @@ class DataAuthorityCommandContractManifestTest {
             assertThat(AuthorityCommandRoute.fromCommand(decoded).domain()).isEqualTo(contract.domain());
             AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(decoded);
             assertThat(frame.manifestPayload())
-                .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+                .containsEntry("declarationId", contract.declarationId())
+                .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
+                .doesNotContainKey("commandType");
             assertThat(AuthorityCommandPayloads.payload(frame.toCommand()))
                 .isEqualTo(AuthorityCommandPayloads.payload(decoded));
         }
@@ -195,6 +197,7 @@ class DataAuthorityCommandContractManifestTest {
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
             command.type(),
+            declarationId(command),
             command.actorId(),
             command.scope(),
             command.idempotencyKey(),
@@ -215,6 +218,7 @@ class DataAuthorityCommandContractManifestTest {
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
             command.type(),
+            declarationId(command),
             command.actorId(),
             command.scope(),
             command.idempotencyKey(),
@@ -235,6 +239,7 @@ class DataAuthorityCommandContractManifestTest {
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
             command.type(),
+            declarationId(command),
             command.actorId(),
             command.scope(),
             command.idempotencyKey(),
@@ -256,6 +261,7 @@ class DataAuthorityCommandContractManifestTest {
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
             command.type(),
+            declarationId(command),
             command.actorId(),
             command.scope(),
             command.idempotencyKey(),
@@ -281,6 +287,7 @@ class DataAuthorityCommandContractManifestTest {
         assertThatThrownBy(() -> new AuthorityCommandFrame(
             command.commandId(),
             command.type(),
+            declarationId(command),
             command.actorId(),
             command.scope(),
             command.idempotencyKey(),
@@ -388,6 +395,10 @@ class DataAuthorityCommandContractManifestTest {
             case GRANT_RANK, REVOKE_RANK -> 1L;
             default -> DataAuthority.ANY_REVISION;
         };
+    }
+
+    private static String declarationId(DataAuthority.AuthorityCommand command) {
+        return DataAuthorityCommandContracts.contract(command.type()).declarationId();
     }
 
     private static DataAuthority.CommandManifest manifest(

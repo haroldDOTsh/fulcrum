@@ -94,7 +94,7 @@ final class AuthorityCommandGuardEvidence {
         evidence.put("guardEvidenceVersion", EVIDENCE_VERSION);
         evidence.put("phase", "PRE_SUBMIT_REFUSAL");
         evidence.put("commandId", result.commandId().toString());
-        evidence.put("commandType", firstKnown(string(safeWire.get("commandType")), "unknown"));
+        evidence.put("declarationId", firstKnown(string(safeWire.get("declarationId")), "unknown"));
         evidence.put("aggregateScope", firstKnown(string(safeWire.get("scope")), "unknown"));
         evidence.put("idempotencyKey", firstKnown(string(safeWire.get("idempotencyKey")), "unknown"));
         evidence.put("claimedActor", firstKnown(string(safeWire.get("actorId")), "unknown"));
@@ -139,6 +139,8 @@ final class AuthorityCommandGuardEvidence {
             route,
             AuthorityCommandLane.DEFAULT_LANE_COUNT
         );
+        DataAuthorityCommandContracts.CommandContract commandContract =
+            DataAuthorityCommandContracts.contract(command.type());
         Map<String, Object> contract = new LinkedHashMap<>();
         contract.put("expectedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
         contract.put("receivedSchemaVersion", command.manifest().schemaVersion());
@@ -146,13 +148,13 @@ final class AuthorityCommandGuardEvidence {
         contract.put("receivedFingerprint", DataAuthorityCommandContracts.fingerprint());
         contract.put("expectedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
         contract.put("receivedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
-        contract.put("deliveryMode", DataAuthorityCommandContracts.deliveryMode(command.type()).name());
+        contract.put("deliveryMode", commandContract.deliveryMode().name());
 
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("guardEvidenceVersion", EVIDENCE_VERSION);
         evidence.put("phase", phase);
         evidence.put("commandId", command.commandId().toString());
-        evidence.put("commandType", command.type().name());
+        evidence.put("declarationId", commandContract.declarationId());
         evidence.put("aggregateScope", command.scope());
         evidence.put("idempotencyKey", command.idempotencyKey());
         evidence.put("claimedActor", command.actorId());
@@ -333,12 +335,13 @@ final class AuthorityCommandGuardEvidence {
 
     private static void attachPreSubmitTopology(Map<String, Object> evidence, Map<String, Object> wire) {
         try {
-            DataAuthority.CommandType type = DataAuthority.CommandType.valueOf(
-                firstKnown(string(wire.get("commandType")), "unknown")
-            );
+            DataAuthorityCommandContracts.CommandContract contract =
+                DataAuthorityCommandContracts.contractByDeclarationId(
+                    firstKnown(string(wire.get("declarationId")), "unknown")
+                );
             AuthorityTopologyEvidence.attach(
                 evidence,
-                type,
+                contract.type(),
                 string(wire.get("scope")),
                 mapValue(wire.get("route"))
             );
@@ -346,7 +349,7 @@ final class AuthorityCommandGuardEvidence {
             evidence.put("topology", Map.of(
                 "topologyEvidenceVersion", 1,
                 "status", "UNRESOLVED",
-                "reason", "command type could not be resolved",
+                "reason", "declaration id could not be resolved",
                 "commandContractFingerprint", DataAuthorityCommandContracts.fingerprint(),
                 "routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint(),
                 "readContractFingerprint", DataAuthorityReadContracts.fingerprint(),

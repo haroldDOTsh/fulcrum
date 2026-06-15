@@ -47,7 +47,7 @@ class KafkaAuthorityLogLiveTest {
                     route,
                     AuthorityLogTopicKind.COMMAND,
                     Map.of(
-                        "commandType", "GRANT_RANK",
+                        "declarationId", "GRANT_RANK",
                         "playerId", playerId.toString()
                     )
                 );
@@ -70,7 +70,7 @@ class KafkaAuthorityLogLiveTest {
                     assertThat(record.key()).isEqualTo(appended.key());
                     assertThat(record.partition()).isEqualTo(appended.partition());
                     assertThat(record.offset()).isEqualTo(appended.offset());
-                    assertThat(record.payload()).containsEntry("commandType", "GRANT_RANK");
+                    assertThat(record.payload()).containsEntry("declarationId", "GRANT_RANK");
                 });
             }
         }

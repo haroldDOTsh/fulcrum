@@ -144,13 +144,15 @@ public final class PostgresAuthorityCommandRefusalLog {
         String receivedRouteManifestFingerprint = firstKnown(string(wire.get("routeManifestFingerprint")), "missing");
         int contractVersion = intValue(wire.get("schemaVersion"), DataAuthority.COMMAND_SCHEMA_VERSION);
         Map<String, Object> commandPayload = stringObjectMap(mapValue(wire.get("payload")));
+        String declarationId = firstKnown(string(wire.get("declarationId")), "unknown");
+        String commandType = commandType(declarationId);
         String payloadHash = AuthorityCommandFingerprints.hash(
             AuthorityCommandFingerprints.canonicalJson(commandPayload)
         );
 
         Map<String, Object> manifestPayload = new LinkedHashMap<>();
         manifestPayload.put("commandId", result.commandId().toString());
-        manifestPayload.put("commandType", firstKnown(string(wire.get("commandType")), "unknown"));
+        manifestPayload.put("declarationId", declarationId);
         manifestPayload.put("actorId", firstKnown(string(wire.get("actorId")), "unknown"));
         manifestPayload.put("scope", firstKnown(string(wire.get("scope")), "unknown"));
         manifestPayload.put("idempotencyKey", firstKnown(string(wire.get("idempotencyKey")), "unknown"));
@@ -171,7 +173,7 @@ public final class PostgresAuthorityCommandRefusalLog {
         Map<String, Object> fingerprintMaterial = new LinkedHashMap<>();
         fingerprintMaterial.put("preSubmitRefusal", true);
         fingerprintMaterial.put("commandId", result.commandId().toString());
-        fingerprintMaterial.put("commandType", manifestPayload.get("commandType"));
+        fingerprintMaterial.put("declarationId", manifestPayload.get("declarationId"));
         fingerprintMaterial.put("actorId", manifestPayload.get("actorId"));
         fingerprintMaterial.put("verifiedPrincipal", verifiedPrincipal);
         fingerprintMaterial.put("scope", manifestPayload.get("scope"));
@@ -187,7 +189,7 @@ public final class PostgresAuthorityCommandRefusalLog {
 
         return new RefusalFrame(
             UUID.randomUUID(),
-            string(manifestPayload.get("commandType")),
+            commandType,
             string(manifestPayload.get("scope")),
             string(manifestPayload.get("idempotencyKey")),
             string(manifestPayload.get("actorId")),
@@ -255,6 +257,14 @@ public final class PostgresAuthorityCommandRefusalLog {
 
     private static String firstKnown(String value, String fallback) {
         return value == null || value.isBlank() || "unknown".equalsIgnoreCase(value) ? fallback : value;
+    }
+
+    private static String commandType(String declarationId) {
+        try {
+            return DataAuthorityCommandContracts.contractByDeclarationId(declarationId).type().name();
+        } catch (RuntimeException ignored) {
+            return "unknown";
+        }
     }
 
     private static String truncate(String value, int maxLength) {

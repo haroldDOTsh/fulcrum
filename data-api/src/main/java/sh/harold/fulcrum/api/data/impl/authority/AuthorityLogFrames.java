@@ -118,7 +118,7 @@ final class AuthorityLogFrames {
         return new MapBuilder()
             .put("frameType", "COMMAND")
             .put("commandId", command.commandId().toString())
-            .put("commandType", command.type().name())
+            .put("declarationId", frame.declarationId())
             .put("aggregateScope", command.scope())
             .put("idempotencyKey", command.idempotencyKey())
             .put("actorId", command.actorId())

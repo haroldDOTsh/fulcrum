@@ -43,7 +43,7 @@ class AuthorityCommandGuardEvidenceTest {
             .containsEntry("guardEvidenceVersion", 1)
             .containsEntry("phase", "TERMINAL")
             .containsEntry("commandId", command.commandId().toString())
-            .containsEntry("commandType", "GRANT_RANK")
+            .containsEntry("declarationId", "GRANT_RANK")
             .containsEntry("aggregateScope", command.scope());
         assertThat(map(evidence.payload().get("contract")))
             .containsEntry("expectedFingerprint", DataAuthorityCommandContracts.fingerprint())
@@ -91,7 +91,7 @@ class AuthorityCommandGuardEvidenceTest {
         UUID scopedPlayerId = UUID.randomUUID();
         Map<String, Object> wire = new LinkedHashMap<>();
         wire.put("commandId", commandId.toString());
-        wire.put("commandType", "GRANT_RANK");
+        wire.put("declarationId", "GRANT_RANK");
         wire.put("actorId", "rank-service");
         wire.put("scope", "rank:player:" + scopedPlayerId);
         wire.put("idempotencyKey", "rank-refusal:" + commandId);

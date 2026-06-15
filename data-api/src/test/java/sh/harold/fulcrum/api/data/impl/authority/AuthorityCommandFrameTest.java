@@ -43,7 +43,9 @@ class AuthorityCommandFrameTest {
         assertThat(storedFrame.route().commandTopic()).isEqualTo("cmd.rank");
         assertThat(storedFrame.route().partitionKey()).isEqualTo("rank:player:" + playerId);
         assertThat(storedFrame.manifestPayload())
-            .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+            .containsEntry("declarationId", "GRANT_RANK")
+            .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
+            .doesNotContainKey("commandType");
 
         DataAuthority.AuthorityCommand restored = AuthorityCommandFrame.fromPayloads(
             storedFrame.manifestPayload(),
@@ -57,6 +59,35 @@ class AuthorityCommandFrameTest {
         assertThat(AuthorityCommandPayloads.payload(restored)).isEqualTo(AuthorityCommandPayloads.payload(command));
         assertThat(AuthorityCommandFingerprints.fingerprint(restored).commandFingerprint())
             .isEqualTo(AuthorityCommandFingerprints.fingerprint(command).commandFingerprint());
+    }
+
+    @Test
+    void storedFrameRequiresDeclarationIdInManifestPayload() {
+        UUID commandId = UUID.randomUUID();
+        UUID playerId = UUID.randomUUID();
+        DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
+            DataAuthority.CommandManifest.create(
+                commandId,
+                DataAuthority.CommandType.GRANT_RANK,
+                "rank-service",
+                "rank:player:" + playerId,
+                "rank:" + commandId,
+                1_800_000_000_000L,
+                "8",
+                4L
+            ),
+            playerId,
+            "ADMIN",
+            List.of("DEFAULT", "ADMIN")
+        );
+        AuthorityCommandFrame storedFrame = AuthorityCommandFrame.fromCommand(command);
+        Map<String, Object> manifestPayload = new java.util.LinkedHashMap<>(storedFrame.manifestPayload());
+        manifestPayload.remove("declarationId");
+
+        assertThatThrownBy(() -> AuthorityCommandFrame.fromPayloads(
+            manifestPayload,
+            Map.copyOf(storedFrame.payload())
+        )).hasMessageContaining("declarationId is required");
     }
 
     @Test

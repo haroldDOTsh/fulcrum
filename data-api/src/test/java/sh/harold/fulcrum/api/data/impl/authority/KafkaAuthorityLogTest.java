@@ -45,14 +45,14 @@ class KafkaAuthorityLogTest {
         AuthorityLogRecord record = log.append(
             route,
             AuthorityLogTopicKind.COMMAND,
-            Map.of("commandType", "GRANT_RANK")
+            Map.of("declarationId", "GRANT_RANK")
         );
 
         ProducerRecord<String, String> produced = producer.history().get(0);
         assertThat(produced.topic()).isEqualTo(route.commandTopic());
         assertThat(produced.key()).isEqualTo(route.partitionKey());
         assertThat(produced.partition()).isEqualTo(AuthorityLogTopology.partition(route));
-        assertThat(produced.value()).contains("\"commandType\":\"GRANT_RANK\"");
+        assertThat(produced.value()).contains("\"declarationId\":\"GRANT_RANK\"");
         assertThat(new String(produced.headers().lastHeader("authority-log-kind").value(), StandardCharsets.UTF_8))
             .isEqualTo("COMMAND");
         assertThat(new String(produced.headers().lastHeader("authority-key-rule").value(), StandardCharsets.UTF_8))

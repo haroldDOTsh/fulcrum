@@ -46,10 +46,17 @@ public final class DataAuthorityCommandContracts {
 
     public static CommandContract contract(DataAuthority.CommandType type) {
         Objects.requireNonNull(type, "type");
-        return contractByDeclarationId(type.name());
+        CommandContract contract = CONTRACTS_BY_TYPE.get(type);
+        if (contract == null) {
+            throw new IllegalArgumentException("No authority command contract for " + type);
+        }
+        return contract;
     }
 
     public static CommandContract contractByDeclarationId(String declarationId) {
+        if (declarationId == null || declarationId.isBlank()) {
+            throw new IllegalArgumentException("declarationId is required");
+        }
         CommandContract contract = CONTRACTS_BY_DECLARATION_ID.get(declarationId);
         if (contract == null) {
             throw new IllegalArgumentException("No authority command contract for " + declarationId);

@@ -11,6 +11,7 @@ import java.util.UUID;
 record AuthorityCommandFrame(
     UUID commandId,
     DataAuthority.CommandType type,
+    String declarationId,
     String actorId,
     String scope,
     String idempotencyKey,
@@ -26,8 +27,15 @@ record AuthorityCommandFrame(
         if (commandId == null) {
             throw new IllegalArgumentException("commandId is required");
         }
+        DataAuthorityCommandContracts.CommandContract contract =
+            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
         if (type == null) {
-            throw new IllegalArgumentException("type is required");
+            type = contract.type();
+        }
+        if (contract.type() != type) {
+            throw new IllegalArgumentException(
+                "Command declaration " + declarationId + " does not match command type " + type
+            );
         }
         route = route == null ? AuthorityCommandRoute.from(type, scope) : route;
         provenance = provenance == null ? DataAuthority.CommandProvenance.unknown() : provenance;
@@ -46,9 +54,11 @@ record AuthorityCommandFrame(
     static AuthorityCommandFrame fromCommand(DataAuthority.AuthorityCommand command) {
         DataAuthorityCommandContracts.validate(command);
         DataAuthority.CommandManifest manifest = command.manifest();
+        DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contract(manifest.type());
         return new AuthorityCommandFrame(
             manifest.commandId(),
             manifest.type(),
+            contract.declarationId(),
             manifest.actorId(),
             manifest.scope(),
             manifest.idempotencyKey(),
@@ -63,12 +73,16 @@ record AuthorityCommandFrame(
     }
 
     static AuthorityCommandFrame fromPayloads(Map<String, Object> manifestPayload, Map<String, Object> commandPayload) {
-        DataAuthority.CommandType type = DataAuthority.CommandType.valueOf(string(manifestPayload.get("commandType")));
+        String declarationId = string(manifestPayload.get("declarationId"));
+        DataAuthorityCommandContracts.CommandContract contract =
+            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
+        DataAuthority.CommandType type = contract.type();
         String scope = string(manifestPayload.get("scope"));
         DataAuthority.CommandProvenance provenance = provenance(mapValue(manifestPayload.get("provenance")));
         return new AuthorityCommandFrame(
             uuid(manifestPayload.get("commandId")),
             type,
+            declarationId,
             string(manifestPayload.get("actorId")),
             scope,
             string(manifestPayload.get("idempotencyKey")),
@@ -85,7 +99,7 @@ record AuthorityCommandFrame(
     Map<String, Object> manifestPayload() {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("commandId", commandId.toString());
-        values.put("commandType", type.name());
+        values.put("declarationId", declarationId);
         values.put("actorId", actorId);
         values.put("scope", scope);
         values.put("idempotencyKey", idempotencyKey);
