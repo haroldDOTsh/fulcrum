@@ -27,6 +27,9 @@ class CanonicalSchemaDdlBoundaryTest {
         "(?s)(?:DataAuthority\\.CommandManifest\\.create|"
             + "new\\s+DataAuthority\\.(?:PlayerProfileCommand|PlayerSessionCommand|PlayerRankCommand|MatchCommand)\\s*\\()"
     );
+    private static final Pattern RAW_AUTHORITY_COMMAND_ACTOR = Pattern.compile(
+        "(?s)AuthorityCommands\\.actor\\s*\\("
+    );
     private static final Pattern MESSAGE_BUS_AUTHORITY_INGRESS = Pattern.compile(
         "(?s)MessageBusDataAuthority(?:Client|Provider)|"
             + "fulcrum\\.authority\\.(?:profile|rank)\\.read|"
@@ -104,6 +107,31 @@ class CanonicalSchemaDdlBoundaryTest {
     }
 
     @Test
+    void gameNodeProductionCodeDoesNotClaimAuthorityCommandActors() throws IOException {
+        Path repoRoot = repoRoot();
+        List<String> violations = new ArrayList<>();
+
+        for (String root : List.of("runtime/src/main", "runtime-velocity/src/main")) {
+            Path moduleRoot = repoRoot.resolve(root);
+            if (!Files.exists(moduleRoot)) {
+                continue;
+            }
+            try (Stream<Path> paths = Files.walk(moduleRoot)) {
+                paths.filter(Files::isRegularFile)
+                    .filter(path -> hasScannedExtension(repoRoot.relativize(path).toString().replace('\\', '/')))
+                    .filter(CanonicalSchemaDdlBoundaryTest::containsRawAuthorityCommandActor)
+                    .map(path -> repoRoot.relativize(path).toString().replace('\\', '/'))
+                    .sorted()
+                    .forEach(violations::add);
+            }
+        }
+
+        assertThat(violations)
+            .as("Game-node runtime modules must let transport provenance stamp authority command actors")
+            .isEmpty();
+    }
+
+    @Test
     void productionCodeDoesNotExposeMessageBusAuthorityCommandIngress() throws IOException {
         Path repoRoot = repoRoot();
         List<String> violations = new ArrayList<>();
@@ -174,6 +202,15 @@ class CanonicalSchemaDdlBoundaryTest {
         try {
             String contents = Files.readString(path, StandardCharsets.UTF_8);
             return HAND_ASSEMBLED_AUTHORITY_ENVELOPE.matcher(stripComments(path, contents)).find();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to read " + path, exception);
+        }
+    }
+
+    private static boolean containsRawAuthorityCommandActor(Path path) {
+        try {
+            String contents = Files.readString(path, StandardCharsets.UTF_8);
+            return RAW_AUTHORITY_COMMAND_ACTOR.matcher(stripComments(path, contents)).find();
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to read " + path, exception);
         }

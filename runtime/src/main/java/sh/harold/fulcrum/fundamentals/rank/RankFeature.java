@@ -305,7 +305,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
 
         long now = System.currentTimeMillis();
         List<String> rankNames = safeRanks.stream().map(Enum::name).collect(Collectors.toList());
-        AuthorityCommands.RankCommands rankCommands = AuthorityCommands.actor("rank-service").rank(playerId);
+        AuthorityCommands.RankCommands rankCommands = AuthorityCommands.transport().rank(playerId);
         DataAuthority.PlayerRankCommand command = switch (declarationId) {
             case "GRANT_RANK" -> rankCommands.grantRank(safePrimary.name(), rankNames, expectedRevision, now);
             case "REVOKE_RANK" -> rankCommands.revokeRank(safePrimary.name(), rankNames, expectedRevision, now);

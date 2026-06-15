@@ -67,7 +67,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     }
 
     private void submitPlayerCommand(String declarationId, PlayerSnapshot snapshot) {
-        AuthorityCommands.PlayerCommands playerCommands = AuthorityCommands.actor("paper-runtime")
+        AuthorityCommands.PlayerCommands playerCommands = AuthorityCommands.transport()
             .player(snapshot.playerId());
         DataAuthority.PlayerProfileCommand command = "RECORD_PLAYER_LOGIN".equals(declarationId)
             ? playerCommands.recordLogin(

@@ -77,7 +77,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     private void submitPlayerCommand(Player player, String declarationId) {
         long now = System.currentTimeMillis();
         UUID sessionId = sessionId(player, declarationId);
-        AuthorityCommands.SessionCommands sessionCommands = AuthorityCommands.actor("velocity-proxy")
+        AuthorityCommands.SessionCommands sessionCommands = AuthorityCommands.transport()
             .session(player.getUniqueId());
         String currentServer = currentServer(player);
         String lastIp = player.getRemoteAddress() != null

@@ -469,9 +469,7 @@ public final class MinigameEngine {
             return;
         }
         long now = System.currentTimeMillis();
-        AuthorityCommands.MatchCommands matchCommands = AuthorityCommands.actor(
-            serverIdentifier != null ? serverIdentifier.getServerId() : "paper-runtime"
-        ).match(matchId);
+        AuthorityCommands.MatchCommands matchCommands = AuthorityCommands.transport().match(matchId);
         DataAuthority.MatchCommand command = switch (declarationId) {
             case "RECORD_MATCH_START" -> matchCommands.recordStart(
                 objectString(payload.get("familyId")),

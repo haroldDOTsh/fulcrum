@@ -13,6 +13,7 @@ import java.util.UUID;
  */
 public final class AuthorityCommands {
     private static final long DEFAULT_DEADLINE_MILLIS = 5_000L;
+    private static final String TRANSPORT_STAMPED_ACTOR = "node:transport-unverified";
 
     private final String actorId;
 
@@ -22,6 +23,10 @@ public final class AuthorityCommands {
 
     public static AuthorityCommands actor(String actorId) {
         return new AuthorityCommands(actorId);
+    }
+
+    public static AuthorityCommands transport() {
+        return new AuthorityCommands(TRANSPORT_STAMPED_ACTOR);
     }
 
     public PlayerCommands player(UUID playerId) {
