@@ -32,7 +32,7 @@ class DataAuthorityCommandContractManifestTest {
                 .containsAll(contract.requiredPayloadFields());
             assertThat(contract.domain())
                 .as(contract.type() + " route domain")
-                .isEqualTo(AuthorityCommandRoute.from(contract.type(), "sample").domain());
+                .isEqualTo(AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), "sample").domain());
             assertThat(contract.deliveryMode())
                 .as(contract.type() + " delivery mode")
                 .isNotNull();
