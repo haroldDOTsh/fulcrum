@@ -470,7 +470,7 @@ public final class MinigameEngine {
         }
         long now = System.currentTimeMillis();
         AuthorityCommands.MatchCommands matchCommands = AuthorityCommands.transport().match(matchId);
-        DataAuthority.MatchCommand command = switch (declarationId) {
+        DataAuthority.AuthorityCommand command = switch (declarationId) {
             case "RECORD_MATCH_START" -> matchCommands.recordStart(
                 objectString(payload.get("familyId")),
                 objectString(payload.get("mapId")),
@@ -511,7 +511,7 @@ public final class MinigameEngine {
         });
     }
 
-    private boolean submitDurableIfAvailable(DataAuthority.MatchCommand command, UUID matchId) {
+    private boolean submitDurableIfAvailable(DataAuthority.AuthorityCommand command, UUID matchId) {
         if (commandSubmissionPort == null) {
             return false;
         }

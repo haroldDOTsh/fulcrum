@@ -69,7 +69,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private void submitPlayerCommand(String declarationId, PlayerSnapshot snapshot) {
         AuthorityCommands.PlayerCommands playerCommands = AuthorityCommands.transport()
             .player(snapshot.playerId());
-        DataAuthority.PlayerProfileCommand command = "RECORD_PLAYER_LOGIN".equals(declarationId)
+        DataAuthority.AuthorityCommand command = "RECORD_PLAYER_LOGIN".equals(declarationId)
             ? playerCommands.recordLogin(
                 snapshot.username(),
                 snapshot.capturedAtMillis(),
@@ -109,7 +109,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     }
 
     private boolean submitDurableIfAvailable(
-        DataAuthority.PlayerProfileCommand command,
+        DataAuthority.AuthorityCommand command,
         String username
     ) {
         if (commandSubmissionPort == null) {

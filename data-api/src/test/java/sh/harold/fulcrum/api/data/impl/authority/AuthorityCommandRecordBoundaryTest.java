@@ -19,25 +19,35 @@ class AuthorityCommandRecordBoundaryTest {
         "\\bDataAuthority\\.(?:PlayerProfileCommand|PlayerSessionCommand|PlayerRankCommand|MatchCommand)\\b"
     );
     private static final Set<String> ALLOWED_COMMAND_RECORD_OWNERS = Set.of(
-        "src/main/java/sh/harold/fulcrum/api/data/authority/client/AuthorityCommands.java",
-        "src/main/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityCommandPayloads.java",
-        "src/main/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityDomainDeclarations.java"
+        "data-api/src/main/java/sh/harold/fulcrum/api/data/authority/client/AuthorityCommands.java",
+        "data-api/src/main/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityCommandPayloads.java",
+        "data-api/src/main/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityDomainDeclarations.java"
+    );
+    private static final List<Path> SOURCE_ROOTS = List.of(
+        Path.of("data-api", "src", "main", "java"),
+        Path.of("runtime", "src", "main", "java"),
+        Path.of("runtime-velocity", "src", "main", "java")
     );
 
     @Test
     void concreteCommandRecordsStayAtAdapterBoundary() throws IOException {
-        Path moduleRoot = moduleRoot();
-        Path sourceRoot = moduleRoot.resolve(Path.of("src", "main", "java"));
+        Path repoRoot = repoRoot();
         List<String> violations = new ArrayList<>();
 
-        try (Stream<Path> paths = Files.walk(sourceRoot)) {
-            paths.filter(Files::isRegularFile)
-                .filter(path -> path.toString().endsWith(".java"))
-                .filter(path -> !ALLOWED_COMMAND_RECORD_OWNERS.contains(relativeTo(moduleRoot, path)))
-                .filter(AuthorityCommandRecordBoundaryTest::containsConcreteCommandRecord)
-                .map(path -> relativeTo(moduleRoot, path))
-                .sorted()
-                .forEach(violations::add);
+        for (Path sourceRoot : SOURCE_ROOTS) {
+            Path resolvedSourceRoot = repoRoot.resolve(sourceRoot);
+            if (!Files.exists(resolvedSourceRoot)) {
+                continue;
+            }
+            try (Stream<Path> paths = Files.walk(resolvedSourceRoot)) {
+                paths.filter(Files::isRegularFile)
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .filter(path -> !ALLOWED_COMMAND_RECORD_OWNERS.contains(relativeTo(repoRoot, path)))
+                    .filter(AuthorityCommandRecordBoundaryTest::containsConcreteCommandRecord)
+                    .map(path -> relativeTo(repoRoot, path))
+                    .sorted()
+                    .forEach(violations::add);
+            }
         }
 
         assertThat(violations)
@@ -54,9 +64,9 @@ class AuthorityCommandRecordBoundaryTest {
         }
     }
 
-    private static Path moduleRoot() {
+    private static Path repoRoot() {
         Path current = Path.of("").toAbsolutePath().normalize();
-        return "data-api".equals(current.getFileName().toString()) ? current : current.resolve("data-api");
+        return "data-api".equals(current.getFileName().toString()) ? current.getParent() : current;
     }
 
     private static String relativeTo(Path root, Path path) {

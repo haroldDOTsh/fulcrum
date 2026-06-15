@@ -84,7 +84,7 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
             ? player.getRemoteAddress().getAddress().getHostAddress()
             : null;
         int protocolVersion = player.getProtocolVersion().getProtocol();
-        DataAuthority.PlayerSessionCommand command = switch (declarationId) {
+        DataAuthority.AuthorityCommand command = switch (declarationId) {
             case "START_SESSION" -> sessionCommands.startSession(
                 player.getUsername(),
                 sessionId,

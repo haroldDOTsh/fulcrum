@@ -306,7 +306,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         long now = System.currentTimeMillis();
         List<String> rankNames = safeRanks.stream().map(Enum::name).collect(Collectors.toList());
         AuthorityCommands.RankCommands rankCommands = AuthorityCommands.transport().rank(playerId);
-        DataAuthority.PlayerRankCommand command = switch (declarationId) {
+        DataAuthority.AuthorityCommand command = switch (declarationId) {
             case "GRANT_RANK" -> rankCommands.grantRank(safePrimary.name(), rankNames, expectedRevision, now);
             case "REVOKE_RANK" -> rankCommands.revokeRank(safePrimary.name(), rankNames, expectedRevision, now);
             default -> throw new IllegalArgumentException("Unsupported rank command declaration " + declarationId);
@@ -316,7 +316,7 @@ public class RankFeature implements PluginFeature, RankService, Listener {
     }
 
     private CompletableFuture<Long> submitRankCommand(
-        DataAuthority.PlayerRankCommand command,
+        DataAuthority.AuthorityCommand command,
         UUID playerId
     ) {
         return commandPort.submit(command).thenApply(result -> {
