@@ -171,7 +171,11 @@ class AuthorityLogCommandPortTest {
     void logClientSubmitsCommandAndWaitsForCorrelatedResponseRecord() {
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();
         DataAuthority.PlayerRankCommand command = rankCommand(21L);
-        AuthorityLogDataAuthorityClient client = new AuthorityLogDataAuthorityClient(log, Duration.ofSeconds(2));
+        AuthorityLogDataAuthorityClient client = new AuthorityLogDataAuthorityClient(
+            log,
+            Duration.ofSeconds(2),
+            transportProvenance()
+        );
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         int partition = AuthorityLogTopology.partition(route);
 
@@ -201,7 +205,11 @@ class AuthorityLogCommandPortTest {
     void logClientDurableSubmissionReturnsCommandLogPositionWithoutAwaitingResponse() {
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();
         DataAuthority.PlayerRankCommand command = rankCommand(23L);
-        AuthorityLogDataAuthorityClient client = new AuthorityLogDataAuthorityClient(log, Duration.ofSeconds(2));
+        AuthorityLogDataAuthorityClient client = new AuthorityLogDataAuthorityClient(
+            log,
+            Duration.ofSeconds(2),
+            transportProvenance()
+        );
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         int partition = AuthorityLogTopology.partition(route);
 
@@ -226,15 +234,36 @@ class AuthorityLogCommandPortTest {
     }
 
     @Test
+    void logClientRequiresVerifiedTransportProvenance() {
+        InMemoryAuthorityLog log = new InMemoryAuthorityLog();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new AuthorityLogDataAuthorityClient(
+            log,
+            Duration.ofSeconds(2),
+            DataAuthority.CommandProvenance.unknown()
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("verified node principal");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new AuthorityLogDataAuthorityClient(
+            log,
+            Duration.ofSeconds(2),
+            new DataAuthority.CommandProvenance(
+                "paper-7",
+                "kafka:paper-7->registry-service",
+                AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
+                DataAuthority.COMMAND_SCHEMA_VERSION,
+                "rank-service"
+            )
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("verified node principal");
+    }
+
+    @Test
     void logClientStampsTransportProvenanceIntoCommandFrame() {
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();
-        DataAuthority.CommandProvenance provenance = new DataAuthority.CommandProvenance(
-            "paper-7",
-            "kafka:paper-7->registry-service",
-            AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
-            DataAuthority.COMMAND_SCHEMA_VERSION,
-            "node:paper-7"
-        );
+        DataAuthority.CommandProvenance provenance = transportProvenance();
         DataAuthority.PlayerRankCommand command = rankCommand(
             24L,
             "rank-service",
@@ -790,6 +819,16 @@ class AuthorityLogCommandPortTest {
     private static DataAuthority.PlayerRankCommand rankCommand(long expectedRevision) {
         UUID playerId = UUID.randomUUID();
         return rankCommandForScope(expectedRevision, playerId, "rank:player:" + playerId);
+    }
+
+    private static DataAuthority.CommandProvenance transportProvenance() {
+        return new DataAuthority.CommandProvenance(
+            "paper-7",
+            "kafka:paper-7->registry-service",
+            AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
+            DataAuthority.COMMAND_SCHEMA_VERSION,
+            "node:paper-7"
+        );
     }
 
     private static DataAuthority.PlayerRankCommand rankCommand(

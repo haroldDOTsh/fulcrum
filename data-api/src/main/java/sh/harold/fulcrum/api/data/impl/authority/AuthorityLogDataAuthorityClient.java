@@ -25,14 +25,6 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
     private final int pollBatchSize;
     private final DataAuthority.CommandProvenance transportProvenance;
 
-    public AuthorityLogDataAuthorityClient(InMemoryAuthorityLog log) {
-        this((AuthorityLog) log, DEFAULT_TIMEOUT);
-    }
-
-    public AuthorityLogDataAuthorityClient(InMemoryAuthorityLog log, Duration timeout) {
-        this((AuthorityLog) log, timeout);
-    }
-
     public AuthorityLogDataAuthorityClient(
         InMemoryAuthorityLog log,
         Duration timeout,
@@ -41,24 +33,12 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
         this((AuthorityLog) log, timeout, transportProvenance);
     }
 
-    public AuthorityLogDataAuthorityClient(KafkaAuthorityLog log) {
-        this((AuthorityLog) log, DEFAULT_TIMEOUT);
-    }
-
-    public AuthorityLogDataAuthorityClient(KafkaAuthorityLog log, Duration timeout) {
-        this((AuthorityLog) log, timeout);
-    }
-
     public AuthorityLogDataAuthorityClient(
         KafkaAuthorityLog log,
         Duration timeout,
         DataAuthority.CommandProvenance transportProvenance
     ) {
         this((AuthorityLog) log, timeout, transportProvenance);
-    }
-
-    AuthorityLogDataAuthorityClient(AuthorityLog log, Duration timeout) {
-        this(log, timeout, DataAuthority.CommandProvenance.unknown());
     }
 
     AuthorityLogDataAuthorityClient(
@@ -73,15 +53,6 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
         AuthorityLog log,
         Duration timeout,
         Duration pollInterval,
-        int pollBatchSize
-    ) {
-        this(log, timeout, pollInterval, pollBatchSize, DataAuthority.CommandProvenance.unknown());
-    }
-
-    AuthorityLogDataAuthorityClient(
-        AuthorityLog log,
-        Duration timeout,
-        Duration pollInterval,
         int pollBatchSize,
         DataAuthority.CommandProvenance transportProvenance
     ) {
@@ -89,9 +60,11 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
         this.timeout = timeout == null ? DEFAULT_TIMEOUT : timeout;
         this.pollInterval = pollInterval == null ? DEFAULT_POLL_INTERVAL : pollInterval;
         this.pollBatchSize = Math.max(1, pollBatchSize);
-        this.transportProvenance = transportProvenance == null
-            ? DataAuthority.CommandProvenance.unknown()
-            : transportProvenance;
+        if (transportProvenance == null
+            || !AuthorityPrincipals.reservedPrincipal(transportProvenance.verifiedPrincipal())) {
+            throw new IllegalArgumentException("transportProvenance must include a verified node principal");
+        }
+        this.transportProvenance = transportProvenance;
     }
 
     @Override
@@ -121,17 +94,11 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
 
     private DataAuthority.AuthorityCommand withTransportProvenance(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
-        if (DataAuthority.CommandProvenance.unknown().equals(transportProvenance)) {
-            return command;
-        }
         AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(command);
-        String actorId = AuthorityPrincipals.known(transportProvenance.verifiedPrincipal())
-            ? transportProvenance.verifiedPrincipal()
-            : frame.actorId();
         return new AuthorityCommandFrame(
             frame.commandId(),
             frame.declarationId(),
-            actorId,
+            transportProvenance.verifiedPrincipal(),
             frame.scope(),
             frame.idempotencyKey(),
             frame.deadlineEpochMillis(),
