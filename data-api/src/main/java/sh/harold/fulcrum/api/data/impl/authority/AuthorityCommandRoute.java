@@ -35,34 +35,20 @@ record AuthorityCommandRoute(
     }
 
     static AuthorityCommandRoute fromCommand(DataAuthority.AuthorityCommand command) {
-        return from(command.type(), command.scope());
+        if (command == null) {
+            throw new IllegalArgumentException("command is required");
+        }
+        DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contract(command.type());
+        return fromDeclarationId(contract.declarationId(), command.scope());
     }
 
     static AuthorityCommandRoute from(DataAuthority.CommandType type, String scope) {
-        return AuthorityDomainDeclarations.route(type, scope);
+        DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contract(type);
+        return fromDeclarationId(contract.declarationId(), scope);
     }
 
     static AuthorityCommandRoute fromDeclarationId(String declarationId, String scope) {
         return AuthorityDomainDeclarations.route(declarationId, scope);
-    }
-
-    static AuthorityCommandRoute fromPayload(
-        Map<?, ?> raw,
-        DataAuthority.CommandType fallbackType,
-        String fallbackScope
-    ) {
-        AuthorityCommandRoute fallback = from(fallbackType, fallbackScope);
-        if (raw == null || raw.isEmpty()) {
-            return fallback;
-        }
-        return new AuthorityCommandRoute(
-            string(raw.get("domain"), fallback.domain()),
-            string(raw.get("commandTopic"), fallback.commandTopic()),
-            string(raw.get("responseTopic"), fallback.responseTopic()),
-            string(raw.get("eventTopic"), fallback.eventTopic()),
-            string(raw.get("stateTopic"), fallback.stateTopic()),
-            string(raw.get("partitionKey"), fallback.partitionKey())
-        );
     }
 
     static AuthorityCommandRoute fromPayload(

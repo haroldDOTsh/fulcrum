@@ -1,6 +1,12 @@
 package sh.harold.fulcrum.api.data.impl.authority;
 
 import org.junit.jupiter.api.Test;
+import sh.harold.fulcrum.api.data.authority.DataAuthority;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,6 +24,50 @@ class AuthorityCommandRouteTest {
         assertThat(route.eventTopic()).isEqualTo("evt.rank");
         assertThat(route.stateTopic()).isEqualTo("state.rank");
         assertThat(route.partitionKey()).isEqualTo("rank:player:00000000-0000-0000-0000-000000000001");
+    }
+
+    @Test
+    void commandObjectsRouteThroughTheirDeclarationId() {
+        UUID playerId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
+            DataAuthority.CommandManifest.create(
+                UUID.randomUUID(),
+                DataAuthority.CommandType.GRANT_RANK,
+                "rank-service",
+                "rank:player:" + playerId,
+                "rank:" + playerId,
+                1_800_000_000_000L,
+                "",
+                1L
+            ),
+            playerId,
+            "ADMIN",
+            List.of("DEFAULT", "ADMIN")
+        );
+
+        assertThat(AuthorityCommandRoute.fromCommand(command))
+            .isEqualTo(AuthorityCommandRoute.fromDeclarationId("GRANT_RANK", command.scope()));
+    }
+
+    @Test
+    void commandRouteSourceKeepsDeclarationIdLookupForCompatibilityEntrypoints() throws Exception {
+        String source = Files.readString(sourcePath());
+
+        assertThat(methodSlice(
+            source,
+            "static AuthorityCommandRoute fromCommand",
+            "static AuthorityCommandRoute from(DataAuthority.CommandType type"
+        ))
+            .contains("DataAuthorityCommandContracts.contract(command.type())")
+            .contains("fromDeclarationId(contract.declarationId(), command.scope())")
+            .doesNotContain("from(command.type(), command.scope())");
+        assertThat(methodSlice(
+            source,
+            "static AuthorityCommandRoute from(DataAuthority.CommandType type",
+            "static AuthorityCommandRoute fromDeclarationId"
+        ))
+            .contains("DataAuthorityCommandContracts.contract(type)")
+            .contains("fromDeclarationId(contract.declarationId(), scope)");
     }
 
     @Test
@@ -66,5 +116,46 @@ class AuthorityCommandRouteTest {
         assertThat(route.domain()).isEqualTo("match");
         assertThat(route.commandTopic()).isEqualTo("cmd.match");
         assertThat(route.partitionKey()).isEqualTo("match:00000000-0000-0000-0000-000000000003");
+    }
+
+    private static Path sourcePath() {
+        Path fromModule = Path.of(
+            "src",
+            "main",
+            "java",
+            "sh",
+            "harold",
+            "fulcrum",
+            "api",
+            "data",
+            "impl",
+            "authority",
+            "AuthorityCommandRoute.java"
+        );
+        if (Files.exists(fromModule)) {
+            return fromModule;
+        }
+        return Path.of(
+            "data-api",
+            "src",
+            "main",
+            "java",
+            "sh",
+            "harold",
+            "fulcrum",
+            "api",
+            "data",
+            "impl",
+            "authority",
+            "AuthorityCommandRoute.java"
+        );
+    }
+
+    private static String methodSlice(String source, String startMarker, String endMarker) {
+        int start = source.indexOf(startMarker);
+        int end = source.indexOf(endMarker);
+        assertThat(start).as(startMarker).isNotNegative();
+        assertThat(end).as(endMarker).isGreaterThan(start);
+        return source.substring(start, end);
     }
 }
