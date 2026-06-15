@@ -59,7 +59,6 @@ class DataAuthorityCommandContractManifestTest {
 
                 assertThat(contract).as(command.declarationId() + " contract").isNotNull();
                 assertThat(contract.declarationId()).isEqualTo(command.declarationId());
-                assertThat(contract.commandClass()).isEqualTo(command.commandClass());
                 assertThat(contract.domain()).isEqualTo(domain.domain());
                 assertThat(AuthorityDomainDeclarations.command(command.declarationId()).declarationId())
                     .isEqualTo(command.declarationId());
@@ -177,7 +176,8 @@ class DataAuthorityCommandContractManifestTest {
             DataAuthority.AuthorityCommand decoded = received.get(contract.declarationId());
 
             assertThat(result.accepted()).as(contract.declarationId() + " result").isTrue();
-            assertThat(decoded).as(contract.declarationId() + " decoded command").isInstanceOf(contract.commandClass());
+            assertThat(decoded).as(contract.declarationId() + " decoded command")
+                .isInstanceOf(AuthorityDomainDeclarations.command(contract.declarationId()).commandClass());
             assertThat(decoded.actorId()).as(contract.declarationId() + " actor").isEqualTo("contract-test");
             assertThat(AuthorityCommandRoute.fromCommand(decoded).domain()).isEqualTo(contract.domain());
             AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(decoded);

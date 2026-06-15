@@ -118,12 +118,14 @@ public final class AuthorityContractArtifacts {
         AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), aggregateScopeTemplate);
         AuthorityLogTopicPolicy commandPolicy = requirePolicy(policiesByTopic, route.commandTopic());
         AuthorityLogTopicPolicy statePolicy = requirePolicy(policiesByTopic, route.stateTopic());
+        AuthorityDomainDeclarations.CommandDeclaration declaration =
+            AuthorityDomainDeclarations.command(contract.declarationId());
         return new CommandRow(
             contract.declarationId(),
             contract.domain(),
             contract.deliveryMode(),
             contract.revisionPolicy(),
-            contract.commandClass().getName(),
+            declaration.commandClass().getName(),
             aggregateScopeTemplate,
             contract.aggregateIdField(),
             route.commandTopic(),

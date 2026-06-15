@@ -86,11 +86,7 @@ public final class DataAuthorityCommandContracts {
     public static void validate(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
         CommandContract contract = contractByDeclarationId(command.declarationId());
-        if (!contract.commandClass().isInstance(command)) {
-            throw new IllegalArgumentException(
-                "Command " + command.declarationId() + " must decode as " + contract.commandClass().getSimpleName()
-            );
-        }
+        AuthorityDomainDeclarations.command(command.declarationId()).payload(command);
         DataAuthority.CommandManifest manifest = command.manifest();
         validateManifestContract(contract, manifest.schemaVersion(), command.provenance().contractVersion());
         validate(
@@ -347,7 +343,6 @@ public final class DataAuthorityCommandContracts {
             for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
                 CommandContract previous = values.put(command.declarationId(), new CommandContract(
                     command.declarationId(),
-                    command.commandClass(),
                     domain.domain(),
                     command.deliveryMode(),
                     command.revisionPolicy(),
@@ -382,7 +377,6 @@ public final class DataAuthorityCommandContracts {
             .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> material
                 .append(contract.declarationId()).append('|')
-                .append(contract.commandClass().getName()).append('|')
                 .append(contract.domain()).append('|')
                 .append(contract.deliveryMode().name()).append('|')
                 .append(contract.revisionPolicy().name()).append('|')
@@ -487,7 +481,6 @@ public final class DataAuthorityCommandContracts {
 
     public record CommandContract(
         String declarationId,
-        Class<? extends DataAuthority.AuthorityCommand> commandClass,
         String domain,
         CommandDeliveryMode deliveryMode,
         CommandRevisionPolicy revisionPolicy,
@@ -504,7 +497,6 @@ public final class DataAuthorityCommandContracts {
             if (declarationId == null || declarationId.isBlank()) {
                 throw new IllegalArgumentException("declarationId is required");
             }
-            commandClass = Objects.requireNonNull(commandClass, "commandClass");
             if (domain == null || domain.isBlank()) {
                 throw new IllegalArgumentException("domain is required");
             }
