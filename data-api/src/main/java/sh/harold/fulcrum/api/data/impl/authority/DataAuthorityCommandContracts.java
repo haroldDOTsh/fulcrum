@@ -2,36 +2,29 @@ package sh.harold.fulcrum.api.data.impl.authority;
 
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
 
 /**
  * Executable command contract manifest for authority command frames.
  */
 public final class DataAuthorityCommandContracts {
-    private static final Map<String, CommandContract> CONTRACTS_BY_DECLARATION_ID = contractsByDeclarationId();
-    private static final String FINGERPRINT = fingerprint(CONTRACTS_BY_DECLARATION_ID);
-    private static final String ROUTE_MANIFEST_FINGERPRINT = routeManifestFingerprint(CONTRACTS_BY_DECLARATION_ID);
-    private static final Map<String, String> ROUTE_PARTITION_KEY_VECTORS = routePartitionKeyVectors(
-        CONTRACTS_BY_DECLARATION_ID);
-    private static final Map<String, String> COMMAND_TOPICS_BY_DECLARATION_ID = routeVectors(CONTRACTS_BY_DECLARATION_ID,
-        AuthorityCommandRoute::commandTopic);
-    private static final Map<String, String> RESPONSE_TOPICS_BY_DECLARATION_ID = routeVectors(
-        CONTRACTS_BY_DECLARATION_ID,
-        AuthorityCommandRoute::responseTopic
-    );
-    private static final Map<String, String> EVENT_TOPICS_BY_DECLARATION_ID = routeVectors(CONTRACTS_BY_DECLARATION_ID,
-        AuthorityCommandRoute::eventTopic);
-    private static final Map<String, String> STATE_TOPICS_BY_DECLARATION_ID = routeVectors(CONTRACTS_BY_DECLARATION_ID,
-        AuthorityCommandRoute::stateTopic);
-    private static final Set<String> COMMAND_TOPICS = commandTopics(CONTRACTS_BY_DECLARATION_ID);
+    private static final Map<String, CommandContract> CONTRACTS_BY_DECLARATION_ID =
+        AuthorityCommandManifest.allByDeclarationId();
+    private static final String FINGERPRINT = AuthorityCommandManifest.fingerprint();
+    private static final String ROUTE_MANIFEST_FINGERPRINT = AuthorityCommandManifest.routeManifestFingerprint();
+    private static final Map<String, String> ROUTE_PARTITION_KEY_VECTORS =
+        AuthorityCommandManifest.routePartitionKeyVectors();
+    private static final Map<String, String> COMMAND_TOPICS_BY_DECLARATION_ID =
+        AuthorityCommandManifest.commandTopicsByDeclarationId();
+    private static final Map<String, String> RESPONSE_TOPICS_BY_DECLARATION_ID =
+        AuthorityCommandManifest.responseTopicsByDeclarationId();
+    private static final Map<String, String> EVENT_TOPICS_BY_DECLARATION_ID =
+        AuthorityCommandManifest.eventTopicsByDeclarationId();
+    private static final Map<String, String> STATE_TOPICS_BY_DECLARATION_ID =
+        AuthorityCommandManifest.stateTopicsByDeclarationId();
+    private static final Set<String> COMMAND_TOPICS = AuthorityCommandManifest.commandTopics();
 
     private DataAuthorityCommandContracts() {
     }
@@ -335,138 +328,6 @@ public final class DataAuthorityCommandContracts {
                     + expectedScope + " but was " + scope
             );
         }
-    }
-
-    private static Map<String, CommandContract> contractsByDeclarationId() {
-        Map<String, CommandContract> values = new LinkedHashMap<>();
-        for (AuthorityDomainDeclarations.DomainDeclaration domain : AuthorityDomainDeclarations.all().values()) {
-            for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
-                CommandContract previous = values.put(command.declarationId(), new CommandContract(
-                    command.declarationId(),
-                    domain.domain(),
-                    command.deliveryMode(),
-                    command.revisionPolicy(),
-                    singleStore(domain.commandLogStores(), "commandLogStore"),
-                    singleStore(domain.hotProjectionStores(), "hotProjectionStore"),
-                    singleStore(domain.historyStores(), "historyStore"),
-                    singleStore(domain.cacheStores(), "cacheStore"),
-                    command.aggregateScopePrefix(),
-                    command.aggregateIdField(),
-                    command.requiredPayloadFields(),
-                    command.allowedPayloadFields()
-                ));
-                if (previous != null) {
-                    throw new IllegalStateException("Duplicate command declaration for " + command.declarationId());
-                }
-            }
-        }
-        return Map.copyOf(values);
-    }
-
-    private static String singleStore(java.util.List<String> stores, String field) {
-        if (stores.size() != 1) {
-            throw new IllegalStateException(field + " requires one store but had " + stores);
-        }
-        return stores.iterator().next();
-    }
-
-    private static String fingerprint(Map<String, CommandContract> contracts) {
-        StringBuilder material = new StringBuilder()
-            .append("commandSchemaVersion=").append(DataAuthority.COMMAND_SCHEMA_VERSION).append('\n');
-        contracts.values().stream()
-            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
-            .forEach(contract -> material
-                .append(contract.declarationId()).append('|')
-                .append(contract.domain()).append('|')
-                .append(contract.deliveryMode().name()).append('|')
-                .append(contract.revisionPolicy().name()).append('|')
-                .append(contract.commandLogStore()).append('|')
-                .append(contract.hotProjectionStore()).append('|')
-                .append(contract.historyStore()).append('|')
-                .append(contract.cacheStore()).append('|')
-                .append(contract.aggregateScopePrefix()).append('|')
-                .append(contract.aggregateIdField()).append('|')
-                .append(String.join(",", contract.requiredPayloadFields().stream().sorted().toList())).append('|')
-                .append(String.join(",", contract.allowedPayloadFields().stream().sorted().toList()))
-                .append('\n'));
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(material.toString().getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception exception) {
-            throw new IllegalStateException("Failed to fingerprint authority command contracts", exception);
-        }
-    }
-
-    private static String routeManifestFingerprint(Map<String, CommandContract> contracts) {
-        StringBuilder material = new StringBuilder()
-            .append("routeManifestSchemaVersion=").append(DataAuthority.COMMAND_SCHEMA_VERSION).append('\n');
-        contracts.values().stream()
-            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
-            .forEach(contract -> {
-                String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
-                AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(),
-                    sampleScope);
-                material
-                    .append(contract.declarationId()).append('|')
-                    .append(contract.domain()).append('|')
-                    .append(contract.aggregateScopePrefix()).append('|')
-                    .append(route.domain()).append('|')
-                    .append(route.commandTopic()).append('|')
-                    .append(route.responseTopic()).append('|')
-                    .append(route.eventTopic()).append('|')
-                    .append(route.stateTopic()).append('|')
-                    .append(route.partitionKey())
-                    .append('\n');
-            });
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(material.toString().getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception exception) {
-            throw new IllegalStateException("Failed to fingerprint authority command route manifest", exception);
-        }
-    }
-
-    private static Map<String, String> routePartitionKeyVectors(
-        Map<String, CommandContract> contracts
-    ) {
-        Map<String, String> values = new LinkedHashMap<>();
-        contracts.values().stream()
-            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
-            .forEach(contract -> {
-                String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
-                AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(),
-                    sampleScope);
-                values.put(contract.declarationId(), sampleScope + "=>" + route.partitionKey());
-            });
-        return Map.copyOf(values);
-    }
-
-    private static Map<String, String> routeVectors(
-        Map<String, CommandContract> contracts,
-        Function<AuthorityCommandRoute, String> extractor
-    ) {
-        Map<String, String> values = new LinkedHashMap<>();
-        contracts.values().stream()
-            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
-            .forEach(contract -> {
-                String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
-                AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(),
-                    sampleScope);
-                values.put(contract.declarationId(), extractor.apply(route));
-            });
-        return Map.copyOf(values);
-    }
-
-    private static Set<String> commandTopics(Map<String, CommandContract> contracts) {
-        Set<String> values = new LinkedHashSet<>();
-        contracts.values().stream()
-            .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
-            .forEach(contract -> {
-                String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
-                values.add(AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), sampleScope)
-                    .commandTopic());
-            });
-        return Set.copyOf(values);
     }
 
     public enum CommandDeliveryMode {

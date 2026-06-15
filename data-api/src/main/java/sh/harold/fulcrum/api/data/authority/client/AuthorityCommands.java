@@ -1,7 +1,7 @@
 package sh.harold.fulcrum.api.data.authority.client;
 
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 
 import java.util.List;
 import java.util.Map;
@@ -466,7 +466,7 @@ public final class AuthorityCommands {
     private static String scope(String declarationId, UUID aggregateId) {
         Objects.requireNonNull(declarationId, "declarationId");
         Objects.requireNonNull(aggregateId, "aggregateId");
-        return DataAuthorityCommandContracts.contractByDeclarationId(declarationId).aggregateScopePrefix()
+        return AuthorityCommandManifest.declaration(declarationId).aggregateScopePrefix()
             + aggregateId;
     }
 

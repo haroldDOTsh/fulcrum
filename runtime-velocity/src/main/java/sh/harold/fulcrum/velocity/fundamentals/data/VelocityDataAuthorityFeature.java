@@ -12,11 +12,11 @@ import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.data.guard.GameNodeCapabilityManifest;
 import sh.harold.fulcrum.api.data.guard.GameNodeStartupAttestation;
 import sh.harold.fulcrum.api.data.guard.GameNodeStorageGuard;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogDataAuthorityClient;
 import sh.harold.fulcrum.api.data.impl.authority.AuthoritySnapshotInvalidation;
 import sh.harold.fulcrum.api.data.impl.authority.AuthoritySnapshotCacheStore;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.data.impl.authority.InMemoryAuthoritySnapshotCacheStore;
 import sh.harold.fulcrum.api.data.impl.authority.KafkaAuthorityLog;
@@ -540,28 +540,28 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
             report.attestationFingerprint(),
             manifest.commandSchemaVersion(),
             manifest.commandContractFingerprint(),
-            DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityCommandManifest.routeManifestFingerprint(),
             AuthorityDomainTopology.fingerprint(),
             authorityServicesByDomain(),
             authorityConsumerGroupsByDomain(),
             authorityPrincipalsByDomain(),
             manifest.readSchemaVersion(),
             manifest.readContractFingerprint(),
-            commandDomainsByType(),
-            commandDeliveryModesByType(),
-            DataAuthorityCommandContracts.routePartitionKeyVectors(),
-            commandAuthorityServicesByType(),
-            commandConsumerGroupsByType(),
-            commandAuthorityPrincipalsByType(),
-            commandPartitionCountsByType(),
-            DataAuthorityCommandContracts.commandTopicsByDeclarationId(),
-            DataAuthorityCommandContracts.responseTopicsByDeclarationId(),
-            DataAuthorityCommandContracts.eventTopicsByDeclarationId(),
-            DataAuthorityCommandContracts.stateTopicsByDeclarationId(),
-            commandLogStoresByType(),
-            commandHotProjectionStoresByType(),
-            commandHistoryStoresByType(),
-            commandCacheStoresByType(),
+            AuthorityCommandManifest.domainsByDeclarationId(),
+            AuthorityCommandManifest.deliveryModesByDeclarationId(),
+            AuthorityCommandManifest.routePartitionKeyVectors(),
+            AuthorityCommandManifest.authorityServicesByDeclarationId(),
+            AuthorityCommandManifest.consumerGroupsByDeclarationId(),
+            AuthorityCommandManifest.authorityPrincipalsByDeclarationId(),
+            AuthorityCommandManifest.partitionCountsByDeclarationId(),
+            AuthorityCommandManifest.commandTopicsByDeclarationId(),
+            AuthorityCommandManifest.responseTopicsByDeclarationId(),
+            AuthorityCommandManifest.eventTopicsByDeclarationId(),
+            AuthorityCommandManifest.stateTopicsByDeclarationId(),
+            AuthorityCommandManifest.commandLogStoresByDeclarationId(),
+            AuthorityCommandManifest.hotProjectionStoresByDeclarationId(),
+            AuthorityCommandManifest.historyStoresByDeclarationId(),
+            AuthorityCommandManifest.cacheStoresByDeclarationId(),
             readProjectionFamiliesByType(),
             readServingStoresByType(),
             readCacheStoresByType()
@@ -636,14 +636,6 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
 
-    private static Map<String, String> commandDomainsByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::domain);
-    }
-
-    private static Map<String, String> commandDeliveryModesByType() {
-        return commandMetadataByType(contract -> contract.deliveryMode().name());
-    }
-
     private static Map<String, String> authorityServicesByDomain() {
         return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityService);
     }
@@ -656,38 +648,6 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
         return domainTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
     }
 
-    private static Map<String, String> commandAuthorityServicesByType() {
-        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::authorityService);
-    }
-
-    private static Map<String, String> commandConsumerGroupsByType() {
-        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::consumerGroup);
-    }
-
-    private static Map<String, String> commandAuthorityPrincipalsByType() {
-        return commandTopologyMetadataByType(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
-    }
-
-    private static Map<String, String> commandPartitionCountsByType() {
-        return commandTopologyMetadataByType(topology -> Integer.toString(topology.partitionCount()));
-    }
-
-    private static Map<String, String> commandLogStoresByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::commandLogStore);
-    }
-
-    private static Map<String, String> commandHotProjectionStoresByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::hotProjectionStore);
-    }
-
-    private static Map<String, String> commandHistoryStoresByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::historyStore);
-    }
-
-    private static Map<String, String> commandCacheStoresByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::cacheStore);
-    }
-
     private static Map<String, String> readProjectionFamiliesByType() {
         return readMetadataByType(DataAuthorityReadContracts.ReadContract::projectionFamily);
     }
@@ -698,29 +658,6 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
 
     private static Map<String, String> readCacheStoresByType() {
         return readMetadataByType(DataAuthorityReadContracts.ReadContract::cacheStore);
-    }
-
-    private static Map<String, String> commandMetadataByType(
-        Function<DataAuthorityCommandContracts.CommandContract, String> extractor
-    ) {
-        Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
-            .sorted(Map.Entry.comparingByKey())
-            .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
-        return Map.copyOf(values);
-    }
-
-    private static Map<String, String> commandTopologyMetadataByType(
-        Function<AuthorityDomainTopology.DomainTopology, String> extractor
-    ) {
-        Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
-            .sorted(Map.Entry.comparingByKey())
-            .forEach(entry -> values.put(
-                entry.getKey(),
-                extractor.apply(AuthorityDomainTopology.domain(entry.getValue().domain()))
-            ));
-        return Map.copyOf(values);
     }
 
     private static Map<String, String> domainTopologyMetadata(

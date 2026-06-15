@@ -1,8 +1,8 @@
 package sh.harold.fulcrum.registry.authority;
 
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
 
@@ -52,12 +52,12 @@ public final class AuthorityDeliveryManifestValidator {
         if (manifest.getCommandSchemaVersion() != DataAuthority.COMMAND_SCHEMA_VERSION) {
             return "Data Authority command schema mismatch";
         }
-        if (!Objects.equals(manifest.getCommandContractFingerprint(), DataAuthorityCommandContracts.fingerprint())) {
+        if (!Objects.equals(manifest.getCommandContractFingerprint(), AuthorityCommandManifest.fingerprint())) {
             return "Data Authority command contract fingerprint mismatch";
         }
         if (!Objects.equals(
             manifest.getCommandRouteManifestFingerprint(),
-            DataAuthorityCommandContracts.routeManifestFingerprint()
+            AuthorityCommandManifest.routeManifestFingerprint()
         )) {
             return "Data Authority command route manifest fingerprint mismatch";
         }
@@ -73,23 +73,23 @@ public final class AuthorityDeliveryManifestValidator {
         if (!expectedCommandDeliveryModes().equals(safeMap(manifest.getCommandDeliveryModesByType()))) {
             return "Data Authority command delivery mode manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.routePartitionKeyVectors()
+        if (!AuthorityCommandManifest.routePartitionKeyVectors()
             .equals(safeMap(manifest.getCommandPartitionKeyVectorsByType()))) {
             return "Data Authority command partition-key vector manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.commandTopicsByDeclarationId()
+        if (!AuthorityCommandManifest.commandTopicsByDeclarationId()
             .equals(safeMap(manifest.getCommandTopicsByType()))) {
             return "Data Authority command topic manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.responseTopicsByDeclarationId()
+        if (!AuthorityCommandManifest.responseTopicsByDeclarationId()
             .equals(safeMap(manifest.getCommandResponseTopicsByType()))) {
             return "Data Authority command response topic manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.eventTopicsByDeclarationId()
+        if (!AuthorityCommandManifest.eventTopicsByDeclarationId()
             .equals(safeMap(manifest.getCommandEventTopicsByType()))) {
             return "Data Authority command event topic manifest mismatch";
         }
-        if (!DataAuthorityCommandContracts.stateTopicsByDeclarationId()
+        if (!AuthorityCommandManifest.stateTopicsByDeclarationId()
             .equals(safeMap(manifest.getCommandStateTopicsByType()))) {
             return "Data Authority command state topic manifest mismatch";
         }
@@ -210,43 +210,43 @@ public final class AuthorityDeliveryManifestValidator {
     }
 
     private static Map<String, String> expectedCommandDomains() {
-        return expectedCommandMetadata(DataAuthorityCommandContracts.CommandContract::domain);
+        return AuthorityCommandManifest.domainsByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandDeliveryModes() {
-        return expectedCommandMetadata(contract -> contract.deliveryMode().name());
+        return AuthorityCommandManifest.deliveryModesByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandAuthorityServices() {
-        return expectedCommandTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityService);
+        return AuthorityCommandManifest.authorityServicesByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandConsumerGroups() {
-        return expectedCommandTopologyMetadata(AuthorityDomainTopology.DomainTopology::consumerGroup);
+        return AuthorityCommandManifest.consumerGroupsByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandAuthorityPrincipals() {
-        return expectedCommandTopologyMetadata(AuthorityDomainTopology.DomainTopology::authorityPrincipal);
+        return AuthorityCommandManifest.authorityPrincipalsByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandPartitionCounts() {
-        return expectedCommandTopologyMetadata(topology -> Integer.toString(topology.partitionCount()));
+        return AuthorityCommandManifest.partitionCountsByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandLogStores() {
-        return expectedCommandMetadata(DataAuthorityCommandContracts.CommandContract::commandLogStore);
+        return AuthorityCommandManifest.commandLogStoresByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandHotProjectionStores() {
-        return expectedCommandMetadata(DataAuthorityCommandContracts.CommandContract::hotProjectionStore);
+        return AuthorityCommandManifest.hotProjectionStoresByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandHistoryStores() {
-        return expectedCommandMetadata(DataAuthorityCommandContracts.CommandContract::historyStore);
+        return AuthorityCommandManifest.historyStoresByDeclarationId();
     }
 
     private static Map<String, String> expectedCommandCacheStores() {
-        return expectedCommandMetadata(DataAuthorityCommandContracts.CommandContract::cacheStore);
+        return AuthorityCommandManifest.cacheStoresByDeclarationId();
     }
 
     private static Map<String, String> expectedReadProjectionFamilies() {
@@ -259,29 +259,6 @@ public final class AuthorityDeliveryManifestValidator {
 
     private static Map<String, String> expectedReadCacheStores() {
         return expectedReadMetadata(DataAuthorityReadContracts.ReadContract::cacheStore);
-    }
-
-    private static Map<String, String> expectedCommandMetadata(
-        Function<DataAuthorityCommandContracts.CommandContract, String> extractor
-    ) {
-        Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
-            .sorted(Map.Entry.comparingByKey())
-            .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
-        return Map.copyOf(values);
-    }
-
-    private static Map<String, String> expectedCommandTopologyMetadata(
-        Function<AuthorityDomainTopology.DomainTopology, String> extractor
-    ) {
-        Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
-            .sorted(Map.Entry.comparingByKey())
-            .forEach(entry -> values.put(
-                entry.getKey(),
-                extractor.apply(AuthorityDomainTopology.domain(entry.getValue().domain()))
-            ));
-        return Map.copyOf(values);
     }
 
     private static Map<String, String> expectedDomainMetadata(

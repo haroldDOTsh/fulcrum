@@ -1,7 +1,7 @@
 package sh.harold.fulcrum.api.data.guard;
 
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 
 import java.nio.charset.StandardCharsets;
@@ -138,12 +138,12 @@ public final class GameNodeStartupAttestation {
                     + " but executable contract is " + DataAuthority.COMMAND_SCHEMA_VERSION
             ));
         }
-        if (!manifest.commandContractFingerprint().equals(DataAuthorityCommandContracts.fingerprint())) {
+        if (!manifest.commandContractFingerprint().equals(AuthorityCommandManifest.fingerprint())) {
             violations.add(new Violation(
                 "contract",
                 "data-authority.command-contract-fingerprint",
                 "game-node manifest expects command contract " + shortFingerprint(manifest.commandContractFingerprint())
-                    + " but executable contract is " + shortFingerprint(DataAuthorityCommandContracts.fingerprint())
+                    + " but executable contract is " + shortFingerprint(AuthorityCommandManifest.fingerprint())
             ));
         }
         if (manifest.readSchemaVersion() != DataAuthorityReadContracts.schemaVersion()) {
