@@ -11,6 +11,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthorityCommandsTest {
+    private static final String TRANSPORT_ACTOR = "node:transport-unverified";
+
     @Test
     void subjectProvidesThinRoutableIdentityScope() {
         UUID playerId = UUID.fromString("00000000-0000-0000-0000-000000000010");
@@ -25,13 +27,13 @@ class AuthorityCommandsTest {
     void rankCommandOwnsScopeIdempotencyAndExpectedRevision() {
         UUID playerId = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
-        DataAuthority.PlayerRankCommand command = AuthorityCommands.actor("rank-service")
+        DataAuthority.PlayerRankCommand command = AuthorityCommands.transport()
             .rank(playerId)
             .grantRank("VIP", List.of("VIP", "DEFAULT"), 42L, 1_000L);
 
         AuthorityCommandManifest.validate(command);
         assertThat(command.declarationId()).isEqualTo("GRANT_RANK");
-        assertThat(command.actorId()).isEqualTo("rank-service");
+        assertThat(command.actorId()).isEqualTo(TRANSPORT_ACTOR);
         assertThat(command.scope()).isEqualTo("rank:player:" + playerId);
         assertThat(command.idempotencyKey()).isEqualTo("GRANT_RANK:" + playerId + ":1000");
         assertThat(command.deadlineEpochMillis()).isEqualTo(6_000L);
@@ -44,11 +46,11 @@ class AuthorityCommandsTest {
     void playerProfileCommandsUsePlayerAggregateScope() {
         UUID playerId = UUID.fromString("22222222-2222-2222-2222-222222222222");
 
-        DataAuthority.PlayerProfileCommand login = AuthorityCommands.actor("paper-runtime")
+        DataAuthority.PlayerProfileCommand login = AuthorityCommands.transport()
             .player(playerId)
             .recordLogin("Richa", 2_000L, "127.0.0.1", "world", "1,64,1", "SURVIVAL",
                 12, 0.5F, 20.0D, 18);
-        DataAuthority.PlayerProfileCommand logout = AuthorityCommands.actor("paper-runtime")
+        DataAuthority.PlayerProfileCommand logout = AuthorityCommands.transport()
             .player(playerId)
             .recordLogout("Richa", 3_000L, "127.0.0.1", "world", "1,64,1", "SURVIVAL",
                 "lastJoin");
@@ -76,7 +78,7 @@ class AuthorityCommandsTest {
         UUID playerId = UUID.fromString("33333333-3333-3333-3333-333333333333");
         UUID sessionId = UUID.fromString("44444444-4444-4444-4444-444444444444");
 
-        DataAuthority.PlayerSessionCommand command = AuthorityCommands.actor("velocity-proxy")
+        DataAuthority.PlayerSessionCommand command = AuthorityCommands.transport()
             .session(playerId)
             .endSession("Richa", sessionId, 4_000L, "survival", "proxy-a", "127.0.0.1", 772, "quit");
 
@@ -91,7 +93,7 @@ class AuthorityCommandsTest {
     void matchCommandsKeepIdempotencyTimestampSeparateFromDeadlineTimestamp() {
         UUID matchId = UUID.fromString("55555555-5555-5555-5555-555555555555");
 
-        DataAuthority.MatchCommand command = AuthorityCommands.actor("arena-01")
+        DataAuthority.MatchCommand command = AuthorityCommands.transport()
             .match(matchId)
             .recordEnd(
                 "duels",
@@ -112,5 +114,12 @@ class AuthorityCommandsTest {
         assertThat(command.deadlineEpochMillis()).isEqualTo(17_000L);
         assertThat(command.state()).isEqualTo("ENDED");
         assertThat(command.slotMetadata()).containsEntry("variant", "solo");
+    }
+
+    @Test
+    void commandClientDoesNotExposeFreeStringActorFactory() {
+        assertThat(AuthorityCommands.class.getDeclaredMethods())
+            .filteredOn(method -> method.getName().equals("actor"))
+            .noneMatch(method -> method.getParameterCount() == 1 && method.getParameterTypes()[0] == String.class);
     }
 }

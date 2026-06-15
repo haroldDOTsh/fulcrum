@@ -21,10 +21,6 @@ public final class AuthorityCommands {
         this.actorId = requireText(actorId, "actorId");
     }
 
-    public static AuthorityCommands actor(String actorId) {
-        return new AuthorityCommands(actorId);
-    }
-
     public static AuthorityCommands transport() {
         return new AuthorityCommands(TRANSPORT_STAMPED_ACTOR);
     }
