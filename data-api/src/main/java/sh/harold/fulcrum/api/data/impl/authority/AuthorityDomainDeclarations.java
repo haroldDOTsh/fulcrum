@@ -38,7 +38,14 @@ final class AuthorityDomainDeclarations {
 
     static CommandDeclaration command(DataAuthority.CommandType type) {
         Objects.requireNonNull(type, "type");
-        return command(type.name());
+        for (DomainDeclaration declaration : DECLARATIONS.values()) {
+            for (CommandDeclaration command : declaration.commands()) {
+                if (command.type() == type) {
+                    return command;
+                }
+            }
+        }
+        throw new IllegalArgumentException("No authority command declaration for " + type);
     }
 
     static CommandDeclaration command(String declarationId) {
@@ -224,7 +231,7 @@ final class AuthorityDomainDeclarations {
                 throw new IllegalArgumentException("partitionCount must be positive");
             }
             commands = commands == null ? List.of() : commands.stream()
-                .sorted(Comparator.comparing(command -> command.type().name()))
+                .sorted(Comparator.comparing(CommandDeclaration::declarationId))
                 .toList();
             if (commands.isEmpty()) {
                 throw new IllegalArgumentException("commands is required");

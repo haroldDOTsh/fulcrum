@@ -61,6 +61,8 @@ class DataAuthorityCommandContractManifestTest {
                 assertThat(contract.declarationId()).isEqualTo(command.declarationId());
                 assertThat(contract.commandClass()).isEqualTo(command.commandClass());
                 assertThat(contract.domain()).isEqualTo(domain.domain());
+                assertThat(AuthorityDomainDeclarations.command(command.type()).declarationId())
+                    .isEqualTo(command.declarationId());
                 assertThat(contract.deliveryMode()).isEqualTo(command.deliveryMode());
                 assertThat(contract.revisionPolicy()).isEqualTo(command.revisionPolicy());
                 assertThat(contract.commandLogStore()).isEqualTo(domain.commandLogStores().get(0));
