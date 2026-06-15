@@ -208,7 +208,7 @@ class DataAuthorityCommandContractManifestTest {
             assertThat(result.accepted()).as(contract.declarationId() + " result").isTrue();
             assertThat(decoded).as(contract.declarationId() + " decoded command")
                 .isInstanceOf(AuthorityDomainDeclarations.command(contract.declarationId()).commandClass());
-            assertThat(decoded.actorId()).as(contract.declarationId() + " actor").isEqualTo("contract-test");
+            assertThat(decoded.actorId()).as(contract.declarationId() + " actor").isEqualTo("node:contract-test");
             assertThat(AuthorityCommandRoute.fromCommand(decoded).domain()).isEqualTo(contract.domain());
             AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(decoded);
             assertThat(frame.manifestPayload())
@@ -437,12 +437,19 @@ class DataAuthorityCommandContractManifestTest {
         return DataAuthority.CommandManifest.create(
             commandId,
             type,
-            "contract-test",
+            "node:contract-test",
             scope,
             type + ":" + commandId,
             now + 5000L,
             "1",
-            expectedRevision
+            expectedRevision,
+            new DataAuthority.CommandProvenance(
+                "contract-test",
+                "kafka:contract-test->authority",
+                AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
+                DataAuthority.COMMAND_SCHEMA_VERSION,
+                "node:contract-test"
+            )
         );
     }
 

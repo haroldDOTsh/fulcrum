@@ -25,13 +25,13 @@ public final class AuthorityPrincipalCommandPort implements DataAuthority.Comman
         Objects.requireNonNull(command, "command");
         DataAuthority.CommandProvenance provenance = command.provenance();
         String verifiedPrincipal = provenance.verifiedPrincipal();
+        if (!AuthorityPrincipals.known(verifiedPrincipal)) {
+            return CompletableFuture.completedFuture(rejected(
+                command,
+                "Authority command did not include a verified principal"
+            ));
+        }
         if (transportProvider(provenance.providerKind())) {
-            if (!AuthorityPrincipals.known(verifiedPrincipal)) {
-                return CompletableFuture.completedFuture(rejected(
-                    command,
-                    "Authority command did not include a verified transport principal"
-                ));
-            }
             if (!verifiedPrincipal.equals(command.actorId())) {
                 return CompletableFuture.completedFuture(rejected(
                     command,

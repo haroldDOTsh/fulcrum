@@ -82,6 +82,24 @@ class AuthorityPrincipalCommandPortTest {
     }
 
     @Test
+    void rejectsNonTransportCommandWithoutVerifiedPrincipal() {
+        AtomicBoolean delegated = new AtomicBoolean(false);
+        AuthorityPrincipalCommandPort port = new AuthorityPrincipalCommandPort(command -> {
+            delegated.set(true);
+            return CompletableFuture.completedFuture(accepted(command));
+        });
+
+        DataAuthority.CommandResult result = port.submit(rankCommand(
+            "rank-service",
+            DataAuthority.CommandProvenance.unknown()
+        )).toCompletableFuture().join();
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.rejectionReason()).isEqualTo(DataAuthority.RejectionReason.INVALID_ACTOR);
+        assertThat(delegated).isFalse();
+    }
+
+    @Test
     void rejectsTransportActorMismatchWithVerifiedPrincipal() {
         AtomicBoolean delegated = new AtomicBoolean(false);
         AuthorityPrincipalCommandPort port = new AuthorityPrincipalCommandPort(command -> {
