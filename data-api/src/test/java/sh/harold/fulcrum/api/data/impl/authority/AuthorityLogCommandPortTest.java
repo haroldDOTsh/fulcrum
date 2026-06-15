@@ -541,6 +541,49 @@ class AuthorityLogCommandPortTest {
     }
 
     @Test
+    void workerRejectsTopologyFingerprintDriftBeforeApplying() {
+        InMemoryAuthorityLog log = new InMemoryAuthorityLog();
+        DataAuthority.PlayerRankCommand command = rankCommand(11L);
+        AuthorityLogRecord commandRecord = AuthorityLogFrames.appendCommand(log, command);
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(commandRecord.payload());
+        Map<String, Object> manifest = new java.util.LinkedHashMap<>();
+        map(payload.get("manifest")).forEach((key, value) -> manifest.put(key.toString(), value));
+        manifest.put(
+            "authorityDomainTopologyFingerprint",
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        payload.put("manifest", Map.copyOf(manifest));
+        AuthorityLogRecord tampered = new AuthorityLogRecord(
+            commandRecord.topic(),
+            commandRecord.key(),
+            commandRecord.partition(),
+            commandRecord.offset(),
+            commandRecord.kind(),
+            Map.copyOf(payload),
+            commandRecord.headers(),
+            commandRecord.appendedAtEpochMillis()
+        );
+        AuthorityLogCommandProcessor processor = new AuthorityLogCommandProcessor(
+            log,
+            ignored -> {
+                throw new AssertionError("topology-mismatched command record should not be applied");
+            }
+        );
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                processor.process(tampered, claimFor(command, "authority-rank-1", 1L)).toCompletableFuture().join()
+            )
+            .hasRootCauseInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("authorityDomainTopologyFingerprint");
+
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
+        int partition = AuthorityLogTopology.partition(route);
+        assertThat(log.records(route.eventTopic(), partition)).isEmpty();
+        assertThat(log.records(route.stateTopic(), partition)).isEmpty();
+        assertThat(log.records(route.responseTopic(), partition)).isEmpty();
+    }
+
+    @Test
     void rejectedCommandsAppendCommandAndResponseOnly() {
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();
         DataAuthority.PlayerRankCommand command = rankCommand(3L);

@@ -341,7 +341,7 @@ final class AuthorityCommandGuardEvidence {
                 );
             AuthorityTopologyEvidence.attach(
                 evidence,
-                contract.type(),
+                contract.declarationId(),
                 string(wire.get("scope")),
                 mapValue(wire.get("route"))
             );

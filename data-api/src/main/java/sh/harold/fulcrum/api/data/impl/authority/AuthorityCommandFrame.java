@@ -37,7 +37,7 @@ record AuthorityCommandFrame(
                 "Command declaration " + declarationId + " does not match command type " + type
             );
         }
-        route = route == null ? AuthorityCommandRoute.from(type, scope) : route;
+        route = route == null ? AuthorityCommandRoute.fromDeclarationId(declarationId, scope) : route;
         provenance = provenance == null ? DataAuthority.CommandProvenance.unknown() : provenance;
         payload = payload == null ? Map.of() : Map.copyOf(payload);
         DataAuthorityCommandContracts.validate(
@@ -66,7 +66,7 @@ record AuthorityCommandFrame(
             manifest.fencingToken(),
             manifest.expectedRevision(),
             manifest.schemaVersion(),
-            AuthorityCommandRoute.fromCommand(command),
+            AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), manifest.scope()),
             manifest.provenance(),
             AuthorityCommandPayloads.payload(command)
         );
@@ -90,7 +90,7 @@ record AuthorityCommandFrame(
             string(manifestPayload.get("fencingToken")),
             longValue(manifestPayload.get("expectedRevision"), DataAuthority.ANY_REVISION),
             intValue(manifestPayload.get("schemaVersion"), DataAuthority.COMMAND_SCHEMA_VERSION),
-            AuthorityCommandRoute.fromPayload(mapValue(manifestPayload.get("route")), type, scope),
+            AuthorityCommandRoute.fromPayload(mapValue(manifestPayload.get("route")), declarationId, scope),
             provenance,
             commandPayload
         );

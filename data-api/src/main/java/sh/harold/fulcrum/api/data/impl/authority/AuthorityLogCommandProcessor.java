@@ -106,14 +106,15 @@ public final class AuthorityLogCommandProcessor {
         Map<String, Object> payload = map(commandRecord.payload().get("payload"), "payload");
         AuthorityCommandFrame frame = AuthorityCommandFrame.fromPayloads(manifest, payload);
         DataAuthority.AuthorityCommand command = frame.toCommand();
-        validateLineage(commandRecord, frame, command);
+        validateLineage(commandRecord, frame, command, manifest);
         return command;
     }
 
     private static void validateLineage(
         AuthorityLogRecord commandRecord,
         AuthorityCommandFrame frame,
-        DataAuthority.AuthorityCommand command
+        DataAuthority.AuthorityCommand command,
+        Map<String, Object> manifest
     ) {
         AuthorityCommandRoute route = frame.route();
         requireEqual("topic", route.commandTopic(), commandRecord.topic());
@@ -138,6 +139,15 @@ public final class AuthorityLogCommandProcessor {
             DataAuthorityCommandContracts.routeManifestFingerprint(),
             string(commandRecord.payload().get("routeManifestFingerprint"))
         );
+        String topologyRejection = AuthorityTopologyEvidence.commandWireRejection(
+            frame.declarationId(),
+            command.scope(),
+            mapOrEmpty(manifest.get("route")),
+            manifest
+        );
+        if (topologyRejection != null) {
+            throw new IllegalArgumentException(topologyRejection);
+        }
         AuthorityCommandFingerprints.Fingerprint fingerprint = AuthorityCommandFingerprints.fingerprint(command);
         requireEqual("payloadHash", fingerprint.payloadHash(), string(commandRecord.payload().get("payloadHash")));
         requireEqual(
@@ -166,6 +176,10 @@ public final class AuthorityLogCommandProcessor {
             }
         });
         return Map.copyOf(result);
+    }
+
+    private static Map<?, ?> mapOrEmpty(Object value) {
+        return value instanceof Map<?, ?> map ? map : Map.of();
     }
 
     private static String string(Object value) {

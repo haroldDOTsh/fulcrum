@@ -68,6 +68,10 @@ final class AuthorityDomainDeclarations {
         return route(command(type), scope);
     }
 
+    static AuthorityCommandRoute route(String declarationId, String scope) {
+        return route(command(declarationId), scope);
+    }
+
     static AuthorityCommandRoute route(CommandDeclaration command, String scope) {
         String domain = command.domain();
         return new AuthorityCommandRoute(

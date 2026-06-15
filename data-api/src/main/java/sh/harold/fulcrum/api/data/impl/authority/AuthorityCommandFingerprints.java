@@ -28,7 +28,8 @@ final class AuthorityCommandFingerprints {
         material.put("schemaVersion", command.manifest().schemaVersion());
         material.put("actorId", command.actorId());
         material.put("verifiedPrincipal", command.provenance().verifiedPrincipal());
-        material.put("route", AuthorityCommandRoute.fromCommand(command).payload());
+        material.put("route", AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope())
+            .payload());
         material.put("scope", command.scope());
         material.put("expectedRevision", command.expectedRevision());
         material.put("payloadHash", payloadHash);

@@ -22,18 +22,21 @@ public final class AuthorityTopologyEvidence {
         AuthorityCommandRoute route
     ) {
         Objects.requireNonNull(command, "command");
-        AuthorityCommandRoute effectiveRoute = route == null ? AuthorityCommandRoute.fromCommand(command) : route;
-        return forCommandType(command.type(), effectiveRoute);
+        DataAuthorityCommandContracts.CommandContract contract =
+            DataAuthorityCommandContracts.contract(command.type());
+        AuthorityCommandRoute effectiveRoute = route == null
+            ? AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope())
+            : route;
+        return forCommandDeclaration(contract.declarationId(), effectiveRoute);
     }
 
-    static Map<String, Object> forCommandType(
-        DataAuthority.CommandType type,
+    static Map<String, Object> forCommandDeclaration(
+        String declarationId,
         AuthorityCommandRoute route
     ) {
-        Objects.requireNonNull(type, "type");
         AuthorityCommandRoute effectiveRoute = Objects.requireNonNull(route, "route");
         DataAuthorityCommandContracts.CommandContract contract =
-            DataAuthorityCommandContracts.contract(type);
+            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
         AuthorityDomainTopology.DomainTopology domainTopology =
             AuthorityDomainTopology.domain(contract.domain());
 
@@ -67,22 +70,16 @@ public final class AuthorityTopologyEvidence {
         return Map.copyOf(values);
     }
 
-    /**
-     * Top-level command-wire fingerprints that bind a runtime command to this authority topology.
-     *
-     * @param type command type
-     * @param scope aggregate scope
-     * @param routePayload command route payload
-     * @return fields to stamp onto the command wire payload
-     */
     public static Map<String, Object> commandWirePayload(
-        DataAuthority.CommandType type,
+        String declarationId,
         String scope,
         Map<?, ?> routePayload
     ) {
-        Map<String, Object> topology = forCommandType(
-            type,
-            AuthorityCommandRoute.fromPayload(routePayload, type, fallbackScope(type, scope))
+        DataAuthorityCommandContracts.CommandContract contract =
+            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
+        Map<String, Object> topology = forCommandDeclaration(
+            declarationId,
+            AuthorityCommandRoute.fromPayload(routePayload, declarationId, fallbackScope(contract, scope))
         );
         return Map.of(
             "readContractFingerprint", topology.get("readContractFingerprint"),
@@ -92,22 +89,13 @@ public final class AuthorityTopologyEvidence {
         );
     }
 
-    /**
-     * Validates topology fingerprints on a command wire payload.
-     *
-     * @param type command type
-     * @param scope aggregate scope
-     * @param routePayload command route payload
-     * @param wire command wire payload
-     * @return null when accepted, otherwise a stable rejection message
-     */
     public static String commandWireRejection(
-        DataAuthority.CommandType type,
+        String declarationId,
         String scope,
         Map<?, ?> routePayload,
         Map<?, ?> wire
     ) {
-        Map<String, Object> expected = commandWirePayload(type, scope, routePayload);
+        Map<String, Object> expected = commandWirePayload(declarationId, scope, routePayload);
         for (String field : java.util.List.of(
             "readContractFingerprint",
             "authorityDomainTopologyFingerprint",
@@ -132,16 +120,18 @@ public final class AuthorityTopologyEvidence {
 
     static void attach(
         Map<String, Object> evidence,
-        DataAuthority.CommandType type,
+        String declarationId,
         String scope,
         Map<?, ?> routePayload
     ) {
+        DataAuthorityCommandContracts.CommandContract contract =
+            DataAuthorityCommandContracts.contractByDeclarationId(declarationId);
         AuthorityCommandRoute route = AuthorityCommandRoute.fromPayload(
             routePayload,
-            type,
-            fallbackScope(type, scope)
+            declarationId,
+            fallbackScope(contract, scope)
         );
-        evidence.put(TOPOLOGY_KEY, forCommandType(type, route));
+        evidence.put(TOPOLOGY_KEY, forCommandDeclaration(declarationId, route));
     }
 
     static String replayMismatch(
@@ -226,11 +216,11 @@ public final class AuthorityTopologyEvidence {
             + shortFingerprint(expectedValue) + " but received " + shortFingerprint(storedValue);
     }
 
-    private static String fallbackScope(DataAuthority.CommandType type, String scope) {
+    private static String fallbackScope(DataAuthorityCommandContracts.CommandContract contract, String scope) {
         if (scope != null && !scope.isBlank()) {
             return scope;
         }
-        return DataAuthorityCommandContracts.contract(type).aggregateScopePrefix() + "unknown";
+        return contract.aggregateScopePrefix() + "unknown";
     }
 
     private static String string(Object value) {

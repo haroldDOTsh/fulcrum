@@ -1,15 +1,14 @@
 package sh.harold.fulcrum.api.data.impl.authority;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthorityCommandRouteTest {
     @Test
     void rankCommandsRouteByRankAggregatePartition() {
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.GRANT_RANK,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "GRANT_RANK",
             "rank:player:00000000-0000-0000-0000-000000000001"
         );
 
@@ -23,8 +22,8 @@ class AuthorityCommandRouteTest {
 
     @Test
     void rankCommandsPreserveLegacyPlayerScopePartition() {
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.REVOKE_RANK,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "REVOKE_RANK",
             "player:00000000-0000-0000-0000-000000000001"
         );
 
@@ -33,12 +32,12 @@ class AuthorityCommandRouteTest {
 
     @Test
     void profileAndSessionCommandsUseDocumentedPublicRoutes() {
-        AuthorityCommandRoute login = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.RECORD_PLAYER_LOGIN,
+        AuthorityCommandRoute login = AuthorityCommandRoute.fromDeclarationId(
+            "RECORD_PLAYER_LOGIN",
             "player:00000000-0000-0000-0000-000000000002"
         );
-        AuthorityCommandRoute session = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.RENEW_SESSION,
+        AuthorityCommandRoute session = AuthorityCommandRoute.fromDeclarationId(
+            "RENEW_SESSION",
             "player:00000000-0000-0000-0000-000000000002"
         );
 
@@ -59,8 +58,8 @@ class AuthorityCommandRouteTest {
 
     @Test
     void matchCommandsRouteByMatchScope() {
-        AuthorityCommandRoute route = AuthorityCommandRoute.from(
-            DataAuthority.CommandType.RECORD_MATCH_START,
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(
+            "RECORD_MATCH_START",
             "match:00000000-0000-0000-0000-000000000003"
         );
 

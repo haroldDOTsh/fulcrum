@@ -97,7 +97,8 @@ public final class DataAuthorityCommandContracts {
     public static Map<String, Object> routePayload(DataAuthority.AuthorityCommand command) {
         Objects.requireNonNull(command, "command");
         validate(command);
-        return AuthorityCommandRoute.fromCommand(command).payload();
+        CommandContract contract = contract(command.type());
+        return AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope()).payload();
     }
 
     public static void validateRouteManifest(
@@ -125,7 +126,8 @@ public final class DataAuthorityCommandContracts {
         requireRouteField(type, rawRoute, "eventTopic");
         requireRouteField(type, rawRoute, "stateTopic");
         requireRouteField(type, rawRoute, "partitionKey");
-        validateRoute(type, scope, AuthorityCommandRoute.fromPayload(rawRoute, type, scope));
+        CommandContract contract = contract(type);
+        validateRoute(type, scope, AuthorityCommandRoute.fromPayload(rawRoute, contract.declarationId(), scope));
     }
 
     public static void validate(DataAuthority.AuthorityCommand command) {
@@ -158,7 +160,8 @@ public final class DataAuthorityCommandContracts {
             return;
         }
 
-        AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
+        CommandContract contract = contract(command.type());
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope());
         requireSettlementField("commandDomain", route.domain(), settlement.commandDomain());
         requireSettlementField("commandTopic", route.commandTopic(), settlement.commandTopic());
         requireSettlementField("responseTopic", route.responseTopic(), settlement.responseTopic());
@@ -263,7 +266,7 @@ public final class DataAuthorityCommandContracts {
         AuthorityCommandRoute route
     ) {
         CommandContract contract = contract(type);
-        AuthorityCommandRoute expectedRoute = AuthorityCommandRoute.from(type, scope);
+        AuthorityCommandRoute expectedRoute = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), scope);
         if (route != null && !contract.domain().equals(route.domain())) {
             throw new IllegalArgumentException(
                 "Command " + type + " route domain " + route.domain()
@@ -460,7 +463,8 @@ public final class DataAuthorityCommandContracts {
             .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> {
                 String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
-                AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), sampleScope);
+                AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(),
+                    sampleScope);
                 material
                     .append(contract.declarationId()).append('|')
                     .append(contract.domain()).append('|')
@@ -489,7 +493,8 @@ public final class DataAuthorityCommandContracts {
             .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> {
                 String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
-                AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), sampleScope);
+                AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(),
+                    sampleScope);
                 values.put(contract.declarationId(), sampleScope + "=>" + route.partitionKey());
             });
         return Map.copyOf(values);
@@ -504,7 +509,8 @@ public final class DataAuthorityCommandContracts {
             .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> {
                 String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
-                AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), sampleScope);
+                AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(),
+                    sampleScope);
                 values.put(contract.declarationId(), extractor.apply(route));
             });
         return Map.copyOf(values);
@@ -516,7 +522,8 @@ public final class DataAuthorityCommandContracts {
             .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
             .forEach(contract -> {
                 String sampleScope = contract.aggregateScopePrefix() + "{aggregateId}";
-                values.add(AuthorityCommandRoute.from(contract.type(), sampleScope).commandTopic());
+                values.add(AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), sampleScope)
+                    .commandTopic());
             });
         return Set.copyOf(values);
     }
