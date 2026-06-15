@@ -69,37 +69,26 @@ public record AuthoritySnapshotInvalidation(
         if (revision <= 0L) {
             return Optional.empty();
         }
-        if (command instanceof DataAuthority.PlayerRankCommand rankCommand) {
-            String playerId = rankCommand.playerId().toString();
+        try {
+            AuthorityDomainDeclarations.CommandDeclaration declaration = AuthorityDomainDeclarations.command(
+                command.declarationId()
+            );
+            Map<String, Object> payload = AuthorityCommandPayloads.payload(command);
+            Object aggregateId = payload.get(declaration.aggregateIdField());
+            if (aggregateId == null || aggregateId.toString().isBlank()) {
+                return Optional.empty();
+            }
+            String aggregateIdValue = aggregateId.toString();
             return revisionFloor(
-                PLAYER_RANK,
-                "rank:player:" + playerId,
-                PLAYER_RANK,
-                playerId,
+                declaration.projectionFamily(),
+                declaration.aggregateScopePrefix() + aggregateIdValue,
+                declaration.projectionFamily(),
+                aggregateIdValue,
                 revision
             );
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
         }
-        if (command instanceof DataAuthority.PlayerProfileCommand profileCommand) {
-            String playerId = profileCommand.playerId().toString();
-            return revisionFloor(
-                PLAYER_PROFILE,
-                "player:" + playerId,
-                PLAYER_PROFILE,
-                playerId,
-                revision
-            );
-        }
-        if (command instanceof DataAuthority.PlayerSessionCommand sessionCommand) {
-            String subjectId = sessionCommand.subject().subjectId().toString();
-            return revisionFloor(
-                PLAYER_PRESENCE,
-                DataAuthority.Subject.SCOPE_PREFIX + subjectId,
-                PLAYER_PRESENCE,
-                subjectId,
-                revision
-            );
-        }
-        return Optional.empty();
     }
 
     public static Optional<AuthoritySnapshotInvalidation> fromPayload(Map<?, ?> payload) {

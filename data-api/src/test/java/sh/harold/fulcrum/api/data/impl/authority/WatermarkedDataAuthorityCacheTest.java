@@ -838,6 +838,14 @@ class WatermarkedDataAuthorityCacheTest {
     }
 
     @Test
+    void matchRevisionFloorInvalidationIsNotCacheableYet() {
+        assertThat(AuthoritySnapshotInvalidation.revisionFloorFor(
+            matchCommand(UUID.randomUUID(), UUID.randomUUID(), 2L),
+            3L
+        )).isEmpty();
+    }
+
+    @Test
     void olderRankInvalidationDoesNotEvictCachedSnapshot() {
         UUID playerId = UUID.randomUUID();
         AtomicInteger reads = new AtomicInteger();
@@ -1239,6 +1247,31 @@ class WatermarkedDataAuthorityCacheTest {
             "127.0.0.1",
             765,
             null
+        );
+    }
+
+    private static DataAuthority.MatchCommand matchCommand(UUID commandId, UUID matchId, long expectedRevision) {
+        return new DataAuthority.MatchCommand(
+            DataAuthority.CommandManifest.create(
+                commandId,
+                "RECORD_MATCH_START",
+                "match-service",
+                "match:" + matchId,
+                commandId.toString(),
+                System.currentTimeMillis() + 1_000L,
+                "",
+                expectedRevision
+            ),
+            matchId,
+            "duels",
+            "arena-1",
+            "server-1",
+            "slot-1",
+            "STARTED",
+            System.currentTimeMillis(),
+            null,
+            Map.of("variant", "standard"),
+            List.of()
         );
     }
 
