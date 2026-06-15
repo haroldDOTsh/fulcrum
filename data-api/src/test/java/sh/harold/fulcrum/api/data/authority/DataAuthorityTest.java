@@ -71,6 +71,68 @@ class DataAuthorityTest {
     }
 
     @Test
+    void typedCommandRecordsDoNotOwnDeclarationLists() {
+        UUID playerId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID matchId = UUID.randomUUID();
+        DataAuthority.AuthorityCommand profile = new DataAuthority.PlayerProfileCommand(
+            manifest("UPSERT_PROFILE", "player:" + playerId),
+            playerId,
+            "Steve",
+            1000L,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+        DataAuthority.AuthorityCommand session = new DataAuthority.PlayerSessionCommand(
+            manifest("TOUCH_SESSION", "player:" + playerId),
+            playerId,
+            "Steve",
+            sessionId,
+            1000L,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+        DataAuthority.AuthorityCommand rank = new DataAuthority.PlayerRankCommand(
+            manifest("SET_PRIMARY_RANK", "rank:player:" + playerId),
+            playerId,
+            "ADMIN",
+            List.of("ADMIN")
+        );
+        DataAuthority.AuthorityCommand match = new DataAuthority.MatchCommand(
+            manifest("UPSERT_MATCH", "match:" + matchId),
+            matchId,
+            "duels",
+            null,
+            null,
+            null,
+            "ACTIVE",
+            null,
+            null,
+            Map.of(),
+            List.of()
+        );
+
+        assertThat(List.of(
+            profile.declarationId(),
+            session.declarationId(),
+            rank.declarationId(),
+            match.declarationId()
+        )).containsExactly("UPSERT_PROFILE", "TOUCH_SESSION", "SET_PRIMARY_RANK", "UPSERT_MATCH");
+    }
+
+    @Test
     void manifestSupportsExplicitAnyRevision() {
         DataAuthority.CommandManifest manifest = DataAuthority.CommandManifest.create(
             UUID.randomUUID(),
@@ -559,5 +621,19 @@ class DataAuthorityTest {
 
         assertThat(reader.profileExists(playerId).toCompletableFuture().join()).isTrue();
         assertThat(reader.profileExists(UUID.randomUUID()).toCompletableFuture().join()).isFalse();
+    }
+
+    private static DataAuthority.CommandManifest manifest(String declarationId, String scope) {
+        UUID commandId = UUID.randomUUID();
+        return DataAuthority.CommandManifest.create(
+            commandId,
+            declarationId,
+            "test-actor",
+            scope,
+            commandId.toString(),
+            System.currentTimeMillis() + 1000,
+            "",
+            DataAuthority.ANY_REVISION
+        );
     }
 }

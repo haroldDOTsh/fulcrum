@@ -1204,7 +1204,7 @@ public final class DataAuthority {
         String playtimeStartField
     ) implements AuthorityCommand {
         public PlayerProfileCommand {
-            requireDeclarationId(manifest, "RECORD_PLAYER_LOGIN", "RECORD_PLAYER_LOGOUT");
+            requireManifest(manifest);
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
             }
@@ -1225,7 +1225,7 @@ public final class DataAuthority {
         String disconnectReason
     ) implements AuthorityCommand {
         public PlayerSessionCommand {
-            requireDeclarationId(manifest, "START_SESSION", "RENEW_SESSION", "END_SESSION");
+            requireManifest(manifest);
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
             }
@@ -1240,7 +1240,7 @@ public final class DataAuthority {
         List<String> ranks
     ) implements AuthorityCommand {
         public PlayerRankCommand {
-            requireDeclarationId(manifest, "GRANT_RANK", "REVOKE_RANK");
+            requireManifest(manifest);
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
             }
@@ -1279,7 +1279,7 @@ public final class DataAuthority {
         List<MatchParticipant> participants
     ) implements AuthorityCommand {
         public MatchCommand {
-            requireDeclarationId(manifest, "RECORD_MATCH_START", "RECORD_MATCH_END");
+            requireManifest(manifest);
             if (matchId == null) {
                 throw new IllegalArgumentException("matchId is required");
             }
@@ -1292,16 +1292,10 @@ public final class DataAuthority {
         }
     }
 
-    private static void requireDeclarationId(CommandManifest manifest, String... allowed) {
+    private static void requireManifest(CommandManifest manifest) {
         if (manifest == null) {
             throw new IllegalArgumentException("manifest is required");
         }
-        for (String declarationId : allowed) {
-            if (manifest.declarationId().equals(declarationId)) {
-                return;
-            }
-        }
-        throw new IllegalArgumentException("Command declaration " + manifest.declarationId() + " is not valid here");
     }
 
     public record CommandSubmissionReceipt(
