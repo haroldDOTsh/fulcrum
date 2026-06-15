@@ -54,7 +54,7 @@ class AuthorityCommandFrameTest {
         assertThat(restored.type()).isEqualTo(DataAuthority.CommandType.GRANT_RANK);
         assertThat(restored.provenance().originNode()).isEqualTo("paper-1");
         assertThat(restored.provenance().verifiedPrincipal()).isEqualTo("node:paper-1");
-        assertThat(restored.payload()).isEqualTo(command.payload());
+        assertThat(AuthorityCommandPayloads.payload(restored)).isEqualTo(AuthorityCommandPayloads.payload(command));
         assertThat(AuthorityCommandFingerprints.fingerprint(restored).commandFingerprint())
             .isEqualTo(AuthorityCommandFingerprints.fingerprint(command).commandFingerprint());
     }

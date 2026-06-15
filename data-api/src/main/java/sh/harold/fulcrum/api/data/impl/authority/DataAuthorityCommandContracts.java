@@ -137,7 +137,7 @@ public final class DataAuthorityCommandContracts {
             command.scope(),
             AuthorityCommandRoute.fromCommand(command),
             command.expectedRevision(),
-            command.payload()
+            AuthorityCommandPayloads.payload(command)
         );
     }
 
@@ -223,7 +223,7 @@ public final class DataAuthorityCommandContracts {
         );
         requireSettlementField(
             "refusalReceipt.payloadHash",
-            DataAuthority.CommandRefusalReceipt.payloadHash(command.payload()),
+            DataAuthority.CommandRefusalReceipt.payloadHash(AuthorityCommandPayloads.payload(command)),
             receipt.payloadHash()
         );
     }

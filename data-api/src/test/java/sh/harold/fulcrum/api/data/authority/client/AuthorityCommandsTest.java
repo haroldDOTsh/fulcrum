@@ -26,8 +26,8 @@ class AuthorityCommandsTest {
         assertThat(command.idempotencyKey()).isEqualTo("GRANT_RANK:" + playerId + ":1000");
         assertThat(command.deadlineEpochMillis()).isEqualTo(6_000L);
         assertThat(command.expectedRevision()).isEqualTo(42L);
-        assertThat(command.payload()).containsEntry("primaryRank", "VIP")
-            .containsEntry("ranks", List.of("VIP", "DEFAULT"));
+        assertThat(command.primaryRank()).isEqualTo("VIP");
+        assertThat(command.ranks()).isEqualTo(List.of("VIP", "DEFAULT"));
     }
 
     @Test
@@ -46,11 +46,11 @@ class AuthorityCommandsTest {
         DataAuthorityCommandContracts.validate(login);
         DataAuthorityCommandContracts.validate(logout);
         assertThat(login.scope()).isEqualTo("player:" + playerId);
-        assertThat(login.payload()).containsEntry("online", true)
-            .containsEntry("level", 12);
+        assertThat(login.type()).isEqualTo(DataAuthority.CommandType.RECORD_PLAYER_LOGIN);
+        assertThat(login.level()).isEqualTo(12);
         assertThat(logout.scope()).isEqualTo("player:" + playerId);
-        assertThat(logout.payload()).containsEntry("online", false)
-            .containsEntry("playtimeStartField", "lastJoin");
+        assertThat(logout.type()).isEqualTo(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT);
+        assertThat(logout.playtimeStartField()).isEqualTo("lastJoin");
     }
 
     @Test
@@ -64,9 +64,8 @@ class AuthorityCommandsTest {
 
         DataAuthorityCommandContracts.validate(command);
         assertThat(command.scope()).isEqualTo("player:" + playerId);
-        assertThat(command.payload()).containsEntry("online", false)
-            .containsEntry("clearCurrentServer", true)
-            .containsEntry("disconnectReason", "quit");
+        assertThat(command.type()).isEqualTo(DataAuthority.CommandType.END_SESSION);
+        assertThat(command.disconnectReason()).isEqualTo("quit");
     }
 
     @Test
@@ -92,7 +91,7 @@ class AuthorityCommandsTest {
         assertThat(command.scope()).isEqualTo("match:" + matchId);
         assertThat(command.idempotencyKey()).isEqualTo("RECORD_MATCH_END:" + matchId + ":1000");
         assertThat(command.deadlineEpochMillis()).isEqualTo(17_000L);
-        assertThat(command.payload()).containsEntry("state", "ENDED")
-            .containsEntry("variant", "solo");
+        assertThat(command.state()).isEqualTo("ENDED");
+        assertThat(command.slotMetadata()).containsEntry("variant", "solo");
     }
 }

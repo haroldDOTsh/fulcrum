@@ -58,7 +58,7 @@ record AuthorityCommandFrame(
             manifest.schemaVersion(),
             AuthorityCommandRoute.fromCommand(command),
             manifest.provenance(),
-            command.payload()
+            AuthorityCommandPayloads.payload(command)
         );
     }
 

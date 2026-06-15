@@ -20,7 +20,7 @@ final class AuthorityCommandFingerprints {
     }
 
     static Fingerprint fingerprint(DataAuthority.AuthorityCommand command) {
-        String payloadHash = hash(canonicalJson(command.payload()));
+        String payloadHash = hash(canonicalJson(AuthorityCommandPayloads.payload(command)));
         Map<String, Object> material = new LinkedHashMap<>();
         material.put("commandId", command.commandId().toString());
         material.put("commandType", command.type().name());

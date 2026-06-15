@@ -153,14 +153,15 @@ class DataAuthorityCommandContractManifestTest {
             AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(decoded);
             assertThat(frame.manifestPayload())
                 .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
-            assertThat(frame.toCommand().payload()).isEqualTo(decoded.payload());
+            assertThat(AuthorityCommandPayloads.payload(frame.toCommand()))
+                .isEqualTo(AuthorityCommandPayloads.payload(decoded));
         }
     }
 
     @Test
     void contractRejectsUnknownTopLevelPayloadFields() {
         DataAuthority.AuthorityCommand command = sampleCommand(DataAuthority.CommandType.GRANT_RANK);
-        Map<String, Object> payload = new java.util.LinkedHashMap<>(command.payload());
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(AuthorityCommandPayloads.payload(command));
         payload.put("legacyCollection", "player_ranks");
 
         assertThatThrownBy(() -> new AuthorityCommandFrame(
@@ -195,7 +196,7 @@ class DataAuthorityCommandContractManifestTest {
             DataAuthority.COMMAND_SCHEMA_VERSION + 1,
             AuthorityCommandRoute.fromCommand(command),
             command.provenance(),
-            command.payload()
+            AuthorityCommandPayloads.payload(command)
         )).hasMessageContaining("schema version");
     }
 
@@ -216,7 +217,7 @@ class DataAuthorityCommandContractManifestTest {
             new AuthorityCommandRoute("player_profile", "cmd.player_profile", "evt.player_profile",
                 "state.player_profile", command.scope()),
             command.provenance(),
-            command.payload()
+            AuthorityCommandPayloads.payload(command)
         )).hasMessageContaining("route domain");
     }
 
@@ -237,7 +238,7 @@ class DataAuthorityCommandContractManifestTest {
             new AuthorityCommandRoute("rank", "cmd.rank", "evt.rank",
                 "state.rank", "rank:player:" + UUID.randomUUID()),
             command.provenance(),
-            command.payload()
+            AuthorityCommandPayloads.payload(command)
         )).hasMessageContaining("partition key");
     }
 
@@ -245,7 +246,7 @@ class DataAuthorityCommandContractManifestTest {
     void contractRejectsScopePayloadAggregateDrift() {
         DataAuthority.PlayerRankCommand command = (DataAuthority.PlayerRankCommand)
             sampleCommand(DataAuthority.CommandType.GRANT_RANK);
-        Map<String, Object> payload = new java.util.LinkedHashMap<>(command.payload());
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(AuthorityCommandPayloads.payload(command));
         UUID otherPlayerId = UUID.randomUUID();
         payload.put("playerId", otherPlayerId.toString());
 
@@ -415,7 +416,7 @@ class DataAuthorityCommandContractManifestTest {
         long revision
     ) {
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
-        Object aggregateId = command.payload()
+        Object aggregateId = AuthorityCommandPayloads.payload(command)
             .get(DataAuthorityCommandContracts.contract(command.type()).aggregateIdField());
         DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
             "authority-log-test-authority",

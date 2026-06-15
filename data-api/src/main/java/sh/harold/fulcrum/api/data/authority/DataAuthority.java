@@ -1005,8 +1005,6 @@ public final class DataAuthority {
         PlayerRankCommand, MatchCommand {
         CommandManifest manifest();
 
-        Map<String, Object> payload();
-
         default UUID commandId() {
             return manifest().commandId();
         }
@@ -1225,27 +1223,6 @@ public final class DataAuthority {
             }
             username = username == null ? "unknown" : username;
         }
-
-        @Override
-        public Map<String, Object> payload() {
-            MapBuilder payload = new MapBuilder()
-                .put("playerId", playerId.toString())
-                .put("username", username)
-                .put("timestamp", timestampEpochMillis)
-                .put("online", type() == CommandType.RECORD_PLAYER_LOGIN)
-                .put("currentServer", currentServer)
-                .put("currentProxy", currentProxy)
-                .put("lastIp", lastIp)
-                .put("lastWorld", lastWorld)
-                .put("lastLocation", lastLocation)
-                .put("gamemode", gameMode)
-                .put("level", level)
-                .put("exp", exp)
-                .put("health", health)
-                .put("foodLevel", foodLevel)
-                .put("playtimeStartField", playtimeStartField);
-            return payload.build();
-        }
     }
 
     public record PlayerSessionCommand(
@@ -1267,32 +1244,6 @@ public final class DataAuthority {
             }
             username = username == null ? "unknown" : username;
         }
-
-        @Override
-        public Map<String, Object> payload() {
-            MapBuilder payload = new MapBuilder()
-                .put("playerId", playerId.toString())
-                .put("username", username)
-                .put("sessionId", sessionId == null ? null : sessionId.toString())
-                .put("timestamp", timestampEpochMillis)
-                .put("online", type() != CommandType.END_SESSION)
-                .put("currentServer", currentServer)
-                .put("currentProxy", currentProxy)
-                .put("lastIp", lastIp)
-                .put("protocolVersion", protocolVersion)
-                .put("disconnectReason", disconnectReason);
-            if (type() == CommandType.START_SESSION) {
-                payload.put("lastProxySession", timestampEpochMillis);
-            }
-            if (type() == CommandType.RENEW_SESSION) {
-                payload.put("lastServerSwitch", timestampEpochMillis);
-            }
-            if (type() == CommandType.END_SESSION) {
-                payload.put("playtimeStartField", "lastProxySession");
-                payload.put("clearCurrentServer", true);
-            }
-            return payload.build();
-        }
     }
 
     public record PlayerRankCommand(
@@ -1308,15 +1259,6 @@ public final class DataAuthority {
             }
             primaryRank = primaryRank == null || primaryRank.isBlank() ? "DEFAULT" : primaryRank;
             ranks = ranks == null || ranks.isEmpty() ? List.of(primaryRank) : List.copyOf(ranks);
-        }
-
-        @Override
-        public Map<String, Object> payload() {
-            return new MapBuilder()
-                .put("playerId", playerId.toString())
-                .put("primaryRank", primaryRank)
-                .put("ranks", ranks)
-                .build();
         }
     }
 
@@ -1334,15 +1276,6 @@ public final class DataAuthority {
             stats = stats == null ? Map.of() : Map.copyOf(stats);
         }
 
-        Map<String, Object> payload() {
-            return new MapBuilder()
-                .put("playerId", playerId.toString())
-                .put("teamId", teamId)
-                .put("placement", placement)
-                .put("state", state)
-                .put("stats", stats)
-                .build();
-        }
     }
 
     public record MatchCommand(
@@ -1370,29 +1303,6 @@ public final class DataAuthority {
             slotMetadata = slotMetadata == null ? Map.of() : Map.copyOf(slotMetadata);
             participants = participants == null ? List.of() : List.copyOf(participants);
         }
-
-        @Override
-        public Map<String, Object> payload() {
-            MapBuilder payload = new MapBuilder()
-                .put("matchId", matchId.toString())
-                .put("familyId", familyId)
-                .put("mapId", mapId)
-                .put("serverId", serverId)
-                .put("slotId", slotId)
-                .put("state", state)
-                .put("startedAt", startedAtEpochMillis)
-                .put("endedAt", endedAtEpochMillis)
-                .put("slotMetadata", slotMetadata);
-            for (String key : List.of("variant", "targetWorld")) {
-                if (slotMetadata.containsKey(key)) {
-                    payload.put(key, slotMetadata.get(key));
-                }
-            }
-            payload.put("participants", participants.stream()
-                .map(MatchParticipant::payload)
-                .toList());
-            return payload.build();
-        }
     }
 
     private static void requireType(CommandManifest manifest, CommandType... allowed) {
@@ -1405,21 +1315,6 @@ public final class DataAuthority {
             }
         }
         throw new IllegalArgumentException("Command type " + manifest.type() + " is not valid here");
-    }
-
-    private static final class MapBuilder {
-        private final java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
-
-        private MapBuilder put(String key, Object value) {
-            if (value != null) {
-                values.put(key, value);
-            }
-            return this;
-        }
-
-        private Map<String, Object> build() {
-            return Map.copyOf(values);
-        }
     }
 
     public record CommandSubmissionReceipt(

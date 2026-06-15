@@ -13,7 +13,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DataAuthorityTest {
     @Test
-    void typedRankCommandBuildsStablePayload() {
+    void authorityCommandDoesNotExposeMapPayload() {
+        assertThat(DataAuthority.AuthorityCommand.class.getDeclaredMethods())
+            .extracting(java.lang.reflect.Method::getName)
+            .doesNotContain("payload");
+    }
+
+    @Test
+    void typedRankCommandExposesTypedFields() {
         UUID commandId = UUID.randomUUID();
         UUID playerId = UUID.randomUUID();
         DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
@@ -34,11 +41,10 @@ class DataAuthorityTest {
 
         assertThat(command.commandId()).isEqualTo(commandId);
         assertThat(command.expectedRevision()).isEqualTo(4L);
-        assertThat(command.payload())
-            .containsEntry("playerId", playerId.toString())
-            .containsEntry("primaryRank", "ADMIN");
-        assertThat(command.payload().get("ranks")).isEqualTo(List.of("DEFAULT", "ADMIN"));
-        assertThatThrownBy(() -> command.payload().put("primaryRank", "DEFAULT"))
+        assertThat(command.playerId()).isEqualTo(playerId);
+        assertThat(command.primaryRank()).isEqualTo("ADMIN");
+        assertThat(command.ranks()).isEqualTo(List.of("DEFAULT", "ADMIN"));
+        assertThatThrownBy(() -> command.ranks().add("DEFAULT"))
             .isInstanceOf(UnsupportedOperationException.class);
     }
 

@@ -785,7 +785,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             return claim.rejection();
         }
 
-        Timestamp timestamp = timestamp(longValue(command.payload(), "timestamp", System.currentTimeMillis()));
+        Map<String, Object> payload = payload(command);
+        Timestamp timestamp = timestamp(longValue(payload, "timestamp", System.currentTimeMillis()));
 
         if (command.type() == DataAuthority.CommandType.START_SESSION
             || command.type() == DataAuthority.CommandType.RENEW_SESSION
@@ -803,16 +804,17 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         UUID playerId,
         Timestamp timestamp
     ) throws SQLException {
-        UUID sessionId = uuid(string(command.payload(), "sessionId", null));
+        Map<String, Object> payload = payload(command);
+        UUID sessionId = uuid(string(payload, "sessionId", null));
         if (sessionId == null) {
             return;
         }
 
         boolean ending = command.type() == DataAuthority.CommandType.END_SESSION;
         String state = ending ? "ENDED" : "ACTIVE";
-        String proxyId = string(command.payload(), "currentProxy", null);
-        String serverId = string(command.payload(), "currentServer", null);
-        String disconnectReason = string(command.payload(), "disconnectReason", null);
+        String proxyId = string(payload, "currentProxy", null);
+        String serverId = string(payload, "currentServer", null);
+        String disconnectReason = string(payload, "disconnectReason", null);
 
         try (PreparedStatement statement = connection.prepareStatement("""
             INSERT INTO player_sessions (
@@ -841,7 +843,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
                 statement.setNull(8, Types.TIMESTAMP);
             }
             setNullableString(statement, 9, disconnectReason);
-            statement.setString(10, gson.toJson(command.payload()));
+            statement.setString(10, gson.toJson(payload));
             statement.executeUpdate();
         }
     }
@@ -860,7 +862,8 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             return claim.rejection();
         }
 
-        String primaryRank = string(command.payload(), "primaryRank", "DEFAULT");
+        Map<String, Object> payload = payload(command);
+        String primaryRank = string(payload, "primaryRank", "DEFAULT");
 
         try (PreparedStatement statement = connection.prepareStatement("""
             INSERT INTO player_rank_audit (audit_id, player_id, rank, action, actor, metadata)
@@ -871,7 +874,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             statement.setString(3, primaryRank);
             statement.setString(4, command.type().name());
             statement.setString(5, command.actorId());
-            statement.setString(6, gson.toJson(command.payload()));
+            statement.setString(6, gson.toJson(payload));
             statement.executeUpdate();
         }
 
@@ -909,7 +912,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             return claim.rejection();
         }
 
-        Map<String, Object> payload = command.payload();
+        Map<String, Object> payload = payload(command);
         Timestamp endedAt = timestamp(longValue(payload, "endedAt",
             longValue(payload, "timestamp", System.currentTimeMillis())));
 
@@ -1077,7 +1080,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
             }
             setNullableString(statement, 8, command.fencingToken());
             statement.setLong(9, command.expectedRevision());
-            statement.setString(10, gson.toJson(command.payload()));
+            statement.setString(10, gson.toJson(payload(command)));
             statement.setBoolean(11, result.accepted());
             statement.setString(12, result.rejectionReason() == null ? null : result.rejectionReason().name());
             statement.setString(13, result.message());
@@ -1556,7 +1559,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
     }
 
     private UUID playerId(DataAuthority.AuthorityCommand command) {
-        String value = string(command.payload(), "playerId", null);
+        String value = string(payload(command), "playerId", null);
         if (value == null || value.isBlank()) {
             String scope = command.scope();
             if (scope != null && scope.startsWith("player:")) {
@@ -1570,7 +1573,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
     }
 
     private UUID matchId(DataAuthority.AuthorityCommand command) {
-        String value = string(command.payload(), "matchId", null);
+        String value = string(payload(command), "matchId", null);
         if (value == null || value.isBlank()) {
             String scope = command.scope();
             if (scope != null && scope.startsWith("match:")) {
@@ -1832,7 +1835,7 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         DataAuthority.AuthorityCommand command,
         DataAuthority.CommandResult result
     ) {
-        Map<String, Object> payload = command.payload();
+        Map<String, Object> payload = payload(command);
         return switch (command.type()) {
             case GRANT_RANK, REVOKE_RANK -> {
                 UUID playerId = playerId(command);
@@ -2000,8 +2003,12 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
         payload.put("revision", result.revision());
         payload.put("route", AuthorityCommandRoute.fromCommand(command).payload());
         payload.put("provenance", provenancePayload(command));
-        payload.put("payload", command.payload());
+        payload.put("payload", payload(command));
         return payload;
+    }
+
+    private static Map<String, Object> payload(DataAuthority.AuthorityCommand command) {
+        return AuthorityCommandPayloads.payload(command);
     }
 
     private static Long epochMillis(Timestamp timestamp) {

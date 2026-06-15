@@ -42,7 +42,7 @@ class AuthorityLogCommandPortTest {
         assertThat(result.accepted()).isTrue();
         assertThat(applied.get()).isNotSameAs(command);
         assertThat(applied.get().commandId()).isEqualTo(command.commandId());
-        assertThat(applied.get().payload()).isEqualTo(command.payload());
+        assertThat(AuthorityCommandPayloads.payload(applied.get())).isEqualTo(AuthorityCommandPayloads.payload(command));
         assertThat(result.settlement().watermark().logPositioned()).isTrue();
         assertThat(commands).singleElement().satisfies(record -> {
             assertThat(record.kind()).isEqualTo(AuthorityLogTopicKind.COMMAND);
@@ -122,7 +122,7 @@ class AuthorityLogCommandPortTest {
 
         assertThat(applied.get()).isNotNull();
         assertThat(applied.get().commandId()).isEqualTo(command.commandId());
-        assertThat(applied.get().payload()).isEqualTo(command.payload());
+        assertThat(AuthorityCommandPayloads.payload(applied.get())).isEqualTo(AuthorityCommandPayloads.payload(command));
         assertThat(processed.commandRecord()).isEqualTo(commandRecord);
         assertThat(processed.commandResult().accepted()).isTrue();
         assertThat(commands).containsExactly(commandRecord);
@@ -639,7 +639,7 @@ class AuthorityLogCommandPortTest {
     ) {
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         Map<String, Object> statePayload = Map.of(
-            "playerId", command.payload().get("playerId").toString(),
+            "playerId", AuthorityCommandPayloads.payload(command).get("playerId").toString(),
             "primaryRank", "ADMIN",
             "ranks", List.of("DEFAULT", "ADMIN"),
             "revision", revision
@@ -648,7 +648,7 @@ class AuthorityLogCommandPortTest {
             "postgres-authority-state",
             command.scope(),
             "player_rank",
-            command.payload().get("playerId").toString(),
+            AuthorityCommandPayloads.payload(command).get("playerId").toString(),
             route.domain(),
             route.stateTopic(),
             route.partitionKey(),
@@ -698,7 +698,7 @@ class AuthorityLogCommandPortTest {
             command.expectedRevision(),
             DataAuthorityCommandContracts.fingerprint(),
             DataAuthorityCommandContracts.routeManifestFingerprint(),
-            DataAuthority.CommandRefusalReceipt.payloadHash(command.payload()),
+            DataAuthority.CommandRefusalReceipt.payloadHash(AuthorityCommandPayloads.payload(command)),
             System.currentTimeMillis()
         );
         return new DataAuthority.CommandResult(
