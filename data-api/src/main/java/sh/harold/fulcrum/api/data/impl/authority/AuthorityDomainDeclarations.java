@@ -20,6 +20,14 @@ final class AuthorityDomainDeclarations {
         return DECLARATIONS;
     }
 
+    static List<DataAuthority.CommandType> commandTypes() {
+        return DECLARATIONS.values().stream()
+            .flatMap(declaration -> declaration.commands().stream())
+            .map(CommandDeclaration::type)
+            .sorted(Comparator.comparing(DataAuthority.CommandType::name))
+            .toList();
+    }
+
     static CommandDeclaration command(DataAuthority.CommandType type) {
         Objects.requireNonNull(type, "type");
         for (DomainDeclaration declaration : DECLARATIONS.values()) {

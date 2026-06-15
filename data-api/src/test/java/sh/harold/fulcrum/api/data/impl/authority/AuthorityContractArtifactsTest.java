@@ -40,7 +40,7 @@ class AuthorityContractArtifactsTest {
             .containsExactlyInAnyOrderElementsOf(AuthorityDomainTopology.all().keySet());
         assertThat(manifest.commands())
             .extracting(AuthorityContractArtifacts.CommandRow::type)
-            .containsExactlyInAnyOrderElementsOf(EnumSet.allOf(DataAuthority.CommandType.class));
+            .containsExactlyInAnyOrderElementsOf(AuthorityDomainDeclarations.commandTypes());
         assertThat(manifest.reads())
             .extracting(AuthorityContractArtifacts.ReadRow::type)
             .containsExactlyInAnyOrderElementsOf(EnumSet.allOf(DataAuthorityReadContracts.ReadType.class));
@@ -131,7 +131,7 @@ class AuthorityContractArtifactsTest {
             .map(AuthorityContractArtifacts.GeneratedArtifactRow::artifactId)
             .collect(Collectors.toUnmodifiableSet());
 
-        for (DataAuthority.CommandType type : EnumSet.allOf(DataAuthority.CommandType.class)) {
+        for (DataAuthority.CommandType type : AuthorityDomainDeclarations.commandTypes()) {
             assertThat(artifactIds).contains(
                 "typed-client/command/" + type,
                 "command-serializer/" + type,

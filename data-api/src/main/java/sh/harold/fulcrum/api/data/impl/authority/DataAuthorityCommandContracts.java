@@ -4,7 +4,6 @@ import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.EnumMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -370,11 +369,10 @@ public final class DataAuthorityCommandContracts {
     }
 
     private static Map<DataAuthority.CommandType, CommandContract> contracts() {
-        EnumMap<DataAuthority.CommandType, CommandContract> values =
-            new EnumMap<>(DataAuthority.CommandType.class);
+        Map<DataAuthority.CommandType, CommandContract> values = new LinkedHashMap<>();
         for (AuthorityDomainDeclarations.DomainDeclaration domain : AuthorityDomainDeclarations.all().values()) {
             for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
-                values.put(command.type(), new CommandContract(
+                CommandContract previous = values.put(command.type(), new CommandContract(
                     command.type(),
                     command.commandClass(),
                     domain.domain(),
@@ -389,6 +387,9 @@ public final class DataAuthorityCommandContracts {
                     command.requiredPayloadFields(),
                     command.allowedPayloadFields()
                 ));
+                if (previous != null) {
+                    throw new IllegalStateException("Duplicate command declaration for " + command.type());
+                }
             }
         }
         return Map.copyOf(values);

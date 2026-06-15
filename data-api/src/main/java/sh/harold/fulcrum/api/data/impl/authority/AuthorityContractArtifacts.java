@@ -330,7 +330,7 @@ public final class AuthorityContractArtifacts {
     }
 
     private static Map<DataAuthority.CommandType, List<String>> commandDomainTables() {
-        EnumMap<DataAuthority.CommandType, List<String>> values = new EnumMap<>(DataAuthority.CommandType.class);
+        Map<DataAuthority.CommandType, List<String>> values = new LinkedHashMap<>();
         values.put(DataAuthority.CommandType.RECORD_PLAYER_LOGIN, List.of());
         values.put(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT, List.of());
         values.put(DataAuthority.CommandType.START_SESSION, List.of("player_sessions"));
@@ -341,6 +341,9 @@ public final class AuthorityContractArtifacts {
         values.put(DataAuthority.CommandType.RECORD_MATCH_START, List.of());
         values.put(DataAuthority.CommandType.RECORD_MATCH_END,
             List.of("match_records", "match_participant_stats"));
+        if (!values.keySet().containsAll(AuthorityDomainDeclarations.commandTypes())) {
+            throw new IllegalStateException("Command table mappings must cover declared commands");
+        }
         return Map.copyOf(values);
     }
 

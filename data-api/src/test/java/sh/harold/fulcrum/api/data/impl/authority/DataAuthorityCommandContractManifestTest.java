@@ -6,8 +6,7 @@ import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.EnumMap;
-import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,9 +20,9 @@ class DataAuthorityCommandContractManifestTest {
         DataAuthorityCommandContracts.all();
 
     @Test
-    void contractManifestCoversEveryCommandType() {
+    void contractManifestCoversEveryDeclaredCommand() {
         assertThat(CONTRACTS.keySet()).containsExactlyInAnyOrderElementsOf(
-            EnumSet.allOf(DataAuthority.CommandType.class)
+            AuthorityDomainDeclarations.commandTypes()
         );
         for (DataAuthorityCommandContracts.CommandContract contract : CONTRACTS.values()) {
             assertThat(contract.allowedPayloadFields())
@@ -134,11 +133,11 @@ class DataAuthorityCommandContractManifestTest {
     }
 
     @Test
-    void routePartitionKeyVectorsCoverEveryCommandType() {
+    void routePartitionKeyVectorsCoverEveryDeclaredCommand() {
         Map<String, String> vectors = DataAuthorityCommandContracts.routePartitionKeyVectors();
 
         assertThat(vectors.keySet()).containsExactlyInAnyOrderElementsOf(
-            CONTRACTS.keySet().stream().map(DataAuthority.CommandType::name).toList()
+            AuthorityDomainDeclarations.commandTypes().stream().map(DataAuthority.CommandType::name).toList()
         );
         assertThat(vectors)
             .containsEntry("GRANT_RANK", "rank:player:{aggregateId}=>rank:player:{aggregateId}")
@@ -148,8 +147,7 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void contractCommandsRoundTripThroughAuthorityLogTransport() {
-        EnumMap<DataAuthority.CommandType, DataAuthority.AuthorityCommand> received =
-            new EnumMap<>(DataAuthority.CommandType.class);
+        Map<DataAuthority.CommandType, DataAuthority.AuthorityCommand> received = new LinkedHashMap<>();
         DataAuthority.CommandPort commandPort = new AuthorityPrincipalCommandPort(command -> {
             received.put(command.type(), command);
             return CompletableFuture.completedFuture(acceptedResult(

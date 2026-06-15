@@ -104,7 +104,7 @@ class DataLayerArchitecturePhaseConformanceTest {
                 List.of(
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
-                        "routePartitionKeyVectorsCoverEveryCommandType"
+                        "routePartitionKeyVectorsCoverEveryDeclaredCommand"
                     ),
                     proof(
                         "runtime/src/test/java/sh/harold/fulcrum/runtime/threading/ThreadBoundaryStaticTest.java",

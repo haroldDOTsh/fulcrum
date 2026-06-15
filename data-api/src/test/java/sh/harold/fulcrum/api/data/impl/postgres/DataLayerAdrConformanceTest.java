@@ -529,7 +529,7 @@ class DataLayerAdrConformanceTest {
                 List.of(
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
-                        "contractManifestCoversEveryCommandType"
+                        "contractManifestCoversEveryDeclaredCommand"
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityContractArtifactsTest.java",
@@ -573,11 +573,11 @@ class DataLayerAdrConformanceTest {
                 List.of(
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityDomainTopologyTest.java",
-                        "declaresConsumerGroupAndPrincipalForEveryCommandDomain"
+                        "declaresConsumerGroupAndPrincipalForEveryDeclaredDomain"
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
-                        "routePartitionKeyVectorsCoverEveryCommandType"
+                        "routePartitionKeyVectorsCoverEveryDeclaredCommand"
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/AuthorityFencingCommandPortTest.java",
@@ -751,7 +751,7 @@ class DataLayerAdrConformanceTest {
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
-                        "routePartitionKeyVectorsCoverEveryCommandType"
+                        "routePartitionKeyVectorsCoverEveryDeclaredCommand"
                     ),
                     proof(
                         "data-api/src/test/java/sh/harold/fulcrum/api/data/impl/authority/DataAuthorityCommandContractManifestTest.java",
