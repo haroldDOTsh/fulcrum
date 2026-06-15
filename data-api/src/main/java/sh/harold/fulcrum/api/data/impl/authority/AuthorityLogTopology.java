@@ -19,11 +19,19 @@ public final class AuthorityLogTopology {
         AuthorityCommandRoute route,
         AuthorityLogTopicKind kind
     ) {
+        return policy(route, kind, DEFAULT_PARTITION_COUNT);
+    }
+
+    private static AuthorityLogTopicPolicy policy(
+        AuthorityCommandRoute route,
+        AuthorityLogTopicKind kind,
+        int partitionCount
+    ) {
         return new AuthorityLogTopicPolicy(
             kind.topic(route),
             kind,
             route.domain(),
-            DEFAULT_PARTITION_COUNT,
+            partitionCount,
             kind == AuthorityLogTopicKind.STATE,
             retentionClass(kind)
         );
@@ -31,15 +39,14 @@ public final class AuthorityLogTopology {
 
     public static Map<String, AuthorityLogTopicPolicy> policiesByTopic() {
         Map<String, AuthorityLogTopicPolicy> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.all().values().stream()
-            .sorted(Comparator.comparing(contract -> contract.type().name()))
-            .forEach(contract -> {
-                String scope = contract.aggregateScopePrefix() + "{aggregateId}";
-                AuthorityCommandRoute route = AuthorityCommandRoute.from(contract.type(), scope);
+        AuthorityDomainDeclarations.all().values().stream()
+            .sorted(Comparator.comparing(AuthorityDomainDeclarations.DomainDeclaration::domain))
+            .forEach(declaration -> declaration.commands().forEach(command -> {
+                AuthorityCommandRoute route = AuthorityDomainDeclarations.route(command);
                 for (AuthorityLogTopicKind kind : AuthorityLogTopicKind.values()) {
-                    values.putIfAbsent(kind.topic(route), policy(route, kind));
+                    values.putIfAbsent(kind.topic(route), policy(route, kind, declaration.partitionCount()));
                 }
-            });
+            }));
         return Map.copyOf(values);
     }
 

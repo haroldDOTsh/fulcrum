@@ -11,11 +11,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.TreeMap;
 import java.util.function.Function;
 
 /**
- * Executable per-domain authority tier topology derived from command contracts.
+ * Executable per-domain authority tier topology derived from domain declarations.
  */
 public final class AuthorityDomainTopology {
     private static final Map<String, DomainTopology> TOPOLOGIES = topologies();
@@ -41,18 +40,14 @@ public final class AuthorityDomainTopology {
     }
 
     private static Map<String, DomainTopology> topologies() {
-        Map<String, List<DataAuthorityCommandContracts.CommandContract>> byDomain = new TreeMap<>();
-        DataAuthorityCommandContracts.all().values().stream()
-            .sorted(Comparator.comparing(contract -> contract.type().name()))
-            .forEach(contract -> byDomain.computeIfAbsent(contract.domain(), ignored -> new ArrayList<>())
-                .add(contract));
-
         Map<String, AuthorityLogTopicPolicy> policiesByTopic = AuthorityLogTopology.policiesByTopic();
         Map<String, DomainTopology> values = new LinkedHashMap<>();
-        for (Map.Entry<String, List<DataAuthorityCommandContracts.CommandContract>> entry : byDomain.entrySet()) {
-            String domain = entry.getKey();
-            List<DataAuthorityCommandContracts.CommandContract> contracts = entry.getValue();
-            List<AuthorityCommandRoute> routes = routes(contracts);
+        for (AuthorityDomainDeclarations.DomainDeclaration declaration : AuthorityDomainDeclarations.all().values()
+            .stream()
+            .sorted(Comparator.comparing(AuthorityDomainDeclarations.DomainDeclaration::domain))
+            .toList()) {
+            String domain = declaration.domain();
+            List<AuthorityCommandRoute> routes = routes(declaration);
 
             String commandTopic = requireSingleRouteValue(domain, routes, AuthorityCommandRoute::commandTopic,
                 "commandTopic");
@@ -73,43 +68,30 @@ public final class AuthorityDomainTopology {
 
             values.put(domain, new DomainTopology(
                 domain,
-                "authority-" + domain,
-                "authority-" + domain,
-                "authority-" + domain,
+                declaration.authorityService(),
+                declaration.consumerGroup(),
+                declaration.authorityPrincipal(),
                 partitionCount,
                 commandTopic,
                 responseTopic,
                 eventTopic,
                 stateTopic,
-                contracts.stream().map(DataAuthorityCommandContracts.CommandContract::type).toList(),
-                distinctSorted(contracts.stream()
-                    .map(DataAuthorityCommandContracts.CommandContract::aggregateScopePrefix)
-                    .toList()),
-                distinctSorted(contracts.stream()
-                    .map(DataAuthorityCommandContracts.CommandContract::commandLogStore)
-                    .toList()),
-                distinctSorted(contracts.stream()
-                    .map(DataAuthorityCommandContracts.CommandContract::hotProjectionStore)
-                    .toList()),
-                distinctSorted(contracts.stream()
-                    .map(DataAuthorityCommandContracts.CommandContract::historyStore)
-                    .toList()),
-                distinctSorted(contracts.stream()
-                    .map(DataAuthorityCommandContracts.CommandContract::cacheStore)
-                    .toList())
+                declaration.commandTypes(),
+                declaration.aggregateScopePrefixes(),
+                declaration.commandLogStores(),
+                declaration.hotProjectionStores(),
+                declaration.historyStores(),
+                declaration.cacheStores()
             ));
         }
         return Map.copyOf(values);
     }
 
     private static List<AuthorityCommandRoute> routes(
-        List<DataAuthorityCommandContracts.CommandContract> contracts
+        AuthorityDomainDeclarations.DomainDeclaration declaration
     ) {
-        return contracts.stream()
-            .map(contract -> AuthorityCommandRoute.from(
-                contract.type(),
-                contract.aggregateScopePrefix() + "{aggregateId}"
-            ))
+        return declaration.commands().stream()
+            .map(AuthorityDomainDeclarations::route)
             .toList();
     }
 
@@ -152,7 +134,12 @@ public final class AuthorityDomainTopology {
                     + " topic partition counts must match");
             }
         }
-        return Objects.requireNonNull(partitionCount, "partitionCount");
+        int declaredPartitionCount = AuthorityDomainDeclarations.all().get(domain).partitionCount();
+        if (!Objects.equals(partitionCount, declaredPartitionCount)) {
+            throw new IllegalStateException("Authority domain " + domain + " topic partition count "
+                + partitionCount + " does not match declared " + declaredPartitionCount);
+        }
+        return declaredPartitionCount;
     }
 
     private static String fingerprint(Map<String, DomainTopology> topologies) {
