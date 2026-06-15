@@ -17,6 +17,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.authority.client.AuthorityCommands;
+import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;
 import sh.harold.fulcrum.fundamentals.slot.SimpleSlotOrchestrator;
@@ -39,6 +41,7 @@ public final class MinigameEngine {
     private final SimpleSlotOrchestrator slotOrchestrator;
     private final PaperRuntime runtime;
     private final DataAuthority.CommandPort commandPort;
+    private final DataAuthority.CommandSubmissionPort commandSubmissionPort;
     private final ServerIdentifier serverIdentifier;
     private final Set<String> provisioningSlots = ConcurrentHashMap.newKeySet();
     private final Map<String, MinigameRegistration> registrations = new ConcurrentHashMap<>();
@@ -61,6 +64,7 @@ public final class MinigameEngine {
                           SimpleSlotOrchestrator slotOrchestrator,
                           PaperRuntime runtime,
                           DataAuthority.CommandPort commandPort,
+                          DataAuthority.CommandSubmissionPort commandSubmissionPort,
                           ServerIdentifier serverIdentifier) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.routeRegistry = routeRegistry;
@@ -68,6 +72,7 @@ public final class MinigameEngine {
         this.slotOrchestrator = slotOrchestrator;
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.commandPort = commandPort;
+        this.commandSubmissionPort = commandSubmissionPort;
         this.serverIdentifier = serverIdentifier;
     }
 
@@ -465,28 +470,39 @@ public final class MinigameEngine {
             return;
         }
         long now = System.currentTimeMillis();
-        DataAuthority.MatchCommand command = new DataAuthority.MatchCommand(
-            DataAuthority.CommandManifest.create(
-                UUID.randomUUID(),
-                type,
-                serverIdentifier != null ? serverIdentifier.getServerId() : "paper-runtime",
-                "match:" + matchId,
-                type.name() + ":" + matchId + ":" + payload.getOrDefault("startedAt", payload.getOrDefault("endedAt", now)),
-                now + 5000L,
-                "",
-                DataAuthority.ANY_REVISION
-            ),
-            matchId,
-            objectString(payload.get("familyId")),
-            objectString(payload.get("mapId")),
-            objectString(payload.get("serverId")),
-            objectString(payload.get("slotId")),
-            objectString(payload.get("state")),
-            longObject(payload.get("startedAt")),
-            longObject(payload.get("endedAt")),
-            slotMetadata(payload.get("slotMetadata")),
-            participants(payload.get("participants"))
-        );
+        AuthorityCommands.MatchCommands matchCommands = AuthorityCommands.actor(
+            serverIdentifier != null ? serverIdentifier.getServerId() : "paper-runtime"
+        ).match(matchId);
+        DataAuthority.MatchCommand command = switch (type) {
+            case RECORD_MATCH_START -> matchCommands.recordStart(
+                objectString(payload.get("familyId")),
+                objectString(payload.get("mapId")),
+                objectString(payload.get("serverId")),
+                objectString(payload.get("slotId")),
+                objectString(payload.get("state")),
+                longObject(payload.get("startedAt")),
+                slotMetadata(payload.get("slotMetadata")),
+                participants(payload.get("participants")),
+                now
+            );
+            case RECORD_MATCH_END -> matchCommands.recordEnd(
+                objectString(payload.get("familyId")),
+                objectString(payload.get("mapId")),
+                objectString(payload.get("serverId")),
+                objectString(payload.get("slotId")),
+                objectString(payload.get("state")),
+                longObject(payload.get("startedAt")),
+                longObject(payload.get("endedAt")),
+                slotMetadata(payload.get("slotMetadata")),
+                participants(payload.get("participants")),
+                now
+            );
+            default -> throw new IllegalArgumentException("Unsupported match command type " + type);
+        };
+
+        if (submitDurableIfAvailable(command, matchId)) {
+            return;
+        }
 
         commandPort.submit(command).whenComplete((result, error) -> {
             if (error != null) {
@@ -496,6 +512,27 @@ public final class MinigameEngine {
                     + result.rejectionReason() + " " + result.message());
             }
         });
+    }
+
+    private boolean submitDurableIfAvailable(DataAuthority.MatchCommand command, UUID matchId) {
+        if (commandSubmissionPort == null
+            || DataAuthorityCommandContracts.deliveryMode(command.type())
+                != DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE) {
+            return false;
+        }
+        commandSubmissionPort.submitDurable(command).whenComplete((receipt, error) -> {
+            if (error != null) {
+                plugin.getLogger().log(
+                    Level.WARNING,
+                    "Failed to durably submit match " + command.type() + " for " + matchId,
+                    error
+                );
+            } else {
+                plugin.getLogger().fine("Durably submitted match " + command.type() + " for " + matchId
+                    + " to " + receipt.commandTopic() + "[" + receipt.partition() + "]@" + receipt.offset());
+            }
+        });
+        return true;
     }
 
     private static void copyMetadata(Map<String, Object> target, Map<String, String> source, String... keys) {

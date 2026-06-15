@@ -7,6 +7,7 @@ import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.authority.client.AuthorityCommands;
 import sh.harold.fulcrum.velocity.FulcrumVelocityPlugin;
 import sh.harold.fulcrum.velocity.fundamentals.messagebus.VelocityMessageBusFeature;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
@@ -76,18 +77,44 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
     private void submitPlayerCommand(Player player, DataAuthority.CommandType commandType) {
         long now = System.currentTimeMillis();
         UUID sessionId = sessionId(player, commandType);
-        DataAuthority.PlayerSessionCommand command = new DataAuthority.PlayerSessionCommand(
-            manifest(player, commandType, now),
-            player.getUniqueId(),
-            player.getUsername(),
-            sessionId,
-            now,
-            currentServer(player),
-            proxyId,
-            player.getRemoteAddress() != null ? player.getRemoteAddress().getAddress().getHostAddress() : null,
-            player.getProtocolVersion().getProtocol(),
-            null
-        );
+        AuthorityCommands.SessionCommands sessionCommands = AuthorityCommands.actor("velocity-proxy")
+            .session(player.getUniqueId());
+        String currentServer = currentServer(player);
+        String lastIp = player.getRemoteAddress() != null
+            ? player.getRemoteAddress().getAddress().getHostAddress()
+            : null;
+        int protocolVersion = player.getProtocolVersion().getProtocol();
+        DataAuthority.PlayerSessionCommand command = switch (commandType) {
+            case START_SESSION -> sessionCommands.startSession(
+                player.getUsername(),
+                sessionId,
+                now,
+                currentServer,
+                proxyId,
+                lastIp,
+                protocolVersion
+            );
+            case RENEW_SESSION -> sessionCommands.renewSession(
+                player.getUsername(),
+                sessionId,
+                now,
+                currentServer,
+                proxyId,
+                lastIp,
+                protocolVersion
+            );
+            case END_SESSION -> sessionCommands.endSession(
+                player.getUsername(),
+                sessionId,
+                now,
+                currentServer,
+                proxyId,
+                lastIp,
+                protocolVersion,
+                null
+            );
+            default -> throw new IllegalArgumentException("Unsupported session command type " + commandType);
+        };
 
         commandPort.submit(command).whenComplete((result, error) -> {
             if (error != null) {
@@ -117,19 +144,6 @@ public class VelocityPlayerDataFeature implements VelocityFeature {
         return player.getCurrentServer()
             .map(server -> server.getServerInfo().getName())
             .orElse(null);
-    }
-
-    private DataAuthority.CommandManifest manifest(Player player, DataAuthority.CommandType commandType, long now) {
-        return DataAuthority.CommandManifest.create(
-            UUID.randomUUID(),
-            commandType,
-            "velocity-proxy",
-            "player:" + player.getUniqueId(),
-            commandType.name() + ":" + player.getUniqueId() + ":" + now,
-            now + 5000L,
-            "",
-            DataAuthority.ANY_REVISION
-        );
     }
     
     @Override

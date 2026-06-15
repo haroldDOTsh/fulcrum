@@ -2,8 +2,23 @@
 authority:
   mode: "remote"
   server-id: "registry-service"
+  command-transport: "kafka"
   request-timeout-ms: 5000
   snapshot-cache-max-age-ms: 1000
+  snapshot-cache:
+    store: "valkey"
+    required: true
+  kafka:
+    bootstrap-servers: "localhost:9092"
+    client-id: "fulcrum-velocity-authority-client"
+    validate-topology: true
+    create-missing-topics: false
+  hot-state:
+    cassandra:
+      contact-points: "localhost:9042"
+      local-datacenter: "datacenter1"
+      keyspace: "fulcrum_authority"
+      validate-schema: true
 
 # Redis configuration for Message Bus
 redis:

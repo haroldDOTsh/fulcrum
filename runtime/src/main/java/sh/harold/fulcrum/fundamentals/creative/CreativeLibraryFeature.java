@@ -1,14 +1,14 @@
 package sh.harold.fulcrum.fundamentals.creative;
 
 import org.bukkit.plugin.java.JavaPlugin;
-import sh.harold.creative.library.menu.MenuService;
-import sh.harold.creative.library.menu.core.StandardMenuService;
-import sh.harold.creative.library.menu.paper.PaperMenuPlatform;
-import sh.harold.creative.library.message.paper.PaperMessageSender;
-import sh.harold.creative.library.scoreboard.ScoreboardService;
-import sh.harold.creative.library.scoreboard.paper.PaperScoreboardPlatform;
-import sh.harold.creative.library.sound.SoundCueService;
-import sh.harold.creative.library.sound.paper.PaperSoundCuePlatform;
+import sh.harold.library.menu.MenuService;
+import sh.harold.library.menu.core.StandardMenuService;
+import sh.harold.library.menu.paper.PaperMenuPlatform;
+import sh.harold.library.message.paper.PaperMessageSender;
+import sh.harold.library.scoreboard.ScoreboardService;
+import sh.harold.library.scoreboard.paper.PaperScoreboardPlatform;
+import sh.harold.library.sound.SoundCueService;
+import sh.harold.library.sound.paper.PaperSoundCuePlatform;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 

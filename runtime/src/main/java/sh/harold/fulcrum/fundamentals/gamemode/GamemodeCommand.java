@@ -7,7 +7,7 @@ import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSele
 import org.bukkit.GameMode;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import sh.harold.creative.library.message.Message;
+import sh.harold.library.message.Message;
 import sh.harold.fulcrum.api.rank.RankUtils;
 
 import static io.papermc.paper.command.brigadier.Commands.argument;

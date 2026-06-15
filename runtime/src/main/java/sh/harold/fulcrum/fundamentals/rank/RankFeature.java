@@ -8,6 +8,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.authority.client.AuthorityCommands;
 import sh.harold.fulcrum.api.rank.Rank;
 import sh.harold.fulcrum.api.rank.RankService;
 import sh.harold.fulcrum.fundamentals.rank.commands.RankCommand;
@@ -303,21 +304,13 @@ public class RankFeature implements PluginFeature, RankService, Listener {
         Rank safePrimary = primary == null ? getEffectiveRankFromSet(safeRanks) : primary;
 
         long now = System.currentTimeMillis();
-        DataAuthority.PlayerRankCommand command = new DataAuthority.PlayerRankCommand(
-            DataAuthority.CommandManifest.create(
-                UUID.randomUUID(),
-                commandType,
-                "rank-service",
-                "rank:player:" + playerId,
-                commandType.name() + ":" + playerId + ":" + now,
-                now + 5000L,
-                "",
-                expectedRevision
-            ),
-            playerId,
-            safePrimary.name(),
-            safeRanks.stream().map(Enum::name).collect(Collectors.toList())
-        );
+        List<String> rankNames = safeRanks.stream().map(Enum::name).collect(Collectors.toList());
+        AuthorityCommands.RankCommands rankCommands = AuthorityCommands.actor("rank-service").rank(playerId);
+        DataAuthority.PlayerRankCommand command = switch (commandType) {
+            case GRANT_RANK -> rankCommands.grantRank(safePrimary.name(), rankNames, expectedRevision, now);
+            case REVOKE_RANK -> rankCommands.revokeRank(safePrimary.name(), rankNames, expectedRevision, now);
+            default -> throw new IllegalArgumentException("Unsupported rank command type " + commandType);
+        };
 
         return submitRankCommand(command, playerId);
     }

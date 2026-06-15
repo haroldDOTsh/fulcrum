@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.guard.GameNodeCapabilityManifest;
 import sh.harold.fulcrum.api.data.guard.GameNodeStartupAttestation;
 import sh.harold.fulcrum.api.data.guard.GameNodeStorageGuard;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
@@ -57,6 +58,7 @@ class DataAuthorityFeatureTest {
         assertTrue(manifest.forbidLocalAuthority());
         assertTrue(manifest.forbidDirectStoreConfig());
         assertTrue(manifest.forbiddenCapabilities().contains("authority.local"));
+        assertTrue(manifest.forbiddenCapabilities().contains("authority.command.message-bus"));
         assertTrue(manifest.forbiddenCapabilities().contains("store.direct.sql"));
         assertTrue(manifest.commandContractFingerprint().equals(DataAuthorityCommandContracts.fingerprint()));
         assertTrue(manifest.readContractFingerprint().equals(DataAuthorityReadContracts.fingerprint()));
@@ -76,6 +78,21 @@ class DataAuthorityFeatureTest {
     }
 
     @Test
+    void negativeCapabilityManifestRejectsMessageBusCommandTransport() {
+        YamlConfiguration config = new YamlConfiguration();
+        config.set("authority.mode", "remote");
+        config.set("authority.command-transport", "message-bus");
+
+        IllegalStateException exception = assertThrows(
+            IllegalStateException.class,
+            () -> DataAuthorityFeature.requireNegativeCapabilityManifest(config)
+        );
+
+        assertTrue(exception.getMessage().contains("authority.command-transport"));
+        assertTrue(exception.getMessage().contains("durable Kafka command log"));
+    }
+
+    @Test
     void bundledGameNodeConfigDoesNotShipPostgresCredentials() throws Exception {
         YamlConfiguration config;
         try (InputStream stream = getClass().getClassLoader().getResourceAsStream("database-config.yml")) {
@@ -84,6 +101,7 @@ class DataAuthorityFeatureTest {
         }
 
         assertFalse(config.contains("postgres"));
+        assertEquals(DataAuthorityFeature.DEFAULT_COMMAND_TRANSPORT, config.getString("authority.command-transport"));
         DataAuthorityFeature.rejectDirectStoreConfigForRemoteAuthority(config);
     }
 
@@ -142,12 +160,30 @@ class DataAuthorityFeatureTest {
             DataAuthorityCommandContracts.routeManifestFingerprint(),
             deliveryManifest.getCommandRouteManifestFingerprint()
         );
+        assertEquals(
+            AuthorityDomainTopology.fingerprint(),
+            deliveryManifest.getAuthorityDomainTopologyFingerprint()
+        );
         assertEquals(DataAuthorityReadContracts.fingerprint(), deliveryManifest.getReadContractFingerprint());
-        assertEquals("player_rank", deliveryManifest.getCommandDomainsByType().get("GRANT_RANK"));
+        assertEquals("authority-rank", deliveryManifest.getAuthorityServicesByDomain().get("rank"));
+        assertEquals("authority-rank", deliveryManifest.getAuthorityConsumerGroupsByDomain().get("rank"));
+        assertEquals("authority-rank", deliveryManifest.getAuthorityPrincipalsByDomain().get("rank"));
+        assertEquals("rank", deliveryManifest.getCommandDomainsByType().get("GRANT_RANK"));
         assertEquals(
             "rank:player:{aggregateId}=>rank:player:{aggregateId}",
             deliveryManifest.getCommandPartitionKeyVectorsByType().get("GRANT_RANK")
         );
+        assertEquals("authority-rank", deliveryManifest.getCommandAuthorityServicesByType().get("GRANT_RANK"));
+        assertEquals("authority-rank", deliveryManifest.getCommandConsumerGroupsByType().get("GRANT_RANK"));
+        assertEquals("authority-rank", deliveryManifest.getCommandAuthorityPrincipalsByType().get("GRANT_RANK"));
+        assertEquals(
+            Integer.toString(AuthorityDomainTopology.domain("rank").partitionCount()),
+            deliveryManifest.getCommandPartitionCountsByType().get("GRANT_RANK")
+        );
+        assertEquals("cmd.rank", deliveryManifest.getCommandTopicsByType().get("GRANT_RANK"));
+        assertEquals("rsp.rank", deliveryManifest.getCommandResponseTopicsByType().get("GRANT_RANK"));
+        assertEquals("evt.rank", deliveryManifest.getCommandEventTopicsByType().get("GRANT_RANK"));
+        assertEquals("state.rank", deliveryManifest.getCommandStateTopicsByType().get("GRANT_RANK"));
         assertEquals("kafka", deliveryManifest.getCommandLogStoresByType().get("GRANT_RANK"));
         assertEquals("cassandra", deliveryManifest.getCommandHotProjectionStoresByType().get("GRANT_RANK"));
         assertEquals("postgresql", deliveryManifest.getCommandHistoryStoresByType().get("GRANT_RANK"));

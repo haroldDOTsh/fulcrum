@@ -17,6 +17,9 @@ repositories {
 
 dependencies {
     api(project(":message-bus-api"))
+    implementation(project(":data-valkey"))
+    implementation("com.datastax.oss:java-driver-core:4.17.0")
+    implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
     api(project(":data-api")) {
         exclude(group = "org.postgresql", module = "postgresql")
         exclude(group = "com.zaxxer", module = "HikariCP")
@@ -36,8 +39,8 @@ dependencies {
     // YAML configuration
     implementation("org.yaml:snakeyaml:2.0")
 
-    implementation("sh.harold.creative:message-core:v6")
-    implementation("sh.harold.creative:message-velocity:v6")
+    implementation("sh.harold.library:message-core:v7")
+    implementation("sh.harold.library:message-velocity:v7")
     
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.9")
@@ -164,7 +167,6 @@ val verifyGameNodeCustody by tasks.registering {
             "org.postgresql" to "PostgreSQL JDBC class",
             "mongodb" to "MongoDB direct store config",
             "mongo:" to "MongoDB direct store config section",
-            "cassandra" to "Cassandra direct store config",
             "mysql" to "MySQL direct store config",
             "mariadb" to "MariaDB direct store config",
             "authority.mode=local" to "local authority mode",

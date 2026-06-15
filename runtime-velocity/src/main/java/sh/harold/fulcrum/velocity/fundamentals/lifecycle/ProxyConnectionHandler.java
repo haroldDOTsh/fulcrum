@@ -11,7 +11,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
-import sh.harold.creative.library.message.Message;
+import sh.harold.library.message.Message;
 import sh.harold.fulcrum.velocity.api.ProxyIdentifier;
 import sh.harold.fulcrum.velocity.api.ServerIdentifier;
 

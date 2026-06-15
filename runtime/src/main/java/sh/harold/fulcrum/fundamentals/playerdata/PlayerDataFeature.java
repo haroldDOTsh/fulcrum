@@ -9,6 +9,8 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
+import sh.harold.fulcrum.api.data.authority.client.AuthorityCommands;
+import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
 import sh.harold.fulcrum.lifecycle.DependencyContainer;
 import sh.harold.fulcrum.lifecycle.PluginFeature;
 import sh.harold.fulcrum.runtime.threading.PaperRuntime;
@@ -24,6 +26,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     private JavaPlugin plugin;
     private Logger logger;
     private DataAuthority.CommandPort commandPort;
+    private DataAuthority.CommandSubmissionPort commandSubmissionPort;
     private DataAuthority.PlayerProfileReader profileReader;
     private FileConfiguration config;
     private PaperRuntime runtime;
@@ -38,6 +41,7 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         this.trackIps = config.getBoolean("player-data.track-ips", false);
         
         this.commandPort = container.getOptional(DataAuthority.CommandPort.class).orElse(null);
+        this.commandSubmissionPort = container.getOptional(DataAuthority.CommandSubmissionPort.class).orElse(null);
         this.profileReader = container.getOptional(DataAuthority.PlayerProfileReader.class).orElse(null);
         
         if (commandPort == null || profileReader == null) {
@@ -64,23 +68,38 @@ public class PlayerDataFeature implements PluginFeature, Listener {
     }
 
     private void submitPlayerCommand(DataAuthority.CommandType commandType, PlayerSnapshot snapshot) {
-        DataAuthority.PlayerProfileCommand command = new DataAuthority.PlayerProfileCommand(
-            manifest(commandType, snapshot),
-            snapshot.playerId(),
-            snapshot.username(),
-            snapshot.capturedAtMillis(),
-            null,
-            null,
-            trackIps ? snapshot.ipAddress() : null,
-            snapshot.worldName(),
-            snapshot.compactLocation(),
-            snapshot.gameMode(),
-            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN ? snapshot.level() : null,
-            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN ? snapshot.exp() : null,
-            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN ? snapshot.health() : null,
-            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN ? snapshot.foodLevel() : null,
-            commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGOUT ? "lastJoin" : null
-        );
+        AuthorityCommands.PlayerCommands playerCommands = AuthorityCommands.actor("paper-runtime")
+            .player(snapshot.playerId());
+        DataAuthority.PlayerProfileCommand command = commandType == DataAuthority.CommandType.RECORD_PLAYER_LOGIN
+            ? playerCommands.recordLogin(
+                snapshot.username(),
+                snapshot.capturedAtMillis(),
+                null,
+                null,
+                trackIps ? snapshot.ipAddress() : null,
+                snapshot.worldName(),
+                snapshot.compactLocation(),
+                snapshot.gameMode(),
+                snapshot.level(),
+                snapshot.exp(),
+                snapshot.health(),
+                snapshot.foodLevel()
+            )
+            : playerCommands.recordLogout(
+                snapshot.username(),
+                snapshot.capturedAtMillis(),
+                null,
+                null,
+                trackIps ? snapshot.ipAddress() : null,
+                snapshot.worldName(),
+                snapshot.compactLocation(),
+                snapshot.gameMode(),
+                "lastJoin"
+            );
+
+        if (submitDurableIfAvailable(command, snapshot.username())) {
+            return;
+        }
 
         commandPort.submit(command).whenComplete((result, error) -> {
             if (error != null) {
@@ -94,17 +113,24 @@ public class PlayerDataFeature implements PluginFeature, Listener {
         });
     }
 
-    private DataAuthority.CommandManifest manifest(DataAuthority.CommandType commandType, PlayerSnapshot snapshot) {
-        return DataAuthority.CommandManifest.create(
-            UUID.randomUUID(),
-            commandType,
-            "paper-runtime",
-            "player:" + snapshot.playerId(),
-            commandType.name() + ":" + snapshot.playerId() + ":" + snapshot.capturedAtMillis(),
-            snapshot.capturedAtMillis() + 5000L,
-            "",
-            DataAuthority.ANY_REVISION
-        );
+    private boolean submitDurableIfAvailable(
+        DataAuthority.PlayerProfileCommand command,
+        String username
+    ) {
+        if (commandSubmissionPort == null
+            || DataAuthorityCommandContracts.deliveryMode(command.type())
+                != DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE) {
+            return false;
+        }
+        commandSubmissionPort.submitDurable(command).whenComplete((receipt, error) -> {
+            if (error != null) {
+                logger.log(Level.WARNING, "Failed to durably submit player command for " + username, error);
+            } else {
+                logger.fine("Durably submitted " + command.type() + " for " + username
+                    + " to " + receipt.commandTopic() + "[" + receipt.partition() + "]@" + receipt.offset());
+            }
+        });
+        return true;
     }
     
     public CompletableFuture<Optional<DataAuthority.PlayerProfileSnapshot>> getPlayerProfile(UUID uuid) {

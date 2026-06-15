@@ -1,7 +1,7 @@
 package sh.harold.fulcrum.velocity.fundamentals.creative;
 
 import org.slf4j.Logger;
-import sh.harold.creative.library.message.velocity.VelocityMessageSender;
+import sh.harold.library.message.velocity.VelocityMessageSender;
 import sh.harold.fulcrum.velocity.lifecycle.ServiceLocator;
 import sh.harold.fulcrum.velocity.lifecycle.VelocityFeature;
 

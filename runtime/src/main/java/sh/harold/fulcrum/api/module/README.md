@@ -8,7 +8,7 @@ External module system for extending Fulcrum.
 import sh.harold.fulcrum.api.module.FulcrumModule;
 import sh.harold.fulcrum.api.module.ModuleInfo;
 import sh.harold.fulcrum.api.module.FulcrumPlatform;
-import sh.harold.creative.library.message.paper.PaperMessageSender;
+import sh.harold.library.message.paper.PaperMessageSender;
 
 @ModuleInfo(
     name = "MyModule",

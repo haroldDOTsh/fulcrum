@@ -35,7 +35,7 @@ import org.bukkit.WorldType;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
-import sh.harold.creative.library.message.Message;
+import sh.harold.library.message.Message;
 import sh.harold.fulcrum.api.lifecycle.ServerIdentifier;
 import sh.harold.fulcrum.api.rank.RankUtils;
 import sh.harold.fulcrum.api.messagebus.messages.SlotLifecycleStatus;

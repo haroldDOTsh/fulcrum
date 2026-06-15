@@ -47,12 +47,15 @@ public class MinigameEngineFeature implements PluginFeature {
             plugin.getLogger().warning("SimpleSlotOrchestrator unavailable; provisioning events will be deferred.");
         }
         DataAuthority.CommandPort commandPort = container.get(DataAuthority.CommandPort.class);
+        DataAuthority.CommandSubmissionPort commandSubmissionPort = container
+            .getOptional(DataAuthority.CommandSubmissionPort.class)
+            .orElse(null);
         ServerIdentifier serverIdentifier = container.getOptional(ServerIdentifier.class)
             .orElseGet(() -> ServiceLocatorImpl.getInstance() != null
                 ? ServiceLocatorImpl.getInstance().findService(ServerIdentifier.class).orElse(null)
                 : null);
         engine = new MinigameEngine(plugin, routeRegistry, environmentService, orchestrator, runtime,
-            commandPort, serverIdentifier);
+            commandPort, commandSubmissionPort, serverIdentifier);
         if (orchestrator != null) {
             orchestrator.addProvisionListener(engine::handleProvisionedSlot);
         }

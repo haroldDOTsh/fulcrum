@@ -21,6 +21,9 @@ repositories {
 
 dependencies {
     implementation(project(":message-bus-api"))
+    implementation(project(":data-valkey"))
+    implementation("com.datastax.oss:java-driver-core:4.17.0")
+    implementation("io.lettuce:lettuce-core:6.3.0.RELEASE")
     implementation(project(":data-api")) {
         exclude(group = "org.postgresql", module = "postgresql")
         exclude(group = "com.zaxxer", module = "HikariCP")
@@ -33,12 +36,12 @@ dependencies {
     implementation("org.yaml:snakeyaml:2.2")
     implementation("io.github.classgraph:classgraph:4.8.173")
 
-    implementation("sh.harold.creative:message-core:v6")
-    implementation("sh.harold.creative:message-paper:v6")
-    implementation("sh.harold.creative:menu-core:v6")
-    implementation("sh.harold.creative:menu-paper:v6")
-    implementation("sh.harold.creative:sound-paper:v6")
-    implementation("sh.harold.creative:scoreboard-paper:v6")
+    implementation("sh.harold.library:message-core:v7")
+    implementation("sh.harold.library:message-paper:v7")
+    implementation("sh.harold.library:menu-core:v7")
+    implementation("sh.harold.library:menu-paper:v7")
+    implementation("sh.harold.library:sound-paper:v7")
+    implementation("sh.harold.library:scoreboard-paper:v7")
     
     // Jackson dependencies (required for message bus serialization)
     implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
@@ -59,6 +62,12 @@ dependencies {
     // (Optional test setup)
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+}
+
+configurations.configureEach {
+    resolutionStrategy.capabilitiesResolution.withCapability("org.lz4:lz4-java") {
+        select("org.lz4:lz4-java:1.8.0")
+    }
 }
 
 val targetJavaVersion = 25
@@ -185,7 +194,6 @@ val verifyGameNodeCustody by tasks.registering {
             "org.postgresql" to "PostgreSQL JDBC class",
             "mongodb" to "MongoDB direct store config",
             "mongo:" to "MongoDB direct store config section",
-            "cassandra" to "Cassandra direct store config",
             "mysql" to "MySQL direct store config",
             "mariadb" to "MariaDB direct store config",
             "authority.mode=local" to "local authority mode",
