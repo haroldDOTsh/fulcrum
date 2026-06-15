@@ -76,7 +76,7 @@ public final class AuthorityDomainTopology {
                 responseTopic,
                 eventTopic,
                 stateTopic,
-                declaration.commandTypes(),
+                declaration.declarationIds(),
                 declaration.aggregateScopePrefixes(),
                 declaration.commandLogStores(),
                 declaration.hotProjectionStores(),
@@ -164,18 +164,8 @@ public final class AuthorityDomainTopology {
         return values.stream().distinct().sorted().toList();
     }
 
-    private static List<DataAuthority.CommandType> sortedCommandTypes(List<DataAuthority.CommandType> values) {
-        return values.stream()
-            .sorted(Comparator.comparing(DataAuthority.CommandType::name))
-            .toList();
-    }
-
     private static String joinStrings(List<String> values) {
         return String.join(",", values);
-    }
-
-    private static String joinCommandTypes(List<DataAuthority.CommandType> values) {
-        return String.join(",", values.stream().map(DataAuthority.CommandType::name).toList());
     }
 
     private static String requireText(String value, String field) {
@@ -195,7 +185,7 @@ public final class AuthorityDomainTopology {
         String responseTopic,
         String eventTopic,
         String stateTopic,
-        List<DataAuthority.CommandType> commandTypes,
+        List<String> declarationIds,
         List<String> aggregateScopePrefixes,
         List<String> commandLogStores,
         List<String> hotProjectionStores,
@@ -214,15 +204,15 @@ public final class AuthorityDomainTopology {
             responseTopic = requireText(responseTopic, "responseTopic");
             eventTopic = requireText(eventTopic, "eventTopic");
             stateTopic = requireText(stateTopic, "stateTopic");
-            commandTypes = sortedCommandTypes(Objects.requireNonNull(commandTypes, "commandTypes"));
+            declarationIds = distinctSorted(Objects.requireNonNull(declarationIds, "declarationIds"));
             aggregateScopePrefixes = distinctSorted(Objects.requireNonNull(aggregateScopePrefixes,
                 "aggregateScopePrefixes"));
             commandLogStores = distinctSorted(Objects.requireNonNull(commandLogStores, "commandLogStores"));
             hotProjectionStores = distinctSorted(Objects.requireNonNull(hotProjectionStores, "hotProjectionStores"));
             historyStores = distinctSorted(Objects.requireNonNull(historyStores, "historyStores"));
             cacheStores = distinctSorted(Objects.requireNonNull(cacheStores, "cacheStores"));
-            if (commandTypes.isEmpty()) {
-                throw new IllegalArgumentException("commandTypes is required");
+            if (declarationIds.isEmpty()) {
+                throw new IllegalArgumentException("declarationIds is required");
             }
             if (aggregateScopePrefixes.isEmpty()) {
                 throw new IllegalArgumentException("aggregateScopePrefixes is required");
@@ -269,7 +259,7 @@ public final class AuthorityDomainTopology {
                 + "|authorityPrincipal=" + authorityPrincipal
                 + "|partitionCount=" + partitionCount
                 + "|topics=" + commandTopic + "," + responseTopic + "," + eventTopic + "," + stateTopic
-                + "|commandTypes=" + joinCommandTypes(commandTypes)
+                + "|declarationIds=" + joinStrings(declarationIds)
                 + "|aggregateScopePrefixes=" + joinStrings(aggregateScopePrefixes)
                 + "|commandLogStores=" + joinStrings(commandLogStores)
                 + "|hotProjectionStores=" + joinStrings(hotProjectionStores)

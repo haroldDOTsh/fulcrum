@@ -215,7 +215,7 @@ class AuthorityContractArtifactsTest {
             assertThat(row.consumerGroup()).as(row.domain()).isEqualTo(topology.consumerGroup());
             assertThat(row.authorityPrincipal()).as(row.domain()).isEqualTo(topology.authorityPrincipal());
             assertThat(row.partitionCount()).as(row.domain()).isEqualTo(topology.partitionCount());
-            assertThat(row.commandTypes()).as(row.domain()).containsExactlyElementsOf(topology.commandTypes());
+            assertThat(row.declarationIds()).as(row.domain()).containsExactlyElementsOf(topology.declarationIds());
             assertThat(row.allTopics()).as(row.domain()).containsExactlyElementsOf(topology.allTopics());
             assertThat(row.allStores()).as(row.domain()).containsExactlyElementsOf(topology.allStores());
         }

@@ -1,7 +1,6 @@
 package sh.harold.fulcrum.api.data.impl.authority;
 
 import org.junit.jupiter.api.Test;
-import sh.harold.fulcrum.api.data.authority.DataAuthority;
 
 import java.util.Map;
 import java.util.Set;
@@ -24,13 +23,15 @@ class AuthorityDomainTopologyTest {
             assertThat(topology.consumerGroup()).isEqualTo(declaration.consumerGroup());
             assertThat(topology.authorityPrincipal()).isEqualTo(declaration.authorityPrincipal());
             assertThat(topology.partitionCount()).isEqualTo(declaration.partitionCount());
-            assertThat(topology.commandTypes()).containsExactlyElementsOf(declaration.commandTypes());
-            assertThat(topology.commandTypes())
-                .allSatisfy(type -> assertThat(DataAuthorityCommandContracts.contract(type).domain())
+            assertThat(topology.declarationIds()).containsExactlyElementsOf(declaration.declarationIds());
+            assertThat(topology.declarationIds())
+                .allSatisfy(declarationId -> assertThat(
+                    DataAuthorityCommandContracts.contractByDeclarationId(declarationId).domain()
+                )
                     .isEqualTo(topology.domain()));
         }
-        assertThat(topologies.get("rank").commandTypes())
-            .containsExactlyInAnyOrder(DataAuthority.CommandType.GRANT_RANK, DataAuthority.CommandType.REVOKE_RANK);
+        assertThat(topologies.get("rank").declarationIds())
+            .containsExactlyInAnyOrder("GRANT_RANK", "REVOKE_RANK");
     }
 
     @Test
@@ -42,7 +43,7 @@ class AuthorityDomainTopologyTest {
             for (AuthorityDomainDeclarations.CommandDeclaration command : declaration.commands()) {
                 AuthorityCommandRoute route = AuthorityDomainDeclarations.route(command);
 
-                assertThat(topology.commandTypes()).contains(command.type());
+                assertThat(topology.declarationIds()).contains(command.declarationId());
                 assertThat(topology.commandTopics()).contains(route.commandTopic());
                 assertThat(topology.responseTopics()).contains(route.responseTopic());
                 assertThat(topology.eventTopics()).contains(route.eventTopic());
@@ -72,17 +73,17 @@ class AuthorityDomainTopologyTest {
     }
 
     @Test
-    void topologyCoversEveryDeclaredCommandTypeExactlyOnce() {
-        Set<DataAuthority.CommandType> declaredTypes = AuthorityDomainDeclarations.all().values().stream()
-            .flatMap(declaration -> declaration.commandTypes().stream())
+    void topologyCoversEveryDeclaredCommandExactlyOnce() {
+        Set<String> declaredIds = AuthorityDomainDeclarations.all().values().stream()
+            .flatMap(declaration -> declaration.declarationIds().stream())
             .collect(Collectors.toUnmodifiableSet());
-        Set<DataAuthority.CommandType> commandTypes = AuthorityDomainTopology.all().values().stream()
-            .flatMap(topology -> topology.commandTypes().stream())
+        Set<String> declarationIds = AuthorityDomainTopology.all().values().stream()
+            .flatMap(topology -> topology.declarationIds().stream())
             .collect(Collectors.toUnmodifiableSet());
 
-        assertThat(commandTypes).containsExactlyInAnyOrderElementsOf(declaredTypes);
+        assertThat(declarationIds).containsExactlyInAnyOrderElementsOf(declaredIds);
         assertThat(AuthorityDomainTopology.all().values().stream()
-            .mapToLong(topology -> topology.commandTypes().size())
-            .sum()).isEqualTo(commandTypes.size());
+            .mapToLong(topology -> topology.declarationIds().size())
+            .sum()).isEqualTo(declarationIds.size());
     }
 }

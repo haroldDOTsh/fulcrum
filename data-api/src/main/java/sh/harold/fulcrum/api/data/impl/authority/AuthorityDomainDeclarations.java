@@ -252,6 +252,10 @@ final class AuthorityDomainDeclarations {
             return commands.stream().map(CommandDeclaration::type).toList();
         }
 
+        List<String> declarationIds() {
+            return commands.stream().map(CommandDeclaration::declarationId).toList();
+        }
+
         List<String> aggregateScopePrefixes() {
             return distinctSorted(commands.stream()
                 .map(CommandDeclaration::aggregateScopePrefix)
