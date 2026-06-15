@@ -20,14 +20,6 @@ final class AuthorityDomainDeclarations {
         return DECLARATIONS;
     }
 
-    static List<DataAuthority.CommandType> commandTypes() {
-        return DECLARATIONS.values().stream()
-            .flatMap(declaration -> declaration.commands().stream())
-            .map(CommandDeclaration::type)
-            .sorted(Comparator.comparing(DataAuthority.CommandType::name))
-            .toList();
-    }
-
     static List<String> declarationIds() {
         return DECLARATIONS.values().stream()
             .flatMap(declaration -> declaration.commands().stream())
@@ -257,10 +249,6 @@ final class AuthorityDomainDeclarations {
             hotProjectionStores = distinctSorted(hotProjectionStores);
             historyStores = distinctSorted(historyStores);
             cacheStores = distinctSorted(cacheStores);
-        }
-
-        List<DataAuthority.CommandType> commandTypes() {
-            return commands.stream().map(CommandDeclaration::type).toList();
         }
 
         List<String> declarationIds() {

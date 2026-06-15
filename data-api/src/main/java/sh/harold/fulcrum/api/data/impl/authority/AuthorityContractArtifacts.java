@@ -33,7 +33,7 @@ public final class AuthorityContractArtifacts {
         "authority_state_changelog",
         "authority_idempotency_conflicts"
     );
-    private static final Map<DataAuthority.CommandType, List<String>> COMMAND_DOMAIN_TABLES =
+    private static final Map<String, List<String>> COMMAND_DOMAIN_TABLES =
         commandDomainTables();
     private static final Map<DataAuthorityReadContracts.ReadType, List<String>> READ_TABLES =
         readTables();
@@ -141,7 +141,7 @@ public final class AuthorityContractArtifacts {
             contract.hotProjectionStore(),
             contract.historyStore(),
             contract.cacheStore(),
-            schemaTables(schema, commandTables(contract.type()))
+            schemaTables(schema, commandTables(contract.declarationId()))
         );
     }
 
@@ -305,11 +305,11 @@ public final class AuthorityContractArtifacts {
         return policy;
     }
 
-    private static List<String> commandTables(DataAuthority.CommandType type) {
+    private static List<String> commandTables(String declarationId) {
         LinkedHashSet<String> tables = new LinkedHashSet<>(COMMON_COMMAND_TABLES);
-        List<String> domainTables = COMMAND_DOMAIN_TABLES.get(type);
+        List<String> domainTables = COMMAND_DOMAIN_TABLES.get(declarationId);
         if (domainTables == null) {
-            throw new IllegalArgumentException("No schema table mapping for command " + type);
+            throw new IllegalArgumentException("No schema table mapping for command " + declarationId);
         }
         tables.addAll(domainTables);
         return List.copyOf(tables);
@@ -330,19 +330,19 @@ public final class AuthorityContractArtifacts {
             .toList();
     }
 
-    private static Map<DataAuthority.CommandType, List<String>> commandDomainTables() {
-        Map<DataAuthority.CommandType, List<String>> values = new LinkedHashMap<>();
-        values.put(DataAuthority.CommandType.RECORD_PLAYER_LOGIN, List.of());
-        values.put(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT, List.of());
-        values.put(DataAuthority.CommandType.START_SESSION, List.of("player_sessions"));
-        values.put(DataAuthority.CommandType.RENEW_SESSION, List.of("player_sessions"));
-        values.put(DataAuthority.CommandType.END_SESSION, List.of("player_sessions"));
-        values.put(DataAuthority.CommandType.GRANT_RANK, List.of("player_rank_audit"));
-        values.put(DataAuthority.CommandType.REVOKE_RANK, List.of("player_rank_audit"));
-        values.put(DataAuthority.CommandType.RECORD_MATCH_START, List.of());
-        values.put(DataAuthority.CommandType.RECORD_MATCH_END,
+    private static Map<String, List<String>> commandDomainTables() {
+        Map<String, List<String>> values = new LinkedHashMap<>();
+        values.put("RECORD_PLAYER_LOGIN", List.of());
+        values.put("RECORD_PLAYER_LOGOUT", List.of());
+        values.put("START_SESSION", List.of("player_sessions"));
+        values.put("RENEW_SESSION", List.of("player_sessions"));
+        values.put("END_SESSION", List.of("player_sessions"));
+        values.put("GRANT_RANK", List.of("player_rank_audit"));
+        values.put("REVOKE_RANK", List.of("player_rank_audit"));
+        values.put("RECORD_MATCH_START", List.of());
+        values.put("RECORD_MATCH_END",
             List.of("match_records", "match_participant_stats"));
-        if (!values.keySet().containsAll(AuthorityDomainDeclarations.commandTypes())) {
+        if (!values.keySet().containsAll(AuthorityDomainDeclarations.declarationIds())) {
             throw new IllegalStateException("Command table mappings must cover declared commands");
         }
         return Map.copyOf(values);
