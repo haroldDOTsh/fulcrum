@@ -163,7 +163,11 @@ public final class DataAuthorityCommandContracts {
         DataAuthority.SnapshotWatermark watermark = settlement.watermark();
         requireSettlementField("watermark.sourceProvider", settlement.sourceProvider(), watermark.sourceProvider());
         requireSettlementField("watermark.aggregateScope", command.scope(), watermark.aggregateScope());
-        requireSettlementField("watermark.aggregateType", projectionFamily(command.type()), watermark.aggregateType());
+        requireSettlementField(
+            "watermark.aggregateType",
+            AuthorityDomainDeclarations.command(command.type()).projectionFamily(),
+            watermark.aggregateType()
+        );
         requireSettlementField("watermark.commandDomain", route.domain(), watermark.commandDomain());
         requireSettlementField("watermark.stateTopic", route.stateTopic(), watermark.stateTopic());
         requireSettlementField("watermark.partitionKey", route.partitionKey(), watermark.partitionKey());
@@ -368,16 +372,33 @@ public final class DataAuthorityCommandContracts {
     private static Map<DataAuthority.CommandType, CommandContract> contracts() {
         EnumMap<DataAuthority.CommandType, CommandContract> values =
             new EnumMap<>(DataAuthority.CommandType.class);
-        putProfile(values, DataAuthority.CommandType.RECORD_PLAYER_LOGIN);
-        putProfile(values, DataAuthority.CommandType.RECORD_PLAYER_LOGOUT);
-        putSession(values, DataAuthority.CommandType.START_SESSION);
-        putSession(values, DataAuthority.CommandType.RENEW_SESSION);
-        putSession(values, DataAuthority.CommandType.END_SESSION);
-        putRank(values, DataAuthority.CommandType.GRANT_RANK);
-        putRank(values, DataAuthority.CommandType.REVOKE_RANK);
-        putMatch(values, DataAuthority.CommandType.RECORD_MATCH_START);
-        putMatch(values, DataAuthority.CommandType.RECORD_MATCH_END);
+        for (AuthorityDomainDeclarations.DomainDeclaration domain : AuthorityDomainDeclarations.all().values()) {
+            for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
+                values.put(command.type(), new CommandContract(
+                    command.type(),
+                    command.commandClass(),
+                    domain.domain(),
+                    command.deliveryMode(),
+                    command.revisionPolicy(),
+                    singleStore(domain.commandLogStores(), "commandLogStore"),
+                    singleStore(domain.hotProjectionStores(), "hotProjectionStore"),
+                    singleStore(domain.historyStores(), "historyStore"),
+                    singleStore(domain.cacheStores(), "cacheStore"),
+                    command.aggregateScopePrefix(),
+                    command.aggregateIdField(),
+                    command.requiredPayloadFields(),
+                    command.allowedPayloadFields()
+                ));
+            }
+        }
         return Map.copyOf(values);
+    }
+
+    private static String singleStore(java.util.List<String> stores, String field) {
+        if (stores.size() != 1) {
+            throw new IllegalStateException(field + " requires one store but had " + stores);
+        }
+        return stores.iterator().next();
     }
 
     private static String fingerprint(Map<DataAuthority.CommandType, CommandContract> contracts) {
@@ -488,110 +509,6 @@ public final class DataAuthorityCommandContracts {
             return "missing";
         }
         return fingerprint.length() <= 12 ? fingerprint : fingerprint.substring(0, 12);
-    }
-
-    private static void putProfile(
-        EnumMap<DataAuthority.CommandType, CommandContract> contracts,
-        DataAuthority.CommandType type
-    ) {
-        contracts.put(type, new CommandContract(
-            type,
-            DataAuthority.PlayerProfileCommand.class,
-            "player",
-            CommandDeliveryMode.ASYNC_DURABLE,
-            CommandRevisionPolicy.BLIND_ALLOWED,
-            "kafka",
-            "cassandra",
-            "postgresql",
-            "valkey",
-            "player:",
-            "playerId",
-            Set.of("playerId", "username", "timestamp"),
-            Set.of(
-                "playerId", "username", "timestamp", "online", "currentServer", "currentProxy",
-                "lastIp", "lastWorld", "lastLocation", "gamemode", "level", "exp", "health",
-                "foodLevel", "playtimeStartField"
-            )
-        ));
-    }
-
-    private static void putSession(
-        EnumMap<DataAuthority.CommandType, CommandContract> contracts,
-        DataAuthority.CommandType type
-    ) {
-        contracts.put(type, new CommandContract(
-            type,
-            DataAuthority.PlayerSessionCommand.class,
-            "session",
-            CommandDeliveryMode.SYNC_INTERACTIVE,
-            CommandRevisionPolicy.BLIND_ALLOWED,
-            "kafka",
-            "cassandra",
-            "postgresql",
-            "valkey",
-            "player:",
-            "playerId",
-            Set.of("playerId", "username", "timestamp"),
-            Set.of(
-                "playerId", "username", "sessionId", "timestamp", "online", "currentServer",
-                "currentProxy", "lastIp", "protocolVersion", "disconnectReason",
-                "lastProxySession", "lastServerSwitch", "playtimeStartField", "clearCurrentServer"
-            )
-        ));
-    }
-
-    private static void putRank(
-        EnumMap<DataAuthority.CommandType, CommandContract> contracts,
-        DataAuthority.CommandType type
-    ) {
-        contracts.put(type, new CommandContract(
-            type,
-            DataAuthority.PlayerRankCommand.class,
-            "rank",
-            CommandDeliveryMode.SYNC_INTERACTIVE,
-            CommandRevisionPolicy.COMPARE_REQUIRED,
-            "kafka",
-            "cassandra",
-            "postgresql",
-            "valkey",
-            "rank:player:",
-            "playerId",
-            Set.of("playerId", "primaryRank", "ranks"),
-            Set.of("playerId", "primaryRank", "ranks")
-        ));
-    }
-
-    private static void putMatch(
-        EnumMap<DataAuthority.CommandType, CommandContract> contracts,
-        DataAuthority.CommandType type
-    ) {
-        contracts.put(type, new CommandContract(
-            type,
-            DataAuthority.MatchCommand.class,
-            "match",
-            CommandDeliveryMode.ASYNC_DURABLE,
-            CommandRevisionPolicy.BLIND_ALLOWED,
-            "kafka",
-            "cassandra",
-            "postgresql",
-            "valkey",
-            "match:",
-            "matchId",
-            Set.of("matchId", "familyId", "state", "participants"),
-            Set.of(
-                "matchId", "familyId", "mapId", "serverId", "slotId", "state",
-                "startedAt", "endedAt", "slotMetadata", "variant", "targetWorld", "participants"
-            )
-        ));
-    }
-
-    private static String projectionFamily(DataAuthority.CommandType type) {
-        return switch (type) {
-            case GRANT_RANK, REVOKE_RANK -> "player_rank";
-            case RECORD_MATCH_START, RECORD_MATCH_END -> "match";
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION ->
-                "player_profile";
-        };
     }
 
     public enum CommandDeliveryMode {

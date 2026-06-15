@@ -39,20 +39,7 @@ record AuthorityCommandRoute(
     }
 
     static AuthorityCommandRoute from(DataAuthority.CommandType type, String scope) {
-        String domain = switch (type) {
-            case GRANT_RANK, REVOKE_RANK -> "rank";
-            case RECORD_MATCH_START, RECORD_MATCH_END -> "match";
-            case START_SESSION, RENEW_SESSION, END_SESSION -> "session";
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT -> "player";
-        };
-        return new AuthorityCommandRoute(
-            domain,
-            "cmd." + domain,
-            "rsp." + domain,
-            "evt." + domain,
-            "state." + domain,
-            partitionKey(type, scope)
-        );
+        return AuthorityDomainDeclarations.route(type, scope);
     }
 
     static AuthorityCommandRoute fromPayload(
@@ -83,16 +70,6 @@ record AuthorityCommandRoute(
         values.put("stateTopic", stateTopic);
         values.put("partitionKey", partitionKey);
         return Map.copyOf(values);
-    }
-
-    private static String partitionKey(DataAuthority.CommandType type, String scope) {
-        return switch (type) {
-            case GRANT_RANK, REVOKE_RANK -> scope != null && scope.startsWith("rank:")
-                ? scope
-                : "rank:" + scope;
-            case RECORD_MATCH_START, RECORD_MATCH_END -> scope;
-            case RECORD_PLAYER_LOGIN, RECORD_PLAYER_LOGOUT, START_SESSION, RENEW_SESSION, END_SESSION -> scope;
-        };
     }
 
     private static String string(Object value, String fallback) {

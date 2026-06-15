@@ -20,28 +20,56 @@ final class AuthorityDomainDeclarations {
         return DECLARATIONS;
     }
 
+    static CommandDeclaration command(DataAuthority.CommandType type) {
+        Objects.requireNonNull(type, "type");
+        for (DomainDeclaration declaration : DECLARATIONS.values()) {
+            for (CommandDeclaration command : declaration.commands()) {
+                if (command.type() == type) {
+                    return command;
+                }
+            }
+        }
+        throw new IllegalArgumentException("No authority command declaration for " + type);
+    }
+
     static AuthorityCommandRoute route(CommandDeclaration command) {
-        return AuthorityCommandRoute.from(command.type(), command.aggregateScopePrefix() + "{aggregateId}");
+        return route(command, command.aggregateScopePrefix() + "{aggregateId}");
+    }
+
+    static AuthorityCommandRoute route(DataAuthority.CommandType type, String scope) {
+        return route(command(type), scope);
+    }
+
+    static AuthorityCommandRoute route(CommandDeclaration command, String scope) {
+        String domain = command.domain();
+        return new AuthorityCommandRoute(
+            domain,
+            "cmd." + domain,
+            "rsp." + domain,
+            "evt." + domain,
+            "state." + domain,
+            partitionKey(command, scope)
+        );
     }
 
     private static Map<String, DomainDeclaration> declarations() {
         Map<String, DomainDeclaration> values = new LinkedHashMap<>();
         put(values, declare("match", List.of(
-            command(DataAuthority.CommandType.RECORD_MATCH_END, "match:"),
-            command(DataAuthority.CommandType.RECORD_MATCH_START, "match:")
+            match(DataAuthority.CommandType.RECORD_MATCH_END),
+            match(DataAuthority.CommandType.RECORD_MATCH_START)
         )));
         put(values, declare("player", List.of(
-            command(DataAuthority.CommandType.RECORD_PLAYER_LOGIN, "player:"),
-            command(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT, "player:")
+            profile(DataAuthority.CommandType.RECORD_PLAYER_LOGIN),
+            profile(DataAuthority.CommandType.RECORD_PLAYER_LOGOUT)
         )));
         put(values, declare("rank", List.of(
-            command(DataAuthority.CommandType.GRANT_RANK, "rank:player:"),
-            command(DataAuthority.CommandType.REVOKE_RANK, "rank:player:")
+            rank(DataAuthority.CommandType.GRANT_RANK),
+            rank(DataAuthority.CommandType.REVOKE_RANK)
         )));
         put(values, declare("session", List.of(
-            command(DataAuthority.CommandType.END_SESSION, "player:"),
-            command(DataAuthority.CommandType.RENEW_SESSION, "player:"),
-            command(DataAuthority.CommandType.START_SESSION, "player:")
+            session(DataAuthority.CommandType.END_SESSION),
+            session(DataAuthority.CommandType.RENEW_SESSION),
+            session(DataAuthority.CommandType.START_SESSION)
         )));
         return Map.copyOf(values);
     }
@@ -65,8 +93,89 @@ final class AuthorityDomainDeclarations {
         );
     }
 
-    private static CommandDeclaration command(DataAuthority.CommandType type, String aggregateScopePrefix) {
-        return new CommandDeclaration(type, aggregateScopePrefix);
+    private static CommandDeclaration profile(DataAuthority.CommandType type) {
+        return new CommandDeclaration(
+            type,
+            DataAuthority.PlayerProfileCommand.class,
+            "player",
+            DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE,
+            DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED,
+            "player:",
+            "",
+            "playerId",
+            "player_profile",
+            Set.of("playerId", "username", "timestamp"),
+            Set.of(
+                "playerId", "username", "timestamp", "online", "currentServer", "currentProxy",
+                "lastIp", "lastWorld", "lastLocation", "gamemode", "level", "exp", "health",
+                "foodLevel", "playtimeStartField"
+            )
+        );
+    }
+
+    private static CommandDeclaration session(DataAuthority.CommandType type) {
+        return new CommandDeclaration(
+            type,
+            DataAuthority.PlayerSessionCommand.class,
+            "session",
+            DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE,
+            DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED,
+            "player:",
+            "",
+            "playerId",
+            "player_profile",
+            Set.of("playerId", "username", "timestamp"),
+            Set.of(
+                "playerId", "username", "sessionId", "timestamp", "online", "currentServer",
+                "currentProxy", "lastIp", "protocolVersion", "disconnectReason",
+                "lastProxySession", "lastServerSwitch", "playtimeStartField", "clearCurrentServer"
+            )
+        );
+    }
+
+    private static CommandDeclaration rank(DataAuthority.CommandType type) {
+        return new CommandDeclaration(
+            type,
+            DataAuthority.PlayerRankCommand.class,
+            "rank",
+            DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE,
+            DataAuthorityCommandContracts.CommandRevisionPolicy.COMPARE_REQUIRED,
+            "rank:player:",
+            "rank:",
+            "playerId",
+            "player_rank",
+            Set.of("playerId", "primaryRank", "ranks"),
+            Set.of("playerId", "primaryRank", "ranks")
+        );
+    }
+
+    private static CommandDeclaration match(DataAuthority.CommandType type) {
+        return new CommandDeclaration(
+            type,
+            DataAuthority.MatchCommand.class,
+            "match",
+            DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE,
+            DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED,
+            "match:",
+            "",
+            "matchId",
+            "match",
+            Set.of("matchId", "familyId", "state", "participants"),
+            Set.of(
+                "matchId", "familyId", "mapId", "serverId", "slotId", "state",
+                "startedAt", "endedAt", "slotMetadata", "variant", "targetWorld", "participants"
+            )
+        );
+    }
+
+    private static String partitionKey(CommandDeclaration command, String scope) {
+        if (scope == null || scope.isBlank()) {
+            return "unknown";
+        }
+        if (!command.partitionKeyPrefix().isBlank() && !scope.startsWith(command.aggregateScopePrefix())) {
+            return command.partitionKeyPrefix() + scope;
+        }
+        return scope;
     }
 
     record DomainDeclaration(
@@ -102,10 +211,9 @@ final class AuthorityDomainDeclarations {
                 throw new IllegalArgumentException("commands must be unique by type");
             }
             for (CommandDeclaration command : commands) {
-                String routeDomain = AuthorityDomainDeclarations.route(command).domain();
-                if (!domain.equals(routeDomain)) {
+                if (!domain.equals(command.domain())) {
                     throw new IllegalArgumentException(
-                        "Command " + command.type() + " routes to " + routeDomain + " not " + domain
+                        "Command " + command.type() + " declares " + command.domain() + " not " + domain
                     );
                 }
             }
@@ -126,10 +234,37 @@ final class AuthorityDomainDeclarations {
         }
     }
 
-    record CommandDeclaration(DataAuthority.CommandType type, String aggregateScopePrefix) {
+    record CommandDeclaration(
+        DataAuthority.CommandType type,
+        Class<? extends DataAuthority.AuthorityCommand> commandClass,
+        String domain,
+        DataAuthorityCommandContracts.CommandDeliveryMode deliveryMode,
+        DataAuthorityCommandContracts.CommandRevisionPolicy revisionPolicy,
+        String aggregateScopePrefix,
+        String partitionKeyPrefix,
+        String aggregateIdField,
+        String projectionFamily,
+        Set<String> requiredPayloadFields,
+        Set<String> allowedPayloadFields
+    ) {
         CommandDeclaration {
             type = Objects.requireNonNull(type, "type");
+            commandClass = Objects.requireNonNull(commandClass, "commandClass");
+            domain = requireText(domain, "domain");
+            deliveryMode = Objects.requireNonNull(deliveryMode, "deliveryMode");
+            revisionPolicy = Objects.requireNonNull(revisionPolicy, "revisionPolicy");
             aggregateScopePrefix = requireText(aggregateScopePrefix, "aggregateScopePrefix");
+            partitionKeyPrefix = partitionKeyPrefix == null ? "" : partitionKeyPrefix;
+            aggregateIdField = requireText(aggregateIdField, "aggregateIdField");
+            projectionFamily = requireText(projectionFamily, "projectionFamily");
+            requiredPayloadFields = requiredPayloadFields == null ? Set.of() : Set.copyOf(requiredPayloadFields);
+            allowedPayloadFields = allowedPayloadFields == null ? Set.of() : Set.copyOf(allowedPayloadFields);
+            if (!requiredPayloadFields.contains(aggregateIdField)) {
+                throw new IllegalArgumentException(type + " aggregate id field must be required");
+            }
+            if (!allowedPayloadFields.containsAll(requiredPayloadFields)) {
+                throw new IllegalArgumentException(type + " required fields must be allowed fields");
+            }
         }
     }
 

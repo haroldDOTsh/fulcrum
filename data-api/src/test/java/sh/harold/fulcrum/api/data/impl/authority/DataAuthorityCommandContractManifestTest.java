@@ -51,6 +51,29 @@ class DataAuthorityCommandContractManifestTest {
     }
 
     @Test
+    void contractManifestIsDerivedFromDomainDeclarations() {
+        for (AuthorityDomainDeclarations.DomainDeclaration domain : AuthorityDomainDeclarations.all().values()) {
+            for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
+                DataAuthorityCommandContracts.CommandContract contract = CONTRACTS.get(command.type());
+
+                assertThat(contract).as(command.type() + " contract").isNotNull();
+                assertThat(contract.commandClass()).isEqualTo(command.commandClass());
+                assertThat(contract.domain()).isEqualTo(domain.domain());
+                assertThat(contract.deliveryMode()).isEqualTo(command.deliveryMode());
+                assertThat(contract.revisionPolicy()).isEqualTo(command.revisionPolicy());
+                assertThat(contract.commandLogStore()).isEqualTo(domain.commandLogStores().get(0));
+                assertThat(contract.hotProjectionStore()).isEqualTo(domain.hotProjectionStores().get(0));
+                assertThat(contract.historyStore()).isEqualTo(domain.historyStores().get(0));
+                assertThat(contract.cacheStore()).isEqualTo(domain.cacheStores().get(0));
+                assertThat(contract.aggregateScopePrefix()).isEqualTo(command.aggregateScopePrefix());
+                assertThat(contract.aggregateIdField()).isEqualTo(command.aggregateIdField());
+                assertThat(contract.requiredPayloadFields()).isEqualTo(command.requiredPayloadFields());
+                assertThat(contract.allowedPayloadFields()).isEqualTo(command.allowedPayloadFields());
+            }
+        }
+    }
+
+    @Test
     void contractManifestClassifiesSyncAndAsyncCommands() {
         assertThat(DataAuthorityCommandContracts.deliveryMode(DataAuthority.CommandType.RECORD_PLAYER_LOGIN))
             .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
