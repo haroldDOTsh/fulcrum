@@ -682,12 +682,12 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
     }
 
     private void recordAcceptedCommand(DataAuthority.AuthorityCommand command, long revision) {
-        String scope = scopeFor(command);
-        if (scope == null) {
+        String scope = command.scope();
+        String projectionFamily = projectionFamilyForScope(scope);
+        if (projectionFamily == null) {
             return;
         }
         observe(scope, revision);
-        String projectionFamily = projectionFamilyForScope(scope);
         if (AuthoritySnapshotInvalidation.PLAYER_PROFILE.equals(projectionFamily)) {
             snapshotCacheStore.invalidateProfile(scope, revision, clock.millis());
         } else if (AuthoritySnapshotInvalidation.PLAYER_PRESENCE.equals(projectionFamily)) {
@@ -701,19 +701,6 @@ public final class WatermarkedDataAuthorityCache implements DataAuthority.Comman
         if (revision > 0L) {
             revisionFloors.merge(scope, revision, Math::max);
         }
-    }
-
-    private static String scopeFor(DataAuthority.AuthorityCommand command) {
-        if (command instanceof DataAuthority.PlayerRankCommand rankCommand) {
-            return rankScope(rankCommand.playerId());
-        }
-        if (command instanceof DataAuthority.PlayerProfileCommand profileCommand) {
-            return profileScope(profileCommand.playerId());
-        }
-        if (command instanceof DataAuthority.PlayerSessionCommand sessionCommand) {
-            return presenceScope(sessionCommand.subject());
-        }
-        return null;
     }
 
     private static String profileScope(UUID playerId) {
