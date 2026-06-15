@@ -25,7 +25,7 @@ public final class AuthorityLogCommandProcessor {
 
     AuthorityLogCommandProcessor(AuthorityLog log, DataAuthority.CommandPort delegate) {
         this.log = Objects.requireNonNull(log, "log");
-        this.delegate = Objects.requireNonNull(delegate, "delegate");
+        this.delegate = new AuthorityPrincipalCommandPort(Objects.requireNonNull(delegate, "delegate"));
     }
 
     public CompletionStage<ProcessingResult> process(AuthorityLogRecord commandRecord) {

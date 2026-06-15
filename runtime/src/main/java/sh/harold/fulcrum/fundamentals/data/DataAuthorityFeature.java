@@ -15,6 +15,8 @@ import sh.harold.fulcrum.api.data.guard.GameNodeStorageGuard;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogDataAuthorityClient;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipalCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipals;
 import sh.harold.fulcrum.api.data.impl.authority.AuthoritySnapshotCacheStore;
 import sh.harold.fulcrum.api.data.impl.authority.AuthoritySnapshotInvalidation;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
@@ -140,7 +142,11 @@ public class DataAuthorityFeature implements PluginFeature {
         MessageBus messageBus = container.get(MessageBus.class);
         String authorityServerId = config.getString("authority.server-id", "registry-service");
         long timeoutMs = config.getLong("authority.request-timeout-ms", 5000L);
-        DataAuthority.CommandPort commandClient = commandClient(config, Duration.ofMillis(timeoutMs));
+        DataAuthority.CommandPort commandClient = commandClient(
+            config,
+            Duration.ofMillis(timeoutMs),
+            commandProvenance(messageBus, authorityServerId)
+        );
         long snapshotCacheMaxAgeMs = config.getLong(
             "authority.snapshot-cache-max-age-ms",
             WatermarkedDataAuthorityCache.DEFAULT_MAX_AGE.toMillis()
@@ -173,7 +179,8 @@ public class DataAuthorityFeature implements PluginFeature {
 
     private DataAuthority.CommandPort commandClient(
         YamlConfiguration config,
-        Duration timeout
+        Duration timeout,
+        DataAuthority.CommandProvenance transportProvenance
     ) {
         String transport = config.getString("authority.command-transport", DEFAULT_COMMAND_TRANSPORT);
         if (!"kafka".equalsIgnoreCase(transport) && !"log".equalsIgnoreCase(transport)) {
@@ -191,7 +198,21 @@ public class DataAuthorityFeature implements PluginFeature {
             kafkaLog.validateTopology();
         }
         authorityLog = kafkaLog;
-        return new AuthorityLogDataAuthorityClient(kafkaLog, timeout);
+        return new AuthorityLogDataAuthorityClient(kafkaLog, timeout, transportProvenance);
+    }
+
+    private static DataAuthority.CommandProvenance commandProvenance(
+        MessageBus messageBus,
+        String authorityServerId
+    ) {
+        String originNode = normalizeDescription(messageBus.currentServerId(), "unknown");
+        return new DataAuthority.CommandProvenance(
+            originNode,
+            "kafka:" + originNode + "->" + normalizeDescription(authorityServerId, "authority"),
+            AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
+            DataAuthority.COMMAND_SCHEMA_VERSION,
+            AuthorityPrincipals.nodePrincipal(originNode)
+        );
     }
 
     private static Properties kafkaProperties(YamlConfiguration config) {

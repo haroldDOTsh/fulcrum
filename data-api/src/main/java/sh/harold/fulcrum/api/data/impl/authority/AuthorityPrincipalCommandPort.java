@@ -10,6 +10,8 @@ import java.util.concurrent.CompletionStage;
  * Rejects commands whose claimed actor attempts to impersonate a reserved authority principal.
  */
 public final class AuthorityPrincipalCommandPort implements DataAuthority.CommandPort {
+    public static final String KAFKA_COMMAND_LOG_PROVIDER = "kafka-command-log";
+
     private static final String MESSAGE_BUS_PROVIDER = "message-bus-provider";
 
     private final DataAuthority.CommandPort delegate;
@@ -23,12 +25,20 @@ public final class AuthorityPrincipalCommandPort implements DataAuthority.Comman
         Objects.requireNonNull(command, "command");
         DataAuthority.CommandProvenance provenance = command.provenance();
         String verifiedPrincipal = provenance.verifiedPrincipal();
-        if (MESSAGE_BUS_PROVIDER.equals(provenance.providerKind())
-            && !AuthorityPrincipals.known(verifiedPrincipal)) {
-            return CompletableFuture.completedFuture(rejected(
-                command,
-                "Message-bus command did not include a verified transport principal"
-            ));
+        if (transportProvider(provenance.providerKind())) {
+            if (!AuthorityPrincipals.known(verifiedPrincipal)) {
+                return CompletableFuture.completedFuture(rejected(
+                    command,
+                    "Authority command did not include a verified transport principal"
+                ));
+            }
+            if (!verifiedPrincipal.equals(command.actorId())) {
+                return CompletableFuture.completedFuture(rejected(
+                    command,
+                    "Actor " + command.actorId() + " must match verified transport principal " + verifiedPrincipal
+                ));
+            }
+            return delegate.submit(command);
         }
         if (!AuthorityPrincipals.canClaimActor(verifiedPrincipal, command.actorId())) {
             return CompletableFuture.completedFuture(rejected(
@@ -37,6 +47,10 @@ public final class AuthorityPrincipalCommandPort implements DataAuthority.Comman
             ));
         }
         return delegate.submit(command);
+    }
+
+    private static boolean transportProvider(String providerKind) {
+        return MESSAGE_BUS_PROVIDER.equals(providerKind) || KAFKA_COMMAND_LOG_PROVIDER.equals(providerKind);
     }
 
     private static DataAuthority.CommandResult rejected(

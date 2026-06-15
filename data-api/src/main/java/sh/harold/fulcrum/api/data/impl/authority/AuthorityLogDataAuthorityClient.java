@@ -23,6 +23,7 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
     private final Duration timeout;
     private final Duration pollInterval;
     private final int pollBatchSize;
+    private final DataAuthority.CommandProvenance transportProvenance;
 
     public AuthorityLogDataAuthorityClient(InMemoryAuthorityLog log) {
         this((AuthorityLog) log, DEFAULT_TIMEOUT);
@@ -30,6 +31,14 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
 
     public AuthorityLogDataAuthorityClient(InMemoryAuthorityLog log, Duration timeout) {
         this((AuthorityLog) log, timeout);
+    }
+
+    public AuthorityLogDataAuthorityClient(
+        InMemoryAuthorityLog log,
+        Duration timeout,
+        DataAuthority.CommandProvenance transportProvenance
+    ) {
+        this((AuthorityLog) log, timeout, transportProvenance);
     }
 
     public AuthorityLogDataAuthorityClient(KafkaAuthorityLog log) {
@@ -40,8 +49,24 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
         this((AuthorityLog) log, timeout);
     }
 
+    public AuthorityLogDataAuthorityClient(
+        KafkaAuthorityLog log,
+        Duration timeout,
+        DataAuthority.CommandProvenance transportProvenance
+    ) {
+        this((AuthorityLog) log, timeout, transportProvenance);
+    }
+
     AuthorityLogDataAuthorityClient(AuthorityLog log, Duration timeout) {
-        this(log, timeout, DEFAULT_POLL_INTERVAL, DEFAULT_POLL_BATCH_SIZE);
+        this(log, timeout, DataAuthority.CommandProvenance.unknown());
+    }
+
+    AuthorityLogDataAuthorityClient(
+        AuthorityLog log,
+        Duration timeout,
+        DataAuthority.CommandProvenance transportProvenance
+    ) {
+        this(log, timeout, DEFAULT_POLL_INTERVAL, DEFAULT_POLL_BATCH_SIZE, transportProvenance);
     }
 
     AuthorityLogDataAuthorityClient(
@@ -50,35 +75,73 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
         Duration pollInterval,
         int pollBatchSize
     ) {
+        this(log, timeout, pollInterval, pollBatchSize, DataAuthority.CommandProvenance.unknown());
+    }
+
+    AuthorityLogDataAuthorityClient(
+        AuthorityLog log,
+        Duration timeout,
+        Duration pollInterval,
+        int pollBatchSize,
+        DataAuthority.CommandProvenance transportProvenance
+    ) {
         this.log = Objects.requireNonNull(log, "log");
         this.timeout = timeout == null ? DEFAULT_TIMEOUT : timeout;
         this.pollInterval = pollInterval == null ? DEFAULT_POLL_INTERVAL : pollInterval;
         this.pollBatchSize = Math.max(1, pollBatchSize);
+        this.transportProvenance = transportProvenance == null
+            ? DataAuthority.CommandProvenance.unknown()
+            : transportProvenance;
     }
 
     @Override
     public CompletionStage<DataAuthority.CommandResult> submit(DataAuthority.AuthorityCommand command) {
-        Objects.requireNonNull(command, "command");
+        DataAuthority.AuthorityCommand submitted = withTransportProvenance(command);
         AuthorityLogRecord commandRecord;
         try {
-            commandRecord = AuthorityLogFrames.appendCommand(log, command);
+            commandRecord = AuthorityLogFrames.appendCommand(log, submitted);
         } catch (RuntimeException exception) {
-            return CompletableFuture.completedFuture(AuthorityLogFrames.storeUnavailable(command, exception));
+            return CompletableFuture.completedFuture(AuthorityLogFrames.storeUnavailable(submitted, exception));
         }
-        return CompletableFuture.supplyAsync(() -> awaitResponse(command, commandRecord));
+        return CompletableFuture.supplyAsync(() -> awaitResponse(submitted, commandRecord));
     }
 
     @Override
     public CompletionStage<DataAuthority.CommandSubmissionReceipt> submitDurable(
         DataAuthority.AuthorityCommand command
     ) {
-        Objects.requireNonNull(command, "command");
+        DataAuthority.AuthorityCommand submitted = withTransportProvenance(command);
         try {
-            AuthorityLogRecord commandRecord = AuthorityLogFrames.appendCommand(log, command);
-            return CompletableFuture.completedFuture(receipt(command, commandRecord));
+            AuthorityLogRecord commandRecord = AuthorityLogFrames.appendCommand(log, submitted);
+            return CompletableFuture.completedFuture(receipt(submitted, commandRecord));
         } catch (RuntimeException exception) {
             return CompletableFuture.failedFuture(exception);
         }
+    }
+
+    private DataAuthority.AuthorityCommand withTransportProvenance(DataAuthority.AuthorityCommand command) {
+        Objects.requireNonNull(command, "command");
+        if (DataAuthority.CommandProvenance.unknown().equals(transportProvenance)) {
+            return command;
+        }
+        AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(command);
+        String actorId = AuthorityPrincipals.known(transportProvenance.verifiedPrincipal())
+            ? transportProvenance.verifiedPrincipal()
+            : frame.actorId();
+        return new AuthorityCommandFrame(
+            frame.commandId(),
+            frame.declarationId(),
+            actorId,
+            frame.scope(),
+            frame.idempotencyKey(),
+            frame.deadlineEpochMillis(),
+            frame.fencingToken(),
+            frame.expectedRevision(),
+            frame.schemaVersion(),
+            frame.route(),
+            transportProvenance,
+            frame.payload()
+        ).toCommand();
     }
 
     private DataAuthority.CommandResult awaitResponse(

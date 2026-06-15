@@ -226,6 +226,91 @@ class AuthorityLogCommandPortTest {
     }
 
     @Test
+    void logClientStampsTransportProvenanceIntoCommandFrame() {
+        InMemoryAuthorityLog log = new InMemoryAuthorityLog();
+        DataAuthority.CommandProvenance provenance = new DataAuthority.CommandProvenance(
+            "paper-7",
+            "kafka:paper-7->registry-service",
+            AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
+            DataAuthority.COMMAND_SCHEMA_VERSION,
+            "node:paper-7"
+        );
+        DataAuthority.PlayerRankCommand command = rankCommand(
+            24L,
+            "rank-service",
+            DataAuthority.CommandProvenance.unknown()
+        );
+        AuthorityLogDataAuthorityClient client = new AuthorityLogDataAuthorityClient(
+            log,
+            Duration.ofSeconds(2),
+            provenance
+        );
+
+        DataAuthority.CommandSubmissionReceipt receipt = client.submitDurable(command).toCompletableFuture().join();
+
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
+        int partition = AuthorityLogTopology.partition(route);
+        assertThat(receipt.provenance()).isEqualTo(provenance);
+        assertThat(log.records(route.commandTopic(), partition)).singleElement().satisfies(record -> {
+            assertThat(record.payload())
+                .containsEntry("actorId", "node:paper-7")
+                .containsEntry("verifiedPrincipal", "node:paper-7");
+            Map<?, ?> manifest = map(record.payload().get("manifest"));
+            assertThat(manifest.get("actorId")).isEqualTo("node:paper-7");
+            Map<?, ?> stampedProvenance = map(manifest.get("provenance"));
+            assertThat(stampedProvenance.get("originNode")).isEqualTo("paper-7");
+            assertThat(stampedProvenance.get("authorityRoute")).isEqualTo("kafka:paper-7->registry-service");
+            assertThat(stampedProvenance.get("providerKind"))
+                .isEqualTo(AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER);
+            assertThat(stampedProvenance.get("verifiedPrincipal")).isEqualTo("node:paper-7");
+        });
+    }
+
+    @Test
+    void processorRejectsReservedActorMismatchBeforeApplying() {
+        InMemoryAuthorityLog log = new InMemoryAuthorityLog();
+        DataAuthority.PlayerRankCommand command = rankCommand(
+            25L,
+            "node:paper-2",
+            new DataAuthority.CommandProvenance(
+                "paper-1",
+                "kafka:paper-1->registry-service",
+                AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
+                DataAuthority.COMMAND_SCHEMA_VERSION,
+                "node:paper-1"
+            )
+        );
+        AuthorityLogRecord commandRecord = AuthorityLogFrames.appendCommand(log, command);
+        AtomicBoolean delegated = new AtomicBoolean(false);
+        AuthorityLogCommandProcessor processor = new AuthorityLogCommandProcessor(
+            log,
+            ignored -> {
+                delegated.set(true);
+                return CompletableFuture.completedFuture(acceptedResult(command, 26L));
+            }
+        );
+
+        AuthorityLogCommandProcessor.ProcessingResult processed = processor
+            .process(commandRecord, claimFor(command, "authority-rank-1", 1L))
+            .toCompletableFuture()
+            .join();
+
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
+        int partition = AuthorityLogTopology.partition(route);
+        assertThat(delegated).isFalse();
+        assertThat(processed.commandResult().accepted()).isFalse();
+        assertThat(processed.commandResult().rejectionReason()).isEqualTo(DataAuthority.RejectionReason.INVALID_ACTOR);
+        assertThat(log.records(route.eventTopic(), partition)).isEmpty();
+        assertThat(log.records(route.stateTopic(), partition)).isEmpty();
+        assertThat(log.records(route.responseTopic(), partition)).singleElement().satisfies(response ->
+            assertThat(response.payload())
+                .containsEntry("accepted", false)
+                .containsEntry("rejectionReason", DataAuthority.RejectionReason.INVALID_ACTOR.name())
+                .containsEntry("sourceCommandOffset", commandRecord.offset())
+        );
+    }
+
+    @Test
     void partitionWorkerClaimsAuthorityLaneBeforeApplyingDurableRecords() {
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();
         DataAuthority.PlayerRankCommand command = rankCommand(13L);
@@ -707,21 +792,25 @@ class AuthorityLogCommandPortTest {
         return rankCommandForScope(expectedRevision, playerId, "rank:player:" + playerId);
     }
 
+    private static DataAuthority.PlayerRankCommand rankCommand(
+        long expectedRevision,
+        String actorId,
+        DataAuthority.CommandProvenance provenance
+    ) {
+        UUID playerId = UUID.randomUUID();
+        return rankCommandForScope(expectedRevision, playerId, "rank:player:" + playerId, actorId, provenance);
+    }
+
     private static DataAuthority.PlayerRankCommand rankCommandForScope(
         long expectedRevision,
         UUID playerId,
         String scope
     ) {
-        DataAuthority.CommandManifest manifest = new DataAuthority.CommandManifest(
-            UUID.randomUUID(),
-            "GRANT_RANK",
-            "node:paper-1",
-            scope,
-            "rank-grant:" + playerId + ":" + expectedRevision,
-            System.currentTimeMillis() + 5_000L,
-            "",
+        return rankCommandForScope(
             expectedRevision,
-            DataAuthority.COMMAND_SCHEMA_VERSION,
+            playerId,
+            scope,
+            "node:paper-1",
             new DataAuthority.CommandProvenance(
                 "paper-1",
                 "authority-rank",
@@ -729,6 +818,27 @@ class AuthorityLogCommandPortTest {
                 DataAuthority.COMMAND_SCHEMA_VERSION,
                 "node:paper-1"
             )
+        );
+    }
+
+    private static DataAuthority.PlayerRankCommand rankCommandForScope(
+        long expectedRevision,
+        UUID playerId,
+        String scope,
+        String actorId,
+        DataAuthority.CommandProvenance provenance
+    ) {
+        DataAuthority.CommandManifest manifest = new DataAuthority.CommandManifest(
+            UUID.randomUUID(),
+            "GRANT_RANK",
+            actorId,
+            scope,
+            "rank-grant:" + playerId + ":" + expectedRevision,
+            System.currentTimeMillis() + 5_000L,
+            "",
+            expectedRevision,
+            DataAuthority.COMMAND_SCHEMA_VERSION,
+            provenance
         );
         return new DataAuthority.PlayerRankCommand(
             manifest,

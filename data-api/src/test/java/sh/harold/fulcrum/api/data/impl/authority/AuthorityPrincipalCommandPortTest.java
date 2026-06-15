@@ -59,7 +59,7 @@ class AuthorityPrincipalCommandPortTest {
     }
 
     @Test
-    void allowsLegacyDomainActorWithVerifiedPrincipal() {
+    void rejectsKafkaCommandWithoutVerifiedPrincipal() {
         AtomicBoolean delegated = new AtomicBoolean(false);
         AuthorityPrincipalCommandPort port = new AuthorityPrincipalCommandPort(command -> {
             delegated.set(true);
@@ -68,6 +68,53 @@ class AuthorityPrincipalCommandPortTest {
 
         DataAuthority.CommandResult result = port.submit(rankCommand(
             "rank-service",
+            new DataAuthority.CommandProvenance(
+                "unknown",
+                "kafka:unknown->authority",
+                AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
+                1
+            )
+        )).toCompletableFuture().join();
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.rejectionReason()).isEqualTo(DataAuthority.RejectionReason.INVALID_ACTOR);
+        assertThat(delegated).isFalse();
+    }
+
+    @Test
+    void rejectsTransportActorMismatchWithVerifiedPrincipal() {
+        AtomicBoolean delegated = new AtomicBoolean(false);
+        AuthorityPrincipalCommandPort port = new AuthorityPrincipalCommandPort(command -> {
+            delegated.set(true);
+            return CompletableFuture.completedFuture(accepted(command));
+        });
+
+        DataAuthority.CommandResult result = port.submit(rankCommand(
+            "rank-service",
+            new DataAuthority.CommandProvenance(
+                "paper-1",
+                "messagebus:paper-1->authority",
+                "message-bus-provider",
+                1,
+                "node:paper-1"
+            )
+        )).toCompletableFuture().join();
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.rejectionReason()).isEqualTo(DataAuthority.RejectionReason.INVALID_ACTOR);
+        assertThat(delegated).isFalse();
+    }
+
+    @Test
+    void allowsTransportActorMatchingVerifiedPrincipal() {
+        AtomicBoolean delegated = new AtomicBoolean(false);
+        AuthorityPrincipalCommandPort port = new AuthorityPrincipalCommandPort(command -> {
+            delegated.set(true);
+            return CompletableFuture.completedFuture(accepted(command));
+        });
+
+        DataAuthority.CommandResult result = port.submit(rankCommand(
+            "node:paper-1",
             new DataAuthority.CommandProvenance(
                 "paper-1",
                 "messagebus:paper-1->authority",

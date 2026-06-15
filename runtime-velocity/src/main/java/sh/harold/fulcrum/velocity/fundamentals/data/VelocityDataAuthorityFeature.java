@@ -15,6 +15,8 @@ import sh.harold.fulcrum.api.data.guard.GameNodeStorageGuard;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityLogDataAuthorityClient;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipalCommandPort;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityPrincipals;
 import sh.harold.fulcrum.api.data.impl.authority.AuthoritySnapshotInvalidation;
 import sh.harold.fulcrum.api.data.impl.authority.AuthoritySnapshotCacheStore;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
@@ -152,7 +154,8 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
         long timeoutMs = longValue(authorityConfig.get("request-timeout-ms"), 5000L);
         DataAuthority.CommandPort commandClient = commandClient(
             authorityConfig,
-            Duration.ofMillis(timeoutMs)
+            Duration.ofMillis(timeoutMs),
+            commandProvenance(messageBus, authorityServerId)
         );
         long snapshotCacheMaxAgeMs = longValue(
             authorityConfig.get("snapshot-cache-max-age-ms"),
@@ -184,7 +187,8 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
 
     private DataAuthority.CommandPort commandClient(
         Map<String, Object> authorityConfig,
-        Duration timeout
+        Duration timeout,
+        DataAuthority.CommandProvenance transportProvenance
     ) {
         String transport = stringValue(authorityConfig.get("command-transport"), DEFAULT_COMMAND_TRANSPORT);
         if (!"kafka".equalsIgnoreCase(transport) && !"log".equalsIgnoreCase(transport)) {
@@ -203,7 +207,21 @@ public class VelocityDataAuthorityFeature implements VelocityFeature {
             kafkaLog.validateTopology();
         }
         authorityLog = kafkaLog;
-        return new AuthorityLogDataAuthorityClient(kafkaLog, timeout);
+        return new AuthorityLogDataAuthorityClient(kafkaLog, timeout, transportProvenance);
+    }
+
+    private static DataAuthority.CommandProvenance commandProvenance(
+        MessageBus messageBus,
+        String authorityServerId
+    ) {
+        String originNode = normalizeDescription(messageBus.currentServerId(), "unknown");
+        return new DataAuthority.CommandProvenance(
+            originNode,
+            "kafka:" + originNode + "->" + normalizeDescription(authorityServerId, "authority"),
+            AuthorityPrincipalCommandPort.KAFKA_COMMAND_LOG_PROVIDER,
+            DataAuthority.COMMAND_SCHEMA_VERSION,
+            AuthorityPrincipals.nodePrincipal(originNode)
+        );
     }
 
     private static Properties kafkaProperties(Map<String, Object> kafkaConfig) {
