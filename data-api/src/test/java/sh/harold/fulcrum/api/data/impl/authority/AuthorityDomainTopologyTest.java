@@ -26,7 +26,7 @@ class AuthorityDomainTopologyTest {
             assertThat(topology.declarationIds()).containsExactlyElementsOf(declaration.declarationIds());
             assertThat(topology.declarationIds())
                 .allSatisfy(declarationId -> assertThat(
-                    DataAuthorityCommandContracts.contractByDeclarationId(declarationId).domain()
+                    AuthorityCommandManifest.declaration(declarationId).domain()
                 )
                     .isEqualTo(topology.domain()));
         }

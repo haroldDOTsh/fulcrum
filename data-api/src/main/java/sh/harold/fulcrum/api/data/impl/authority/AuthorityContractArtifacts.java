@@ -104,7 +104,7 @@ public final class AuthorityContractArtifacts {
     private static List<CommandRow> commandRows(FulcrumSchemaContract schema) {
         Map<String, AuthorityLogTopicPolicy> policiesByTopic = AuthorityLogTopology.policiesByTopic();
         return AuthorityCommandManifest.allByDeclarationId().values().stream()
-            .sorted(Comparator.comparing(DataAuthorityCommandContracts.CommandContract::declarationId))
+            .sorted(Comparator.comparing(AuthorityCommandManifest.CommandContract::declarationId))
             .map(contract -> commandRow(schema, policiesByTopic, contract))
             .toList();
     }
@@ -112,7 +112,7 @@ public final class AuthorityContractArtifacts {
     private static CommandRow commandRow(
         FulcrumSchemaContract schema,
         Map<String, AuthorityLogTopicPolicy> policiesByTopic,
-        DataAuthorityCommandContracts.CommandContract contract
+        AuthorityCommandManifest.CommandContract contract
     ) {
         String aggregateScopeTemplate = contract.aggregateScopePrefix() + "{aggregateId}";
         AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), aggregateScopeTemplate);
@@ -545,8 +545,8 @@ public final class AuthorityContractArtifacts {
     public record CommandRow(
         String declarationId,
         String domain,
-        DataAuthorityCommandContracts.CommandDeliveryMode deliveryMode,
-        DataAuthorityCommandContracts.CommandRevisionPolicy revisionPolicy,
+        AuthorityCommandManifest.CommandDeliveryMode deliveryMode,
+        AuthorityCommandManifest.CommandRevisionPolicy revisionPolicy,
         String commandClassName,
         String aggregateScopeTemplate,
         String aggregateIdField,

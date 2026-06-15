@@ -16,15 +16,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DataAuthorityCommandContractManifestTest {
-    private static final Map<String, DataAuthorityCommandContracts.CommandContract> CONTRACTS =
-        DataAuthorityCommandContracts.allByDeclarationId();
+    private static final Map<String, AuthorityCommandManifest.CommandContract> CONTRACTS =
+        AuthorityCommandManifest.allByDeclarationId();
 
     @Test
     void contractManifestCoversEveryDeclaredCommand() {
         assertThat(CONTRACTS.keySet()).containsExactlyInAnyOrderElementsOf(
             AuthorityDomainDeclarations.declarationIds()
         );
-        for (DataAuthorityCommandContracts.CommandContract contract : CONTRACTS.values()) {
+        for (AuthorityCommandManifest.CommandContract contract : CONTRACTS.values()) {
             assertThat(contract.declarationId()).as(contract.declarationId() + " declaration id")
                 .isNotBlank();
             assertThat(contract.allowedPayloadFields())
@@ -55,7 +55,7 @@ class DataAuthorityCommandContractManifestTest {
     void contractManifestIsDerivedFromDomainDeclarations() {
         for (AuthorityDomainDeclarations.DomainDeclaration domain : AuthorityDomainDeclarations.all().values()) {
             for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
-                DataAuthorityCommandContracts.CommandContract contract = CONTRACTS.get(command.declarationId());
+                AuthorityCommandManifest.CommandContract contract = CONTRACTS.get(command.declarationId());
 
                 assertThat(contract).as(command.declarationId() + " contract").isNotNull();
                 assertThat(contract.declarationId()).isEqualTo(command.declarationId());
@@ -79,50 +79,50 @@ class DataAuthorityCommandContractManifestTest {
     @Test
     void contractManifestClassifiesSyncAndAsyncCommands() {
         assertThat(CONTRACTS.get("RECORD_PLAYER_LOGIN").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.ASYNC_DURABLE);
         assertThat(CONTRACTS.get("RECORD_PLAYER_LOGOUT").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.ASYNC_DURABLE);
         assertThat(CONTRACTS.get("RECORD_MATCH_START").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.ASYNC_DURABLE);
         assertThat(CONTRACTS.get("RECORD_MATCH_END").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.ASYNC_DURABLE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.ASYNC_DURABLE);
         assertThat(CONTRACTS.get("GRANT_RANK").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.SYNC_INTERACTIVE);
         assertThat(CONTRACTS.get("REVOKE_RANK").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.SYNC_INTERACTIVE);
         assertThat(CONTRACTS.get("START_SESSION").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.SYNC_INTERACTIVE);
         assertThat(CONTRACTS.get("RENEW_SESSION").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.SYNC_INTERACTIVE);
         assertThat(CONTRACTS.get("END_SESSION").deliveryMode())
-            .isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
+            .isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.SYNC_INTERACTIVE);
     }
 
     @Test
     void contractManifestClassifiesCompareRequiredCommands() {
         assertThat(CONTRACTS.get("RECORD_PLAYER_LOGIN").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.BLIND_ALLOWED);
         assertThat(CONTRACTS.get("RECORD_PLAYER_LOGOUT").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.BLIND_ALLOWED);
         assertThat(CONTRACTS.get("START_SESSION").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.BLIND_ALLOWED);
         assertThat(CONTRACTS.get("RENEW_SESSION").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.BLIND_ALLOWED);
         assertThat(CONTRACTS.get("END_SESSION").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.BLIND_ALLOWED);
         assertThat(CONTRACTS.get("RECORD_MATCH_START").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.BLIND_ALLOWED);
         assertThat(CONTRACTS.get("RECORD_MATCH_END").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.BLIND_ALLOWED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.BLIND_ALLOWED);
         assertThat(CONTRACTS.get("GRANT_RANK").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.COMPARE_REQUIRED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.COMPARE_REQUIRED);
         assertThat(CONTRACTS.get("REVOKE_RANK").revisionPolicy())
-            .isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.COMPARE_REQUIRED);
+            .isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.COMPARE_REQUIRED);
     }
 
     @Test
     void contractManifestFingerprintIsStable() throws Exception {
-        String actual = DataAuthorityCommandContracts.fingerprint();
+        String actual = AuthorityCommandManifest.fingerprint();
 
         assertThat(actual).matches("[0-9a-f]{64}");
         assertThat(actual).isEqualTo(goldenFingerprint("/contracts/data-authority-command-contract.sha256"));
@@ -130,7 +130,7 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void routeManifestFingerprintIsStable() throws Exception {
-        String actual = DataAuthorityCommandContracts.routeManifestFingerprint();
+        String actual = AuthorityCommandManifest.routeManifestFingerprint();
 
         assertThat(actual).matches("[0-9a-f]{64}");
         assertThat(actual).isEqualTo(goldenFingerprint("/contracts/data-authority-command-route-manifest.sha256"));
@@ -138,7 +138,7 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void routePartitionKeyVectorsCoverEveryDeclaredCommand() {
-        Map<String, String> vectors = DataAuthorityCommandContracts.routePartitionKeyVectors();
+        Map<String, String> vectors = AuthorityCommandManifest.routePartitionKeyVectors();
 
         assertThat(vectors.keySet()).containsExactlyInAnyOrderElementsOf(AuthorityDomainDeclarations.declarationIds());
         assertThat(vectors)
@@ -149,8 +149,8 @@ class DataAuthorityCommandContractManifestTest {
 
     @Test
     void stringLookupRejectsUndeclaredDeclarationId() {
-        assertThatThrownBy(() -> DataAuthorityCommandContracts.contractByDeclarationId("NOT_DECLARED"))
-            .hasMessageContaining("No authority command contract for NOT_DECLARED");
+        assertThatThrownBy(() -> AuthorityCommandManifest.declaration("NOT_DECLARED"))
+            .hasMessageContaining("No authority command declaration for NOT_DECLARED");
     }
 
     @Test
@@ -166,7 +166,7 @@ class DataAuthorityCommandContractManifestTest {
         InMemoryAuthorityLog log = new InMemoryAuthorityLog();
         AuthorityLogCommandProcessor processor = new AuthorityLogCommandProcessor(log, commandPort);
 
-        for (DataAuthorityCommandContracts.CommandContract contract : CONTRACTS.values()) {
+        for (AuthorityCommandManifest.CommandContract contract : CONTRACTS.values()) {
             DataAuthority.AuthorityCommand command = sampleCommand(contract.declarationId());
             AuthorityLogRecord commandRecord = AuthorityLogFrames.appendCommand(log, command);
             DataAuthority.CommandResult result = processor.process(
@@ -183,7 +183,7 @@ class DataAuthorityCommandContractManifestTest {
             AuthorityCommandFrame frame = AuthorityCommandFrame.fromCommand(decoded);
             assertThat(frame.manifestPayload())
                 .containsEntry("declarationId", contract.declarationId())
-                .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
+                .containsEntry("routeManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint())
                 .doesNotContainKey("commandType");
             assertThat(AuthorityCommandPayloads.payload(frame.toCommand()))
                 .isEqualTo(AuthorityCommandPayloads.payload(decoded));
@@ -296,7 +296,7 @@ class DataAuthorityCommandContractManifestTest {
             command.provenance(),
             payload
         ))
-            .isInstanceOf(DataAuthorityCommandContracts.CommandContractViolation.class)
+            .isInstanceOf(AuthorityCommandManifest.CommandContractViolation.class)
             .hasMessageContaining("scope does not match payload aggregate id")
             .hasMessageContaining("expected rank:player:" + otherPlayerId)
             .hasMessageContaining("but was " + command.scope());
@@ -308,10 +308,10 @@ class DataAuthorityCommandContractManifestTest {
             sampleCommand("GRANT_RANK", DataAuthority.ANY_REVISION);
 
         assertThatThrownBy(() -> AuthorityCommandFrame.fromCommand(command))
-            .isInstanceOf(DataAuthorityCommandContracts.CommandContractViolation.class)
+            .isInstanceOf(AuthorityCommandManifest.CommandContractViolation.class)
             .hasMessageContaining("requires a concrete expectedRevision")
             .satisfies(exception -> assertThat(
-                ((DataAuthorityCommandContracts.CommandContractViolation) exception).rejectionReason()
+                ((AuthorityCommandManifest.CommandContractViolation) exception).rejectionReason()
             ).isEqualTo(DataAuthority.RejectionReason.STALE_REVISION));
     }
 
@@ -454,7 +454,7 @@ class DataAuthorityCommandContractManifestTest {
     ) {
         AuthorityCommandRoute route = AuthorityCommandRoute.fromCommand(command);
         Object aggregateId = AuthorityCommandPayloads.payload(command)
-            .get(DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId()).aggregateIdField());
+            .get(AuthorityCommandManifest.declaration(command.declarationId()).aggregateIdField());
         DataAuthority.SnapshotWatermark watermark = new DataAuthority.SnapshotWatermark(
             "authority-log-test-authority",
             command.scope(),

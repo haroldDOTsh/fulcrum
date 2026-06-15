@@ -143,7 +143,7 @@ public final class AuthorityLogDataAuthorityClient implements DataAuthority.Comm
             ),
             DataAuthority.CommandRefusalReceipt.fromPayload(mapValue(payload.get("refusalReceipt")), null)
         );
-        DataAuthorityCommandContracts.validateResult(command, result);
+        AuthorityCommandManifest.validateResult(command, result);
         return result;
     }
 

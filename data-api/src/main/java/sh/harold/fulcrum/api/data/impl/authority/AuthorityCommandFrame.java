@@ -24,12 +24,12 @@ record AuthorityCommandFrame(
         if (commandId == null) {
             throw new IllegalArgumentException("commandId is required");
         }
-        DataAuthorityCommandContracts.CommandContract contract =
+        AuthorityCommandManifest.CommandContract contract =
             AuthorityCommandManifest.declaration(declarationId);
         route = route == null ? AuthorityCommandRoute.fromDeclarationId(declarationId, scope) : route;
         provenance = provenance == null ? DataAuthority.CommandProvenance.unknown() : provenance;
         payload = payload == null ? Map.of() : Map.copyOf(payload);
-        DataAuthorityCommandContracts.validate(
+        AuthorityCommandManifest.validate(
             contract,
             schemaVersion,
             provenance.contractVersion(),
@@ -41,9 +41,9 @@ record AuthorityCommandFrame(
     }
 
     static AuthorityCommandFrame fromCommand(DataAuthority.AuthorityCommand command) {
-        DataAuthorityCommandContracts.validate(command);
+        AuthorityCommandManifest.validate(command);
         DataAuthority.CommandManifest manifest = command.manifest();
-        DataAuthorityCommandContracts.CommandContract contract =
+        AuthorityCommandManifest.CommandContract contract =
             AuthorityCommandManifest.declaration(manifest.declarationId());
         return new AuthorityCommandFrame(
             manifest.commandId(),
@@ -119,7 +119,7 @@ record AuthorityCommandFrame(
         );
         DataAuthority.AuthorityCommand command =
             AuthorityDomainDeclarations.command(commandDeclarationId).toCommand(manifest, payload);
-        DataAuthorityCommandContracts.validate(command);
+        AuthorityCommandManifest.validate(command);
         return command;
     }
 

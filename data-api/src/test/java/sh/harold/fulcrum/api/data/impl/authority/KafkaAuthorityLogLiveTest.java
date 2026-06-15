@@ -63,7 +63,7 @@ class KafkaAuthorityLogLiveTest {
                     .containsEntry("authority-log-kind", "COMMAND")
                     .containsEntry("authority-domain", "rank")
                     .containsEntry("authority-route-manifest-fingerprint",
-                        DataAuthorityCommandContracts.routeManifestFingerprint());
+                        AuthorityCommandManifest.routeManifestFingerprint());
                 assertThat(replayed).singleElement().satisfies(record -> {
                     assertThat(record.topic()).isEqualTo(appended.topic());
                     assertThat(record.key()).isEqualTo(appended.key());

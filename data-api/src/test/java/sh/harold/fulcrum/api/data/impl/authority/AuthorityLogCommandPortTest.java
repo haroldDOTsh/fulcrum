@@ -819,8 +819,8 @@ class AuthorityLogCommandPortTest {
             AuthorityCommandRoute.fromCommand(command).commandTopic(),
             DataAuthority.RejectionReason.STALE_REVISION,
             command.expectedRevision(),
-            DataAuthorityCommandContracts.fingerprint(),
-            DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityCommandManifest.fingerprint(),
+            AuthorityCommandManifest.routeManifestFingerprint(),
             DataAuthority.CommandRefusalReceipt.payloadHash(AuthorityCommandPayloads.payload(command)),
             System.currentTimeMillis()
         );
@@ -834,7 +834,7 @@ class AuthorityLogCommandPortTest {
     }
 
     private static String declarationId(DataAuthority.AuthorityCommand command) {
-        return DataAuthorityCommandContracts.contractByDeclarationId(command.declarationId()).declarationId();
+        return AuthorityCommandManifest.declaration(command.declarationId()).declarationId();
     }
 
     @SuppressWarnings("unchecked")

@@ -763,9 +763,9 @@ public final class PostgresDataAuthority implements DataAuthority.CommandPort,
 
     private DataAuthority.CommandResult contractRejection(DataAuthority.AuthorityCommand command) {
         try {
-            DataAuthorityCommandContracts.validate(command);
+            AuthorityCommandManifest.validate(command);
             return null;
-        } catch (DataAuthorityCommandContracts.CommandContractViolation violation) {
+        } catch (AuthorityCommandManifest.CommandContractViolation violation) {
             return rejected(command, violation.rejectionReason(), violation.getMessage());
         } catch (IllegalArgumentException exception) {
             return rejected(command, DataAuthority.RejectionReason.VALIDATION_FAILED, exception.getMessage());

@@ -1312,7 +1312,7 @@ class PostgresDataAuthorityIntegrationTest {
                 assertThat(rows.getString("replay_eligibility")).isEqualTo("NOT_REPLAYABLE");
                 assertThat(rows.getString("guard_phase")).isEqualTo("TERMINAL");
                 assertThat(rows.getString("guard_contract"))
-                    .isEqualTo(DataAuthorityCommandContracts.fingerprint());
+                    .isEqualTo(AuthorityCommandManifest.fingerprint());
                 assertThat(rows.getString("guard_result_accepted")).isEqualTo("true");
                 assertThat(rows.getString("guard_evidence_text"))
                     .contains("schemaContract", "routeManifest", "deadline", "principal", "routeAndScope",
@@ -1431,8 +1431,8 @@ class PostgresDataAuthorityIntegrationTest {
         wire.put("fencingToken", "3");
         wire.put("expectedRevision", DataAuthority.ANY_REVISION);
         wire.put("schemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
-        wire.put("contractFingerprint", DataAuthorityCommandContracts.fingerprint());
-        wire.put("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint());
+        wire.put("contractFingerprint", AuthorityCommandManifest.fingerprint());
+        wire.put("routeManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint());
         wire.put("route", AuthorityCommandRoute.fromDeclarationId("GRANT_RANK",
             "rank:player:" + scopedPlayerId).payload());
         wire.put("payload", Map.of(
@@ -1482,9 +1482,9 @@ class PostgresDataAuthorityIntegrationTest {
                 assertThat(rows.getString("provider_kind")).isEqualTo("message-bus-provider");
                 assertThat(rows.getInt("contract_version")).isEqualTo(DataAuthority.COMMAND_SCHEMA_VERSION);
                 assertThat(rows.getString("expected_contract_fingerprint"))
-                    .isEqualTo(DataAuthorityCommandContracts.fingerprint());
+                    .isEqualTo(AuthorityCommandManifest.fingerprint());
                 assertThat(rows.getString("received_contract_fingerprint"))
-                    .isEqualTo(DataAuthorityCommandContracts.fingerprint());
+                    .isEqualTo(AuthorityCommandManifest.fingerprint());
                 assertThat(rows.getString("rejection_reason")).isEqualTo("INVALID_SCOPE");
                 assertThat(rows.getLong("result_revision")).isEqualTo(DataAuthority.ANY_REVISION);
                 assertThat(rows.getString("result_message")).contains("scope does not match");
@@ -1494,7 +1494,7 @@ class PostgresDataAuthorityIntegrationTest {
                 assertThat(rows.getString("result_settled")).isEqualTo("false");
                 assertThat(rows.getString("guard_phase")).isEqualTo("PRE_SUBMIT_REFUSAL");
                 assertThat(rows.getString("guard_received_contract"))
-                    .isEqualTo(DataAuthorityCommandContracts.fingerprint());
+                    .isEqualTo(AuthorityCommandManifest.fingerprint());
                 assertThat(rows.getString("guard_rejection_reason")).isEqualTo("INVALID_SCOPE");
                 assertThat(rows.getString("guard_evidence_text"))
                     .contains("schemaContract", "routeManifest", "principal", "routeAndScope", "terminalOutcome");

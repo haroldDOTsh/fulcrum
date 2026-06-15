@@ -3,7 +3,7 @@ package sh.harold.fulcrum.registry.persistence;
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.data.impl.postgres.FulcrumDataMigrations;
 import sh.harold.fulcrum.api.data.impl.postgres.FulcrumSchemaContract;
@@ -485,8 +485,8 @@ class RegistryNodeSnapshotStoreWiringTest {
             "watermarked-snapshot-cache",
             "attestation-fingerprint",
             DataAuthority.COMMAND_SCHEMA_VERSION,
-            DataAuthorityCommandContracts.fingerprint(),
-            DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityCommandManifest.fingerprint(),
+            AuthorityCommandManifest.routeManifestFingerprint(),
             AuthorityDomainTopology.fingerprint(),
             authorityServicesByDomain(),
             authorityConsumerGroupsByDomain(),
@@ -495,15 +495,15 @@ class RegistryNodeSnapshotStoreWiringTest {
             DataAuthorityReadContracts.fingerprint(),
             commandDomainsByType(),
             commandDeliveryModesByType(),
-            DataAuthorityCommandContracts.routePartitionKeyVectors(),
+            AuthorityCommandManifest.routePartitionKeyVectors(),
             commandAuthorityServicesByType(),
             commandConsumerGroupsByType(),
             commandAuthorityPrincipalsByType(),
             commandPartitionCountsByType(),
-            DataAuthorityCommandContracts.commandTopicsByDeclarationId(),
-            DataAuthorityCommandContracts.responseTopicsByDeclarationId(),
-            DataAuthorityCommandContracts.eventTopicsByDeclarationId(),
-            DataAuthorityCommandContracts.stateTopicsByDeclarationId(),
+            AuthorityCommandManifest.commandTopicsByDeclarationId(),
+            AuthorityCommandManifest.responseTopicsByDeclarationId(),
+            AuthorityCommandManifest.eventTopicsByDeclarationId(),
+            AuthorityCommandManifest.stateTopicsByDeclarationId(),
             commandLogStoresByType(),
             commandHotProjectionStoresByType(),
             commandHistoryStoresByType(),
@@ -571,7 +571,7 @@ class RegistryNodeSnapshotStoreWiringTest {
     }
 
     private static Map<String, String> commandDomainsByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::domain);
+        return commandMetadataByType(AuthorityCommandManifest.CommandContract::domain);
     }
 
     private static Map<String, String> commandDeliveryModesByType() {
@@ -607,19 +607,19 @@ class RegistryNodeSnapshotStoreWiringTest {
     }
 
     private static Map<String, String> commandLogStoresByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::commandLogStore);
+        return commandMetadataByType(AuthorityCommandManifest.CommandContract::commandLogStore);
     }
 
     private static Map<String, String> commandHotProjectionStoresByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::hotProjectionStore);
+        return commandMetadataByType(AuthorityCommandManifest.CommandContract::hotProjectionStore);
     }
 
     private static Map<String, String> commandHistoryStoresByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::historyStore);
+        return commandMetadataByType(AuthorityCommandManifest.CommandContract::historyStore);
     }
 
     private static Map<String, String> commandCacheStoresByType() {
-        return commandMetadataByType(DataAuthorityCommandContracts.CommandContract::cacheStore);
+        return commandMetadataByType(AuthorityCommandManifest.CommandContract::cacheStore);
     }
 
     private static Map<String, String> readProjectionFamiliesByType() {
@@ -635,10 +635,10 @@ class RegistryNodeSnapshotStoreWiringTest {
     }
 
     private static Map<String, String> commandMetadataByType(
-        Function<DataAuthorityCommandContracts.CommandContract, String> extractor
+        Function<AuthorityCommandManifest.CommandContract, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
+        AuthorityCommandManifest.allByDeclarationId().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> values.put(entry.getKey(), extractor.apply(entry.getValue())));
         return Map.copyOf(values);
@@ -648,7 +648,7 @@ class RegistryNodeSnapshotStoreWiringTest {
         Function<AuthorityDomainTopology.DomainTopology, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
-        DataAuthorityCommandContracts.allByDeclarationId().entrySet().stream()
+        AuthorityCommandManifest.allByDeclarationId().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> values.put(
                 entry.getKey(),

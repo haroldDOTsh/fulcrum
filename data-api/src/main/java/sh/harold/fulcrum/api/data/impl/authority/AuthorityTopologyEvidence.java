@@ -22,7 +22,7 @@ public final class AuthorityTopologyEvidence {
         AuthorityCommandRoute route
     ) {
         Objects.requireNonNull(command, "command");
-        DataAuthorityCommandContracts.CommandContract contract =
+        AuthorityCommandManifest.CommandContract contract =
             AuthorityCommandManifest.declaration(command.declarationId());
         AuthorityCommandRoute effectiveRoute = route == null
             ? AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope())
@@ -35,7 +35,7 @@ public final class AuthorityTopologyEvidence {
         AuthorityCommandRoute route
     ) {
         AuthorityCommandRoute effectiveRoute = Objects.requireNonNull(route, "route");
-        DataAuthorityCommandContracts.CommandContract contract =
+        AuthorityCommandManifest.CommandContract contract =
             AuthorityCommandManifest.declaration(declarationId);
         AuthorityDomainTopology.DomainTopology domainTopology =
             AuthorityDomainTopology.domain(contract.domain());
@@ -75,7 +75,7 @@ public final class AuthorityTopologyEvidence {
         String scope,
         Map<?, ?> routePayload
     ) {
-        DataAuthorityCommandContracts.CommandContract contract =
+        AuthorityCommandManifest.CommandContract contract =
             AuthorityCommandManifest.declaration(declarationId);
         Map<String, Object> topology = forCommandDeclaration(
             declarationId,
@@ -124,7 +124,7 @@ public final class AuthorityTopologyEvidence {
         String scope,
         Map<?, ?> routePayload
     ) {
-        DataAuthorityCommandContracts.CommandContract contract =
+        AuthorityCommandManifest.CommandContract contract =
             AuthorityCommandManifest.declaration(declarationId);
         AuthorityCommandRoute route = AuthorityCommandRoute.fromPayload(
             routePayload,
@@ -216,7 +216,7 @@ public final class AuthorityTopologyEvidence {
             + shortFingerprint(expectedValue) + " but received " + shortFingerprint(storedValue);
     }
 
-    private static String fallbackScope(DataAuthorityCommandContracts.CommandContract contract, String scope) {
+    private static String fallbackScope(AuthorityCommandManifest.CommandContract contract, String scope) {
         if (scope != null && !scope.isBlank()) {
             return scope;
         }

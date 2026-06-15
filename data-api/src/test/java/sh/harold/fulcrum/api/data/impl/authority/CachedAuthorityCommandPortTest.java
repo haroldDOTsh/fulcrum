@@ -38,7 +38,7 @@ class CachedAuthorityCommandPortTest {
         assertThat(second).isEqualTo(first);
         assertThat(delegated).hasValue(1);
         assertThat(cache.entries().get(command.idempotencyKey()).contractFingerprint())
-            .isEqualTo(DataAuthorityCommandContracts.fingerprint());
+            .isEqualTo(AuthorityCommandManifest.fingerprint());
     }
 
     @Test
@@ -80,7 +80,7 @@ class CachedAuthorityCommandPortTest {
         assertThat(result.message()).isEqualTo("accepted-current-contract");
         assertThat(delegated).hasValue(1);
         assertThat(cache.entries().get(command.idempotencyKey()).contractFingerprint())
-            .isEqualTo(DataAuthorityCommandContracts.fingerprint());
+            .isEqualTo(AuthorityCommandManifest.fingerprint());
         assertThat(cache.entries().get(command.idempotencyKey()).result().message())
             .isEqualTo("accepted-current-contract");
     }
@@ -114,7 +114,7 @@ class CachedAuthorityCommandPortTest {
         assertThat(second).isEqualTo(first);
         assertThat(delegated).hasValue(1);
         assertThat(cache.entries().get(command.idempotencyKey()).contractFingerprint())
-            .isEqualTo(DataAuthorityCommandContracts.fingerprint());
+            .isEqualTo(AuthorityCommandManifest.fingerprint());
     }
 
     @Test

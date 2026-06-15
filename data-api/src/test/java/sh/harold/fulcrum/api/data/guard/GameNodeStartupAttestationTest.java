@@ -2,7 +2,7 @@ package sh.harold.fulcrum.api.data.guard;
 
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 
 import java.io.ByteArrayInputStream;
@@ -47,7 +47,7 @@ class GameNodeStartupAttestationTest {
                 "nodeKind=Paper",
                 "manifestVersion=2",
                 "passed=true",
-                DataAuthorityCommandContracts.fingerprint().substring(0, 12),
+                AuthorityCommandManifest.fingerprint().substring(0, 12),
                 DataAuthorityReadContracts.fingerprint().substring(0, 12),
                 "attestationFingerprint="
             );
@@ -200,7 +200,7 @@ class GameNodeStartupAttestationTest {
         ))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("data-authority.command-contract-fingerprint")
-            .hasMessageContaining(DataAuthorityCommandContracts.fingerprint().substring(0, 12));
+            .hasMessageContaining(AuthorityCommandManifest.fingerprint().substring(0, 12));
     }
 
     @Test
@@ -269,7 +269,7 @@ class GameNodeStartupAttestationTest {
     private static GameNodeCapabilityManifest manifest(String nodeKind) {
         return manifest(
             nodeKind,
-            DataAuthorityCommandContracts.fingerprint(),
+            AuthorityCommandManifest.fingerprint(),
             DataAuthorityReadContracts.fingerprint()
         );
     }

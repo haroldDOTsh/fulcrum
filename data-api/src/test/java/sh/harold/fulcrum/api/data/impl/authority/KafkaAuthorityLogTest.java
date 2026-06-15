@@ -63,7 +63,7 @@ class KafkaAuthorityLogTest {
         assertThat(record.headers())
             .containsEntry("authority-domain", route.domain())
             .containsEntry("authority-route-manifest-fingerprint",
-                DataAuthorityCommandContracts.routeManifestFingerprint());
+                AuthorityCommandManifest.routeManifestFingerprint());
     }
 
     @Test

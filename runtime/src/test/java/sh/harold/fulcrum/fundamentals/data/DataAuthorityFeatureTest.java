@@ -6,7 +6,7 @@ import sh.harold.fulcrum.api.data.guard.GameNodeCapabilityManifest;
 import sh.harold.fulcrum.api.data.guard.GameNodeStartupAttestation;
 import sh.harold.fulcrum.api.data.guard.GameNodeStorageGuard;
 import sh.harold.fulcrum.api.data.impl.authority.AuthorityDomainTopology;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 import sh.harold.fulcrum.api.messagebus.messages.RuntimeAuthorityDeliveryManifest;
 import sh.harold.fulcrum.api.messagebus.messages.RuntimeDataAuthorityAttestation;
@@ -60,7 +60,7 @@ class DataAuthorityFeatureTest {
         assertTrue(manifest.forbiddenCapabilities().contains("authority.local"));
         assertTrue(manifest.forbiddenCapabilities().contains("authority.command.message-bus"));
         assertTrue(manifest.forbiddenCapabilities().contains("store.direct.sql"));
-        assertTrue(manifest.commandContractFingerprint().equals(DataAuthorityCommandContracts.fingerprint()));
+        assertTrue(manifest.commandContractFingerprint().equals(AuthorityCommandManifest.fingerprint()));
         assertTrue(manifest.readContractFingerprint().equals(DataAuthorityReadContracts.fingerprint()));
     }
 
@@ -119,7 +119,7 @@ class DataAuthorityFeatureTest {
         assertFalse(report.configFingerprint().isBlank());
         assertFalse(report.classpathFingerprint().isBlank());
         assertTrue(report.summary().contains("nodeKind=Paper"));
-        assertTrue(report.summary().contains(DataAuthorityCommandContracts.fingerprint().substring(0, 12)));
+        assertTrue(report.summary().contains(AuthorityCommandManifest.fingerprint().substring(0, 12)));
         assertTrue(report.summary().contains(DataAuthorityReadContracts.fingerprint().substring(0, 12)));
     }
 
@@ -142,7 +142,7 @@ class DataAuthorityFeatureTest {
         assertEquals("remote-authority", attestation.getRuntimeDataMode());
         assertEquals(DataAuthorityFeature.SNAPSHOT_CACHE_MODE, attestation.getCacheMode());
         assertEquals(report.attestationFingerprint(), attestation.getAttestationFingerprint());
-        assertEquals(DataAuthorityCommandContracts.fingerprint(), attestation.getCommandContractFingerprint());
+        assertEquals(AuthorityCommandManifest.fingerprint(), attestation.getCommandContractFingerprint());
         assertEquals(DataAuthorityReadContracts.fingerprint(), attestation.getReadContractFingerprint());
 
         RuntimeAuthorityDeliveryManifest deliveryManifest = DataAuthorityFeature.runtimeAuthorityDeliveryManifest(
@@ -155,9 +155,9 @@ class DataAuthorityFeatureTest {
         assertEquals("Paper", deliveryManifest.getNodeKind());
         assertEquals("registry-service", deliveryManifest.getAuthorityServerId());
         assertEquals(report.attestationFingerprint(), deliveryManifest.getStartupAttestationFingerprint());
-        assertEquals(DataAuthorityCommandContracts.fingerprint(), deliveryManifest.getCommandContractFingerprint());
+        assertEquals(AuthorityCommandManifest.fingerprint(), deliveryManifest.getCommandContractFingerprint());
         assertEquals(
-            DataAuthorityCommandContracts.routeManifestFingerprint(),
+            AuthorityCommandManifest.routeManifestFingerprint(),
             deliveryManifest.getCommandRouteManifestFingerprint()
         );
         assertEquals(

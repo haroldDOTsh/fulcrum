@@ -38,7 +38,7 @@ record AuthorityCommandRoute(
         if (command == null) {
             throw new IllegalArgumentException("command is required");
         }
-        DataAuthorityCommandContracts.CommandContract contract =
+        AuthorityCommandManifest.CommandContract contract =
             AuthorityCommandManifest.declaration(command.declarationId());
         return fromDeclarationId(contract.declarationId(), command.scope());
     }

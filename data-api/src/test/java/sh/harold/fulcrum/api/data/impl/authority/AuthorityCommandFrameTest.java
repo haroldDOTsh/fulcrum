@@ -44,7 +44,7 @@ class AuthorityCommandFrameTest {
         assertThat(storedFrame.route().partitionKey()).isEqualTo("rank:player:" + playerId);
         assertThat(storedFrame.manifestPayload())
             .containsEntry("declarationId", "GRANT_RANK")
-            .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
+            .containsEntry("routeManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint())
             .doesNotContainKey("commandType");
 
         DataAuthority.AuthorityCommand restored = AuthorityCommandFrame.fromPayloads(

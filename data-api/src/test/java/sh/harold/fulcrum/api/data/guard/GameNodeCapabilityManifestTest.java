@@ -2,7 +2,7 @@ package sh.harold.fulcrum.api.data.guard;
 
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityReadContracts;
 
 import java.io.ByteArrayInputStream;
@@ -30,7 +30,7 @@ class GameNodeCapabilityManifestTest {
                 "store.migration.resources"
             );
         assertThat(manifest.commandSchemaVersion()).isEqualTo(DataAuthority.COMMAND_SCHEMA_VERSION);
-        assertThat(manifest.commandContractFingerprint()).isEqualTo(DataAuthorityCommandContracts.fingerprint());
+        assertThat(manifest.commandContractFingerprint()).isEqualTo(AuthorityCommandManifest.fingerprint());
         assertThat(manifest.readSchemaVersion()).isEqualTo(DataAuthorityReadContracts.schemaVersion());
         assertThat(manifest.readContractFingerprint()).isEqualTo(DataAuthorityReadContracts.fingerprint());
     }
@@ -104,7 +104,7 @@ class GameNodeCapabilityManifestTest {
             data-authority.read-contract-fingerprint=%s
             """.formatted(
             DataAuthority.COMMAND_SCHEMA_VERSION,
-            DataAuthorityCommandContracts.fingerprint(),
+            AuthorityCommandManifest.fingerprint(),
             DataAuthorityReadContracts.schemaVersion(),
             DataAuthorityReadContracts.fingerprint()
         ))))
@@ -126,7 +126,7 @@ class GameNodeCapabilityManifestTest {
             """.formatted(
             nodeKind,
             DataAuthority.COMMAND_SCHEMA_VERSION,
-            DataAuthorityCommandContracts.fingerprint(),
+            AuthorityCommandManifest.fingerprint(),
             DataAuthorityReadContracts.schemaVersion(),
             DataAuthorityReadContracts.fingerprint()
         )));

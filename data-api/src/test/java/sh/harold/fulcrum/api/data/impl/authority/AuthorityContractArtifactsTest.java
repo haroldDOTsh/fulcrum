@@ -23,9 +23,9 @@ class AuthorityContractArtifactsTest {
         assertThat(manifest.schemaVersion()).isEqualTo(3);
         assertThat(manifest.schemaFingerprint()).matches("[0-9a-f]{64}");
         assertThat(manifest.commandContractFingerprint())
-            .isEqualTo(DataAuthorityCommandContracts.fingerprint());
+            .isEqualTo(AuthorityCommandManifest.fingerprint());
         assertThat(manifest.routeManifestFingerprint())
-            .isEqualTo(DataAuthorityCommandContracts.routeManifestFingerprint());
+            .isEqualTo(AuthorityCommandManifest.routeManifestFingerprint());
         assertThat(manifest.domainTopologyFingerprint())
             .isEqualTo(AuthorityDomainTopology.fingerprint());
         assertThat(manifest.readContractFingerprint())
@@ -71,8 +71,8 @@ class AuthorityContractArtifactsTest {
         AuthorityContractArtifacts.CommandRow row = command("GRANT_RANK");
 
         assertThat(row.domain()).isEqualTo("rank");
-        assertThat(row.deliveryMode()).isEqualTo(DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE);
-        assertThat(row.revisionPolicy()).isEqualTo(DataAuthorityCommandContracts.CommandRevisionPolicy.COMPARE_REQUIRED);
+        assertThat(row.deliveryMode()).isEqualTo(AuthorityCommandManifest.CommandDeliveryMode.SYNC_INTERACTIVE);
+        assertThat(row.revisionPolicy()).isEqualTo(AuthorityCommandManifest.CommandRevisionPolicy.COMPARE_REQUIRED);
         assertThat(row.aggregateScopeTemplate()).isEqualTo("rank:player:{aggregateId}");
         assertThat(row.partitionKeyTemplate()).isEqualTo("rank:player:{aggregateId}");
         assertThat(row.commandTopic()).isEqualTo("cmd.rank");

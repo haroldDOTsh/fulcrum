@@ -139,7 +139,7 @@ final class AuthorityCommandGuardEvidence {
             route,
             AuthorityCommandLane.DEFAULT_LANE_COUNT
         );
-        DataAuthorityCommandContracts.CommandContract commandContract =
+        AuthorityCommandManifest.CommandContract commandContract =
             AuthorityCommandManifest.declaration(command.declarationId());
         Map<String, Object> contract = new LinkedHashMap<>();
         contract.put("expectedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION);
@@ -335,7 +335,7 @@ final class AuthorityCommandGuardEvidence {
 
     private static void attachPreSubmitTopology(Map<String, Object> evidence, Map<String, Object> wire) {
         try {
-            DataAuthorityCommandContracts.CommandContract contract =
+            AuthorityCommandManifest.CommandContract contract =
                 AuthorityCommandManifest.declaration(
                     firstKnown(string(wire.get("declarationId")), "unknown")
                 );

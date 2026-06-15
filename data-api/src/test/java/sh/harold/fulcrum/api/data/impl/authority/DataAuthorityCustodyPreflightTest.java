@@ -33,7 +33,7 @@ class DataAuthorityCustodyPreflightTest {
         );
 
         assertThat(first.passed()).isTrue();
-        assertThat(first.commandContractFingerprint()).isEqualTo(DataAuthorityCommandContracts.fingerprint());
+        assertThat(first.commandContractFingerprint()).isEqualTo(AuthorityCommandManifest.fingerprint());
         assertThat(first.readContractFingerprint()).isEqualTo(DataAuthorityReadContracts.fingerprint());
         assertThat(first.custodyFingerprint()).matches("[0-9a-f]{64}");
         assertThat(first.custodyFingerprint()).isEqualTo(second.custodyFingerprint());

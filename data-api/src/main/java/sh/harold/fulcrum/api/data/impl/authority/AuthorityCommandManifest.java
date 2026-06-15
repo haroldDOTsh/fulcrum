@@ -7,6 +7,7 @@ import java.security.MessageDigest;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -14,7 +15,7 @@ import java.util.function.Function;
  * Command manifest metadata derived from authority domain declarations.
  */
 public final class AuthorityCommandManifest {
-    private static final Map<String, DataAuthorityCommandContracts.CommandContract> CONTRACTS_BY_DECLARATION_ID =
+    private static final Map<String, CommandContract> CONTRACTS_BY_DECLARATION_ID =
         contractsByDeclarationId();
     private static final String FINGERPRINT = fingerprint(CONTRACTS_BY_DECLARATION_ID);
     private static final String ROUTE_MANIFEST_FINGERPRINT = routeManifestFingerprint(CONTRACTS_BY_DECLARATION_ID);
@@ -41,15 +42,15 @@ public final class AuthorityCommandManifest {
     private AuthorityCommandManifest() {
     }
 
-    public static Map<String, DataAuthorityCommandContracts.CommandContract> allByDeclarationId() {
+    public static Map<String, CommandContract> allByDeclarationId() {
         return CONTRACTS_BY_DECLARATION_ID;
     }
 
-    public static DataAuthorityCommandContracts.CommandContract declaration(String declarationId) {
+    public static CommandContract declaration(String declarationId) {
         if (declarationId == null || declarationId.isBlank()) {
             throw new IllegalArgumentException("declarationId is required");
         }
-        DataAuthorityCommandContracts.CommandContract contract = CONTRACTS_BY_DECLARATION_ID.get(declarationId);
+        CommandContract contract = CONTRACTS_BY_DECLARATION_ID.get(declarationId);
         if (contract == null) {
             throw new IllegalArgumentException("No authority command declaration for " + declarationId);
         }
@@ -89,7 +90,7 @@ public final class AuthorityCommandManifest {
     }
 
     public static Map<String, String> domainsByDeclarationId() {
-        return commandMetadata(DataAuthorityCommandContracts.CommandContract::domain);
+        return commandMetadata(CommandContract::domain);
     }
 
     public static Map<String, String> deliveryModesByDeclarationId() {
@@ -97,19 +98,19 @@ public final class AuthorityCommandManifest {
     }
 
     public static Map<String, String> commandLogStoresByDeclarationId() {
-        return commandMetadata(DataAuthorityCommandContracts.CommandContract::commandLogStore);
+        return commandMetadata(CommandContract::commandLogStore);
     }
 
     public static Map<String, String> hotProjectionStoresByDeclarationId() {
-        return commandMetadata(DataAuthorityCommandContracts.CommandContract::hotProjectionStore);
+        return commandMetadata(CommandContract::hotProjectionStore);
     }
 
     public static Map<String, String> historyStoresByDeclarationId() {
-        return commandMetadata(DataAuthorityCommandContracts.CommandContract::historyStore);
+        return commandMetadata(CommandContract::historyStore);
     }
 
     public static Map<String, String> cacheStoresByDeclarationId() {
-        return commandMetadata(DataAuthorityCommandContracts.CommandContract::cacheStore);
+        return commandMetadata(CommandContract::cacheStore);
     }
 
     public static Map<String, String> authorityServicesByDeclarationId() {
@@ -128,12 +129,12 @@ public final class AuthorityCommandManifest {
         return topologyMetadata(topology -> Integer.toString(topology.partitionCount()));
     }
 
-    private static Map<String, DataAuthorityCommandContracts.CommandContract> contractsByDeclarationId() {
-        Map<String, DataAuthorityCommandContracts.CommandContract> values = new LinkedHashMap<>();
+    private static Map<String, CommandContract> contractsByDeclarationId() {
+        Map<String, CommandContract> values = new LinkedHashMap<>();
         for (AuthorityDomainDeclarations.DomainDeclaration domain : AuthorityDomainDeclarations.all().values()) {
             for (AuthorityDomainDeclarations.CommandDeclaration command : domain.commands()) {
-                DataAuthorityCommandContracts.CommandContract previous =
-                    values.put(command.declarationId(), new DataAuthorityCommandContracts.CommandContract(
+                CommandContract previous =
+                    values.put(command.declarationId(), new CommandContract(
                         command.declarationId(),
                         domain.domain(),
                         command.deliveryMode(),
@@ -163,7 +164,7 @@ public final class AuthorityCommandManifest {
     }
 
     private static Map<String, String> commandMetadata(
-        Function<DataAuthorityCommandContracts.CommandContract, String> extractor
+        Function<CommandContract, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
         CONTRACTS_BY_DECLARATION_ID.entrySet().stream()
@@ -185,9 +186,7 @@ public final class AuthorityCommandManifest {
         return Map.copyOf(values);
     }
 
-    private static String fingerprint(
-        Map<String, DataAuthorityCommandContracts.CommandContract> contracts
-    ) {
+    private static String fingerprint(Map<String, CommandContract> contracts) {
         StringBuilder material = new StringBuilder()
             .append("commandSchemaVersion=").append(DataAuthority.COMMAND_SCHEMA_VERSION).append('\n');
         contracts.values().stream()
@@ -209,9 +208,7 @@ public final class AuthorityCommandManifest {
         return sha256(material.toString(), "authority command manifest");
     }
 
-    private static String routeManifestFingerprint(
-        Map<String, DataAuthorityCommandContracts.CommandContract> contracts
-    ) {
+    private static String routeManifestFingerprint(Map<String, CommandContract> contracts) {
         StringBuilder material = new StringBuilder()
             .append("routeManifestSchemaVersion=").append(DataAuthority.COMMAND_SCHEMA_VERSION).append('\n');
         contracts.values().stream()
@@ -235,9 +232,7 @@ public final class AuthorityCommandManifest {
         return sha256(material.toString(), "authority command route manifest");
     }
 
-    private static Map<String, String> routePartitionKeyVectors(
-        Map<String, DataAuthorityCommandContracts.CommandContract> contracts
-    ) {
+    private static Map<String, String> routePartitionKeyVectors(Map<String, CommandContract> contracts) {
         Map<String, String> values = new LinkedHashMap<>();
         contracts.values().stream()
             .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
@@ -251,7 +246,7 @@ public final class AuthorityCommandManifest {
     }
 
     private static Map<String, String> routeVectors(
-        Map<String, DataAuthorityCommandContracts.CommandContract> contracts,
+        Map<String, CommandContract> contracts,
         Function<AuthorityCommandRoute, String> extractor
     ) {
         Map<String, String> values = new LinkedHashMap<>();
@@ -266,9 +261,7 @@ public final class AuthorityCommandManifest {
         return Map.copyOf(values);
     }
 
-    private static Set<String> commandTopics(
-        Map<String, DataAuthorityCommandContracts.CommandContract> contracts
-    ) {
+    private static Set<String> commandTopics(Map<String, CommandContract> contracts) {
         Set<String> values = new LinkedHashSet<>();
         contracts.values().stream()
             .sorted((left, right) -> left.declarationId().compareTo(right.declarationId()))
@@ -278,6 +271,337 @@ public final class AuthorityCommandManifest {
                     .commandTopic());
             });
         return Set.copyOf(values);
+    }
+
+    public static void validate(DataAuthority.AuthorityCommand command) {
+        Objects.requireNonNull(command, "command");
+        CommandContract contract = declaration(command.declarationId());
+        AuthorityDomainDeclarations.command(command.declarationId()).payload(command);
+        DataAuthority.CommandManifest manifest = command.manifest();
+        validateManifestContract(contract, manifest.schemaVersion(), command.provenance().contractVersion());
+        validate(
+            contract,
+            manifest.schemaVersion(),
+            command.provenance().contractVersion(),
+            command.scope(),
+            AuthorityCommandRoute.fromCommand(command),
+            command.expectedRevision(),
+            AuthorityCommandPayloads.payload(command)
+        );
+    }
+
+    public static void validateSettlement(
+        DataAuthority.AuthorityCommand command,
+        DataAuthority.CommandSettlement settlement
+    ) {
+        Objects.requireNonNull(command, "command");
+        if (settlement == null || !settlement.settled()) {
+            return;
+        }
+
+        CommandContract contract = declaration(command.declarationId());
+        AuthorityCommandRoute route = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), command.scope());
+        requireSettlementField("commandDomain", route.domain(), settlement.commandDomain());
+        requireSettlementField("commandTopic", route.commandTopic(), settlement.commandTopic());
+        requireSettlementField("responseTopic", route.responseTopic(), settlement.responseTopic());
+        requireSettlementField("eventTopic", route.eventTopic(), settlement.eventTopic());
+        requireSettlementField("stateTopic", route.stateTopic(), settlement.stateTopic());
+        requireSettlementField("partitionKey", route.partitionKey(), settlement.partitionKey());
+        requireSettlementField("idempotencyKey", command.idempotencyKey(), settlement.idempotencyKey());
+        requireSettlementField("expectedRevision", command.expectedRevision(), settlement.expectedRevision());
+
+        DataAuthority.SnapshotWatermark watermark = settlement.watermark();
+        requireSettlementField("watermark.sourceProvider", settlement.sourceProvider(), watermark.sourceProvider());
+        requireSettlementField("watermark.aggregateScope", command.scope(), watermark.aggregateScope());
+        requireSettlementField(
+            "watermark.aggregateType",
+            AuthorityDomainDeclarations.command(contract.declarationId()).projectionFamily(),
+            watermark.aggregateType()
+        );
+        requireSettlementField("watermark.commandDomain", route.domain(), watermark.commandDomain());
+        requireSettlementField("watermark.stateTopic", route.stateTopic(), watermark.stateTopic());
+        requireSettlementField("watermark.partitionKey", route.partitionKey(), watermark.partitionKey());
+        requireSettlementField("watermark.sourceCommandId", command.commandId(), watermark.sourceCommandId());
+    }
+
+    public static void validateResult(
+        DataAuthority.AuthorityCommand command,
+        DataAuthority.CommandResult result
+    ) {
+        Objects.requireNonNull(command, "command");
+        Objects.requireNonNull(result, "result");
+        if (!command.commandId().equals(result.commandId())) {
+            throw new IllegalStateException(
+                "Authority command response commandId mismatch: expected "
+                    + command.commandId() + " but received " + result.commandId()
+            );
+        }
+        if (result.accepted()) {
+            requireResultField("accepted result rejectionReason", DataAuthority.RejectionReason.NONE,
+                result.rejectionReason());
+            if (!result.settlement().settled()) {
+                throw new IllegalStateException("Authority command accepted result requires a settled receipt");
+            }
+            validateSettlement(command, result.settlement());
+            requireResultField("settlement watermark.sourceRevision", result.revision(),
+                result.settlement().watermark().sourceRevision());
+            return;
+        }
+        if (result.rejectionReason() == DataAuthority.RejectionReason.NONE) {
+            throw new IllegalStateException("Authority command rejected result requires a stable rejectionReason");
+        }
+        if (result.settlement().settled()) {
+            throw new IllegalStateException("Authority command rejected result must not carry a settled receipt");
+        }
+        validateRefusalReceipt(command, result);
+    }
+
+    private static void validateRefusalReceipt(
+        DataAuthority.AuthorityCommand command,
+        DataAuthority.CommandResult result
+    ) {
+        DataAuthority.CommandRefusalReceipt receipt = result.refusalReceipt();
+        if (receipt == null || !receipt.refused()) {
+            throw new IllegalStateException("Authority command rejected result requires a refusal receipt");
+        }
+        requireSettlementField("refusalReceipt.commandId", command.commandId(), receipt.commandId());
+        requireSettlementField("refusalReceipt.declarationId", command.declarationId(), receipt.declarationId());
+        requireSettlementField("refusalReceipt.aggregateScope", command.scope(), receipt.aggregateScope());
+        requireSettlementField("refusalReceipt.rejectionReason", result.rejectionReason(), receipt.rejectionReason());
+        requireSettlementField("refusalReceipt.resultRevision", result.revision(), receipt.resultRevision());
+        requireSettlementField("refusalReceipt.contractFingerprint", fingerprint(), receipt.contractFingerprint());
+        requireSettlementField(
+            "refusalReceipt.routeManifestFingerprint",
+            routeManifestFingerprint(),
+            receipt.routeManifestFingerprint()
+        );
+        requireSettlementField(
+            "refusalReceipt.payloadHash",
+            DataAuthority.CommandRefusalReceipt.payloadHash(AuthorityCommandPayloads.payload(command)),
+            receipt.payloadHash()
+        );
+    }
+
+    static void validate(
+        CommandContract contract,
+        int schemaVersion,
+        int provenanceContractVersion,
+        String scope,
+        AuthorityCommandRoute route,
+        long expectedRevision,
+        Map<String, Object> payload
+    ) {
+        validateManifestContract(contract, schemaVersion, provenanceContractVersion);
+        validateRoute(contract, scope, route);
+        validatePayload(contract, payload);
+        validateAggregateScope(contract, scope, payload);
+        validateRevisionPolicy(contract, expectedRevision);
+    }
+
+    private static void validateRoute(
+        CommandContract contract,
+        String scope,
+        AuthorityCommandRoute route
+    ) {
+        AuthorityCommandRoute expectedRoute = AuthorityCommandRoute.fromDeclarationId(contract.declarationId(), scope);
+        if (route != null && !contract.domain().equals(route.domain())) {
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " route domain " + route.domain()
+                    + " does not match contract domain " + contract.domain()
+            );
+        }
+        if (route != null && !expectedRoute.commandTopic().equals(route.commandTopic())) {
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " command topic does not match contract route"
+            );
+        }
+        if (route != null && !expectedRoute.responseTopic().equals(route.responseTopic())) {
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " response topic does not match contract route"
+            );
+        }
+        if (route != null && !expectedRoute.eventTopic().equals(route.eventTopic())) {
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " event topic does not match contract route"
+            );
+        }
+        if (route != null && !expectedRoute.stateTopic().equals(route.stateTopic())) {
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " state topic does not match contract route"
+            );
+        }
+        if (route != null && !expectedRoute.partitionKey().equals(route.partitionKey())) {
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " partition key does not match command scope"
+            );
+        }
+    }
+
+    private static void requireSettlementField(String field, Object expected, Object actual) {
+        if (!Objects.equals(expected, actual)) {
+            throw new IllegalStateException(
+                "Authority command settlement " + field + " mismatch: expected "
+                    + expected + " but received " + actual
+            );
+        }
+    }
+
+    private static void requireResultField(String field, Object expected, Object actual) {
+        if (!Objects.equals(expected, actual)) {
+            throw new IllegalStateException(
+                "Authority command " + field + " mismatch: expected "
+                    + expected + " but received " + actual
+            );
+        }
+    }
+
+    private static void validateManifestContract(
+        CommandContract contract,
+        int schemaVersion,
+        int provenanceContractVersion
+    ) {
+        if (schemaVersion != DataAuthority.COMMAND_SCHEMA_VERSION) {
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " schema version " + schemaVersion
+                    + " is not supported by authority contract version "
+                    + DataAuthority.COMMAND_SCHEMA_VERSION
+            );
+        }
+        if (provenanceContractVersion != DataAuthority.COMMAND_SCHEMA_VERSION) {
+            throw new IllegalArgumentException(
+                "Command " + contract.declarationId() + " provenance contract version " + provenanceContractVersion
+                    + " is not supported by authority contract version "
+                    + DataAuthority.COMMAND_SCHEMA_VERSION
+            );
+        }
+    }
+
+    private static void validatePayload(CommandContract contract, Map<String, Object> payload) {
+        Map<String, Object> safePayload = payload == null ? Map.of() : payload;
+        for (String requiredField : contract.requiredPayloadFields()) {
+            Object value = safePayload.get(requiredField);
+            if (value == null || value.toString().isBlank()) {
+                throw new IllegalArgumentException(
+                    "Command " + contract.declarationId() + " is missing required payload field " + requiredField
+                );
+            }
+        }
+        Set<String> allowedFields = contract.allowedPayloadFields();
+        for (String field : safePayload.keySet()) {
+            if (!allowedFields.contains(field)) {
+                throw new IllegalArgumentException(
+                    "Command " + contract.declarationId() + " payload field " + field + " is not in the command contract"
+                );
+            }
+        }
+    }
+
+    private static void validateRevisionPolicy(CommandContract contract, long expectedRevision) {
+        if (contract.revisionPolicy() == CommandRevisionPolicy.COMPARE_REQUIRED
+            && expectedRevision == DataAuthority.ANY_REVISION) {
+            throw new CommandContractViolation(
+                DataAuthority.RejectionReason.STALE_REVISION,
+                "Command " + contract.declarationId()
+                    + " requires a concrete expectedRevision; ANY_REVISION is only valid for blind writes"
+            );
+        }
+    }
+
+    private static void validateAggregateScope(
+        CommandContract contract,
+        String scope,
+        Map<String, Object> payload
+    ) {
+        Map<String, Object> safePayload = payload == null ? Map.of() : payload;
+        Object aggregateId = safePayload.get(contract.aggregateIdField());
+        if (aggregateId == null || aggregateId.toString().isBlank()) {
+            return;
+        }
+        String expectedScope = contract.aggregateScopePrefix() + aggregateId;
+        if (!expectedScope.equals(scope)) {
+            throw new CommandContractViolation(
+                DataAuthority.RejectionReason.INVALID_SCOPE,
+                "Command " + contract.declarationId() + " scope does not match payload aggregate id: expected "
+                    + expectedScope + " but was " + scope
+            );
+        }
+    }
+
+    public enum CommandDeliveryMode {
+        ASYNC_DURABLE,
+        SYNC_INTERACTIVE
+    }
+
+    public enum CommandRevisionPolicy {
+        BLIND_ALLOWED,
+        COMPARE_REQUIRED
+    }
+
+    public record CommandContract(
+        String declarationId,
+        String domain,
+        CommandDeliveryMode deliveryMode,
+        CommandRevisionPolicy revisionPolicy,
+        String commandLogStore,
+        String hotProjectionStore,
+        String historyStore,
+        String cacheStore,
+        String aggregateScopePrefix,
+        String aggregateIdField,
+        Set<String> requiredPayloadFields,
+        Set<String> allowedPayloadFields
+    ) {
+        public CommandContract {
+            if (declarationId == null || declarationId.isBlank()) {
+                throw new IllegalArgumentException("declarationId is required");
+            }
+            if (domain == null || domain.isBlank()) {
+                throw new IllegalArgumentException("domain is required");
+            }
+            deliveryMode = Objects.requireNonNull(deliveryMode, "deliveryMode");
+            revisionPolicy = Objects.requireNonNull(revisionPolicy, "revisionPolicy");
+            if (commandLogStore == null || commandLogStore.isBlank()) {
+                throw new IllegalArgumentException("commandLogStore is required");
+            }
+            if (hotProjectionStore == null || hotProjectionStore.isBlank()) {
+                throw new IllegalArgumentException("hotProjectionStore is required");
+            }
+            if (historyStore == null || historyStore.isBlank()) {
+                throw new IllegalArgumentException("historyStore is required");
+            }
+            if (cacheStore == null || cacheStore.isBlank()) {
+                throw new IllegalArgumentException("cacheStore is required");
+            }
+            if (aggregateScopePrefix == null || aggregateScopePrefix.isBlank()) {
+                throw new IllegalArgumentException("aggregateScopePrefix is required");
+            }
+            if (aggregateIdField == null || aggregateIdField.isBlank()) {
+                throw new IllegalArgumentException("aggregateIdField is required");
+            }
+            requiredPayloadFields = requiredPayloadFields == null ? Set.of() : Set.copyOf(requiredPayloadFields);
+            allowedPayloadFields = allowedPayloadFields == null ? Set.of() : Set.copyOf(allowedPayloadFields);
+            if (!requiredPayloadFields.contains(aggregateIdField)) {
+                throw new IllegalArgumentException(declarationId + " aggregate id field must be required");
+            }
+            if (!allowedPayloadFields.containsAll(requiredPayloadFields)) {
+                throw new IllegalArgumentException(declarationId + " required fields must be allowed fields");
+            }
+        }
+    }
+
+    public static final class CommandContractViolation extends IllegalArgumentException {
+        private final DataAuthority.RejectionReason rejectionReason;
+
+        public CommandContractViolation(DataAuthority.RejectionReason rejectionReason, String message) {
+            super(message);
+            this.rejectionReason = rejectionReason == null
+                ? DataAuthority.RejectionReason.VALIDATION_FAILED
+                : rejectionReason;
+        }
+
+        public DataAuthority.RejectionReason rejectionReason() {
+            return rejectionReason;
+        }
     }
 
     private static String sha256(String value, String subject) {

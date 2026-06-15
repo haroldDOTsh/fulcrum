@@ -46,11 +46,11 @@ class AuthorityCommandGuardEvidenceTest {
             .containsEntry("declarationId", "GRANT_RANK")
             .containsEntry("aggregateScope", command.scope());
         assertThat(map(evidence.payload().get("contract")))
-            .containsEntry("expectedFingerprint", DataAuthorityCommandContracts.fingerprint())
-            .containsEntry("receivedFingerprint", DataAuthorityCommandContracts.fingerprint())
-            .containsEntry("expectedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
-            .containsEntry("receivedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
-            .containsEntry("deliveryMode", DataAuthorityCommandContracts.CommandDeliveryMode.SYNC_INTERACTIVE.name());
+            .containsEntry("expectedFingerprint", AuthorityCommandManifest.fingerprint())
+            .containsEntry("receivedFingerprint", AuthorityCommandManifest.fingerprint())
+            .containsEntry("expectedRouteManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint())
+            .containsEntry("receivedRouteManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint())
+            .containsEntry("deliveryMode", AuthorityCommandManifest.CommandDeliveryMode.SYNC_INTERACTIVE.name());
         assertThat(map(evidence.payload().get("route")))
             .containsEntry("commandTopic", "cmd.rank")
             .containsEntry("partitionKey", command.scope());
@@ -59,8 +59,8 @@ class AuthorityCommandGuardEvidenceTest {
             .containsEntry("partitionKey", command.scope())
             .containsEntry("laneCount", AuthorityCommandLane.DEFAULT_LANE_COUNT);
         assertThat(map(evidence.payload().get("topology")))
-            .containsEntry("commandContractFingerprint", DataAuthorityCommandContracts.fingerprint())
-            .containsEntry("routeManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
+            .containsEntry("commandContractFingerprint", AuthorityCommandManifest.fingerprint())
+            .containsEntry("routeManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint())
             .containsEntry("readContractFingerprint", DataAuthorityReadContracts.fingerprint())
             .containsEntry("authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint())
             .containsEntry("authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint())
@@ -135,12 +135,12 @@ class AuthorityCommandGuardEvidenceTest {
             .containsEntry("expectedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION)
             .containsEntry("receivedSchemaVersion", DataAuthority.COMMAND_SCHEMA_VERSION + 1)
             .containsEntry("receivedFingerprint", "0000000000000000000000000000000000000000000000000000000000000000")
-            .containsEntry("expectedRouteManifestFingerprint", DataAuthorityCommandContracts.routeManifestFingerprint())
+            .containsEntry("expectedRouteManifestFingerprint", AuthorityCommandManifest.routeManifestFingerprint())
             .containsEntry("receivedRouteManifestFingerprint", "1111111111111111111111111111111111111111111111111111111111111111");
         assertThat(map(evidence.payload().get("route")))
             .containsEntry("partitionKey", "rank:player:" + scopedPlayerId);
         assertThat(map(evidence.payload().get("topology")))
-            .containsEntry("commandContractFingerprint", DataAuthorityCommandContracts.fingerprint())
+            .containsEntry("commandContractFingerprint", AuthorityCommandManifest.fingerprint())
             .containsEntry("authorityDomainTopologyFingerprint", AuthorityDomainTopology.fingerprint())
             .containsEntry("authorityStorePlacementFingerprint", AuthorityStorePlacements.fingerprint())
             .containsEntry("domain", "rank");

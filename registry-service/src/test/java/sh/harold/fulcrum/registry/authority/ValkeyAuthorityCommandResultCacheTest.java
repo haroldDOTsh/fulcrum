@@ -7,7 +7,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
 import sh.harold.fulcrum.api.data.impl.authority.CachedAuthorityCommandPort;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 import sh.harold.fulcrum.api.messagebus.adapter.MessageBusConnectionConfig;
 
 import java.time.Duration;
@@ -75,14 +75,14 @@ class ValkeyAuthorityCommandResultCacheTest {
                 new CachedAuthorityCommandPort.CachedCommandResult(
                     idempotencyKey,
                     "fingerprint-a",
-                    DataAuthorityCommandContracts.fingerprint(),
+                    AuthorityCommandManifest.fingerprint(),
                     firstResult
                 );
             CachedAuthorityCommandPort.CachedCommandResult drift =
                 new CachedAuthorityCommandPort.CachedCommandResult(
                     idempotencyKey,
                     "fingerprint-b",
-                    DataAuthorityCommandContracts.fingerprint(),
+                    AuthorityCommandManifest.fingerprint(),
                     new DataAuthority.CommandResult(
                         UUID.randomUUID(),
                         true,

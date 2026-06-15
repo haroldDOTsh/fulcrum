@@ -2,7 +2,7 @@ package sh.harold.fulcrum.api.data.authority.client;
 
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.data.authority.DataAuthority;
-import sh.harold.fulcrum.api.data.impl.authority.DataAuthorityCommandContracts;
+import sh.harold.fulcrum.api.data.impl.authority.AuthorityCommandManifest;
 
 import java.util.List;
 import java.util.Map;
@@ -19,7 +19,7 @@ class AuthorityCommandsTest {
             .rank(playerId)
             .grantRank("VIP", List.of("VIP", "DEFAULT"), 42L, 1_000L);
 
-        DataAuthorityCommandContracts.validate(command);
+        AuthorityCommandManifest.validate(command);
         assertThat(command.declarationId()).isEqualTo("GRANT_RANK");
         assertThat(command.actorId()).isEqualTo("rank-service");
         assertThat(command.scope()).isEqualTo("rank:player:" + playerId);
@@ -43,8 +43,8 @@ class AuthorityCommandsTest {
             .recordLogout("Richa", 3_000L, null, null, "127.0.0.1", "world", "1,64,1", "SURVIVAL",
                 "lastJoin");
 
-        DataAuthorityCommandContracts.validate(login);
-        DataAuthorityCommandContracts.validate(logout);
+        AuthorityCommandManifest.validate(login);
+        AuthorityCommandManifest.validate(logout);
         assertThat(login.scope()).isEqualTo("player:" + playerId);
         assertThat(login.declarationId()).isEqualTo("RECORD_PLAYER_LOGIN");
         assertThat(login.level()).isEqualTo(12);
@@ -62,7 +62,7 @@ class AuthorityCommandsTest {
             .session(playerId)
             .endSession("Richa", sessionId, 4_000L, "survival", "proxy-a", "127.0.0.1", 772, "quit");
 
-        DataAuthorityCommandContracts.validate(command);
+        AuthorityCommandManifest.validate(command);
         assertThat(command.scope()).isEqualTo("player:" + playerId);
         assertThat(command.declarationId()).isEqualTo("END_SESSION");
         assertThat(command.disconnectReason()).isEqualTo("quit");
@@ -87,7 +87,7 @@ class AuthorityCommandsTest {
                 12_000L
             );
 
-        DataAuthorityCommandContracts.validate(command);
+        AuthorityCommandManifest.validate(command);
         assertThat(command.scope()).isEqualTo("match:" + matchId);
         assertThat(command.idempotencyKey()).isEqualTo("RECORD_MATCH_END:" + matchId + ":1000");
         assertThat(command.deadlineEpochMillis()).isEqualTo(17_000L);

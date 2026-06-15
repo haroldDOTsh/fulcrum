@@ -180,7 +180,7 @@ class DataLayerStorePlacementArchitectureTest {
         String hotConcern,
         String historyConcern
     ) {
-        DataAuthorityCommandContracts.CommandContract contract = DataAuthorityCommandContracts.contractByDeclarationId(type);
+        AuthorityCommandManifest.CommandContract contract = AuthorityCommandManifest.declaration(type);
 
         assertThat(storesFor(placements, "Command audit"))
             .as(type + " command log store")
