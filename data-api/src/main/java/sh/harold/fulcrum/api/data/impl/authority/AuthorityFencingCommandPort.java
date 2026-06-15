@@ -107,8 +107,6 @@ public final class AuthorityFencingCommandPort implements DataAuthority.CommandP
                 profile.playerId(),
                 profile.username(),
                 profile.timestampEpochMillis(),
-                profile.currentServer(),
-                profile.currentProxy(),
                 profile.lastIp(),
                 profile.lastWorld(),
                 profile.lastLocation(),

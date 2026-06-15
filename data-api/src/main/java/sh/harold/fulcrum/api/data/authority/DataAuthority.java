@@ -1297,8 +1297,6 @@ public final class DataAuthority {
         UUID playerId,
         String username,
         long timestampEpochMillis,
-        String currentServer,
-        String currentProxy,
         String lastIp,
         String lastWorld,
         String lastLocation,
@@ -1313,9 +1311,6 @@ public final class DataAuthority {
             requireManifest(manifest);
             if (playerId == null) {
                 throw new IllegalArgumentException("playerId is required");
-            }
-            if (currentServer != null || currentProxy != null) {
-                throw new IllegalArgumentException("profile commands must not carry presence routing fields");
             }
             username = username == null ? "unknown" : username;
         }

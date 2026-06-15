@@ -88,8 +88,6 @@ class DataAuthorityTest {
             null,
             null,
             null,
-            null,
-            null,
             null
         );
         DataAuthority.AuthorityCommand session = new DataAuthority.PlayerSessionCommand(

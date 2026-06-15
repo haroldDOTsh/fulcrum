@@ -73,8 +73,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             ? playerCommands.recordLogin(
                 snapshot.username(),
                 snapshot.capturedAtMillis(),
-                null,
-                null,
                 trackIps ? snapshot.ipAddress() : null,
                 snapshot.worldName(),
                 snapshot.compactLocation(),
@@ -87,8 +85,6 @@ public class PlayerDataFeature implements PluginFeature, Listener {
             : playerCommands.recordLogout(
                 snapshot.username(),
                 snapshot.capturedAtMillis(),
-                null,
-                null,
                 trackIps ? snapshot.ipAddress() : null,
                 snapshot.worldName(),
                 snapshot.compactLocation(),

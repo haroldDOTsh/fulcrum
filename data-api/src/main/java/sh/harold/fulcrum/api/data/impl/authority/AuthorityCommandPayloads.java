@@ -47,8 +47,6 @@ final class AuthorityCommandPayloads {
             uuid(payload.get("playerId")),
             string(payload.get("username")),
             longValue(payload.get("timestamp"), System.currentTimeMillis()),
-            string(payload.get("currentServer")),
-            string(payload.get("currentProxy")),
             string(payload.get("lastIp")),
             string(payload.get("lastWorld")),
             string(payload.get("lastLocation")),

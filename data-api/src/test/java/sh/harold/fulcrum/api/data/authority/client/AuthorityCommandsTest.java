@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthorityCommandsTest {
     @Test
@@ -47,11 +46,11 @@ class AuthorityCommandsTest {
 
         DataAuthority.PlayerProfileCommand login = AuthorityCommands.actor("paper-runtime")
             .player(playerId)
-            .recordLogin("Richa", 2_000L, null, null, "127.0.0.1", "world", "1,64,1", "SURVIVAL",
+            .recordLogin("Richa", 2_000L, "127.0.0.1", "world", "1,64,1", "SURVIVAL",
                 12, 0.5F, 20.0D, 18);
         DataAuthority.PlayerProfileCommand logout = AuthorityCommands.actor("paper-runtime")
             .player(playerId)
-            .recordLogout("Richa", 3_000L, null, null, "127.0.0.1", "world", "1,64,1", "SURVIVAL",
+            .recordLogout("Richa", 3_000L, "127.0.0.1", "world", "1,64,1", "SURVIVAL",
                 "lastJoin");
 
         AuthorityCommandManifest.validate(login);
@@ -66,14 +65,10 @@ class AuthorityCommandsTest {
     }
 
     @Test
-    void playerProfileCommandsRejectPresenceRoutingFields() {
-        UUID playerId = UUID.fromString("22222222-2222-2222-2222-222222222222");
-
-        assertThatThrownBy(() -> AuthorityCommands.actor("paper-runtime")
-            .player(playerId)
-            .recordLogin("Richa", 2_000L, "lobby", "proxy-a", null, null, null, null,
-                null, null, null, null))
-            .hasMessageContaining("presence routing");
+    void playerProfileCommandsDoNotExposePresenceRoutingFields() {
+        assertThat(DataAuthority.PlayerProfileCommand.class.getRecordComponents())
+            .extracting(java.lang.reflect.RecordComponent::getName)
+            .doesNotContain("currentServer", "currentProxy");
     }
 
     @Test

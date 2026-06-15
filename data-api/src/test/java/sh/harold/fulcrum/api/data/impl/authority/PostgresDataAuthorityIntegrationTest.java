@@ -1958,8 +1958,6 @@ class PostgresDataAuthorityIntegrationTest {
             playerId,
             "ReplayUser",
             now,
-            null,
-            null,
             "127.0.0.1",
             "world",
             "0,64,0",
