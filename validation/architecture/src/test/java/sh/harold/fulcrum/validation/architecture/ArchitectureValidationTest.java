@@ -36,6 +36,7 @@ final class ArchitectureValidationTest {
             "SubjectId.java"
     );
     private static final Map<String, Set<String>> ALLOWED_PROJECT_EDGES = Map.ofEntries(
+            Map.entry(":adapters:agones-fake", Set.of(":host:host-api")),
             Map.entry(":api:contract-api", Set.of(":api:kernel-api")),
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
@@ -321,6 +322,47 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Subject authority crossed thin identity boundary: " + violations);
+    }
+
+    @Test
+    void hostApiKeepsCredentialScopeReadOrMessageOnly() throws IOException {
+        Path accessMode = ROOT.resolve("host/host-api/src/main/java/sh/harold/fulcrum/host/api/HostAccessMode.java");
+        String text = Files.readString(accessMode, StandardCharsets.UTF_8);
+
+        assertTrue(text.contains("PRODUCE"), "Host API must allow scoped command or observation production");
+        assertTrue(text.contains("CONSUME"), "Host API must allow scoped addressed command consumption");
+        assertTrue(text.contains("READ"), "Host API must allow scoped hot projection, cache, and artifact reads");
+        assertTrue(!text.contains("WRITE"), "Host API must not expose canonical store write grants");
+    }
+
+    @Test
+    void fakeAgonesAdapterStaysAllocationOnly() throws IOException {
+        Path fakeAgones = ROOT.resolve("adapters/agones-fake/src/main/java");
+        if (!Files.exists(fakeAgones)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(fakeAgones)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Fake Agones adapter crossed allocation boundary: " + violations);
     }
 
     private static List<Path> productionJavaSources() throws IOException {

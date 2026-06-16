@@ -33,6 +33,10 @@ val step1CheckedProjects = step0CheckedProjects + listOf(
     ":data:subject-authority",
 )
 
+val step2CheckedProjects = step1CheckedProjects + listOf(
+    ":adapters:agones-fake",
+)
+
 allprojects {
     group = "sh.harold.fulcrum"
     version = "0.1.0-SNAPSHOT"
@@ -75,6 +79,12 @@ tasks.register("step1Check") {
     dependsOn(step1CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("step2Check") {
+    group = "verification"
+    description = "Runs the automated Step 2 host runtime checks that exist so far."
+    dependsOn(step2CheckedProjects.map { "$it:check" })
+}
+
 tasks.named("check") {
-    dependsOn("step1Check")
+    dependsOn("step2Check")
 }
