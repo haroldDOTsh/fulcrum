@@ -173,7 +173,7 @@ final class ArtifactAuthorityReplayTest {
             assertRejected(revisionMismatch, AuthorityRejectionReason.REVISION_MISMATCH);
             assertRejected(principalMismatch, AuthorityRejectionReason.PRINCIPAL_MISMATCH);
             assertEquals("0", stack.queryPostgresScalar("SELECT count(*) FROM artifact_metadata_projection;"));
-            assertEquals("3", stack.queryPostgresScalar("SELECT count(*) FROM artifact_authority_idempotency;"));
+            assertEquals("1", stack.queryPostgresScalar("SELECT count(*) FROM artifact_authority_idempotency;"));
             assertEquals("""
                     command-artifact-metadata-principal-mismatch:PRINCIPAL_MISMATCH:7:7:0:0:principal-artifact-pipeline:principal-other-transport,\
                     command-artifact-metadata-revision-mismatch:REVISION_MISMATCH:7:7:1:0:principal-artifact-pipeline:principal-artifact-pipeline,\
@@ -488,7 +488,7 @@ final class ArtifactAuthorityReplayTest {
                     storeAttempt(attemptId, commandRecord.idempotencyKey(), record.offset(), decision);
                     publishResponse(producer, commandRecord.aggregateId(), decision.response());
                 } else if (decision.status() == AuthorityDecisionStatus.REJECTED) {
-                    persistRejectedDecision(attemptId, commandRecord, record.offset(), currentRecord, decision, ledger.pendingDecision());
+                    persistRejectedDecision(attemptId, commandRecord, record.offset(), currentRecord, decision, ledger.pendingDecisionIfPresent());
                     publishResponse(producer, commandRecord.aggregateId(), decision.response());
                 } else {
                     persistAcceptedDecision(attemptId, commandRecord, record.offset(), decision, ledger.pendingDecision());
@@ -644,10 +644,9 @@ final class ArtifactAuthorityReplayTest {
                 long kafkaOffset,
                 AuthorityRecord<ArtifactMetadataState> currentRecord,
                 AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision,
-                StoredAuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> storedDecision) {
+                Optional<StoredAuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt>> storedDecision) {
             AuthorityRejectionReason reason = decision.rejectionReason().orElseThrow();
-            stack.executePostgres("""
-                    BEGIN;
+            storedDecision.ifPresent(stored -> stack.executePostgres("""
                     INSERT INTO artifact_authority_idempotency (
                         idempotency_key,
                         payload_fingerprint,
@@ -683,6 +682,24 @@ final class ArtifactAuthorityReplayTest {
                         %d,
                         '%s'
                     ) ON CONFLICT (idempotency_key) DO NOTHING;
+                    """.formatted(
+                    sql(command.idempotencyKey()),
+                    sql(stored.payloadFingerprint()),
+                    sql(stored.decision().status().name()),
+                    sql(reason.name()),
+                    sql(command.aggregateId()),
+                    sql(command.digestAlgorithm()),
+                    sql(command.digestValue()),
+                    sql(command.kind()),
+                    command.byteLength(),
+                    sql(command.contentAddress()),
+                    sql(command.declaredPrincipalId()),
+                    sql(command.provenance()),
+                    sql(RECEIVED_AT.toString()),
+                    decision.revision().value(),
+                    command.fencingEpoch(),
+                    sql(command.commandId()))));
+            stack.executePostgres("""
                     INSERT INTO artifact_authority_rejection (
                         command_id,
                         idempotency_key,
@@ -710,24 +727,7 @@ final class ArtifactAuthorityReplayTest {
                     );
                     INSERT INTO artifact_authority_attempt (attempt_id, idempotency_key, replayed, kafka_offset, revision)
                     VALUES ('%s', '%s', 'false', %d, %d);
-                    COMMIT;
                     """.formatted(
-                    sql(command.idempotencyKey()),
-                    sql(storedDecision.payloadFingerprint()),
-                    sql(storedDecision.decision().status().name()),
-                    sql(reason.name()),
-                    sql(command.aggregateId()),
-                    sql(command.digestAlgorithm()),
-                    sql(command.digestValue()),
-                    sql(command.kind()),
-                    command.byteLength(),
-                    sql(command.contentAddress()),
-                    sql(command.declaredPrincipalId()),
-                    sql(command.provenance()),
-                    sql(RECEIVED_AT.toString()),
-                    decision.revision().value(),
-                    command.fencingEpoch(),
-                    sql(command.commandId()),
                     sql(command.commandId()),
                     sql(command.idempotencyKey()),
                     sql(command.aggregateId()),
@@ -969,6 +969,10 @@ final class ArtifactAuthorityReplayTest {
                 throw new IllegalStateException("Authority accepted a non-replay command without storing idempotency state");
             }
             return pendingDecision;
+        }
+
+        private Optional<StoredAuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt>> pendingDecisionIfPresent() {
+            return Optional.ofNullable(pendingDecision);
         }
     }
 

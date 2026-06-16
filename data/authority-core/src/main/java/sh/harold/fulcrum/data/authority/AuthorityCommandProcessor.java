@@ -23,6 +23,11 @@ public final class AuthorityCommandProcessor<S, C extends CommandPayload, R> {
         Objects.requireNonNull(command, "command");
         Objects.requireNonNull(currentRecord, "currentRecord");
 
+        Optional<AuthorityRejectionReason> trustBoundaryRejection = trustBoundaryRejection(command, currentRecord);
+        if (trustBoundaryRejection.isPresent()) {
+            return reject(command, currentRecord, trustBoundaryRejection.orElseThrow(), false);
+        }
+
         Optional<StoredAuthorityDecision<S, R>> stored = idempotencyLedger.find(command.envelope().idempotencyKey());
         if (stored.isPresent()) {
             StoredAuthorityDecision<S, R> decision = stored.orElseThrow();
@@ -51,18 +56,24 @@ public final class AuthorityCommandProcessor<S, C extends CommandPayload, R> {
         return decision;
     }
 
+    private Optional<AuthorityRejectionReason> trustBoundaryRejection(
+            AuthorityCommand<C> command,
+            AuthorityRecord<S> currentRecord) {
+        if (!command.envelope().principalId().equals(command.authenticatedPrincipal())) {
+            return Optional.of(AuthorityRejectionReason.PRINCIPAL_MISMATCH);
+        }
+        if (command.fencingEpoch() != currentRecord.fencingEpoch()) {
+            return Optional.of(AuthorityRejectionReason.STALE_FENCING_EPOCH);
+        }
+        return Optional.empty();
+    }
+
     private Optional<AuthorityRejectionReason> firstRejection(AuthorityCommand<C> command, AuthorityRecord<S> currentRecord) {
         boolean expired = command.envelope().deadlineAt()
                 .map(deadline -> !deadline.isAfter(command.receivedAt()))
                 .orElse(false);
         if (expired) {
             return Optional.of(AuthorityRejectionReason.DEADLINE_EXPIRED);
-        }
-        if (!command.envelope().principalId().equals(command.authenticatedPrincipal())) {
-            return Optional.of(AuthorityRejectionReason.PRINCIPAL_MISMATCH);
-        }
-        if (command.fencingEpoch() != currentRecord.fencingEpoch()) {
-            return Optional.of(AuthorityRejectionReason.STALE_FENCING_EPOCH);
         }
         if (command.expectedRevision().isPresent() && !command.expectedRevision().orElseThrow().equals(currentRecord.revision())) {
             return Optional.of(AuthorityRejectionReason.REVISION_MISMATCH);

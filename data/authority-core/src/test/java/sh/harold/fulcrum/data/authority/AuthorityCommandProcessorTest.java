@@ -154,6 +154,72 @@ final class AuthorityCommandProcessorTest {
     }
 
     @Test
+    void storedDecisionDoesNotLetStaleOwnerBypassFencing() {
+        AtomicInteger mutationRuns = new AtomicInteger();
+        AuthorityCommandProcessor<GreetingState, SetGreeting, String> processor = processor(mutationRuns);
+        AuthorityCommand<SetGreeting> original = command(
+                "command-9",
+                "idem-9",
+                PRINCIPAL,
+                PRINCIPAL,
+                7,
+                Optional.of(new Revision(0)),
+                Optional.empty(),
+                "hello",
+                "payload-i");
+        AuthorityDecision<GreetingState, String> accepted = processor.process(original, INITIAL);
+
+        AuthorityDecision<GreetingState, String> staleOwner = processor.process(
+                command(
+                        "command-9",
+                        "idem-9",
+                        PRINCIPAL,
+                        PRINCIPAL,
+                        6,
+                        Optional.of(new Revision(0)),
+                        Optional.empty(),
+                        "hello",
+                        "payload-i"),
+                new AuthorityRecord<>(accepted.revision(), 7, accepted.state()));
+
+        assertEquals(1, mutationRuns.get());
+        assertRejected(staleOwner, AuthorityRejectionReason.STALE_FENCING_EPOCH);
+    }
+
+    @Test
+    void storedDecisionDoesNotLetPrincipalMismatchBypassTransportVerification() {
+        AtomicInteger mutationRuns = new AtomicInteger();
+        AuthorityCommandProcessor<GreetingState, SetGreeting, String> processor = processor(mutationRuns);
+        AuthorityCommand<SetGreeting> original = command(
+                "command-10",
+                "idem-10",
+                PRINCIPAL,
+                PRINCIPAL,
+                7,
+                Optional.of(new Revision(0)),
+                Optional.empty(),
+                "hello",
+                "payload-j");
+        AuthorityDecision<GreetingState, String> accepted = processor.process(original, INITIAL);
+
+        AuthorityDecision<GreetingState, String> mismatchedPrincipal = processor.process(
+                command(
+                        "command-10",
+                        "idem-10",
+                        PRINCIPAL,
+                        new PrincipalId("transport-attacker"),
+                        7,
+                        Optional.of(new Revision(0)),
+                        Optional.empty(),
+                        "hello",
+                        "payload-j"),
+                new AuthorityRecord<>(accepted.revision(), 7, accepted.state()));
+
+        assertEquals(1, mutationRuns.get());
+        assertRejected(mismatchedPrincipal, AuthorityRejectionReason.PRINCIPAL_MISMATCH);
+    }
+
+    @Test
     void acceptedDecisionCarriesTraceAndEmissions() {
         AuthorityDecision<GreetingState, String> decision = processor(new AtomicInteger()).process(
                 command("command-8", "idem-8", PRINCIPAL, PRINCIPAL, 7, Optional.of(new Revision(0)), Optional.empty(), "hello", "payload-h"),
