@@ -3,6 +3,11 @@ package sh.harold.fulcrum.data.route;
 import sh.harold.fulcrum.api.contract.AggregateId;
 import sh.harold.fulcrum.api.contract.Revision;
 import sh.harold.fulcrum.api.kernel.RouteId;
+import sh.harold.fulcrum.data.route.contract.AcknowledgeRoute;
+import sh.harold.fulcrum.data.route.contract.OpenRoute;
+import sh.harold.fulcrum.data.route.contract.RouteCommand;
+import sh.harold.fulcrum.data.route.contract.RouteContracts;
+import sh.harold.fulcrum.data.route.contract.TimeoutRoute;
 import sh.harold.fulcrum.data.authority.AuthorityCommand;
 import sh.harold.fulcrum.data.authority.AuthorityCommandProcessor;
 import sh.harold.fulcrum.data.authority.AuthorityDecision;
@@ -17,8 +22,6 @@ import java.util.List;
 import java.util.Objects;
 
 public final class RouteAuthority {
-    private static final String CONTRACT_NAME = "route";
-
     private final AuthorityCommandProcessor<RouteState, RouteCommand, RouteReceipt> processor;
 
     public RouteAuthority(IdempotencyLedger<RouteState, RouteReceipt> idempotencyLedger) {
@@ -39,12 +42,11 @@ public final class RouteAuthority {
     }
 
     public static AggregateId aggregateId(RouteId routeId) {
-        Objects.requireNonNull(routeId, "routeId");
-        return new AggregateId("route:" + routeId.value());
+        return RouteContracts.aggregateId(routeId);
     }
 
     public static String cacheKey(RouteId routeId) {
-        return CONTRACT_NAME + ":" + aggregateId(routeId).value();
+        return RouteContracts.cacheKey(routeId);
     }
 
     private AuthorityMutationResult<RouteState, RouteReceipt> apply(

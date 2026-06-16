@@ -28,6 +28,7 @@ val step1CheckedProjects = step0CheckedProjects + listOf(
     ":data:authority-core",
     ":data:artifact-authority",
     ":data:presence-authority",
+    ":data:route-contract",
     ":data:route-authority",
     ":data:session-authority",
     ":data:subject-authority",
@@ -36,6 +37,7 @@ val step1CheckedProjects = step0CheckedProjects + listOf(
 val step2CheckedProjects = step1CheckedProjects + listOf(
     ":adapters:agones-fake",
     ":host:paper-agent",
+    ":host:velocity-agent",
 )
 
 allprojects {

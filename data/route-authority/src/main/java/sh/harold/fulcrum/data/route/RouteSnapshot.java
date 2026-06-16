@@ -4,6 +4,9 @@ import sh.harold.fulcrum.api.kernel.InstanceId;
 import sh.harold.fulcrum.api.kernel.RouteId;
 import sh.harold.fulcrum.api.kernel.SessionId;
 import sh.harold.fulcrum.api.kernel.SubjectId;
+import sh.harold.fulcrum.data.route.contract.AcknowledgeRoute;
+import sh.harold.fulcrum.data.route.contract.OpenRoute;
+import sh.harold.fulcrum.data.route.contract.TimeoutRoute;
 
 import java.time.Instant;
 import java.util.Objects;

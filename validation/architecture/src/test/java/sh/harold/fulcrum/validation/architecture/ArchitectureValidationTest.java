@@ -46,12 +46,14 @@ final class ArchitectureValidationTest {
             Map.entry(":data:contract-codegen", Set.of(":api:contract-api", ":data:contract-declarations")),
             Map.entry(":data:contract-declarations", Set.of(":api:contract-api")),
             Map.entry(":data:presence-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
-            Map.entry(":data:route-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
+            Map.entry(":data:route-contract", Set.of(":api:contract-api", ":api:kernel-api")),
+            Map.entry(":data:route-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core", ":data:route-contract")),
             Map.entry(":data:session-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
             Map.entry(":host:paper-agent", Set.of(":host:host-api")),
+            Map.entry(":host:velocity-agent", Set.of(":host:host-api", ":data:route-contract")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
             Map.entry(":testkit:architecture-testkit", Set.of()),
             Map.entry(":testkit:substrate-testkit", Set.of(":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
@@ -392,6 +394,37 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Paper agent artifact cache crossed host boundary: " + violations);
+    }
+
+    @Test
+    void velocityAgentUsesRouteContractsWithoutAuthorityRuntimeOrStores() throws IOException {
+        Path velocityAgent = ROOT.resolve("host/velocity-agent/src/main/java");
+        if (!Files.exists(velocityAgent)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "AuthorityCommand",
+                "AuthorityCommandProcessor",
+                "IdempotencyLedger",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(velocityAgent)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Velocity agent crossed route command boundary: " + violations);
     }
 
     private static List<Path> productionJavaSources() throws IOException {

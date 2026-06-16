@@ -4,8 +4,6 @@ import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.contract.AggregateId;
 import sh.harold.fulcrum.api.contract.CommandEnvelope;
 import sh.harold.fulcrum.api.contract.CommandId;
-import sh.harold.fulcrum.api.contract.CommandName;
-import sh.harold.fulcrum.api.contract.ContractName;
 import sh.harold.fulcrum.api.contract.IdempotencyKey;
 import sh.harold.fulcrum.api.contract.PrincipalId;
 import sh.harold.fulcrum.api.contract.Revision;
@@ -21,6 +19,11 @@ import sh.harold.fulcrum.data.authority.AuthorityEmissionKind;
 import sh.harold.fulcrum.data.authority.AuthorityRecord;
 import sh.harold.fulcrum.data.authority.AuthorityRejectionReason;
 import sh.harold.fulcrum.data.authority.InMemoryIdempotencyLedger;
+import sh.harold.fulcrum.data.route.contract.AcknowledgeRoute;
+import sh.harold.fulcrum.data.route.contract.OpenRoute;
+import sh.harold.fulcrum.data.route.contract.RouteCommand;
+import sh.harold.fulcrum.data.route.contract.RouteContracts;
+import sh.harold.fulcrum.data.route.contract.TimeoutRoute;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -448,8 +451,8 @@ final class RouteAuthorityTest {
                 new IdempotencyKey(idempotencyKey),
                 declaredPrincipal,
                 aggregateId,
-                new ContractName("route"),
-                new CommandName(commandName(payload)),
+                RouteContracts.CONTRACT_NAME,
+                RouteContracts.commandName(payload),
                 new TraceEnvelope(
                         "trace-route",
                         "span-route",
@@ -466,16 +469,6 @@ final class RouteAuthorityTest {
                 expectedRevision,
                 payloadFingerprint,
                 receivedAt);
-    }
-
-    private static String commandName(RouteCommand payload) {
-        if (payload instanceof OpenRoute) {
-            return "open-route";
-        }
-        if (payload instanceof AcknowledgeRoute) {
-            return "acknowledge-route";
-        }
-        return "timeout-route";
     }
 
     private static void assertRejected(

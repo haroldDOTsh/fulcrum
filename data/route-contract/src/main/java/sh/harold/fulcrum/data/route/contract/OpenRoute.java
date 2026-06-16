@@ -1,4 +1,4 @@
-package sh.harold.fulcrum.data.route;
+package sh.harold.fulcrum.data.route.contract;
 
 import sh.harold.fulcrum.api.kernel.InstanceId;
 import sh.harold.fulcrum.api.kernel.RouteId;
