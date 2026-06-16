@@ -36,6 +36,7 @@ final class ArchitectureValidationTest {
             "SubjectId.java"
     );
     private static final Map<String, Set<String>> ALLOWED_PROJECT_EDGES = Map.ofEntries(
+            Map.entry(":adapters:agones-allocator", Set.of(":host:host-api")),
             Map.entry(":adapters:agones-fake", Set.of(":host:host-api")),
             Map.entry(":api:contract-api", Set.of(":api:kernel-api")),
             Map.entry(":api:kernel-api", Set.of()),
@@ -366,6 +367,42 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Fake Agones adapter crossed allocation boundary: " + violations);
+    }
+
+    @Test
+    void agonesAllocatorAdapterStaysAllocationOnly() throws IOException {
+        Path agonesAllocator = ROOT.resolve("adapters/agones-allocator/src/main/java");
+        if (!Files.exists(agonesAllocator)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "io.kubernetes",
+                "KubernetesClient",
+                "FleetAutoscaler",
+                "reconcile",
+                "watch",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(agonesAllocator)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Agones allocator adapter crossed allocation boundary: " + violations);
     }
 
     @Test

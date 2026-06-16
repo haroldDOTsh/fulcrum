@@ -32,6 +32,7 @@ include(
     "data:route-authority",
     "data:session-authority",
     "data:subject-authority",
+    "adapters:agones-allocator",
     "adapters:agones-fake",
     "capability:capability-api",
     "host:host-api",
