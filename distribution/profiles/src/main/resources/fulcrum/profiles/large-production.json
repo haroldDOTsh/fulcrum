@@ -1,0 +1,9 @@
+{
+  "profileId": "large-production",
+  "semanticModel": "fulcrum-v2-substrate",
+  "contractSet": "fulcrum-step0-contracts",
+  "servicePlacement": "separated-service-families",
+  "storageShape": "full-log-store-topology",
+  "agonesMode": "kubernetes-native",
+  "objectStorage": "external-object-store"
+}

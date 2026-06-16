@@ -1,0 +1,9 @@
+{
+  "profileId": "small-production",
+  "semanticModel": "fulcrum-v2-substrate",
+  "contractSet": "fulcrum-step0-contracts",
+  "servicePlacement": "co-located-service-families",
+  "storageShape": "reduced-redundancy-real-engines",
+  "agonesMode": "kubernetes-native",
+  "objectStorage": "external-object-store"
+}

@@ -1,0 +1,9 @@
+{
+  "profileId": "single-machine",
+  "semanticModel": "fulcrum-v2-substrate",
+  "contractSet": "fulcrum-step0-contracts",
+  "servicePlacement": "co-located-controllers-authorities",
+  "storageShape": "testcontainers-friendly",
+  "agonesMode": "fake-contract-adapter",
+  "objectStorage": "local-blob-store"
+}
