@@ -34,6 +34,7 @@ include(
     "adapters:agones-fake",
     "capability:capability-api",
     "host:host-api",
+    "host:paper-agent",
     "distribution:profiles",
     "testkit:architecture-testkit",
     "testkit:substrate-testkit",

@@ -51,6 +51,7 @@ final class ArchitectureValidationTest {
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
+            Map.entry(":host:paper-agent", Set.of(":host:host-api")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
             Map.entry(":testkit:architecture-testkit", Set.of()),
             Map.entry(":testkit:substrate-testkit", Set.of(":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
@@ -363,6 +364,34 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Fake Agones adapter crossed allocation boundary: " + violations);
+    }
+
+    @Test
+    void paperAgentArtifactCacheDoesNotUseCanonicalStoreOrLogClients() throws IOException {
+        Path paperAgent = ROOT.resolve("host/paper-agent/src/main/java");
+        if (!Files.exists(paperAgent)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(paperAgent)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Paper agent artifact cache crossed host boundary: " + violations);
     }
 
     private static List<Path> productionJavaSources() throws IOException {
