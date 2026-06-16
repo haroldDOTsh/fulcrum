@@ -46,6 +46,7 @@ final class ArchitectureValidationTest {
             Map.entry(":data:contract-declarations", Set.of(":api:contract-api")),
             Map.entry(":data:presence-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":data:route-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
+            Map.entry(":data:session-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
@@ -244,6 +245,42 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Route authority crossed route boundary: " + violations);
+    }
+
+    @Test
+    void sessionAuthorityStaysPlatformLifecycleOnly() throws IOException {
+        Path sessionAuthority = ROOT.resolve("data/session-authority/src/main/java");
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "paper",
+                "bukkit",
+                "velocity",
+                "rank",
+                "profile",
+                "punishment",
+                "party",
+                "guild",
+                "friends",
+                "chat",
+                "economy",
+                "stats",
+                "loot",
+                "kit",
+                "reward"
+        );
+        if (!Files.exists(sessionAuthority)) {
+            return;
+        }
+        try (Stream<Path> files = Files.walk(sessionAuthority)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8).toLowerCase();
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Session authority crossed platform lifecycle boundary: " + violations);
     }
 
     private static List<Path> productionJavaSources() throws IOException {

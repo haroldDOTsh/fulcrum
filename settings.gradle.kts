@@ -29,6 +29,7 @@ include(
     "data:artifact-authority",
     "data:presence-authority",
     "data:route-authority",
+    "data:session-authority",
     "capability:capability-api",
     "host:host-api",
     "distribution:profiles",
