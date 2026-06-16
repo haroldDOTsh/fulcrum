@@ -29,6 +29,7 @@ include(
     "data:contract-declarations",
     "data:contract-codegen",
     "data:authority-core",
+    "data:authority-runtime",
     "data:artifact-authority",
     "data:presence-authority",
     "data:route-contract",

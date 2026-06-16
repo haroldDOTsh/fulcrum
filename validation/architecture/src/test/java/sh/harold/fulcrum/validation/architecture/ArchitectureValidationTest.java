@@ -53,6 +53,7 @@ final class ArchitectureValidationTest {
             Map.entry(":core:session-runtime", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":data:artifact-authority", Set.of(":api:contract-api", ":data:authority-core")),
             Map.entry(":data:authority-core", Set.of(":api:contract-api")),
+            Map.entry(":data:authority-runtime", Set.of(":api:contract-api", ":data:authority-core")),
             Map.entry(":data:contract-codegen", Set.of(":api:contract-api", ":data:contract-declarations")),
             Map.entry(":data:contract-declarations", Set.of(":api:contract-api")),
             Map.entry(":data:presence-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
@@ -346,6 +347,38 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Subject authority crossed thin identity boundary: " + violations);
+    }
+
+    @Test
+    void authorityRuntimeDeclaresPortsWithoutConcreteStoreClients() throws IOException {
+        Path authorityRuntime = ROOT.resolve("data/authority-runtime/src/main/java");
+        if (!Files.exists(authorityRuntime)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "KafkaConsumer",
+                "KafkaProducer",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "com.datastax",
+                "io.lettuce",
+                "redis",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(authorityRuntime)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(term -> text.toLowerCase().contains(term.toLowerCase()))
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Authority runtime crossed adapter boundary: " + violations);
     }
 
     @Test

@@ -26,6 +26,7 @@ val step0CheckedProjects = listOf(
 
 val step1CheckedProjects = step0CheckedProjects + listOf(
     ":data:authority-core",
+    ":data:authority-runtime",
     ":data:artifact-authority",
     ":data:presence-authority",
     ":data:route-contract",
