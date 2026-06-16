@@ -15,9 +15,15 @@ import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlanner;
 import sh.harold.fulcrum.standard.chat.ChatDecorationCapability;
 import sh.harold.fulcrum.standard.chat.ChatDecorationInput;
 import sh.harold.fulcrum.standard.chat.ChatDecorationRenderer;
+import sh.harold.fulcrum.standard.contracts.PartyContracts;
 import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
+import sh.harold.fulcrum.standard.party.PartyCapability;
+import sh.harold.fulcrum.standard.party.PartyFormed;
+import sh.harold.fulcrum.standard.party.PartyId;
+import sh.harold.fulcrum.standard.party.PartyRosterProjection;
+import sh.harold.fulcrum.standard.party.PartyRosterSnapshot;
 import sh.harold.fulcrum.standard.profile.PlayerProfileCapability;
 import sh.harold.fulcrum.standard.punishment.ActivePunishmentSnapshot;
 import sh.harold.fulcrum.standard.punishment.PunishmentCapability;
@@ -40,22 +46,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class StandardCapabilityIntegrationTest {
     private static final Instant NOW = Instant.parse("2026-06-16T18:00:00Z");
     private static final SubjectId SUBJECT = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000701"));
+    private static final SubjectId PARTY_MEMBER = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000702"));
     private static final PrincipalId PRINCIPAL = new PrincipalId("standard-suite-validation");
 
     @Test
-    void tierOneDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
-        CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(tierOneDescriptors());
-        CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(tierOneDescriptors());
+    void tierOneAndPartyDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
+        CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(standardDescriptorsWithParty());
+        CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(standardDescriptorsWithParty());
         CapabilityMaterializationPlan plan = CapabilityMaterializationPlanner.plan(graph);
 
         assertTrue(graphResult.valid(), () -> graphResult.errors().toString());
         assertEquals(Optional.of(PlayerProfileCapability.CAPABILITY_ID),
                 graph.providerOf(PlayerProfileContracts.CONTRACT));
         assertEquals(Optional.of(RankCapability.CAPABILITY_ID), graph.providerOf(RankContracts.CONTRACT));
+        assertEquals(Optional.of(PartyCapability.CAPABILITY_ID), graph.providerOf(PartyContracts.CONTRACT));
         assertEquals(Optional.of(PunishmentCapability.CAPABILITY_ID),
                 graph.providerOf(PunishmentContracts.CONTRACT));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
                 graph.dependenciesFor(RankCapability.CAPABILITY_ID));
+        assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
+                graph.dependenciesFor(PartyCapability.CAPABILITY_ID));
         assertEquals(List.of(RankCapability.CAPABILITY_ID),
                 graph.dependenciesFor(ChatDecorationCapability.CAPABILITY_ID));
         assertTrue(graph.dependenciesFor(PunishmentCapability.CAPABILITY_ID).isEmpty());
@@ -63,6 +73,8 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(List.of(
                         PlayerProfileContracts.EFFECTIVE_PROJECTION,
                         RankContracts.EFFECTIVE_PROJECTION,
+                        PartyContracts.ROSTER_PROJECTION,
+                        PartyContracts.SUBJECT_INDEX_PROJECTION,
                         PunishmentContracts.ACTIVE_PROJECTION),
                 plan.projections().stream()
                         .map(resource -> resource.declaration().relationName())
@@ -70,6 +82,18 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(List.of(PunishmentCapability.CAPABILITY_ID),
                 CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
                         .registrationsFor(CapabilityExtensionPoint.PROXY_LOGIN_GATE)
+                        .stream()
+                        .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
+                        .toList());
+        assertEquals(List.of(PartyCapability.CAPABILITY_ID),
+                CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
+                        .registrationsFor(CapabilityExtensionPoint.EXPERIENCE_QUEUE_POLICY)
+                        .stream()
+                        .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
+                        .toList());
+        assertEquals(List.of(PartyCapability.CAPABILITY_ID),
+                CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
+                        .registrationsFor(CapabilityExtensionPoint.EXPERIENCE_ROSTER_POLICY)
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
@@ -108,11 +132,23 @@ final class StandardCapabilityIntegrationTest {
                 Optional.of(activePunishment)).allowed());
     }
 
-    private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> tierOneDescriptors() {
+    @Test
+    void partyProjectionFeedsQueueRosterLogicWithoutCallingPartyAuthority() {
+        PartyId partyId = new PartyId("party-suite-validation");
+        PartyRosterProjection projection = PartyRosterProjection.rebuild(List.of(new PartyFormed(
+                new PartyRosterSnapshot(partyId, SUBJECT, List.of(SUBJECT, PARTY_MEMBER), PRINCIPAL, NOW),
+                new Revision(1))));
+
+        assertEquals(partyId, projection.partyFor(PARTY_MEMBER).orElseThrow());
+        assertEquals(List.of(SUBJECT, PARTY_MEMBER), projection.membersFor(SUBJECT));
+    }
+
+    private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptorsWithParty() {
         return List.of(
                 PlayerProfileCapability.descriptor(),
                 RankCapability.descriptor(),
                 ChatDecorationCapability.descriptor(),
+                PartyCapability.descriptor(),
                 PunishmentCapability.descriptor());
     }
 }

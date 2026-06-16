@@ -132,6 +132,8 @@ import sh.harold.fulcrum.host.velocity.VelocityRouteTransfer;
 import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
+import sh.harold.fulcrum.standard.contracts.PartyContracts;
+import sh.harold.fulcrum.standard.party.PartyCapability;
 import sh.harold.fulcrum.standard.profile.PlayerProfileCapability;
 import sh.harold.fulcrum.standard.punishment.PunishmentCapability;
 import sh.harold.fulcrum.standard.punishment.PunishmentLoginGate;
@@ -809,14 +811,16 @@ final class FinalFleetE2eTest {
         List<CapabilityDescriptor> descriptors = List.of(
                 PlayerProfileCapability.descriptor(),
                 RankCapability.descriptor(),
+                PartyCapability.descriptor(),
                 PunishmentCapability.descriptor());
         assertEquals(
-                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
+                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
                 descriptors.stream().map(CapabilityDescriptor::capabilityId).collect(Collectors.toSet()));
         assertTrue(descriptors.stream().flatMap(descriptor -> descriptor.authorityDomains().stream())
                 .allMatch(domain -> domain.resourceClass().equals("standard")));
         assertEquals(PlayerProfileContracts.CONTRACT, PlayerProfileCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(RankContracts.CONTRACT, RankCapability.descriptor().declaredContracts().getFirst().name());
+        assertEquals(PartyContracts.CONTRACT, PartyCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(PunishmentContracts.CONTRACT, PunishmentCapability.descriptor().declaredContracts().getFirst().name());
     }
 

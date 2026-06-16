@@ -62,6 +62,7 @@ include(
     "standard-capabilities:rank",
     "standard-capabilities:chat-decoration",
     "standard-capabilities:punishment",
+    "standard-capabilities:party",
     "standard-capabilities:realm",
     "distribution:profiles",
     "distribution:service-launcher",

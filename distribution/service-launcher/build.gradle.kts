@@ -31,6 +31,7 @@ dependencies {
     runtimeOnly(project(":host:velocity-agent"))
     runtimeOnly(project(":host:worker-agent"))
     runtimeOnly(project(":standard-capabilities:chat-decoration"))
+    runtimeOnly(project(":standard-capabilities:party"))
     runtimeOnly(project(":standard-capabilities:player-profile"))
     runtimeOnly(project(":standard-capabilities:punishment"))
     runtimeOnly(project(":standard-capabilities:rank"))
