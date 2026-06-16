@@ -65,6 +65,7 @@ include(
     "testkit:substrate-testkit",
     "validation:architecture",
     "validation:fleet-e2e",
+    "validation:store-adapter-certification",
     "validation:synthetic-load",
     "validation:standard-capabilities",
 )
