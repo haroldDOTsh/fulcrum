@@ -6,9 +6,11 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
@@ -53,6 +55,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ArtifactAuthorityReplayTest {
@@ -205,6 +208,78 @@ final class ArtifactAuthorityReplayTest {
         }
     }
 
+    @Test
+    void crashAfterDurableEffectsBeforeOffsetCommitRedeliversWithoutDuplicatingEffects() throws Exception {
+        try (FulcrumSubstrateStack stack = FulcrumSubstrateStack.create().start()) {
+            createTopics(stack.kafkaBootstrapServers());
+            createSchema(stack);
+
+            String groupId = AUTHORITY_GROUP + "-crash";
+            ArtifactCommandRecord command = ArtifactCommandRecord.fixture();
+            sendCommand(stack.kafkaBootstrapServers(), command);
+
+            ArtifactAuthorityWorker crashingWorker = new ArtifactAuthorityWorker(stack, groupId);
+            AuthorityProcessCrash crash = assertThrows(
+                    AuthorityProcessCrash.class,
+                    () -> crashingWorker.handleNext(
+                            "attempt-crashing-owner",
+                            true,
+                            CrashPhase.AFTER_DURABLE_EFFECTS_BEFORE_OFFSET_COMMIT));
+            assertEquals(CrashPhase.AFTER_DURABLE_EFFECTS_BEFORE_OFFSET_COMMIT, crash.phase());
+
+            String certificate = stack.queryPostgresScalar("""
+                    SELECT topic || ':' ||
+                        partition_number || ':' ||
+                        record_offset || ':' ||
+                        idempotency_key || ':' ||
+                        projection_revision || ':' ||
+                        event_key || ':' ||
+                        state_key || ':' ||
+                        response_key || ':' ||
+                        cache_key || ':' ||
+                        crash_phase
+                    FROM artifact_authority_processing_certificate
+                    WHERE idempotency_key = '%s';
+                    """.formatted(sql(command.idempotencyKey())));
+            assertEquals("""
+                    cmd.artifact-metadata:0:0:idempotency-artifact-metadata-1:1:sha-256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:sha-256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:command-artifact-metadata-1:artifact-metadata:sha-256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:AFTER_DURABLE_EFFECTS_BEFORE_OFFSET_COMMIT\
+                    """, certificate);
+            assertTrue(committedOffset(stack.kafkaBootstrapServers(), groupId, 0).isEmpty());
+
+            ArtifactAuthorityWorker restartedWorker = new ArtifactAuthorityWorker(stack, groupId);
+            AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> replayed =
+                    restartedWorker.handleNext("attempt-restarted-owner", true);
+
+            assertTrue(replayed.replayed());
+            assertEquals(AuthorityDecisionStatus.ACCEPTED, replayed.status());
+            assertEquals("1", stack.queryPostgresScalar("SELECT count(*) FROM artifact_metadata_projection;"));
+            assertEquals("1", stack.queryPostgresScalar("SELECT count(*) FROM artifact_authority_idempotency;"));
+            assertEquals("0,0", stack.queryPostgresScalar("""
+                    SELECT string_agg(kafka_offset::TEXT, ',' ORDER BY attempt_id)
+                    FROM artifact_authority_attempt
+                    WHERE idempotency_key = '%s';
+                    """.formatted(sql(command.idempotencyKey()))));
+            assertEquals("false,true", stack.queryPostgresScalar("""
+                    SELECT string_agg(replayed, ',' ORDER BY attempt_id)
+                    FROM artifact_authority_attempt
+                    WHERE idempotency_key = '%s';
+                    """.formatted(sql(command.idempotencyKey()))));
+            assertEquals(Optional.of(1L), committedOffset(stack.kafkaBootstrapServers(), groupId, 0));
+
+            List<String> events = drainTopic(stack.kafkaBootstrapServers(), EVENT_TOPIC, 1);
+            List<String> states = drainTopic(stack.kafkaBootstrapServers(), STATE_TOPIC, 1);
+            List<String> responses = drainTopic(stack.kafkaBootstrapServers(), RESPONSE_TOPIC, 2);
+
+            assertEquals(1, events.size(), "crash replay must not duplicate the accepted domain event");
+            assertEquals(1, states.size(), "crash replay must not duplicate compacted state");
+            assertEquals(2, responses.size(), "the original attempt and replay both return the stable response");
+            assertEquals(responses.get(0), responses.get(1));
+            assertEquals(certificate.substring(certificate.lastIndexOf("artifact-metadata:"),
+                            certificate.lastIndexOf(":AFTER_DURABLE_EFFECTS_BEFORE_OFFSET_COMMIT")),
+                    "artifact-metadata:" + command.aggregateId());
+        }
+    }
+
     private static void createTopics(String bootstrapServers) throws Exception {
         try (AdminClient admin = AdminClient.create(Map.of("bootstrap.servers", bootstrapServers))) {
             admin.createTopics(List.of(
@@ -264,7 +339,21 @@ final class ArtifactAuthorityReplayTest {
                     attempt_id TEXT PRIMARY KEY,
                     idempotency_key TEXT NOT NULL,
                     replayed TEXT NOT NULL,
+                    kafka_offset BIGINT NOT NULL,
                     revision BIGINT NOT NULL
+                );
+                CREATE TABLE artifact_authority_processing_certificate (
+                    certificate_id TEXT PRIMARY KEY,
+                    topic TEXT NOT NULL,
+                    partition_number INTEGER NOT NULL,
+                    record_offset BIGINT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    projection_revision BIGINT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    state_key TEXT NOT NULL,
+                    response_key TEXT NOT NULL,
+                    cache_key TEXT NOT NULL,
+                    crash_phase TEXT NOT NULL
                 );
                 """);
     }
@@ -335,6 +424,16 @@ final class ArtifactAuthorityReplayTest {
                 ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
     }
 
+    private static Optional<Long> committedOffset(String bootstrapServers, String groupId, int partition) throws Exception {
+        try (AdminClient admin = AdminClient.create(Map.of("bootstrap.servers", bootstrapServers))) {
+            Map<TopicPartition, OffsetAndMetadata> offsets = admin.listConsumerGroupOffsets(groupId)
+                    .partitionsToOffsetAndMetadata()
+                    .get(20, TimeUnit.SECONDS);
+            OffsetAndMetadata committed = offsets.get(new TopicPartition(COMMAND_TOPIC, partition));
+            return committed == null ? Optional.empty() : Optional.of(committed.offset());
+        }
+    }
+
     private static String sql(String value) {
         return value.replace("'", "''");
     }
@@ -367,6 +466,13 @@ final class ArtifactAuthorityReplayTest {
         private AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> handleNext(
                 String attemptId,
                 boolean commitOffset) throws Exception {
+            return handleNext(attemptId, commitOffset, CrashPhase.NONE);
+        }
+
+        private AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> handleNext(
+                String attemptId,
+                boolean commitOffset,
+                CrashPhase crashPhase) throws Exception {
             BufferedArtifactIdempotencyLedger ledger = new BufferedArtifactIdempotencyLedger(stack);
             ArtifactMetadataAuthority authority = new ArtifactMetadataAuthority(ledger);
             try (KafkaConsumer<String, String> consumer =
@@ -379,17 +485,17 @@ final class ArtifactAuthorityReplayTest {
                 AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision = authority.handle(command, currentRecord);
 
                 if (decision.replayed()) {
-                    storeAttempt(attemptId, commandRecord.idempotencyKey(), decision);
+                    storeAttempt(attemptId, commandRecord.idempotencyKey(), record.offset(), decision);
                     publishResponse(producer, commandRecord.aggregateId(), decision.response());
                 } else if (decision.status() == AuthorityDecisionStatus.REJECTED) {
                     persistRejectedDecision(attemptId, commandRecord, record.offset(), currentRecord, decision, ledger.pendingDecision());
                     publishResponse(producer, commandRecord.aggregateId(), decision.response());
                 } else {
-                    persistAcceptedDecision(attemptId, commandRecord, decision, ledger.pendingDecision());
+                    persistAcceptedDecision(attemptId, commandRecord, record.offset(), decision, ledger.pendingDecision());
                     publishEmissions(producer, decision.emissions());
                     storeCacheWrites(decision.emissions());
                 }
-                afterDurableDecisionBeforeOffsetCommit();
+                afterDurableDecisionBeforeOffsetCommit(record, commandRecord, decision, crashPhase);
                 if (commitOffset) {
                     consumer.commitSync();
                 }
@@ -433,6 +539,7 @@ final class ArtifactAuthorityReplayTest {
         private void persistAcceptedDecision(
                 String attemptId,
                 ArtifactCommandRecord command,
+                long kafkaOffset,
                 AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision,
                 StoredAuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> storedDecision) {
             ArtifactMetadata metadata = decision.state().metadata().orElseThrow();
@@ -496,8 +603,8 @@ final class ArtifactAuthorityReplayTest {
                         %d,
                         '%s'
                     ) ON CONFLICT (idempotency_key) DO NOTHING;
-                    INSERT INTO artifact_authority_attempt (attempt_id, idempotency_key, replayed, revision)
-                    VALUES ('%s', '%s', 'false', %d);
+                    INSERT INTO artifact_authority_attempt (attempt_id, idempotency_key, replayed, kafka_offset, revision)
+                    VALUES ('%s', '%s', 'false', %d, %d);
                     COMMIT;
                     """.formatted(
                     sql(command.aggregateId()),
@@ -527,6 +634,7 @@ final class ArtifactAuthorityReplayTest {
                     sql(command.commandId()),
                     sql(attemptId),
                     sql(command.idempotencyKey()),
+                    kafkaOffset,
                     decision.revision().value()));
         }
 
@@ -600,8 +708,8 @@ final class ArtifactAuthorityReplayTest {
                         %d,
                         '%s'
                     );
-                    INSERT INTO artifact_authority_attempt (attempt_id, idempotency_key, replayed, revision)
-                    VALUES ('%s', '%s', 'false', %d);
+                    INSERT INTO artifact_authority_attempt (attempt_id, idempotency_key, replayed, kafka_offset, revision)
+                    VALUES ('%s', '%s', 'false', %d, %d);
                     COMMIT;
                     """.formatted(
                     sql(command.idempotencyKey()),
@@ -633,20 +741,23 @@ final class ArtifactAuthorityReplayTest {
                     sql(reason.name()),
                     sql(attemptId),
                     sql(command.idempotencyKey()),
+                    kafkaOffset,
                     decision.revision().value()));
         }
 
         private void storeAttempt(
                 String attemptId,
                 String idempotencyKey,
+                long kafkaOffset,
                 AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision) {
             stack.executePostgres("""
-                    INSERT INTO artifact_authority_attempt (attempt_id, idempotency_key, replayed, revision)
-                    VALUES ('%s', '%s', '%s', %d);
+                    INSERT INTO artifact_authority_attempt (attempt_id, idempotency_key, replayed, kafka_offset, revision)
+                    VALUES ('%s', '%s', '%s', %d, %d);
                     """.formatted(
                     sql(attemptId),
                     sql(idempotencyKey),
                     Boolean.toString(decision.replayed()),
+                    kafkaOffset,
                     decision.revision().value()));
         }
 
@@ -680,8 +791,88 @@ final class ArtifactAuthorityReplayTest {
                     .forEach(emission -> stack.setValkey(emission.key(), emission.payload()));
         }
 
-        private void afterDurableDecisionBeforeOffsetCommit() {
-            // Named seam for the follow-up crash-before-offset-commit proof.
+        private void afterDurableDecisionBeforeOffsetCommit(
+                ConsumerRecord<String, String> record,
+                ArtifactCommandRecord command,
+                AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision,
+                CrashPhase crashPhase) {
+            if (crashPhase == CrashPhase.NONE) {
+                return;
+            }
+            recordProcessingCertificate(record, command, decision, crashPhase);
+            throw new AuthorityProcessCrash(crashPhase);
+        }
+
+        private void recordProcessingCertificate(
+                ConsumerRecord<String, String> record,
+                ArtifactCommandRecord command,
+                AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision,
+                CrashPhase crashPhase) {
+            List<AuthorityEmission> emissions = decision.emissions();
+            stack.executePostgres("""
+                    INSERT INTO artifact_authority_processing_certificate (
+                        certificate_id,
+                        topic,
+                        partition_number,
+                        record_offset,
+                        idempotency_key,
+                        projection_revision,
+                        event_key,
+                        state_key,
+                        response_key,
+                        cache_key,
+                        crash_phase
+                    ) VALUES (
+                        '%s',
+                        '%s',
+                        %d,
+                        %d,
+                        '%s',
+                        %d,
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s'
+                    );
+                    """.formatted(
+                    sql(record.topic() + "-" + record.partition() + "-" + record.offset()),
+                    sql(record.topic()),
+                    record.partition(),
+                    record.offset(),
+                    sql(command.idempotencyKey()),
+                    decision.revision().value(),
+                    sql(emissionKey(emissions, AuthorityEmissionKind.EVENT)),
+                    sql(emissionKey(emissions, AuthorityEmissionKind.STATE)),
+                    sql(emissionKey(emissions, AuthorityEmissionKind.RESPONSE)),
+                    sql(emissionKey(emissions, AuthorityEmissionKind.CACHE_WRITE)),
+                    sql(crashPhase.name())));
+        }
+
+        private static String emissionKey(List<AuthorityEmission> emissions, AuthorityEmissionKind kind) {
+            return emissions.stream()
+                    .filter(emission -> emission.kind() == kind)
+                    .map(AuthorityEmission::key)
+                    .findFirst()
+                    .orElse("");
+        }
+    }
+
+    private enum CrashPhase {
+        NONE,
+        AFTER_DURABLE_EFFECTS_BEFORE_OFFSET_COMMIT
+    }
+
+    private static final class AuthorityProcessCrash extends RuntimeException {
+        private final CrashPhase phase;
+
+        private AuthorityProcessCrash(CrashPhase phase) {
+            super("authority crashed at " + phase.name());
+            this.phase = phase;
+        }
+
+        private CrashPhase phase() {
+            return phase;
         }
     }
 
