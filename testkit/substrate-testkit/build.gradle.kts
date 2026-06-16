@@ -9,6 +9,7 @@ dependencies {
     implementation(libs.testcontainers.postgresql)
 
     testImplementation(project(":data:contract-codegen"))
+    testImplementation(project(":data:artifact-authority"))
     testImplementation(libs.kafka.clients)
     testImplementation(libs.testcontainers.junit.jupiter)
 }
