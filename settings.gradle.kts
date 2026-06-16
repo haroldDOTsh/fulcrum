@@ -59,6 +59,7 @@ include(
     "testkit:architecture-testkit",
     "testkit:substrate-testkit",
     "validation:architecture",
+    "validation:fleet-e2e",
     "validation:synthetic-load",
     "validation:standard-capabilities",
 )

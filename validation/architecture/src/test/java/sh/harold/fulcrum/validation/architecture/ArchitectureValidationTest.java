@@ -76,6 +76,7 @@ final class ArchitectureValidationTest {
             Map.entry(":testkit:architecture-testkit", Set.of()),
             Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
             Map.entry(":validation:architecture", Set.of()),
+            Map.entry(":validation:fleet-e2e", Set.of(":adapters:agones-allocator", ":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":control:allocation-bridge", ":control:queue-controller", ":control:route-controller", ":core:content-resolver", ":core:manifest-core", ":core:session-runtime", ":data:authority-core", ":data:route-contract", ":data:session-authority", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts")),
             Map.entry(":validation:synthetic-load", Set.of(":adapters:agones-fake", ":api:contract-api", ":api:kernel-api", ":control:route-controller", ":data:authority-core", ":host:host-api", ":standard-capabilities:rank")),
             Map.entry(":validation:standard-capabilities", Set.of(":capability:capability-runtime", ":standard-capabilities:chat-decoration", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts"))
     );
