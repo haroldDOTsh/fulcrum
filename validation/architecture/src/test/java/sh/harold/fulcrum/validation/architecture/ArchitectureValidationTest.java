@@ -41,6 +41,7 @@ final class ArchitectureValidationTest {
             Map.entry(":api:contract-api", Set.of(":api:kernel-api")),
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
+            Map.entry(":capability:capability-runtime", Set.of(":capability:capability-api")),
             Map.entry(":control:allocation-bridge", Set.of(":api:contract-api", ":api:kernel-api", ":control:queue-controller", ":host:host-api")),
             Map.entry(":control:fault-controller", Set.of(":api:contract-api")),
             Map.entry(":control:lifecycle-controller", Set.of(":api:contract-api", ":api:kernel-api")),
@@ -541,6 +542,44 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Host tick runtime API crossed host boundary: " + violations);
+    }
+
+    @Test
+    void capabilityRuntimeHasNoHostStoreOrAdapterClients() throws IOException {
+        Path capabilityRuntime = ROOT.resolve("capability/capability-runtime/src/main/java");
+        if (!Files.exists(capabilityRuntime)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "io.kubernetes",
+                "KubernetesClient",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "HttpClient",
+                "HostAllocationPort",
+                "FakeAgonesAllocationAdapter",
+                "AgonesAllocatorRestClient",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(capabilityRuntime)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Capability runtime crossed materialization boundary: " + violations);
     }
 
     @Test

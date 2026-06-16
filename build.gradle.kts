@@ -56,6 +56,7 @@ val step4CheckedProjects = step3CheckedProjects + listOf(
 
 val step5CheckedProjects = step4CheckedProjects + listOf(
     ":capability:capability-api",
+    ":capability:capability-runtime",
 )
 
 allprojects {

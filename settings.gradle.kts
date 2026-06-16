@@ -36,6 +36,7 @@ include(
     "adapters:agones-allocator",
     "adapters:agones-fake",
     "capability:capability-api",
+    "capability:capability-runtime",
     "control:allocation-bridge",
     "control:fault-controller",
     "control:lifecycle-controller",
