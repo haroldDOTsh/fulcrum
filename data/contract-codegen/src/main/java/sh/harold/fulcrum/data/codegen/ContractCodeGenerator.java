@@ -46,6 +46,7 @@ public final class ContractCodeGenerator {
         artifacts.add(new GeneratedArtifact("src/main/java/sh/harold/fulcrum/generated/contracts/" + classPrefix + "CommandClient.java", clientSource(declaration, classPrefix)));
         artifacts.add(new GeneratedArtifact("src/main/java/sh/harold/fulcrum/generated/contracts/" + classPrefix + "Serializer.java", serializerSource(declaration, classPrefix)));
         artifacts.add(new GeneratedArtifact("src/main/java/sh/harold/fulcrum/generated/contracts/" + classPrefix + "AuthorityStub.java", authorityStubSource(declaration, classPrefix)));
+        artifacts.add(new GeneratedArtifact("manifests/" + domain + ".acl.json", aclManifest(declaration)));
         artifacts.add(new GeneratedArtifact("manifests/" + domain + ".topics.json", topicManifest(declaration)));
         artifacts.add(new GeneratedArtifact("migrations/" + domain + ".sql", migration(declaration)));
 
@@ -67,11 +68,12 @@ public final class ContractCodeGenerator {
                     "src/main/java/sh/harold/fulcrum/generated/contracts/%sCommandClient.java",
                     "src/main/java/sh/harold/fulcrum/generated/contracts/%sSerializer.java",
                     "src/main/java/sh/harold/fulcrum/generated/contracts/%sAuthorityStub.java",
+                    "manifests/%s.acl.json",
                     "manifests/%s.topics.json",
                     "migrations/%s.sql"
                   ]
                 }
-                """.formatted(domain, GENERATOR_VERSION, fingerprint, payloadArtifactLines(declaration), classPrefix, classPrefix, classPrefix, domain, domain);
+                """.formatted(domain, GENERATOR_VERSION, fingerprint, payloadArtifactLines(declaration), classPrefix, classPrefix, classPrefix, domain, domain, domain);
     }
 
     private static String clientSource(ContractDeclaration declaration, String classPrefix) {
@@ -236,6 +238,25 @@ public final class ContractCodeGenerator {
                 """.formatted(declaration.name().value(), indent(topics, 4));
     }
 
+    private static String aclManifest(ContractDeclaration declaration) {
+        String rules = declaration.aclRules().stream()
+                .map(rule -> """
+                            {
+                              "resource": "%s",
+                              "producers": [%s],
+                              "consumers": [%s]
+                            }""".formatted(rule.resource(), quotedList(rule.producers()), quotedList(rule.consumers())))
+                .collect(Collectors.joining(",\n"));
+        return """
+                {
+                  "contract": "%s",
+                  "rules": [
+                %s
+                  ]
+                }
+                """.formatted(declaration.name().value(), indent(rules, 4));
+    }
+
     private static String migration(ContractDeclaration declaration) {
         ProjectionDeclaration projection = declaration.projections().getFirst();
         String columns = projection.fields().stream()
@@ -346,6 +367,10 @@ public final class ContractCodeGenerator {
         declaration.topics().forEach(topic -> builder.append("topic:")
                 .append(topic.name()).append(':')
                 .append(topic.family()).append('\n'));
+        declaration.aclRules().forEach(rule -> builder.append("acl:")
+                .append(rule.resource()).append(':')
+                .append(String.join(",", rule.producers())).append(':')
+                .append(String.join(",", rule.consumers())).append('\n'));
         return builder.toString();
     }
 
@@ -378,5 +403,11 @@ public final class ContractCodeGenerator {
     private static String indent(String value, int spaces) {
         String prefix = " ".repeat(spaces);
         return value.lines().map(line -> prefix + line).collect(Collectors.joining("\n"));
+    }
+
+    private static String quotedList(List<String> values) {
+        return values.stream()
+                .map(value -> "\"" + value + "\"")
+                .collect(Collectors.joining(", "));
     }
 }

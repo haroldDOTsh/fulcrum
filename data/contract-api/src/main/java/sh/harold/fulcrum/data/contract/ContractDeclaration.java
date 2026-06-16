@@ -12,13 +12,24 @@ public record ContractDeclaration(
         List<EventDeclaration> events,
         Optional<SnapshotDeclaration> snapshot,
         List<ProjectionDeclaration> projections,
-        List<TopicDeclaration> topics) {
+        List<TopicDeclaration> topics,
+        List<AclRuleDeclaration> aclRules) {
     public ContractDeclaration(
             ContractName name,
             List<CommandDeclaration> commands,
             List<EventDeclaration> events,
             List<TopicDeclaration> topics) {
-        this(name, commands, events, Optional.empty(), List.of(), topics);
+        this(name, commands, events, Optional.empty(), List.of(), topics, List.of());
+    }
+
+    public ContractDeclaration(
+            ContractName name,
+            List<CommandDeclaration> commands,
+            List<EventDeclaration> events,
+            Optional<SnapshotDeclaration> snapshot,
+            List<ProjectionDeclaration> projections,
+            List<TopicDeclaration> topics) {
+        this(name, commands, events, snapshot, projections, topics, List.of());
     }
 
     public ContractDeclaration {
@@ -28,5 +39,6 @@ public record ContractDeclaration(
         snapshot = snapshot == null ? Optional.empty() : snapshot;
         projections = List.copyOf(Objects.requireNonNull(projections, "projections"));
         topics = List.copyOf(Objects.requireNonNull(topics, "topics"));
+        aclRules = List.copyOf(Objects.requireNonNull(aclRules, "aclRules"));
     }
 }

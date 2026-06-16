@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import sh.harold.fulcrum.api.contract.CommandName;
 import sh.harold.fulcrum.api.contract.ContractName;
 import sh.harold.fulcrum.api.contract.EventName;
+import sh.harold.fulcrum.data.contract.AclRuleDeclaration;
 import sh.harold.fulcrum.data.contract.CommandDeclaration;
 import sh.harold.fulcrum.data.contract.ContractDeclaration;
 import sh.harold.fulcrum.data.contract.EventDeclaration;
@@ -43,6 +44,7 @@ final class ContractCodeGeneratorTest {
 
         assertEquals(List.of(
                 "contracts/hello-world/contract-ledger.json",
+                "manifests/hello-world.acl.json",
                 "manifests/hello-world.topics.json",
                 "migrations/hello-world.sql",
                 "src/main/java/sh/harold/fulcrum/generated/contracts/GreetingAccepted.java",
@@ -63,12 +65,57 @@ final class ContractCodeGeneratorTest {
                 );
                 """, packet.artifact("migrations/hello-world.sql").contents());
 
-        String topicManifest = packet.artifact("manifests/hello-world.topics.json").contents();
-        assertTrue(topicManifest.contains("\"contract\": \"hello-world\""));
-        assertTrue(topicManifest.contains("\"name\": \"cmd.hello-world\""));
-        assertTrue(topicManifest.contains("\"family\": \"COMMAND\""));
-        assertTrue(topicManifest.contains("\"name\": \"evt.hello-world\""));
-        assertTrue(topicManifest.contains("\"family\": \"EVENT\""));
+        assertEquals("""
+                {
+                  "contract": "hello-world",
+                  "topics": [
+                    {
+                      "name": "cmd.hello-world",
+                      "family": "COMMAND"
+                    },
+                    {
+                      "name": "evt.hello-world",
+                      "family": "EVENT"
+                    },
+                    {
+                      "name": "state.hello-world",
+                      "family": "STATE"
+                    },
+                    {
+                      "name": "rsp.hello-world",
+                      "family": "RESPONSE"
+                    }
+                  ]
+                }
+                """, packet.artifact("manifests/hello-world.topics.json").contents());
+
+        assertEquals("""
+                {
+                  "contract": "hello-world",
+                  "rules": [
+                    {
+                      "resource": "cmd.hello-world",
+                      "producers": ["hello-world-client"],
+                      "consumers": ["hello-world-authority"]
+                    },
+                    {
+                      "resource": "evt.hello-world",
+                      "producers": ["hello-world-authority"],
+                      "consumers": ["hello-world-projection"]
+                    },
+                    {
+                      "resource": "state.hello-world",
+                      "producers": ["hello-world-authority"],
+                      "consumers": ["hello-world-projection"]
+                    },
+                    {
+                      "resource": "rsp.hello-world",
+                      "producers": ["hello-world-authority"],
+                      "consumers": ["hello-world-client"]
+                    }
+                  ]
+                }
+                """, packet.artifact("manifests/hello-world.acl.json").contents());
 
         String ledger = packet.artifact("contracts/hello-world/contract-ledger.json").contents();
         assertTrue(ledger.contains("\"generator\": \"contract-codegen-v1\""));
@@ -106,7 +153,8 @@ final class ContractCodeGeneratorTest {
                 List.of(new EventDeclaration(new EventName("greeting-accepted"), "GreetingAccepted", List.of(new FieldDeclaration("greeting", FieldType.STRING)))),
                 Optional.of(new SnapshotDeclaration("HelloWorldSnapshot", List.of(new FieldDeclaration("revision", FieldType.LONG)))),
                 List.of(),
-                List.of(new TopicDeclaration("cmd.hello-world", TopicFamily.COMMAND)));
+                List.of(new TopicDeclaration("cmd.hello-world", TopicFamily.COMMAND)),
+                List.of(new AclRuleDeclaration("cmd.hello-world", List.of("hello-world-client"), List.of("hello-world-authority"))));
 
         IllegalArgumentException exception = org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalArgumentException.class,
@@ -185,6 +233,11 @@ final class ContractCodeGeneratorTest {
                         new TopicDeclaration("cmd.hello-world", TopicFamily.COMMAND),
                         new TopicDeclaration("evt.hello-world", TopicFamily.EVENT),
                         new TopicDeclaration("state.hello-world", TopicFamily.STATE),
-                        new TopicDeclaration("rsp.hello-world", TopicFamily.RESPONSE)));
+                        new TopicDeclaration("rsp.hello-world", TopicFamily.RESPONSE)),
+                List.of(
+                        new AclRuleDeclaration("cmd.hello-world", List.of("hello-world-client"), List.of("hello-world-authority")),
+                        new AclRuleDeclaration("evt.hello-world", List.of("hello-world-authority"), List.of("hello-world-projection")),
+                        new AclRuleDeclaration("state.hello-world", List.of("hello-world-authority"), List.of("hello-world-projection")),
+                        new AclRuleDeclaration("rsp.hello-world", List.of("hello-world-authority"), List.of("hello-world-client"))));
     }
 }
