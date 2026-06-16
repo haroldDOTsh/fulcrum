@@ -32,6 +32,10 @@ val step1CheckedProjects = step0CheckedProjects + listOf(
     ":data:route-contract",
     ":data:route-authority",
     ":data:session-authority",
+    ":data:store-cassandra",
+    ":data:store-kafka",
+    ":data:store-postgresql",
+    ":data:store-valkey",
     ":data:subject-authority",
 )
 

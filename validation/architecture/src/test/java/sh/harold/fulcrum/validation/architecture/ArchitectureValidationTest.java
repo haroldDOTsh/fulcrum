@@ -62,6 +62,10 @@ final class ArchitectureValidationTest {
             Map.entry(":data:route-contract", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":data:route-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core", ":data:route-contract")),
             Map.entry(":data:session-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
+            Map.entry(":data:store-cassandra", Set.of(":data:authority-runtime")),
+            Map.entry(":data:store-kafka", Set.of(":data:authority-runtime")),
+            Map.entry(":data:store-postgresql", Set.of(":data:authority-runtime")),
+            Map.entry(":data:store-valkey", Set.of(":data:authority-runtime")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
             Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":standard-capabilities:chat-decoration", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:realm", ":standard-capabilities:standard-contracts")),
@@ -273,6 +277,14 @@ final class ArchitectureValidationTest {
         for (String required : List.of("kafka-log", "cassandra-projection", "postgresql-authority-record", "valkey-cache-idempotency", "object-storage-artifact")) {
             assertTrue(text.contains(required), "store adapter certification matrix missing " + required);
         }
+    }
+
+    @Test
+    void concreteStoreAdaptersOwnPhysicalClients() throws IOException {
+        assertSourceContains("data/store-kafka/src/main/java", "org.apache.kafka.clients.consumer", "org.apache.kafka.clients.producer");
+        assertSourceContains("data/store-cassandra/src/main/java", "CqlSession");
+        assertSourceContains("data/store-postgresql/src/main/java", "DataSource", "PreparedStatement");
+        assertSourceContains("data/store-valkey/src/main/java", "UnifiedJedis");
     }
 
     @Test
@@ -1235,6 +1247,20 @@ final class ArchitectureValidationTest {
             return ":data:contract-declarations";
         }
         return ":" + relativeParent.toString().replace('\\', ':').replace('/', ':');
+    }
+
+    private static void assertSourceContains(String relativeRoot, String... terms) throws IOException {
+        Path root = ROOT.resolve(relativeRoot);
+        assertTrue(Files.exists(root), relativeRoot + " must exist");
+        StringBuilder combined = new StringBuilder();
+        try (Stream<Path> files = Files.walk(root)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                combined.append(Files.readString(source, StandardCharsets.UTF_8)).append('\n');
+            }
+        }
+        for (String term : terms) {
+            assertTrue(combined.toString().contains(term), relativeRoot + " missing " + term);
+        }
     }
 
     private static Path findRoot() {

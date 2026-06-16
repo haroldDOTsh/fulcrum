@@ -1,15 +1,21 @@
 [versions]
+cassandra-driver = "4.17.0"
 junit = "6.1.0"
 kafka = "4.3.0"
+postgresql = "42.7.11"
 testcontainers = "2.0.5"
+valkey-java = "5.5.0"
 
 [libraries]
+cassandra-driver-core = { module = "com.datastax.oss:java-driver-core", version.ref = "cassandra-driver" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-cassandra = { module = "org.testcontainers:testcontainers-cassandra", version.ref = "testcontainers" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
 testcontainers-kafka = { module = "org.testcontainers:testcontainers-kafka", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+valkey-java = { module = "io.valkey:valkey-java", version.ref = "valkey-java" }
