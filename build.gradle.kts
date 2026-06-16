@@ -41,6 +41,11 @@ val step2CheckedProjects = step1CheckedProjects + listOf(
     ":host:velocity-agent",
 )
 
+val step3CheckedProjects = step2CheckedProjects + listOf(
+    ":core:session-runtime",
+    ":host:tick-runtime-api",
+)
+
 allprojects {
     group = "sh.harold.fulcrum"
     version = "0.1.0-SNAPSHOT"
@@ -89,6 +94,12 @@ tasks.register("step2Check") {
     dependsOn(step2CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("step3Check") {
+    group = "verification"
+    description = "Runs the automated Step 3 Session runtime checks that exist so far."
+    dependsOn(step3CheckedProjects.map { "$it:check" })
+}
+
 tasks.named("check") {
-    dependsOn("step2Check")
+    dependsOn("step3Check")
 }

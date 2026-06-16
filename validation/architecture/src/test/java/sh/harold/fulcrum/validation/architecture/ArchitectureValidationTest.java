@@ -42,6 +42,7 @@ final class ArchitectureValidationTest {
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
             Map.entry(":core:manifest-core", Set.of(":api:contract-api", ":api:kernel-api")),
+            Map.entry(":core:session-runtime", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":data:artifact-authority", Set.of(":api:contract-api", ":data:authority-core")),
             Map.entry(":data:authority-core", Set.of(":api:contract-api")),
             Map.entry(":data:contract-codegen", Set.of(":api:contract-api", ":data:contract-declarations")),
@@ -54,6 +55,7 @@ final class ArchitectureValidationTest {
             Map.entry(":distribution:profiles", Set.of()),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
             Map.entry(":host:paper-agent", Set.of(":host:host-api")),
+            Map.entry(":host:tick-runtime-api", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:velocity-agent", Set.of(":host:host-api", ":data:route-contract")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
             Map.entry(":testkit:architecture-testkit", Set.of()),
@@ -462,6 +464,114 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Velocity agent crossed route command boundary: " + violations);
+    }
+
+    @Test
+    void sessionRuntimeCoreHasNoHostRuntimeOrBlockingDependencies() throws IOException {
+        Path sessionRuntime = ROOT.resolve("core/session-runtime/src/main/java");
+        if (!Files.exists(sessionRuntime)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "java.net",
+                "java.sql",
+                "java.io",
+                "HttpClient",
+                "Thread.sleep",
+                "CompletableFuture",
+                "Future<",
+                "ExecutorService",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(sessionRuntime)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Session runtime core crossed reducer boundary: " + violations);
+    }
+
+    @Test
+    void hostTickRuntimeApiHasNoPaperOrStoreClients() throws IOException {
+        Path tickRuntime = ROOT.resolve("host/tick-runtime-api/src/main/java");
+        if (!Files.exists(tickRuntime)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "AuthorityCommandProcessor",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(tickRuntime)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Host tick runtime API crossed host boundary: " + violations);
+    }
+
+    @Test
+    void sessionRuntimeDoesNotImplementDeferredMinigameEngine() throws IOException {
+        List<Path> runtimeRoots = List.of(
+                ROOT.resolve("core/session-runtime/src/main/java"),
+                ROOT.resolve("host/tick-runtime-api/src/main/java")
+        );
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "minigame",
+                "pregame",
+                "gameplay",
+                "waiting lobby",
+                "participant",
+                "spectator",
+                "team roster",
+                "kit",
+                "loot table"
+        );
+        for (Path runtimeRoot : runtimeRoots) {
+            if (!Files.exists(runtimeRoot)) {
+                continue;
+            }
+            try (Stream<Path> files = Files.walk(runtimeRoot)) {
+                for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                    String text = Files.readString(source, StandardCharsets.UTF_8).toLowerCase();
+                    forbidden.stream()
+                            .filter(text::contains)
+                            .map(term -> ROOT.relativize(source) + " contains " + term)
+                            .forEach(violations::add);
+                }
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Session runtime implemented deferred engine concepts: " + violations);
     }
 
     private static List<Path> productionJavaSources() throws IOException {
