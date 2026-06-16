@@ -38,6 +38,7 @@ import sh.harold.fulcrum.data.authority.AuthorityDecisionStatus;
 import sh.harold.fulcrum.data.authority.AuthorityEmission;
 import sh.harold.fulcrum.data.authority.AuthorityEmissionKind;
 import sh.harold.fulcrum.data.authority.AuthorityRecord;
+import sh.harold.fulcrum.data.authority.AuthorityRejectionReason;
 import sh.harold.fulcrum.data.authority.IdempotencyLedger;
 import sh.harold.fulcrum.data.authority.StoredAuthorityDecision;
 
@@ -121,6 +122,89 @@ final class ArtifactAuthorityReplayTest {
         }
     }
 
+    @Test
+    void rejectedArtifactMetadataCommandsDoNotWriteProjectionEventsOrCache() throws Exception {
+        try (FulcrumSubstrateStack stack = FulcrumSubstrateStack.create().start()) {
+            createTopics(stack.kafkaBootstrapServers());
+            createSchema(stack);
+
+            long currentFencingEpoch = 7;
+            List<ArtifactCommandRecord> commands = List.of(
+                    ArtifactCommandRecord.rejectionFixture(
+                            "stale-fencing",
+                            '1',
+                            currentFencingEpoch - 1,
+                            0,
+                            "principal-artifact-pipeline",
+                            "principal-artifact-pipeline"),
+                    ArtifactCommandRecord.rejectionFixture(
+                            "revision-mismatch",
+                            '2',
+                            currentFencingEpoch,
+                            1,
+                            "principal-artifact-pipeline",
+                            "principal-artifact-pipeline"),
+                    ArtifactCommandRecord.rejectionFixture(
+                            "principal-mismatch",
+                            '3',
+                            currentFencingEpoch,
+                            0,
+                            "principal-artifact-pipeline",
+                            "principal-other-transport"));
+
+            ArtifactAuthorityWorker worker = new ArtifactAuthorityWorker(
+                    stack,
+                    AUTHORITY_GROUP + "-rejection",
+                    currentFencingEpoch);
+            sendCommand(stack.kafkaBootstrapServers(), commands.get(0));
+            AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> staleFencing =
+                    worker.handleNext("attempt-stale-fencing", true);
+            sendCommand(stack.kafkaBootstrapServers(), commands.get(1));
+            AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> revisionMismatch =
+                    worker.handleNext("attempt-revision-mismatch", true);
+            sendCommand(stack.kafkaBootstrapServers(), commands.get(2));
+            AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> principalMismatch =
+                    worker.handleNext("attempt-principal-mismatch", true);
+
+            assertRejected(staleFencing, AuthorityRejectionReason.STALE_FENCING_EPOCH);
+            assertRejected(revisionMismatch, AuthorityRejectionReason.REVISION_MISMATCH);
+            assertRejected(principalMismatch, AuthorityRejectionReason.PRINCIPAL_MISMATCH);
+            assertEquals("0", stack.queryPostgresScalar("SELECT count(*) FROM artifact_metadata_projection;"));
+            assertEquals("3", stack.queryPostgresScalar("SELECT count(*) FROM artifact_authority_idempotency;"));
+            assertEquals("""
+                    command-artifact-metadata-principal-mismatch:PRINCIPAL_MISMATCH:7:7:0:0:principal-artifact-pipeline:principal-other-transport,\
+                    command-artifact-metadata-revision-mismatch:REVISION_MISMATCH:7:7:1:0:principal-artifact-pipeline:principal-artifact-pipeline,\
+                    command-artifact-metadata-stale-fencing:STALE_FENCING_EPOCH:6:7:0:0:principal-artifact-pipeline:principal-artifact-pipeline\
+                    """, stack.queryPostgresScalar("""
+                    SELECT string_agg(
+                        command_id || ':' ||
+                        rejection_reason || ':' ||
+                        command_fencing_epoch || ':' ||
+                        observed_fencing_epoch || ':' ||
+                        expected_revision || ':' ||
+                        observed_revision || ':' ||
+                        declared_principal || ':' ||
+                        authenticated_principal,
+                        ',' ORDER BY command_id)
+                    FROM artifact_authority_rejection;
+                    """));
+
+            List<String> events = drainTopic(stack.kafkaBootstrapServers(), EVENT_TOPIC, 0);
+            List<String> states = drainTopic(stack.kafkaBootstrapServers(), STATE_TOPIC, 0);
+            List<String> responses = drainTopic(stack.kafkaBootstrapServers(), RESPONSE_TOPIC, 3);
+
+            assertEquals(0, events.size(), "rejected commands must not emit accepted domain events");
+            assertEquals(0, states.size(), "rejected commands must not emit compacted state");
+            assertEquals(3, responses.size(), "sync path still returns one rejection receipt per command");
+            assertTrue(responses.stream().anyMatch(response -> response.contains("reason=STALE_FENCING_EPOCH")));
+            assertTrue(responses.stream().anyMatch(response -> response.contains("reason=REVISION_MISMATCH")));
+            assertTrue(responses.stream().anyMatch(response -> response.contains("reason=PRINCIPAL_MISMATCH")));
+            for (ArtifactCommandRecord command : commands) {
+                assertEquals("", stack.getValkey("artifact-metadata:" + command.aggregateId()));
+            }
+        }
+    }
+
     private static void createTopics(String bootstrapServers) throws Exception {
         try (AdminClient admin = AdminClient.create(Map.of("bootstrap.servers", bootstrapServers))) {
             admin.createTopics(List.of(
@@ -149,6 +233,7 @@ final class ArtifactAuthorityReplayTest {
                     idempotency_key TEXT PRIMARY KEY,
                     payload_fingerprint TEXT NOT NULL,
                     status TEXT NOT NULL,
+                    rejection_reason TEXT NOT NULL,
                     aggregate_id TEXT NOT NULL,
                     digest_algorithm TEXT NOT NULL,
                     digest_value TEXT NOT NULL,
@@ -161,6 +246,19 @@ final class ArtifactAuthorityReplayTest {
                     revision BIGINT NOT NULL,
                     fencing_epoch BIGINT NOT NULL,
                     command_id TEXT NOT NULL
+                );
+                CREATE TABLE artifact_authority_rejection (
+                    command_id TEXT PRIMARY KEY,
+                    idempotency_key TEXT NOT NULL,
+                    aggregate_id TEXT NOT NULL,
+                    declared_principal TEXT NOT NULL,
+                    authenticated_principal TEXT NOT NULL,
+                    command_fencing_epoch BIGINT NOT NULL,
+                    observed_fencing_epoch BIGINT NOT NULL,
+                    expected_revision BIGINT NOT NULL,
+                    observed_revision BIGINT NOT NULL,
+                    kafka_offset BIGINT NOT NULL,
+                    rejection_reason TEXT NOT NULL
                 );
                 CREATE TABLE artifact_authority_attempt (
                     attempt_id TEXT PRIMARY KEY,
@@ -241,13 +339,29 @@ final class ArtifactAuthorityReplayTest {
         return value.replace("'", "''");
     }
 
+    private static void assertRejected(
+            AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision,
+            AuthorityRejectionReason reason) {
+        assertFalse(decision.replayed());
+        assertEquals(AuthorityDecisionStatus.REJECTED, decision.status());
+        assertEquals(Optional.of(reason), decision.rejectionReason());
+        assertEquals(ArtifactMetadataReceiptStatus.REJECTED, decision.response().status());
+        assertFalse(decision.state().metadata().isPresent());
+    }
+
     private static final class ArtifactAuthorityWorker {
         private final FulcrumSubstrateStack stack;
         private final String groupId;
+        private final long currentFencingEpoch;
 
         private ArtifactAuthorityWorker(FulcrumSubstrateStack stack, String groupId) {
+            this(stack, groupId, 7);
+        }
+
+        private ArtifactAuthorityWorker(FulcrumSubstrateStack stack, String groupId, long currentFencingEpoch) {
             this.stack = stack;
             this.groupId = groupId;
+            this.currentFencingEpoch = currentFencingEpoch;
         }
 
         private AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> handleNext(
@@ -266,6 +380,9 @@ final class ArtifactAuthorityReplayTest {
 
                 if (decision.replayed()) {
                     storeAttempt(attemptId, commandRecord.idempotencyKey(), decision);
+                    publishResponse(producer, commandRecord.aggregateId(), decision.response());
+                } else if (decision.status() == AuthorityDecisionStatus.REJECTED) {
+                    persistRejectedDecision(attemptId, commandRecord, record.offset(), currentRecord, decision, ledger.pendingDecision());
                     publishResponse(producer, commandRecord.aggregateId(), decision.response());
                 } else {
                     persistAcceptedDecision(attemptId, commandRecord, decision, ledger.pendingDecision());
@@ -296,7 +413,7 @@ final class ArtifactAuthorityReplayTest {
                     WHERE aggregate_id = '%s';
                     """.formatted(sql(command.aggregateId())));
             if (row.isBlank()) {
-                return ArtifactMetadataAuthority.emptyRecord(command.fencingEpoch());
+                return ArtifactMetadataAuthority.emptyRecord(currentFencingEpoch);
             }
             String[] fields = row.split("\\|", -1);
             ArtifactMetadata metadata = new ArtifactMetadata(
@@ -348,6 +465,7 @@ final class ArtifactAuthorityReplayTest {
                         idempotency_key,
                         payload_fingerprint,
                         status,
+                        rejection_reason,
                         aggregate_id,
                         digest_algorithm,
                         digest_value,
@@ -364,6 +482,7 @@ final class ArtifactAuthorityReplayTest {
                         '%s',
                         '%s',
                         '%s',
+                        '',
                         '%s',
                         '%s',
                         '%s',
@@ -406,6 +525,112 @@ final class ArtifactAuthorityReplayTest {
                     decision.revision().value(),
                     command.fencingEpoch(),
                     sql(command.commandId()),
+                    sql(attemptId),
+                    sql(command.idempotencyKey()),
+                    decision.revision().value()));
+        }
+
+        private void persistRejectedDecision(
+                String attemptId,
+                ArtifactCommandRecord command,
+                long kafkaOffset,
+                AuthorityRecord<ArtifactMetadataState> currentRecord,
+                AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision,
+                StoredAuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> storedDecision) {
+            AuthorityRejectionReason reason = decision.rejectionReason().orElseThrow();
+            stack.executePostgres("""
+                    BEGIN;
+                    INSERT INTO artifact_authority_idempotency (
+                        idempotency_key,
+                        payload_fingerprint,
+                        status,
+                        rejection_reason,
+                        aggregate_id,
+                        digest_algorithm,
+                        digest_value,
+                        kind,
+                        byte_length,
+                        content_address,
+                        producer_principal,
+                        provenance,
+                        published_at,
+                        revision,
+                        fencing_epoch,
+                        command_id
+                    ) VALUES (
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        %d,
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        %d,
+                        %d,
+                        '%s'
+                    ) ON CONFLICT (idempotency_key) DO NOTHING;
+                    INSERT INTO artifact_authority_rejection (
+                        command_id,
+                        idempotency_key,
+                        aggregate_id,
+                        declared_principal,
+                        authenticated_principal,
+                        command_fencing_epoch,
+                        observed_fencing_epoch,
+                        expected_revision,
+                        observed_revision,
+                        kafka_offset,
+                        rejection_reason
+                    ) VALUES (
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        '%s',
+                        %d,
+                        %d,
+                        %d,
+                        %d,
+                        %d,
+                        '%s'
+                    );
+                    INSERT INTO artifact_authority_attempt (attempt_id, idempotency_key, replayed, revision)
+                    VALUES ('%s', '%s', 'false', %d);
+                    COMMIT;
+                    """.formatted(
+                    sql(command.idempotencyKey()),
+                    sql(storedDecision.payloadFingerprint()),
+                    sql(storedDecision.decision().status().name()),
+                    sql(reason.name()),
+                    sql(command.aggregateId()),
+                    sql(command.digestAlgorithm()),
+                    sql(command.digestValue()),
+                    sql(command.kind()),
+                    command.byteLength(),
+                    sql(command.contentAddress()),
+                    sql(command.declaredPrincipalId()),
+                    sql(command.provenance()),
+                    sql(RECEIVED_AT.toString()),
+                    decision.revision().value(),
+                    command.fencingEpoch(),
+                    sql(command.commandId()),
+                    sql(command.commandId()),
+                    sql(command.idempotencyKey()),
+                    sql(command.aggregateId()),
+                    sql(command.declaredPrincipalId()),
+                    sql(command.authenticatedPrincipalId()),
+                    command.fencingEpoch(),
+                    currentRecord.fencingEpoch(),
+                    command.expectedRevision(),
+                    currentRecord.revision().value(),
+                    kafkaOffset,
+                    sql(reason.name()),
                     sql(attemptId),
                     sql(command.idempotencyKey()),
                     decision.revision().value()));
@@ -475,6 +700,7 @@ final class ArtifactAuthorityReplayTest {
                     SELECT concat_ws('|',
                         payload_fingerprint,
                         status,
+                        rejection_reason,
                         aggregate_id,
                         digest_algorithm,
                         digest_value,
@@ -494,24 +720,42 @@ final class ArtifactAuthorityReplayTest {
                 return Optional.empty();
             }
             String[] fields = row.split("\\|", -1);
-            ArtifactDigest digest = new ArtifactDigest(fields[3], fields[4]);
-            Revision revision = new Revision(Long.parseLong(fields[11]));
+            Revision revision = new Revision(Long.parseLong(fields[12]));
+            if (AuthorityDecisionStatus.REJECTED.name().equals(fields[1])) {
+                AuthorityRejectionReason reason = AuthorityRejectionReason.valueOf(fields[2]);
+                ArtifactMetadataReceipt receipt = new ArtifactMetadataReceipt(
+                        ArtifactMetadataReceiptStatus.REJECTED,
+                        Optional.of(reason.name()),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty());
+                AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision = AuthorityDecision.rejected(
+                        reason,
+                        revision,
+                        new ArtifactMetadataState(Optional.empty()),
+                        receipt,
+                        traceEnvelope("trace-stored-decision"));
+                return Optional.of(new StoredAuthorityDecision<>(fields[0], decision));
+            }
+            ArtifactDigest digest = new ArtifactDigest(fields[4], fields[5]);
             ArtifactMetadata metadata = new ArtifactMetadata(
                     digest,
-                    ArtifactKind.valueOf(fields[5]),
-                    Long.parseLong(fields[6]),
-                    new ContentAddress(fields[7]),
-                    new PrincipalId(fields[8]),
-                    new ProvenanceRef(fields[9]),
-                    Instant.parse(fields[10]));
+                    ArtifactKind.valueOf(fields[6]),
+                    Long.parseLong(fields[7]),
+                    new ContentAddress(fields[8]),
+                    new PrincipalId(fields[9]),
+                    new ProvenanceRef(fields[10]),
+                    Instant.parse(fields[11]));
             ArtifactMetadataReceipt receipt = new ArtifactMetadataReceipt(
                     ArtifactMetadataReceiptStatus.ACCEPTED,
                     Optional.empty(),
                     Optional.of(digest),
                     Optional.of(revision),
-                    Optional.of(Long.parseLong(fields[12])),
+                    Optional.of(Long.parseLong(fields[13])),
                     Optional.of(idempotencyKey.value()),
-                    Optional.of(fields[13]));
+                    Optional.of(fields[14]));
             AuthorityDecision<ArtifactMetadataState, ArtifactMetadataReceipt> decision = AuthorityDecision.accepted(
                     revision,
                     new ArtifactMetadataState(metadata),
@@ -564,7 +808,8 @@ final class ArtifactAuthorityReplayTest {
     private record ArtifactCommandRecord(
             String commandId,
             String idempotencyKey,
-            String principalId,
+            String declaredPrincipalId,
+            String authenticatedPrincipalId,
             String aggregateId,
             String digestAlgorithm,
             String digestValue,
@@ -583,6 +828,7 @@ final class ArtifactAuthorityReplayTest {
                     "command-artifact-metadata-1",
                     "idempotency-artifact-metadata-1",
                     "principal-artifact-pipeline",
+                    "principal-artifact-pipeline",
                     ArtifactAuthorityReplayTest.aggregateId(digest),
                     digest.algorithm(),
                     digest.value(),
@@ -595,10 +841,36 @@ final class ArtifactAuthorityReplayTest {
                     "publish-artifact-metadata:0123456789abcdef");
         }
 
+        private static ArtifactCommandRecord rejectionFixture(
+                String suffix,
+                char digestNibble,
+                long fencingEpoch,
+                long expectedRevision,
+                String declaredPrincipalId,
+                String authenticatedPrincipalId) {
+            ArtifactDigest digest = new ArtifactDigest("sha-256", Character.toString(digestNibble).repeat(64));
+            return new ArtifactCommandRecord(
+                    "command-artifact-metadata-" + suffix,
+                    "idempotency-artifact-metadata-" + suffix,
+                    declaredPrincipalId,
+                    authenticatedPrincipalId,
+                    ArtifactAuthorityReplayTest.aggregateId(digest),
+                    digest.algorithm(),
+                    digest.value(),
+                    ArtifactKind.CAPABILITY_BUNDLE.name(),
+                    4096,
+                    "object://artifact-store/capability/" + suffix,
+                    "build:artifact-pipeline:" + suffix,
+                    fencingEpoch,
+                    expectedRevision,
+                    "publish-artifact-metadata:" + suffix);
+        }
+
         private String encode() {
             return "commandId=" + commandId
                     + "\nidempotencyKey=" + idempotencyKey
-                    + "\nprincipalId=" + principalId
+                    + "\ndeclaredPrincipalId=" + declaredPrincipalId
+                    + "\nauthenticatedPrincipalId=" + authenticatedPrincipalId
                     + "\naggregateId=" + aggregateId
                     + "\ndigestAlgorithm=" + digestAlgorithm
                     + "\ndigestValue=" + digestValue
@@ -618,7 +890,8 @@ final class ArtifactAuthorityReplayTest {
             return new ArtifactCommandRecord(
                     fields.get("commandId"),
                     fields.get("idempotencyKey"),
-                    fields.get("principalId"),
+                    fields.get("declaredPrincipalId"),
+                    fields.get("authenticatedPrincipalId"),
                     fields.get("aggregateId"),
                     fields.get("digestAlgorithm"),
                     fields.get("digestValue"),
@@ -642,7 +915,7 @@ final class ArtifactAuthorityReplayTest {
             CommandEnvelope<PublishArtifactMetadata> envelope = new CommandEnvelope<>(
                     new CommandId(commandId),
                     new IdempotencyKey(idempotencyKey),
-                    new PrincipalId(principalId),
+                    new PrincipalId(declaredPrincipalId),
                     new AggregateId(aggregateId),
                     new ContractName("artifact-metadata"),
                     new CommandName("publish-artifact-metadata"),
@@ -651,7 +924,7 @@ final class ArtifactAuthorityReplayTest {
                     payload);
             return new AuthorityCommand<>(
                     envelope,
-                    new PrincipalId(principalId),
+                    new PrincipalId(authenticatedPrincipalId),
                     fencingEpoch,
                     Optional.of(new Revision(expectedRevision)),
                     payloadFingerprint,
