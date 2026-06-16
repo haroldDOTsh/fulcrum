@@ -46,6 +46,7 @@ final class ArchitectureValidationTest {
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
             Map.entry(":testkit:architecture-testkit", Set.of()),
+            Map.entry(":testkit:substrate-testkit", Set.of()),
             Map.entry(":validation:architecture", Set.of())
     );
 

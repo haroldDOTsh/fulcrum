@@ -29,6 +29,7 @@ include(
     "host:host-api",
     "distribution:profiles",
     "testkit:architecture-testkit",
+    "testkit:substrate-testkit",
     "validation:architecture",
 )
 

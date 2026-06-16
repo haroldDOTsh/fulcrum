@@ -20,6 +20,7 @@ val step0CheckedProjects = listOf(
     ":host:host-api",
     ":distribution:profiles",
     ":testkit:architecture-testkit",
+    ":testkit:substrate-testkit",
     ":validation:architecture",
 )
 
