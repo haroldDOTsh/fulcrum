@@ -61,6 +61,7 @@ final class ArchitectureValidationTest {
             Map.entry(":data:session-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
+            Map.entry(":host:effect-admission", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
             Map.entry(":host:paper-agent", Set.of(":core:artifact-layout", ":host:host-api")),
             Map.entry(":host:tick-runtime-api", Set.of(":core:session-runtime", ":host:host-api")),
@@ -479,6 +480,42 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Velocity agent crossed route command boundary: " + violations);
+    }
+
+    @Test
+    void effectAdmissionHasNoExecutorStoreOrAdapterClients() throws IOException {
+        Path effectAdmission = ROOT.resolve("host/effect-admission/src/main/java");
+        if (!Files.exists(effectAdmission)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "AuthorityCommandProcessor",
+                "IdempotencyLedger",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "HttpClient",
+                "ExecutorService",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(effectAdmission)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Effect admission crossed host boundary: " + violations);
     }
 
     @Test

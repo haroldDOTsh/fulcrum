@@ -44,6 +44,7 @@ include(
     "control:lifecycle-controller",
     "control:queue-controller",
     "control:route-controller",
+    "host:effect-admission",
     "host:host-api",
     "host:paper-agent",
     "host:tick-runtime-api",

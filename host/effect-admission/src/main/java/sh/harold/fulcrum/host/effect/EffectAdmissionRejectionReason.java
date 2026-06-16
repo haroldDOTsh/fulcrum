@@ -1,0 +1,12 @@
+package sh.harold.fulcrum.host.effect;
+
+public enum EffectAdmissionRejectionReason {
+    SECURITY_CONTEXT_MISMATCH,
+    TRACE_INSTANCE_MISMATCH,
+    ORIGIN_SESSION_MISMATCH,
+    HOST_LOCAL_EFFECT,
+    INVALID_SETTLEMENT,
+    UNDECLARED_PLATFORM_SCOPE,
+    CAPABILITY_SCOPE_MISMATCH,
+    MISSING_HOST_GRANT
+}

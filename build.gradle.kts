@@ -74,6 +74,10 @@ val step7CheckedProjects = step6CheckedProjects + listOf(
     ":standard-capabilities:realm",
 )
 
+val step8CheckedProjects = step7CheckedProjects + listOf(
+    ":host:effect-admission",
+)
+
 allprojects {
     group = "sh.harold.fulcrum"
     version = "0.1.0-SNAPSHOT"
@@ -152,6 +156,12 @@ tasks.register("step7Check") {
     dependsOn(step7CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("step8Check") {
+    group = "verification"
+    description = "Runs the automated Step 8 safety and hardening checks that exist so far."
+    dependsOn(step8CheckedProjects.map { "$it:check" })
+}
+
 tasks.named("check") {
-    dependsOn("step7Check")
+    dependsOn("step8Check")
 }
