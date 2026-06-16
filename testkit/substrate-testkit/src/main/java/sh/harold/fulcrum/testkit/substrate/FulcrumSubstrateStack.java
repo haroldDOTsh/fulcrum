@@ -62,12 +62,36 @@ public final class FulcrumSubstrateStack implements AutoCloseable {
         return postgres.getJdbcUrl();
     }
 
+    public String postgresUsername() {
+        return postgres.getUsername();
+    }
+
+    public String postgresPassword() {
+        return postgres.getPassword();
+    }
+
     public String cassandraContactPoint() {
         return cassandra.getContactPoint().toString();
     }
 
+    public String cassandraHost() {
+        return cassandra.getHost();
+    }
+
+    public int cassandraPort() {
+        return cassandra.getMappedPort(9042);
+    }
+
     public String valkeyEndpoint() {
         return valkey.getHost() + ":" + valkey.getMappedPort(6379);
+    }
+
+    public String valkeyHost() {
+        return valkey.getHost();
+    }
+
+    public int valkeyPort() {
+        return valkey.getMappedPort(6379);
     }
 
     public boolean postgresAcceptsConnections() {
