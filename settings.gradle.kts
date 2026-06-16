@@ -64,6 +64,7 @@ include(
     "standard-capabilities:punishment",
     "standard-capabilities:party",
     "standard-capabilities:friends",
+    "standard-capabilities:guild",
     "standard-capabilities:realm",
     "distribution:profiles",
     "distribution:service-launcher",

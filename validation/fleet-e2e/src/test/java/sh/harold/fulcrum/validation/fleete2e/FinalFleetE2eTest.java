@@ -135,6 +135,8 @@ import sh.harold.fulcrum.standard.contracts.RankContracts;
 import sh.harold.fulcrum.standard.contracts.PartyContracts;
 import sh.harold.fulcrum.standard.contracts.FriendsContracts;
 import sh.harold.fulcrum.standard.friends.FriendsCapability;
+import sh.harold.fulcrum.standard.contracts.GuildContracts;
+import sh.harold.fulcrum.standard.guild.GuildCapability;
 import sh.harold.fulcrum.standard.party.PartyCapability;
 import sh.harold.fulcrum.standard.profile.PlayerProfileCapability;
 import sh.harold.fulcrum.standard.punishment.PunishmentCapability;
@@ -815,9 +817,10 @@ final class FinalFleetE2eTest {
                 RankCapability.descriptor(),
                 PartyCapability.descriptor(),
                 FriendsCapability.descriptor(),
+                GuildCapability.descriptor(),
                 PunishmentCapability.descriptor());
         assertEquals(
-                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, FriendsCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
+                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, FriendsCapability.CAPABILITY_ID, GuildCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
                 descriptors.stream().map(CapabilityDescriptor::capabilityId).collect(Collectors.toSet()));
         assertTrue(descriptors.stream().flatMap(descriptor -> descriptor.authorityDomains().stream())
                 .allMatch(domain -> domain.resourceClass().equals("standard")));
@@ -825,6 +828,7 @@ final class FinalFleetE2eTest {
         assertEquals(RankContracts.CONTRACT, RankCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(PartyContracts.CONTRACT, PartyCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(FriendsContracts.CONTRACT, FriendsCapability.descriptor().declaredContracts().getFirst().name());
+        assertEquals(GuildContracts.CONTRACT, GuildCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(PunishmentContracts.CONTRACT, PunishmentCapability.descriptor().declaredContracts().getFirst().name());
     }
 

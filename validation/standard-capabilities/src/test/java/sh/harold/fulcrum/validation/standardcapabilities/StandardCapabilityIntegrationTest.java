@@ -29,6 +29,12 @@ import sh.harold.fulcrum.standard.party.PartyFormed;
 import sh.harold.fulcrum.standard.party.PartyId;
 import sh.harold.fulcrum.standard.party.PartyRosterProjection;
 import sh.harold.fulcrum.standard.party.PartyRosterSnapshot;
+import sh.harold.fulcrum.standard.contracts.GuildContracts;
+import sh.harold.fulcrum.standard.guild.GuildCapability;
+import sh.harold.fulcrum.standard.guild.GuildCreated;
+import sh.harold.fulcrum.standard.guild.GuildId;
+import sh.harold.fulcrum.standard.guild.GuildRosterProjection;
+import sh.harold.fulcrum.standard.guild.GuildRosterSnapshot;
 import sh.harold.fulcrum.standard.profile.PlayerProfileCapability;
 import sh.harold.fulcrum.standard.punishment.ActivePunishmentSnapshot;
 import sh.harold.fulcrum.standard.punishment.PunishmentCapability;
@@ -53,10 +59,11 @@ final class StandardCapabilityIntegrationTest {
     private static final SubjectId SUBJECT = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000701"));
     private static final SubjectId PARTY_MEMBER = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000702"));
     private static final SubjectId FRIEND_SUBJECT = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000703"));
+    private static final SubjectId GUILD_MEMBER = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000704"));
     private static final PrincipalId PRINCIPAL = new PrincipalId("standard-suite-validation");
 
     @Test
-    void tierOnePartyAndFriendsDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
+    void tierOneAndTierTwoDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
         CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(standardDescriptorsWithTierTwoSocial());
         CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(standardDescriptorsWithTierTwoSocial());
         CapabilityMaterializationPlan plan = CapabilityMaterializationPlanner.plan(graph);
@@ -67,6 +74,7 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(Optional.of(RankCapability.CAPABILITY_ID), graph.providerOf(RankContracts.CONTRACT));
         assertEquals(Optional.of(PartyCapability.CAPABILITY_ID), graph.providerOf(PartyContracts.CONTRACT));
         assertEquals(Optional.of(FriendsCapability.CAPABILITY_ID), graph.providerOf(FriendsContracts.CONTRACT));
+        assertEquals(Optional.of(GuildCapability.CAPABILITY_ID), graph.providerOf(GuildContracts.CONTRACT));
         assertEquals(Optional.of(PunishmentCapability.CAPABILITY_ID),
                 graph.providerOf(PunishmentContracts.CONTRACT));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
@@ -75,6 +83,8 @@ final class StandardCapabilityIntegrationTest {
                 graph.dependenciesFor(PartyCapability.CAPABILITY_ID));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
                 graph.dependenciesFor(FriendsCapability.CAPABILITY_ID));
+        assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
+                graph.dependenciesFor(GuildCapability.CAPABILITY_ID));
         assertEquals(List.of(RankCapability.CAPABILITY_ID),
                 graph.dependenciesFor(ChatDecorationCapability.CAPABILITY_ID));
         assertTrue(graph.dependenciesFor(PunishmentCapability.CAPABILITY_ID).isEmpty());
@@ -86,6 +96,8 @@ final class StandardCapabilityIntegrationTest {
                         PartyContracts.SUBJECT_INDEX_PROJECTION,
                         FriendsContracts.CONNECTION_PROJECTION,
                         FriendsContracts.SUBJECT_INDEX_PROJECTION,
+                        GuildContracts.ROSTER_PROJECTION,
+                        GuildContracts.SUBJECT_INDEX_PROJECTION,
                         PunishmentContracts.ACTIVE_PROJECTION),
                 plan.projections().stream()
                         .map(resource -> resource.declaration().relationName())
@@ -114,9 +126,15 @@ final class StandardCapabilityIntegrationTest {
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
-        assertEquals(List.of(FriendsCapability.CAPABILITY_ID),
+        assertEquals(List.of(FriendsCapability.CAPABILITY_ID, GuildCapability.CAPABILITY_ID),
                 CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
                         .registrationsFor(CapabilityExtensionPoint.PROXY_PLAYER_FANOUT)
+                        .stream()
+                        .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
+                        .toList());
+        assertEquals(List.of(GuildCapability.CAPABILITY_ID),
+                CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
+                        .registrationsFor(CapabilityExtensionPoint.PAPER_MENUS)
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
@@ -170,6 +188,17 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(List.of(SUBJECT), projection.friendsOf(FRIEND_SUBJECT));
     }
 
+    @Test
+    void guildProjectionFeedsSocialSurfaceLogicWithoutCallingGuildAuthority() {
+        GuildId guildId = new GuildId("guild-suite-validation");
+        GuildRosterProjection projection = GuildRosterProjection.rebuild(List.of(new GuildCreated(
+                new GuildRosterSnapshot(guildId, SUBJECT, List.of(SUBJECT, GUILD_MEMBER), "Suite Guild", PRINCIPAL, NOW),
+                new Revision(1))));
+
+        assertEquals(guildId, projection.guildFor(GUILD_MEMBER).orElseThrow());
+        assertEquals(List.of(SUBJECT, GUILD_MEMBER), projection.membersFor(SUBJECT));
+    }
+
     private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptorsWithTierTwoSocial() {
         return List.of(
                 PlayerProfileCapability.descriptor(),
@@ -177,6 +206,7 @@ final class StandardCapabilityIntegrationTest {
                 ChatDecorationCapability.descriptor(),
                 PartyCapability.descriptor(),
                 FriendsCapability.descriptor(),
+                GuildCapability.descriptor(),
                 PunishmentCapability.descriptor());
     }
 }

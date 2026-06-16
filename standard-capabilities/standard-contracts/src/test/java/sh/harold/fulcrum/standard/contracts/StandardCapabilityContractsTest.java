@@ -72,6 +72,20 @@ final class StandardCapabilityContractsTest {
     }
 
     @Test
+    void guildContractDeclaresRosterAndSubjectIndexProjections() {
+        ContractDeclaration contract = GuildContracts.contract();
+
+        assertEquals(GuildContracts.CONTRACT, contract.name());
+        assertEquals(2, contract.projections().size());
+        assertEquals(
+                java.util.List.of(GuildContracts.ROSTER_PROJECTION, GuildContracts.SUBJECT_INDEX_PROJECTION),
+                contract.projections().stream().map(projection -> projection.relationName()).toList());
+        assertEquals(
+                java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
+                contract.topics().stream().map(topic -> topic.family()).toList());
+    }
+
+    @Test
     void realmContractDeclaresSnapshotMetadataProjection() {
         ContractDeclaration contract = RealmContracts.contract();
 

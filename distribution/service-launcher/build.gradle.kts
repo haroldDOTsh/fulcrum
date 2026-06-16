@@ -33,6 +33,7 @@ dependencies {
     runtimeOnly(project(":standard-capabilities:chat-decoration"))
     runtimeOnly(project(":standard-capabilities:party"))
     runtimeOnly(project(":standard-capabilities:friends"))
+    runtimeOnly(project(":standard-capabilities:guild"))
     runtimeOnly(project(":standard-capabilities:player-profile"))
     runtimeOnly(project(":standard-capabilities:punishment"))
     runtimeOnly(project(":standard-capabilities:rank"))

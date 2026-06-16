@@ -74,6 +74,7 @@ val step6CheckedProjects = step5CheckedProjects + listOf(
     ":standard-capabilities:chat-decoration",
     ":standard-capabilities:party",
     ":standard-capabilities:friends",
+    ":standard-capabilities:guild",
     ":standard-capabilities:punishment",
     ":validation:standard-capabilities",
 )
