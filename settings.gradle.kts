@@ -36,6 +36,7 @@ include(
     "adapters:agones-allocator",
     "adapters:agones-fake",
     "capability:capability-api",
+    "control:queue-controller",
     "control:route-controller",
     "host:host-api",
     "host:paper-agent",
