@@ -30,6 +30,7 @@ val step1CheckedProjects = step0CheckedProjects + listOf(
     ":data:presence-authority",
     ":data:route-authority",
     ":data:session-authority",
+    ":data:subject-authority",
 )
 
 allprojects {

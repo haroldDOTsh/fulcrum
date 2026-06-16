@@ -30,6 +30,7 @@ include(
     "data:presence-authority",
     "data:route-authority",
     "data:session-authority",
+    "data:subject-authority",
     "capability:capability-api",
     "host:host-api",
     "distribution:profiles",
