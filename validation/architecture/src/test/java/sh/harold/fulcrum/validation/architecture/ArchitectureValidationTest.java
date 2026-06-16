@@ -70,6 +70,7 @@ final class ArchitectureValidationTest {
             Map.entry(":standard-capabilities:player-profile", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:standard-contracts")),
             Map.entry(":standard-capabilities:punishment", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:standard-contracts")),
             Map.entry(":standard-capabilities:rank", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
+            Map.entry(":standard-capabilities:realm", Set.of(":api:contract-api", ":capability:capability-api", ":capability:capability-runtime", ":core:artifact-layout", ":core:manifest-core", ":standard-capabilities:standard-contracts")),
             Map.entry(":standard-capabilities:standard-contracts", Set.of(":api:contract-api", ":data:contract-declarations")),
             Map.entry(":testkit:architecture-testkit", Set.of()),
             Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),

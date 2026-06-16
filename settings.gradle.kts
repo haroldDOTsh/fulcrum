@@ -53,6 +53,7 @@ include(
     "standard-capabilities:rank",
     "standard-capabilities:chat-decoration",
     "standard-capabilities:punishment",
+    "standard-capabilities:realm",
     "distribution:profiles",
     "testkit:architecture-testkit",
     "testkit:substrate-testkit",

@@ -42,4 +42,16 @@ final class StandardCapabilityContractsTest {
                 java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
                 contract.topics().stream().map(topic -> topic.family()).toList());
     }
+
+    @Test
+    void realmContractDeclaresSnapshotMetadataProjection() {
+        ContractDeclaration contract = RealmContracts.contract();
+
+        assertEquals(RealmContracts.CONTRACT, contract.name());
+        assertEquals(1, contract.projections().size());
+        assertEquals(RealmContracts.SNAPSHOT_METADATA_PROJECTION, contract.projections().getFirst().relationName());
+        assertEquals(
+                java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
+                contract.topics().stream().map(topic -> topic.family()).toList());
+    }
 }
