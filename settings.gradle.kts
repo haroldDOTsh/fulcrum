@@ -49,6 +49,7 @@ include(
     "standard-capabilities:standard-contracts",
     "standard-capabilities:player-profile",
     "standard-capabilities:rank",
+    "standard-capabilities:chat-decoration",
     "distribution:profiles",
     "testkit:architecture-testkit",
     "testkit:substrate-testkit",
