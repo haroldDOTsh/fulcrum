@@ -22,7 +22,17 @@ import sh.harold.fulcrum.api.contract.EventName;
 import sh.harold.fulcrum.api.contract.IdempotencyKey;
 import sh.harold.fulcrum.api.contract.PrincipalId;
 import sh.harold.fulcrum.api.contract.TraceEnvelope;
+import sh.harold.fulcrum.api.kernel.CapabilityId;
 import sh.harold.fulcrum.api.kernel.InstanceId;
+import sh.harold.fulcrum.capability.api.CapabilityAuthorityDeclaration;
+import sh.harold.fulcrum.capability.api.CapabilityDescriptor;
+import sh.harold.fulcrum.capability.api.CapabilityExtensionPoint;
+import sh.harold.fulcrum.capability.api.CapabilityScope;
+import sh.harold.fulcrum.capability.api.CapabilityVersion;
+import sh.harold.fulcrum.capability.api.ContributionDeclaration;
+import sh.harold.fulcrum.capability.runtime.CapabilityContributionComposer;
+import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlan;
+import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlanner;
 import sh.harold.fulcrum.data.codegen.ContractCodeGenerator;
 import sh.harold.fulcrum.data.codegen.GeneratedArtifact;
 import sh.harold.fulcrum.data.codegen.GeneratedContractPacket;
@@ -71,11 +81,16 @@ final class HelloWorldSubstrateRoundTripTest {
     @Test
     void helloWorldCommandRoundTripsThroughSubstrate(@TempDir Path tempDir) throws Exception {
         GeneratedContractPacket packet = new ContractCodeGenerator().generate(helloWorldContract());
+        CapabilityMaterializationPlan capabilityPlan = CapabilityMaterializationPlanner.plan(List.of(
+                sampleCapability(packet.declaration())));
         Path classesDir = compileGeneratedSources(packet, tempDir);
 
         try (URLClassLoader loader = new URLClassLoader(new java.net.URL[]{classesDir.toUri().toURL()}, getClass().getClassLoader());
              FulcrumSubstrateStack stack = FulcrumSubstrateStack.create().start()) {
-            createTopics(stack.kafkaBootstrapServers(), packet.declaration().topics());
+            assertSampleCapabilityPlan(capabilityPlan);
+            createTopics(stack.kafkaBootstrapServers(), capabilityPlan.topics().stream()
+                    .map(CapabilityMaterializationPlan.TopicResource::declaration)
+                    .toList());
             stack.executePostgres(packet.artifact("migrations/hello-world.sql").contents());
 
             GeneratedHelloWorld generated = GeneratedHelloWorld.load(loader);
@@ -93,6 +108,35 @@ final class HelloWorldSubstrateRoundTripTest {
             assertEquals("hello from generated contract", stack.getValkey("hello-world:greeting:" + AGGREGATE_ID));
             assertEquals("hello from generated contract", generated.greeting(consumeResponse(stack.kafkaBootstrapServers(), generated)));
         }
+    }
+
+    private static void assertSampleCapabilityPlan(CapabilityMaterializationPlan capabilityPlan) {
+        assertEquals(List.of(new CapabilityId("sample-capability")),
+                capabilityPlan.contracts().stream()
+                        .map(CapabilityMaterializationPlan.DeclaredContract::capabilityId)
+                        .toList());
+        assertEquals(List.of("sample-by-aggregate"),
+                capabilityPlan.authorities().stream()
+                        .map(resource -> resource.declaration().authorityDomain())
+                        .toList());
+        assertEquals(List.of(COMMAND_TOPIC, EVENT_TOPIC, "state.hello-world", RESPONSE_TOPIC),
+                capabilityPlan.topics().stream()
+                        .map(resource -> resource.declaration().name())
+                        .toList());
+        assertEquals(List.of("hello_world_greeting_projection"),
+                capabilityPlan.projections().stream()
+                        .map(resource -> resource.declaration().relationName())
+                        .toList());
+        assertEquals(List.of(COMMAND_TOPIC, EVENT_TOPIC, "state.hello-world", RESPONSE_TOPIC),
+                capabilityPlan.aclRules().stream()
+                        .map(resource -> resource.declaration().resource())
+                        .toList());
+        assertEquals(List.of(new CapabilityId("sample-capability")),
+                CapabilityContributionComposer.compose(capabilityPlan, CapabilityScope.NETWORK)
+                        .registrationsFor(CapabilityExtensionPoint.PAPER_COMMANDS)
+                        .stream()
+                        .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
+                        .toList());
     }
 
     private static void createTopics(String bootstrapServers, List<TopicDeclaration> topicDeclarations) throws Exception {
@@ -251,6 +295,17 @@ final class HelloWorldSubstrateRoundTripTest {
                         new AclRuleDeclaration(EVENT_TOPIC, List.of("hello-world-authority"), List.of("hello-world-projection")),
                         new AclRuleDeclaration("state.hello-world", List.of("hello-world-authority"), List.of("hello-world-projection")),
                         new AclRuleDeclaration(RESPONSE_TOPIC, List.of("hello-world-authority"), List.of("hello-world-client"))));
+    }
+
+    private static CapabilityDescriptor sampleCapability(ContractDeclaration declaration) {
+        return new CapabilityDescriptor(
+                new CapabilityId("sample-capability"),
+                new CapabilityVersion("1.0.0"),
+                List.of(),
+                List.of(declaration),
+                List.of(new CapabilityAuthorityDeclaration("sample-by-aggregate", "standard", 1)),
+                List.of(new ContributionDeclaration(CapabilityExtensionPoint.PAPER_COMMANDS, CapabilityScope.NETWORK, 10)),
+                List.of(CapabilityScope.NETWORK));
     }
 
     private static String sql(String value) {

@@ -65,7 +65,7 @@ final class ArchitectureValidationTest {
             Map.entry(":host:velocity-agent", Set.of(":host:host-api", ":data:route-contract")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
             Map.entry(":testkit:architecture-testkit", Set.of()),
-            Map.entry(":testkit:substrate-testkit", Set.of(":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
+            Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
             Map.entry(":validation:architecture", Set.of())
     );
 
