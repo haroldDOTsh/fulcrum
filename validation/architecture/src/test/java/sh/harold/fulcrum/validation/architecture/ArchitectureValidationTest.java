@@ -64,6 +64,9 @@ final class ArchitectureValidationTest {
             Map.entry(":host:tick-runtime-api", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:velocity-agent", Set.of(":host:host-api", ":data:route-contract")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
+            Map.entry(":standard-capabilities:player-profile", Set.of(":capability:capability-api", ":capability:capability-runtime", ":standard-capabilities:standard-contracts")),
+            Map.entry(":standard-capabilities:rank", Set.of(":capability:capability-api", ":capability:capability-runtime", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
+            Map.entry(":standard-capabilities:standard-contracts", Set.of(":api:contract-api", ":data:contract-declarations")),
             Map.entry(":testkit:architecture-testkit", Set.of()),
             Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
             Map.entry(":validation:architecture", Set.of())
@@ -580,6 +583,41 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Capability runtime crossed materialization boundary: " + violations);
+    }
+
+    @Test
+    void standardCapabilitiesStayOutsideKernelAndRuntimeClients() throws IOException {
+        Path standardCapabilities = ROOT.resolve("standard-capabilities");
+        if (!Files.exists(standardCapabilities)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "io.kubernetes",
+                "KubernetesClient",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "HttpClient",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(standardCapabilities)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Standard capabilities crossed substrate boundary: " + violations);
     }
 
     @Test

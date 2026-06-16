@@ -59,6 +59,12 @@ val step5CheckedProjects = step4CheckedProjects + listOf(
     ":capability:capability-runtime",
 )
 
+val step6CheckedProjects = step5CheckedProjects + listOf(
+    ":standard-capabilities:standard-contracts",
+    ":standard-capabilities:player-profile",
+    ":standard-capabilities:rank",
+)
+
 allprojects {
     group = "sh.harold.fulcrum"
     version = "0.1.0-SNAPSHOT"
@@ -125,6 +131,12 @@ tasks.register("step5Check") {
     dependsOn(step5CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("step6Check") {
+    group = "verification"
+    description = "Runs the automated Step 6 standard capability checks that exist so far."
+    dependsOn(step6CheckedProjects.map { "$it:check" })
+}
+
 tasks.named("check") {
-    dependsOn("step5Check")
+    dependsOn("step6Check")
 }
