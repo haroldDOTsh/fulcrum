@@ -40,6 +40,7 @@ final class ArchitectureValidationTest {
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
             Map.entry(":core:manifest-core", Set.of(":api:contract-api", ":api:kernel-api")),
+            Map.entry(":data:authority-core", Set.of(":api:contract-api")),
             Map.entry(":data:contract-codegen", Set.of(":api:contract-api", ":data:contract-declarations")),
             Map.entry(":data:contract-declarations", Set.of(":api:contract-api")),
             Map.entry(":distribution:profiles", Set.of()),

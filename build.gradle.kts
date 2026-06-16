@@ -24,6 +24,10 @@ val step0CheckedProjects = listOf(
     ":validation:architecture",
 )
 
+val step1CheckedProjects = step0CheckedProjects + listOf(
+    ":data:authority-core",
+)
+
 allprojects {
     group = "sh.harold.fulcrum"
     version = "0.1.0-SNAPSHOT"
@@ -60,6 +64,12 @@ tasks.register("step0Check") {
     dependsOn(step0CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("step1Check") {
+    group = "verification"
+    description = "Runs the automated Step 1 authority checks that exist so far."
+    dependsOn(step1CheckedProjects.map { "$it:check" })
+}
+
 tasks.named("check") {
-    dependsOn("step0Check")
+    dependsOn("step1Check")
 }

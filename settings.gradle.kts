@@ -25,6 +25,7 @@ include(
     "core:manifest-core",
     "data:contract-declarations",
     "data:contract-codegen",
+    "data:authority-core",
     "capability:capability-api",
     "host:host-api",
     "distribution:profiles",
