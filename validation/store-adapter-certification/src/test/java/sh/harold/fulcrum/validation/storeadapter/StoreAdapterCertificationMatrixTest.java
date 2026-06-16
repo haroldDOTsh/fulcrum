@@ -73,6 +73,14 @@ final class StoreAdapterCertificationMatrixTest {
     }
 
     @Test
+    void matrixHasNoPendingOrMissingAdapterState() throws IOException {
+        String matrix = readMatrix();
+
+        assertTrue(!matrix.contains("certification pending"), "adapter certification state must not be pending");
+        assertTrue(!matrix.contains("| missing |"), "adapter certification state must not be missing");
+    }
+
+    @Test
     void localObjectStorageAdapterRoundTripsArtifactsAndRealmSnapshots(@TempDir Path root) throws IOException {
         LocalObjectStorageAdapter adapter = new LocalObjectStorageAdapter(root, "artifact-store");
         byte[] artifactBytes = bytes("validated-map-template");
