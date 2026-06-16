@@ -65,7 +65,7 @@ final class ArchitectureValidationTest {
             Map.entry(":host:velocity-agent", Set.of(":host:host-api", ":data:route-contract")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
             Map.entry(":standard-capabilities:player-profile", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:rank", Set.of(":capability:capability-api", ":capability:capability-runtime", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
+            Map.entry(":standard-capabilities:rank", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
             Map.entry(":standard-capabilities:standard-contracts", Set.of(":api:contract-api", ":data:contract-declarations")),
             Map.entry(":testkit:architecture-testkit", Set.of()),
             Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
