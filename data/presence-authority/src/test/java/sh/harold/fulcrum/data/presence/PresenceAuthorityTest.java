@@ -28,7 +28,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,6 +38,7 @@ final class PresenceAuthorityTest {
     private static final SubjectId SUBJECT = new SubjectId(UUID.fromString("11111111-1111-1111-1111-111111111111"));
     private static final PresenceId PRESENCE = new PresenceId("presence-edge-1");
     private static final InstanceId OWNER_INSTANCE = new InstanceId("instance-velocity-1");
+    private static final PresenceOwnerToken OWNER_TOKEN = new PresenceOwnerToken("owner-token-edge-1");
     private static final SessionId SESSION = new SessionId("session-lobby-1");
     private static final RouteId ROUTE = new RouteId("route-lobby-1");
 
@@ -56,10 +56,15 @@ final class PresenceAuthorityTest {
         assertEquals(Optional.of(PRESENCE), decision.response().presenceId());
         assertEquals(Optional.of(SUBJECT), decision.response().subjectId());
         assertEquals(Optional.of(9L), decision.response().fencingEpoch());
+        assertEquals(Optional.of(1L), decision.response().ownerEpoch());
+        assertEquals(Optional.of(PresenceLifecycleStatus.LIVE), decision.response().lifecycleStatus());
         assertTrue(decision.state().current().isPresent());
         PresenceSnapshot snapshot = decision.state().current().orElseThrow();
         assertEquals(SUBJECT, snapshot.subjectId());
         assertEquals(OWNER_INSTANCE, snapshot.ownerInstanceId());
+        assertEquals(OWNER_TOKEN, snapshot.ownerToken());
+        assertEquals(1, snapshot.ownerEpoch());
+        assertEquals(PresenceLifecycleStatus.LIVE, snapshot.status());
         assertEquals(Optional.of(SESSION), snapshot.sessionId());
         assertEquals(Optional.of(ROUTE), snapshot.routeId());
         assertEquals("trace-presence", decision.traceEnvelope().traceId());
@@ -83,7 +88,7 @@ final class PresenceAuthorityTest {
     void duplicateClaimReplaysStoredReceipt() {
         PresenceAuthority authority = authority();
         AuthorityRecord<PresenceState> initial = PresenceAuthority.emptyRecord(9);
-        AuthorityCommand<ClaimPresence> command = command(
+        AuthorityCommand<PresenceCommand> command = command(
                 "command-presence-2",
                 "idempotency-presence-2",
                 PRINCIPAL,
@@ -105,7 +110,7 @@ final class PresenceAuthorityTest {
     @Test
     void conflictingIdempotencyPayloadRejectsWithoutReplacingStoredReceipt() {
         PresenceAuthority authority = authority();
-        AuthorityCommand<ClaimPresence> original = command(
+        AuthorityCommand<PresenceCommand> original = command(
                 "command-presence-3",
                 "idempotency-presence-3",
                 PRINCIPAL,
@@ -130,6 +135,7 @@ final class PresenceAuthorityTest {
                                 new PresenceId("presence-edge-2"),
                                 SUBJECT,
                                 OWNER_INSTANCE,
+                                new PresenceOwnerToken("owner-token-edge-2"),
                                 Optional.of(SESSION),
                                 Optional.of(ROUTE),
                                 NOW,
@@ -169,9 +175,260 @@ final class PresenceAuthorityTest {
     }
 
     @Test
+    void heartbeatExtendsCurrentOwnerLeaseAndReleaseClosesPresence() {
+        PresenceAuthority authority = authority();
+        AuthorityDecision<PresenceState, PresenceReceipt> claimed = authority.handle(
+                command("command-presence-9", "idempotency-presence-9", PRINCIPAL, PRINCIPAL, 9, Optional.of(new Revision(0)), payload(), "payload-9"),
+                PresenceAuthority.emptyRecord(9));
+
+        Instant heartbeatAt = Instant.parse("2026-06-16T13:30:20Z");
+        Instant heartbeatExpiresAt = Instant.parse("2026-06-16T13:32:00Z");
+        AuthorityDecision<PresenceState, PresenceReceipt> heartbeat = authority.handle(
+                command(
+                        "command-presence-10",
+                        "idempotency-presence-10",
+                        PRINCIPAL,
+                        PRINCIPAL,
+                        9,
+                        Optional.of(new Revision(1)),
+                        new HeartbeatPresence(SUBJECT, OWNER_TOKEN, 1, heartbeatAt, heartbeatExpiresAt),
+                        "payload-10"),
+                new AuthorityRecord<>(claimed.revision(), 9, claimed.state()));
+
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, heartbeat.status());
+        PresenceSnapshot renewed = heartbeat.state().current().orElseThrow();
+        assertEquals(heartbeatAt, renewed.observedAt());
+        assertEquals(heartbeatExpiresAt, renewed.expiresAt());
+        assertEquals(PresenceLifecycleStatus.LIVE, renewed.status());
+        assertEquals(Optional.of(1L), heartbeat.response().ownerEpoch());
+        assertEquals(Optional.of(PresenceLifecycleStatus.LIVE), heartbeat.response().lifecycleStatus());
+        assertTrue(heartbeat.emissions().stream()
+                .filter(emission -> emission.kind() == AuthorityEmissionKind.EVENT)
+                .findFirst()
+                .orElseThrow()
+                .payload()
+                .contains("change=HEARTBEAT"));
+
+        Instant releasedAt = Instant.parse("2026-06-16T13:30:30Z");
+        AuthorityDecision<PresenceState, PresenceReceipt> release = authority.handle(
+                command(
+                        "command-presence-11",
+                        "idempotency-presence-11",
+                        PRINCIPAL,
+                        PRINCIPAL,
+                        9,
+                        Optional.of(new Revision(2)),
+                        new ReleasePresence(SUBJECT, OWNER_TOKEN, 1, releasedAt, PresenceReleaseReason.DISCONNECTED),
+                        "payload-11"),
+                new AuthorityRecord<>(heartbeat.revision(), 9, heartbeat.state()));
+
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, release.status());
+        PresenceSnapshot released = release.state().current().orElseThrow();
+        assertEquals(PresenceLifecycleStatus.RELEASED, released.status());
+        assertEquals(Optional.of(releasedAt), released.releasedAt());
+        assertEquals(Optional.of(PresenceReleaseReason.DISCONNECTED), released.releaseReason());
+        assertEquals(Optional.of(PresenceLifecycleStatus.RELEASED), release.response().lifecycleStatus());
+        assertTrue(release.emissions().stream()
+                .filter(emission -> emission.kind() == AuthorityEmissionKind.EVENT)
+                .findFirst()
+                .orElseThrow()
+                .payload()
+                .contains("change=RELEASED"));
+    }
+
+    @Test
+    void staleOwnerTokenAndExpiredHeartbeatCannotMutatePresence() {
+        PresenceAuthority authority = authority();
+        AuthorityDecision<PresenceState, PresenceReceipt> claimed = authority.handle(
+                command("command-presence-12", "idempotency-presence-12", PRINCIPAL, PRINCIPAL, 9, Optional.of(new Revision(0)), payload(), "payload-12"),
+                PresenceAuthority.emptyRecord(9));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> authority.handle(
+                        command(
+                                "command-presence-13",
+                                "idempotency-presence-13",
+                                PRINCIPAL,
+                                PRINCIPAL,
+                                9,
+                                Optional.of(new Revision(1)),
+                                new HeartbeatPresence(
+                                        SUBJECT,
+                                        new PresenceOwnerToken("owner-token-other"),
+                                        1,
+                                        Instant.parse("2026-06-16T13:30:20Z"),
+                                        Instant.parse("2026-06-16T13:32:00Z")),
+                                "payload-13"),
+                        new AuthorityRecord<>(claimed.revision(), 9, claimed.state())));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> authority.handle(
+                        command(
+                                "command-presence-14",
+                                "idempotency-presence-14",
+                                PRINCIPAL,
+                                PRINCIPAL,
+                                9,
+                                Optional.of(new Revision(1)),
+                                new HeartbeatPresence(
+                                        SUBJECT,
+                                        OWNER_TOKEN,
+                                        1,
+                                        Instant.parse("2026-06-16T13:31:20Z"),
+                                        Instant.parse("2026-06-16T13:32:00Z")),
+                                "payload-14",
+                                Instant.parse("2026-06-16T13:31:20Z")),
+                        new AuthorityRecord<>(claimed.revision(), 9, claimed.state())));
+    }
+
+    @Test
+    void releasedPresenceCannotBeResurrectedByHeartbeatOrReleaseReplayWithNewIdempotencyKey() {
+        PresenceAuthority authority = authority();
+        AuthorityDecision<PresenceState, PresenceReceipt> claimed = authority.handle(
+                command("command-presence-15", "idempotency-presence-15", PRINCIPAL, PRINCIPAL, 9, Optional.of(new Revision(0)), payload(), "payload-15"),
+                PresenceAuthority.emptyRecord(9));
+        AuthorityDecision<PresenceState, PresenceReceipt> released = authority.handle(
+                command(
+                        "command-presence-16",
+                        "idempotency-presence-16",
+                        PRINCIPAL,
+                        PRINCIPAL,
+                        9,
+                        Optional.of(new Revision(1)),
+                        new ReleasePresence(
+                                SUBJECT,
+                                OWNER_TOKEN,
+                                1,
+                                Instant.parse("2026-06-16T13:30:30Z"),
+                                PresenceReleaseReason.DISCONNECTED),
+                        "payload-16"),
+                new AuthorityRecord<>(claimed.revision(), 9, claimed.state()));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> authority.handle(
+                        command(
+                                "command-presence-17",
+                                "idempotency-presence-17",
+                                PRINCIPAL,
+                                PRINCIPAL,
+                                9,
+                                Optional.of(new Revision(2)),
+                                new HeartbeatPresence(
+                                        SUBJECT,
+                                        OWNER_TOKEN,
+                                        1,
+                                        Instant.parse("2026-06-16T13:30:40Z"),
+                                        Instant.parse("2026-06-16T13:32:00Z")),
+                                "payload-17"),
+                        new AuthorityRecord<>(released.revision(), 9, released.state())));
+        assertThrows(
+                IllegalStateException.class,
+                () -> authority.handle(
+                        command(
+                                "command-presence-18",
+                                "idempotency-presence-18",
+                                PRINCIPAL,
+                                PRINCIPAL,
+                                9,
+                                Optional.of(new Revision(2)),
+                                new ReleasePresence(
+                                        SUBJECT,
+                                        OWNER_TOKEN,
+                                        1,
+                                        Instant.parse("2026-06-16T13:30:45Z"),
+                                        PresenceReleaseReason.DISCONNECTED),
+                                "payload-18"),
+                        new AuthorityRecord<>(released.revision(), 9, released.state())));
+    }
+
+    @Test
+    void newClaimAfterExpiredLeaseAdvancesOwnerEpochAndFencesOldOwner() {
+        PresenceAuthority authority = authority();
+        AuthorityDecision<PresenceState, PresenceReceipt> claimed = authority.handle(
+                command("command-presence-19", "idempotency-presence-19", PRINCIPAL, PRINCIPAL, 9, Optional.of(new Revision(0)), payload(), "payload-19"),
+                PresenceAuthority.emptyRecord(9));
+
+        ClaimPresence replacementPayload = new ClaimPresence(
+                new PresenceId("presence-edge-2"),
+                SUBJECT,
+                new InstanceId("instance-velocity-2"),
+                new PresenceOwnerToken("owner-token-edge-2"),
+                Optional.of(SESSION),
+                Optional.of(ROUTE),
+                Instant.parse("2026-06-16T13:31:10Z"),
+                Instant.parse("2026-06-16T13:33:00Z"));
+        AuthorityDecision<PresenceState, PresenceReceipt> replacement = authority.handle(
+                command(
+                        "command-presence-20",
+                        "idempotency-presence-20",
+                        PRINCIPAL,
+                        PRINCIPAL,
+                        9,
+                        Optional.of(new Revision(1)),
+                        replacementPayload,
+                        "payload-20",
+                        Instant.parse("2026-06-16T13:31:10Z")),
+                new AuthorityRecord<>(claimed.revision(), 9, claimed.state()));
+
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, replacement.status());
+        assertEquals(Optional.of(2L), replacement.response().ownerEpoch());
+        assertEquals(new PresenceOwnerToken("owner-token-edge-2"), replacement.state().current().orElseThrow().ownerToken());
+        assertThrows(
+                IllegalStateException.class,
+                () -> authority.handle(
+                        command(
+                                "command-presence-21",
+                                "idempotency-presence-21",
+                                PRINCIPAL,
+                                PRINCIPAL,
+                                9,
+                                Optional.of(new Revision(2)),
+                                new HeartbeatPresence(
+                                        SUBJECT,
+                                        OWNER_TOKEN,
+                                        1,
+                                        Instant.parse("2026-06-16T13:31:20Z"),
+                                        Instant.parse("2026-06-16T13:32:00Z")),
+                                "payload-21",
+                                Instant.parse("2026-06-16T13:31:20Z")),
+                        new AuthorityRecord<>(replacement.revision(), 9, replacement.state())));
+    }
+
+    @Test
+    void staleFencingEpochRejectsPausedOwnerBeforeLifecycleMutation() {
+        PresenceAuthority authority = authority();
+        AuthorityDecision<PresenceState, PresenceReceipt> claimed = authority.handle(
+                command("command-presence-22", "idempotency-presence-22", PRINCIPAL, PRINCIPAL, 9, Optional.of(new Revision(0)), payload(), "payload-22"),
+                PresenceAuthority.emptyRecord(9));
+
+        AuthorityDecision<PresenceState, PresenceReceipt> staleOwner = authority.handle(
+                command(
+                        "command-presence-23",
+                        "idempotency-presence-23",
+                        PRINCIPAL,
+                        PRINCIPAL,
+                        9,
+                        Optional.of(new Revision(1)),
+                        new HeartbeatPresence(
+                                SUBJECT,
+                                OWNER_TOKEN,
+                                1,
+                                Instant.parse("2026-06-16T13:30:20Z"),
+                                Instant.parse("2026-06-16T13:32:00Z")),
+                        "payload-23"),
+                new AuthorityRecord<>(claimed.revision(), 10, claimed.state()));
+
+        assertRejected(staleOwner, AuthorityRejectionReason.STALE_FENCING_EPOCH);
+        assertEquals(PresenceLifecycleStatus.LIVE, staleOwner.state().current().orElseThrow().status());
+    }
+
+    @Test
     void claimPayloadContainsLivePresenceFieldsOnly() {
         assertEquals(
-                java.util.Set.of("presenceId", "subjectId", "ownerInstanceId", "sessionId", "routeId", "observedAt", "expiresAt"),
+                java.util.Set.of("presenceId", "subjectId", "ownerInstanceId", "ownerToken", "sessionId", "routeId", "observedAt", "expiresAt"),
                 java.util.Arrays.stream(ClaimPresence.class.getRecordComponents())
                         .map(java.lang.reflect.RecordComponent::getName)
                         .collect(java.util.stream.Collectors.toSet()));
@@ -206,20 +463,21 @@ final class PresenceAuthorityTest {
                 PRESENCE,
                 SUBJECT,
                 OWNER_INSTANCE,
+                OWNER_TOKEN,
                 Optional.of(SESSION),
                 Optional.of(ROUTE),
                 NOW,
                 EXPIRES_AT);
     }
 
-    private static AuthorityCommand<ClaimPresence> command(
+    private static AuthorityCommand<PresenceCommand> command(
             String commandId,
             String idempotencyKey,
             PrincipalId declaredPrincipal,
             PrincipalId authenticatedPrincipal,
             long fencingEpoch,
             Optional<Revision> expectedRevision,
-            ClaimPresence payload,
+            PresenceCommand payload,
             String payloadFingerprint) {
         return command(
                 commandId,
@@ -230,20 +488,68 @@ final class PresenceAuthorityTest {
                 expectedRevision,
                 payload,
                 payloadFingerprint,
-                PresenceAuthority.aggregateId(payload.subjectId()));
+                PresenceAuthority.aggregateId(payload.subjectId()),
+                NOW);
     }
 
-    private static AuthorityCommand<ClaimPresence> command(
+    private static AuthorityCommand<PresenceCommand> command(
             String commandId,
             String idempotencyKey,
             PrincipalId declaredPrincipal,
             PrincipalId authenticatedPrincipal,
             long fencingEpoch,
             Optional<Revision> expectedRevision,
-            ClaimPresence payload,
+            PresenceCommand payload,
+            String payloadFingerprint,
+            Instant receivedAt) {
+        return command(
+                commandId,
+                idempotencyKey,
+                declaredPrincipal,
+                authenticatedPrincipal,
+                fencingEpoch,
+                expectedRevision,
+                payload,
+                payloadFingerprint,
+                PresenceAuthority.aggregateId(payload.subjectId()),
+                receivedAt);
+    }
+
+    private static AuthorityCommand<PresenceCommand> command(
+            String commandId,
+            String idempotencyKey,
+            PrincipalId declaredPrincipal,
+            PrincipalId authenticatedPrincipal,
+            long fencingEpoch,
+            Optional<Revision> expectedRevision,
+            PresenceCommand payload,
             String payloadFingerprint,
             AggregateId aggregateId) {
-        CommandEnvelope<ClaimPresence> envelope = new CommandEnvelope<>(
+        return command(
+                commandId,
+                idempotencyKey,
+                declaredPrincipal,
+                authenticatedPrincipal,
+                fencingEpoch,
+                expectedRevision,
+                payload,
+                payloadFingerprint,
+                aggregateId,
+                NOW);
+    }
+
+    private static AuthorityCommand<PresenceCommand> command(
+            String commandId,
+            String idempotencyKey,
+            PrincipalId declaredPrincipal,
+            PrincipalId authenticatedPrincipal,
+            long fencingEpoch,
+            Optional<Revision> expectedRevision,
+            PresenceCommand payload,
+            String payloadFingerprint,
+            AggregateId aggregateId,
+            Instant receivedAt) {
+        CommandEnvelope<PresenceCommand> envelope = new CommandEnvelope<>(
                 new CommandId(commandId),
                 new IdempotencyKey(idempotencyKey),
                 declaredPrincipal,
@@ -265,7 +571,7 @@ final class PresenceAuthorityTest {
                 fencingEpoch,
                 expectedRevision,
                 payloadFingerprint,
-                NOW);
+                receivedAt);
     }
 
     private static void assertRejected(
@@ -274,6 +580,5 @@ final class PresenceAuthorityTest {
         assertEquals(AuthorityDecisionStatus.REJECTED, decision.status());
         assertEquals(Optional.of(reason), decision.rejectionReason());
         assertEquals(PresenceReceiptStatus.REJECTED, decision.response().status());
-        assertFalse(decision.state().current().isPresent());
     }
 }

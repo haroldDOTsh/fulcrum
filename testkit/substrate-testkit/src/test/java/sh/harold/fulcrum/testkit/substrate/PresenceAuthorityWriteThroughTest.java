@@ -33,7 +33,9 @@ import sh.harold.fulcrum.data.authority.AuthorityEmission;
 import sh.harold.fulcrum.data.authority.AuthorityEmissionKind;
 import sh.harold.fulcrum.data.authority.InMemoryIdempotencyLedger;
 import sh.harold.fulcrum.data.presence.ClaimPresence;
+import sh.harold.fulcrum.data.presence.PresenceCommand;
 import sh.harold.fulcrum.data.presence.PresenceAuthority;
+import sh.harold.fulcrum.data.presence.PresenceOwnerToken;
 import sh.harold.fulcrum.data.presence.PresenceReceipt;
 import sh.harold.fulcrum.data.presence.PresenceSnapshot;
 import sh.harold.fulcrum.data.presence.PresenceState;
@@ -75,12 +77,14 @@ final class PresenceAuthorityWriteThroughTest {
             assertEquals(new Revision(1), decision.revision());
 
             String cassandraProjection = stack.queryCassandra("""
-                    SELECT presence_id, owner_instance_id, session_id, route_id, revision
+                    SELECT presence_id, owner_instance_id, owner_token, owner_epoch, lifecycle_status, session_id, route_id, revision
                     FROM fulcrum.presence_hot
                     WHERE subject_id = '%s';
                     """.formatted(cql(command.subjectId())));
             assertTrue(cassandraProjection.contains(command.presenceId()));
             assertTrue(cassandraProjection.contains(command.ownerInstanceId()));
+            assertTrue(cassandraProjection.contains(command.ownerToken()));
+            assertTrue(cassandraProjection.contains("LIVE"));
             assertTrue(cassandraProjection.contains(command.sessionId()));
             assertTrue(cassandraProjection.contains(command.routeId()));
             assertTrue(cassandraProjection.contains("1"));
@@ -99,10 +103,13 @@ final class PresenceAuthorityWriteThroughTest {
             assertEquals(1, events.size());
             assertEquals(1, states.size());
             assertEquals(1, responses.size());
+            assertTrue(events.getFirst().contains("change=CLAIMED"));
             assertTrue(events.getFirst().contains("presenceId=" + command.presenceId()));
             assertEquals(cachePayload, states.getFirst());
             assertTrue(responses.getFirst().contains("status=ACCEPTED"));
             assertTrue(responses.getFirst().contains("subjectId=" + command.subjectId()));
+            assertTrue(responses.getFirst().contains("ownerEpoch=1"));
+            assertTrue(responses.getFirst().contains("lifecycleStatus=LIVE"));
         }
     }
 
@@ -125,6 +132,9 @@ final class PresenceAuthorityWriteThroughTest {
                     subject_id text PRIMARY KEY,
                     presence_id text,
                     owner_instance_id text,
+                    owner_token text,
+                    owner_epoch bigint,
+                    lifecycle_status text,
                     session_id text,
                     route_id text,
                     observed_at text,
@@ -233,6 +243,9 @@ final class PresenceAuthorityWriteThroughTest {
                         subject_id,
                         presence_id,
                         owner_instance_id,
+                        owner_token,
+                        owner_epoch,
+                        lifecycle_status,
                         session_id,
                         route_id,
                         observed_at,
@@ -241,6 +254,9 @@ final class PresenceAuthorityWriteThroughTest {
                     ) VALUES (
                         '%s',
                         '%s',
+                        '%s',
+                        '%s',
+                        %d,
                         '%s',
                         '%s',
                         '%s',
@@ -252,6 +268,9 @@ final class PresenceAuthorityWriteThroughTest {
                     cql(snapshot.subjectId().value().toString()),
                     cql(snapshot.presenceId().value()),
                     cql(snapshot.ownerInstanceId().value()),
+                    cql(snapshot.ownerToken().value()),
+                    snapshot.ownerEpoch(),
+                    cql(snapshot.status().name()),
                     cql(snapshot.sessionId().map(SessionId::value).orElse("")),
                     cql(snapshot.routeId().map(RouteId::value).orElse("")),
                     cql(snapshot.observedAt().toString()),
@@ -288,6 +307,7 @@ final class PresenceAuthorityWriteThroughTest {
             String subjectId,
             String presenceId,
             String ownerInstanceId,
+            String ownerToken,
             String sessionId,
             String routeId,
             String observedAt,
@@ -304,6 +324,7 @@ final class PresenceAuthorityWriteThroughTest {
                     "11111111-1111-1111-1111-111111111111",
                     "presence-edge-1",
                     "instance-velocity-1",
+                    "owner-token-edge-1",
                     "session-lobby-1",
                     "route-lobby-1",
                     RECEIVED_AT.toString(),
@@ -325,6 +346,7 @@ final class PresenceAuthorityWriteThroughTest {
                     + "\nsubjectId=" + subjectId
                     + "\npresenceId=" + presenceId
                     + "\nownerInstanceId=" + ownerInstanceId
+                    + "\nownerToken=" + ownerToken
                     + "\nsessionId=" + sessionId
                     + "\nrouteId=" + routeId
                     + "\nobservedAt=" + observedAt
@@ -346,6 +368,7 @@ final class PresenceAuthorityWriteThroughTest {
                     fields.get("subjectId"),
                     fields.get("presenceId"),
                     fields.get("ownerInstanceId"),
+                    fields.get("ownerToken"),
                     fields.get("sessionId"),
                     fields.get("routeId"),
                     fields.get("observedAt"),
@@ -355,16 +378,17 @@ final class PresenceAuthorityWriteThroughTest {
                     fields.get("payloadFingerprint"));
         }
 
-        private AuthorityCommand<ClaimPresence> toAuthorityCommand() {
+        private AuthorityCommand<PresenceCommand> toAuthorityCommand() {
             ClaimPresence payload = new ClaimPresence(
                     new PresenceId(presenceId),
                     new SubjectId(UUID.fromString(subjectId)),
                     new InstanceId(ownerInstanceId),
+                    new PresenceOwnerToken(ownerToken),
                     Optional.of(new SessionId(sessionId)),
                     Optional.of(new RouteId(routeId)),
                     Instant.parse(observedAt),
                     Instant.parse(expiresAt));
-            CommandEnvelope<ClaimPresence> envelope = new CommandEnvelope<>(
+            CommandEnvelope<PresenceCommand> envelope = new CommandEnvelope<>(
                     new CommandId(commandId),
                     new IdempotencyKey(idempotencyKey),
                     new PrincipalId(declaredPrincipalId),

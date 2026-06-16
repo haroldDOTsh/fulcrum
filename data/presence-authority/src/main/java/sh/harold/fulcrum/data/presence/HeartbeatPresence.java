@@ -1,31 +1,22 @@
 package sh.harold.fulcrum.data.presence;
 
-import sh.harold.fulcrum.api.kernel.InstanceId;
-import sh.harold.fulcrum.api.kernel.PresenceId;
-import sh.harold.fulcrum.api.kernel.RouteId;
-import sh.harold.fulcrum.api.kernel.SessionId;
 import sh.harold.fulcrum.api.kernel.SubjectId;
 
 import java.time.Instant;
 import java.util.Objects;
-import java.util.Optional;
 
-public record ClaimPresence(
-        PresenceId presenceId,
+public record HeartbeatPresence(
         SubjectId subjectId,
-        InstanceId ownerInstanceId,
         PresenceOwnerToken ownerToken,
-        Optional<SessionId> sessionId,
-        Optional<RouteId> routeId,
+        long ownerEpoch,
         Instant observedAt,
         Instant expiresAt) implements PresenceCommand {
-    public ClaimPresence {
-        presenceId = Objects.requireNonNull(presenceId, "presenceId");
+    public HeartbeatPresence {
         subjectId = Objects.requireNonNull(subjectId, "subjectId");
-        ownerInstanceId = Objects.requireNonNull(ownerInstanceId, "ownerInstanceId");
         ownerToken = Objects.requireNonNull(ownerToken, "ownerToken");
-        sessionId = sessionId == null ? Optional.empty() : sessionId;
-        routeId = routeId == null ? Optional.empty() : routeId;
+        if (ownerEpoch <= 0) {
+            throw new IllegalArgumentException("ownerEpoch must be positive");
+        }
         observedAt = Objects.requireNonNull(observedAt, "observedAt");
         expiresAt = Objects.requireNonNull(expiresAt, "expiresAt");
         if (!expiresAt.isAfter(observedAt)) {

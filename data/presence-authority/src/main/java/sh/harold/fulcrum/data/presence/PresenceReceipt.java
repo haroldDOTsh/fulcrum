@@ -14,6 +14,8 @@ public record PresenceReceipt(
         Optional<SubjectId> subjectId,
         Optional<Revision> revision,
         Optional<Long> fencingEpoch,
+        Optional<Long> ownerEpoch,
+        Optional<PresenceLifecycleStatus> lifecycleStatus,
         Optional<String> idempotencyKey,
         Optional<String> commandId) {
     public PresenceReceipt {
@@ -23,6 +25,8 @@ public record PresenceReceipt(
         subjectId = subjectId == null ? Optional.empty() : subjectId;
         revision = revision == null ? Optional.empty() : revision;
         fencingEpoch = fencingEpoch == null ? Optional.empty() : fencingEpoch;
+        ownerEpoch = ownerEpoch == null ? Optional.empty() : ownerEpoch;
+        lifecycleStatus = lifecycleStatus == null ? Optional.empty() : lifecycleStatus;
         idempotencyKey = idempotencyKey == null ? Optional.empty() : idempotencyKey.map(value -> PresenceNames.requireNonBlank(value, "idempotencyKey"));
         commandId = commandId == null ? Optional.empty() : commandId.map(value -> PresenceNames.requireNonBlank(value, "commandId"));
     }
@@ -41,6 +45,27 @@ public record PresenceReceipt(
                 Optional.of(subjectId),
                 Optional.of(revision),
                 Optional.of(fencingEpoch),
+                Optional.of(1L),
+                Optional.of(PresenceLifecycleStatus.LIVE),
+                Optional.of(idempotencyKey),
+                Optional.of(commandId));
+    }
+
+    static PresenceReceipt accepted(
+            PresenceSnapshot snapshot,
+            Revision revision,
+            long fencingEpoch,
+            String idempotencyKey,
+            String commandId) {
+        return new PresenceReceipt(
+                PresenceReceiptStatus.ACCEPTED,
+                Optional.empty(),
+                Optional.of(snapshot.presenceId()),
+                Optional.of(snapshot.subjectId()),
+                Optional.of(revision),
+                Optional.of(fencingEpoch),
+                Optional.of(snapshot.ownerEpoch()),
+                Optional.of(snapshot.status()),
                 Optional.of(idempotencyKey),
                 Optional.of(commandId));
     }
@@ -49,6 +74,8 @@ public record PresenceReceipt(
         return new PresenceReceipt(
                 PresenceReceiptStatus.REJECTED,
                 Optional.of(PresenceNames.requireNonBlank(reason, "reason")),
+                Optional.empty(),
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
@@ -64,6 +91,8 @@ public record PresenceReceipt(
                 + "\nsubjectId=" + subjectId.map(value -> value.value().toString()).orElse("")
                 + "\nrevision=" + revision.map(value -> Long.toString(value.value())).orElse("")
                 + "\nfencingEpoch=" + fencingEpoch.map(Object::toString).orElse("")
+                + "\nownerEpoch=" + ownerEpoch.map(Object::toString).orElse("")
+                + "\nlifecycleStatus=" + lifecycleStatus.map(PresenceLifecycleStatus::name).orElse("")
                 + "\nidempotencyKey=" + idempotencyKey.orElse("")
                 + "\ncommandId=" + commandId.orElse("");
     }
