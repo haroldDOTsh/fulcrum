@@ -21,6 +21,7 @@ import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
 import sh.harold.fulcrum.standard.contracts.FriendsContracts;
+import sh.harold.fulcrum.standard.contracts.StatsContracts;
 import sh.harold.fulcrum.standard.economy.EconomyAccountId;
 import sh.harold.fulcrum.standard.economy.EconomyCapability;
 import sh.harold.fulcrum.standard.economy.EconomyLedgerEntry;
@@ -50,6 +51,11 @@ import sh.harold.fulcrum.standard.rank.EffectiveRankProjection;
 import sh.harold.fulcrum.standard.rank.EffectiveRankSnapshot;
 import sh.harold.fulcrum.standard.rank.RankCapability;
 import sh.harold.fulcrum.standard.rank.RankGranted;
+import sh.harold.fulcrum.standard.stats.StatsCapability;
+import sh.harold.fulcrum.standard.stats.StatsCounterId;
+import sh.harold.fulcrum.standard.stats.StatsDeltaRecorded;
+import sh.harold.fulcrum.standard.stats.StatsLedgerEntry;
+import sh.harold.fulcrum.standard.stats.StatsProjection;
 
 import java.time.Instant;
 import java.util.List;
@@ -82,6 +88,7 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(Optional.of(FriendsCapability.CAPABILITY_ID), graph.providerOf(FriendsContracts.CONTRACT));
         assertEquals(Optional.of(GuildCapability.CAPABILITY_ID), graph.providerOf(GuildContracts.CONTRACT));
         assertEquals(Optional.of(EconomyCapability.CAPABILITY_ID), graph.providerOf(EconomyContracts.CONTRACT));
+        assertEquals(Optional.of(StatsCapability.CAPABILITY_ID), graph.providerOf(StatsContracts.CONTRACT));
         assertEquals(Optional.of(PunishmentCapability.CAPABILITY_ID),
                 graph.providerOf(PunishmentContracts.CONTRACT));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
@@ -94,6 +101,8 @@ final class StandardCapabilityIntegrationTest {
                 graph.dependenciesFor(GuildCapability.CAPABILITY_ID));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
                 graph.dependenciesFor(EconomyCapability.CAPABILITY_ID));
+        assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
+                graph.dependenciesFor(StatsCapability.CAPABILITY_ID));
         assertEquals(List.of(RankCapability.CAPABILITY_ID),
                 graph.dependenciesFor(ChatDecorationCapability.CAPABILITY_ID));
         assertTrue(graph.dependenciesFor(PunishmentCapability.CAPABILITY_ID).isEmpty());
@@ -109,6 +118,9 @@ final class StandardCapabilityIntegrationTest {
                         GuildContracts.SUBJECT_INDEX_PROJECTION,
                         EconomyContracts.BALANCE_PROJECTION,
                         EconomyContracts.LEDGER_PROJECTION,
+                        StatsContracts.COUNTER_PROJECTION,
+                        StatsContracts.EXPERIENCE_COUNTER_PROJECTION,
+                        StatsContracts.LEDGER_PROJECTION,
                         PunishmentContracts.ACTIVE_PROJECTION),
                 plan.projections().stream()
                         .map(resource -> resource.declaration().relationName())
@@ -143,13 +155,13 @@ final class StandardCapabilityIntegrationTest {
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
-        assertEquals(List.of(GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID),
+        assertEquals(List.of(GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID, StatsCapability.CAPABILITY_ID),
                 CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
                         .registrationsFor(CapabilityExtensionPoint.PAPER_MENUS)
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
-        assertEquals(List.of(EconomyCapability.CAPABILITY_ID),
+        assertEquals(List.of(EconomyCapability.CAPABILITY_ID, StatsCapability.CAPABILITY_ID),
                 CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
                         .registrationsFor(CapabilityExtensionPoint.PAPER_SCOREBOARD)
                         .stream()
@@ -239,6 +251,40 @@ final class StandardCapabilityIntegrationTest {
                 .toList());
     }
 
+    @Test
+    void statsProjectionFeedsCrossExperienceSurfacesWithoutCallingStatsAuthority() {
+        StatsCounterId counterId = new StatsCounterId(SUBJECT, "session-completions");
+        sh.harold.fulcrum.api.kernel.ExperienceId arena = new sh.harold.fulcrum.api.kernel.ExperienceId("experience.suite.arena");
+        sh.harold.fulcrum.api.kernel.ExperienceId realm = new sh.harold.fulcrum.api.kernel.ExperienceId("experience.suite.realm");
+        StatsProjection projection = StatsProjection.rebuild(List.of(
+                new StatsDeltaRecorded(new StatsLedgerEntry(
+                        "stats-suite-entry-1",
+                        counterId,
+                        arena,
+                        1,
+                        1,
+                        PRINCIPAL,
+                        NOW,
+                        "stats-suite-idem-1",
+                        "stats-suite-command-1",
+                        new Revision(1)), new Revision(1)),
+                new StatsDeltaRecorded(new StatsLedgerEntry(
+                        "stats-suite-entry-2",
+                        counterId,
+                        realm,
+                        1,
+                        2,
+                        PRINCIPAL,
+                        NOW.plusSeconds(1),
+                        "stats-suite-idem-2",
+                        "stats-suite-command-2",
+                        new Revision(2)), new Revision(2))));
+
+        assertEquals(2, projection.counter(counterId).orElseThrow().total());
+        assertEquals(1, projection.experienceCounter(counterId, arena).orElseThrow().total());
+        assertEquals(1, projection.experienceCounter(counterId, realm).orElseThrow().total());
+    }
+
     private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptorsWithEconomy() {
         return List.of(
                 PlayerProfileCapability.descriptor(),
@@ -248,6 +294,7 @@ final class StandardCapabilityIntegrationTest {
                 FriendsCapability.descriptor(),
                 GuildCapability.descriptor(),
                 EconomyCapability.descriptor(),
+                StatsCapability.descriptor(),
                 PunishmentCapability.descriptor());
     }
 }

@@ -32,6 +32,7 @@ dependencies {
     testImplementation(project(":standard-capabilities:friends"))
     testImplementation(project(":standard-capabilities:guild"))
     testImplementation(project(":standard-capabilities:economy"))
+    testImplementation(project(":standard-capabilities:stats"))
     testImplementation(project(":standard-capabilities:punishment"))
     testImplementation(project(":standard-capabilities:rank"))
     testImplementation(project(":standard-capabilities:standard-contracts"))

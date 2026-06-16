@@ -100,6 +100,23 @@ final class StandardCapabilityContractsTest {
     }
 
     @Test
+    void statsContractDeclaresCounterExperienceAndLedgerProjections() {
+        ContractDeclaration contract = StatsContracts.contract();
+
+        assertEquals(StatsContracts.CONTRACT, contract.name());
+        assertEquals(3, contract.projections().size());
+        assertEquals(
+                java.util.List.of(
+                        StatsContracts.COUNTER_PROJECTION,
+                        StatsContracts.EXPERIENCE_COUNTER_PROJECTION,
+                        StatsContracts.LEDGER_PROJECTION),
+                contract.projections().stream().map(projection -> projection.relationName()).toList());
+        assertEquals(
+                java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
+                contract.topics().stream().map(topic -> topic.family()).toList());
+    }
+
+    @Test
     void realmContractDeclaresSnapshotMetadataProjection() {
         ContractDeclaration contract = RealmContracts.contract();
 

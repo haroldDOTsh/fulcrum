@@ -66,6 +66,7 @@ include(
     "standard-capabilities:friends",
     "standard-capabilities:guild",
     "standard-capabilities:economy",
+    "standard-capabilities:stats",
     "standard-capabilities:realm",
     "distribution:profiles",
     "distribution:service-launcher",

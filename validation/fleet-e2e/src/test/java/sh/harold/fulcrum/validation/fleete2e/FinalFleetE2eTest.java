@@ -5,11 +5,9 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import sh.harold.fulcrum.adapters.agones.allocator.AgonesAllocatorRestClient;
-import sh.harold.fulcrum.api.contract.AggregateId;
 import sh.harold.fulcrum.api.contract.CommandEnvelope;
 import sh.harold.fulcrum.api.contract.CommandId;
 import sh.harold.fulcrum.api.contract.CommandName;
-import sh.harold.fulcrum.api.contract.CommandPayload;
 import sh.harold.fulcrum.api.contract.ContractName;
 import sh.harold.fulcrum.api.contract.IdempotencyKey;
 import sh.harold.fulcrum.api.contract.PrincipalId;
@@ -83,14 +81,9 @@ import sh.harold.fulcrum.core.session.EffectTargetScope;
 import sh.harold.fulcrum.core.session.SessionDomainEvent;
 import sh.harold.fulcrum.core.session.SessionReduction;
 import sh.harold.fulcrum.data.authority.AuthorityCommand;
-import sh.harold.fulcrum.data.authority.AuthorityCommandProcessor;
 import sh.harold.fulcrum.data.authority.AuthorityDecision;
 import sh.harold.fulcrum.data.authority.AuthorityDecisionStatus;
-import sh.harold.fulcrum.data.authority.AuthorityEmission;
-import sh.harold.fulcrum.data.authority.AuthorityEmissionKind;
-import sh.harold.fulcrum.data.authority.AuthorityMutationResult;
 import sh.harold.fulcrum.data.authority.AuthorityRecord;
-import sh.harold.fulcrum.data.authority.AuthorityRejectionReason;
 import sh.harold.fulcrum.data.authority.InMemoryIdempotencyLedger;
 import sh.harold.fulcrum.data.route.contract.RouteCommand;
 import sh.harold.fulcrum.data.route.contract.RouteContracts;
@@ -135,6 +128,7 @@ import sh.harold.fulcrum.standard.contracts.RankContracts;
 import sh.harold.fulcrum.standard.contracts.PartyContracts;
 import sh.harold.fulcrum.standard.contracts.FriendsContracts;
 import sh.harold.fulcrum.standard.contracts.EconomyContracts;
+import sh.harold.fulcrum.standard.contracts.StatsContracts;
 import sh.harold.fulcrum.standard.economy.EconomyAccountId;
 import sh.harold.fulcrum.standard.economy.EconomyAuthority;
 import sh.harold.fulcrum.standard.economy.EconomyCapability;
@@ -152,6 +146,14 @@ import sh.harold.fulcrum.standard.punishment.PunishmentCapability;
 import sh.harold.fulcrum.standard.punishment.PunishmentLoginGate;
 import sh.harold.fulcrum.standard.punishment.PunishmentLoginRequest;
 import sh.harold.fulcrum.standard.rank.RankCapability;
+import sh.harold.fulcrum.standard.stats.RecordStatDelta;
+import sh.harold.fulcrum.standard.stats.StatsAuthority;
+import sh.harold.fulcrum.standard.stats.StatsCapability;
+import sh.harold.fulcrum.standard.stats.StatsCounterId;
+import sh.harold.fulcrum.standard.stats.StatsDeltaRecorded;
+import sh.harold.fulcrum.standard.stats.StatsProjection;
+import sh.harold.fulcrum.standard.stats.StatsReceipt;
+import sh.harold.fulcrum.standard.stats.StatsState;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -165,7 +167,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -175,7 +176,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -214,8 +214,9 @@ final class FinalFleetE2eTest {
     private static final long SESSION_FENCING_EPOCH = 103;
     private static final long REWARD_FENCING_EPOCH = 104;
     private static final CapabilityId ECONOMY_CAPABILITY = EconomyCapability.CAPABILITY_ID;
-    private static final CapabilityId STATS_CAPABILITY = new CapabilityId("stats");
+    private static final CapabilityId STATS_CAPABILITY = StatsCapability.CAPABILITY_ID;
     private static final String ECONOMY_CURRENCY = "coins";
+    private static final String SESSION_COMPLETIONS_STAT = "session-completions";
     private static final HostResourceGrant ECONOMY_COMMAND_GRANT =
             new HostResourceGrant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "cmd.standard.economy");
     private static final HostResourceGrant STATS_COMMAND_GRANT =
@@ -272,7 +273,7 @@ final class FinalFleetE2eTest {
             timeline.record("fixture-reducer", trace("fixture-reducer", claim.instanceIdentity().instanceId()), SESSION_ID.value());
 
             EconomyRewardAuthority economyAuthority = new EconomyRewardAuthority();
-            RewardAuthority statsAuthority = new RewardAuthority("stats", STATS_CAPABILITY);
+            StatsRewardAuthority statsAuthority = new StatsRewardAuthority();
             EffectAdmissionGate admissionGate = new EffectAdmissionGate(EffectAdmissionPolicy.of(
                     new EffectAdmissionRule(EffectClass.AUTHORITY, "economy:", Optional.of(ECONOMY_CAPABILITY), ECONOMY_COMMAND_GRANT),
                     new EffectAdmissionRule(EffectClass.AUTHORITY, "stats:", Optional.of(STATS_CAPABILITY), STATS_COMMAND_GRANT)));
@@ -290,17 +291,17 @@ final class FinalFleetE2eTest {
                     assertEquals(AuthorityDecisionStatus.ACCEPTED, first.status());
                     assertTrue(duplicate.replayed());
                 } else {
-                    AuthorityCommand<RewardCommand> command = statsAuthority.commandFrom(effect, admission);
+                    AuthorityCommand<RecordStatDelta> command = statsAuthority.commandFrom(effect, admission);
                     commandEnvelopes.add(command.envelope());
-                    AuthorityDecision<RewardState, RewardReceipt> first = statsAuthority.apply(command);
-                    AuthorityDecision<RewardState, RewardReceipt> duplicate = statsAuthority.apply(command);
+                    AuthorityDecision<StatsState, StatsReceipt> first = statsAuthority.apply(command);
+                    AuthorityDecision<StatsState, StatsReceipt> duplicate = statsAuthority.apply(command);
                     assertEquals(AuthorityDecisionStatus.ACCEPTED, first.status());
                     assertTrue(duplicate.replayed());
                 }
             }
             assertEquals(Map.of(SUBJECT_ONE, 100L, SUBJECT_TWO, 100L), economyAuthority.projectionTotals());
-            assertEquals(Map.of(SUBJECT_ONE, 1, SUBJECT_TWO, 1), statsAuthority.projectionTotals());
-            assertEquals(statsAuthority.projectionTotals(), RewardProjection.rebuild(statsAuthority.events()).totals());
+            assertEquals(Map.of(SUBJECT_ONE, 1L, SUBJECT_TWO, 1L), statsAuthority.projectionTotals());
+            assertEquals(Map.of(SUBJECT_ONE, 1L, SUBJECT_TWO, 1L), statsAuthority.experienceProjectionTotals(EXPERIENCE_ID));
             assertEquals(SUBJECTS.size(), economyAuthority.mutationRuns());
             assertEquals(SUBJECTS.size(), statsAuthority.mutationRuns());
 
@@ -836,9 +837,10 @@ final class FinalFleetE2eTest {
                 FriendsCapability.descriptor(),
                 GuildCapability.descriptor(),
                 EconomyCapability.descriptor(),
+                StatsCapability.descriptor(),
                 PunishmentCapability.descriptor());
         assertEquals(
-                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, FriendsCapability.CAPABILITY_ID, GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
+                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, FriendsCapability.CAPABILITY_ID, GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID, StatsCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
                 descriptors.stream().map(CapabilityDescriptor::capabilityId).collect(Collectors.toSet()));
         assertTrue(descriptors.stream().flatMap(descriptor -> descriptor.authorityDomains().stream())
                 .allMatch(domain -> domain.resourceClass().equals("standard")));
@@ -848,6 +850,7 @@ final class FinalFleetE2eTest {
         assertEquals(FriendsContracts.CONTRACT, FriendsCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(GuildContracts.CONTRACT, GuildCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(EconomyContracts.CONTRACT, EconomyCapability.descriptor().declaredContracts().getFirst().name());
+        assertEquals(StatsContracts.CONTRACT, StatsCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(PunishmentContracts.CONTRACT, PunishmentCapability.descriptor().declaredContracts().getFirst().name());
     }
 
@@ -887,6 +890,7 @@ final class FinalFleetE2eTest {
                 new ContractPin(PlayerProfileContracts.CONTRACT, "1.0.0"),
                 new ContractPin(RankContracts.CONTRACT, "1.0.0"),
                 new ContractPin(EconomyContracts.CONTRACT, "1.0.0"),
+                new ContractPin(StatsContracts.CONTRACT, "1.0.0"),
                 new ContractPin(PunishmentContracts.CONTRACT, "1.0.0"));
     }
 
@@ -1066,146 +1070,80 @@ final class FinalFleetE2eTest {
         }
     }
 
-    private record RewardCommand(String domain, SubjectId subjectId, int amount) implements CommandPayload {
-    }
+    private static final class StatsRewardAuthority {
+        private final StatsAuthority authority = new StatsAuthority(new InMemoryIdempotencyLedger<>());
+        private final Map<StatsCounterId, AuthorityRecord<StatsState>> records = new HashMap<>();
+        private final List<StatsDeltaRecorded> events = new ArrayList<>();
 
-    private record RewardReceipt(boolean accepted, SubjectId subjectId, int total, Revision revision, Optional<String> rejectionReason) {
-        private static RewardReceipt rejected(AuthorityRejectionReason reason) {
-            return new RewardReceipt(false, SUBJECT_ONE, 0, new Revision(0), Optional.of(reason.name()));
-        }
-    }
-
-    private record RewardState(Map<SubjectId, Integer> totals) {
-        private RewardState {
-            totals = Map.copyOf(totals);
-        }
-
-        private static RewardState empty() {
-            return new RewardState(Map.of());
-        }
-
-        private RewardState add(SubjectId subjectId, int amount) {
-            Map<SubjectId, Integer> next = new HashMap<>(totals);
-            next.merge(subjectId, amount, Integer::sum);
-            return new RewardState(next);
-        }
-    }
-
-    private record RewardApplied(String domain, SubjectId subjectId, int amount, Revision revision) {
-    }
-
-    private record RewardProjection(Map<SubjectId, Integer> totals) {
-        private static RewardProjection rebuild(List<RewardApplied> events) {
-            Map<SubjectId, Integer> totals = new HashMap<>();
-            events.stream()
-                    .sorted(Comparator.comparingLong(event -> event.revision().value()))
-                    .forEach(event -> totals.merge(event.subjectId(), event.amount(), Integer::sum));
-            return new RewardProjection(Map.copyOf(totals));
-        }
-    }
-
-    private static final class RewardAuthority {
-        private final String domain;
-        private final CapabilityId capabilityId;
-        private final AuthorityCommandProcessor<RewardState, RewardCommand, RewardReceipt> processor;
-        private final Map<SubjectId, AuthorityRecord<RewardState>> records = new HashMap<>();
-        private final List<RewardApplied> events = new ArrayList<>();
-        private final AtomicInteger mutationRuns = new AtomicInteger();
-
-        private RewardAuthority(String domain, CapabilityId capabilityId) {
-            this.domain = domain;
-            this.capabilityId = capabilityId;
-            this.processor = new AuthorityCommandProcessor<>(
-                    new InMemoryIdempotencyLedger<>(),
-                    RewardReceipt::rejected,
-                    this::applyMutation);
-        }
-
-        private AuthorityCommand<RewardCommand> commandFrom(
+        private AuthorityCommand<RecordStatDelta> commandFrom(
                 EffectEnvelope<? extends EffectPayload> effect,
                 EffectAdmissionReceipt admission) {
             RewardEffectPayload payload = (RewardEffectPayload) effect.payload();
-            assertEquals(domain, payload.domain());
-            assertEquals(Optional.of(capabilityId), admission.requiredCapability());
-            CommandEnvelope<RewardCommand> envelope = new CommandEnvelope<>(
-                    new CommandId("cmd-" + domain + "-" + payload.subjectId().value()),
+            assertEquals("stats", payload.domain());
+            assertEquals(Optional.of(STATS_CAPABILITY), admission.requiredCapability());
+            StatsCounterId counterId = StatsAuthority.counterId(payload.subjectId(), SESSION_COMPLETIONS_STAT);
+            AuthorityRecord<StatsState> currentRecord = record(counterId);
+            RecordStatDelta commandPayload = new RecordStatDelta(
+                    payload.subjectId(),
+                    EXPERIENCE_ID,
+                    SESSION_COMPLETIONS_STAT,
+                    payload.amount(),
+                    effect.issuedAt(),
+                    currentRecord.revision().value());
+            CommandEnvelope<RecordStatDelta> envelope = new CommandEnvelope<>(
+                    new CommandId("cmd-stats-" + payload.subjectId().value()),
                     effect.idempotencyKey(),
                     admission.authenticatedPrincipal(),
-                    aggregateId(payload.subjectId()),
-                    new ContractName("fixture." + domain + ".v1"),
-                    new CommandName("apply-" + domain + "-reward"),
+                    StatsAuthority.aggregateId(counterId),
+                    StatsContracts.CONTRACT,
+                    new CommandName("record-stat-delta"),
                     effect.traceEnvelope(),
                     effect.deadlineAt(),
-                    new RewardCommand(domain, payload.subjectId(), payload.amount()));
+                    commandPayload);
             return new AuthorityCommand<>(
                     envelope,
                     admission.authenticatedPrincipal(),
                     REWARD_FENCING_EPOCH,
-                    Optional.of(record(payload.subjectId()).revision()),
-                    payload.domain() + ":" + payload.subjectId().value() + ":" + payload.amount(),
+                    Optional.of(currentRecord.revision()),
+                    "stats:" + payload.subjectId().value() + ":" + EXPERIENCE_ID.value() + ":" + SESSION_COMPLETIONS_STAT + ":" + payload.amount(),
                     effect.issuedAt());
         }
 
-        private AuthorityDecision<RewardState, RewardReceipt> apply(AuthorityCommand<RewardCommand> command) {
-            SubjectId subjectId = command.envelope().payload().subjectId();
-            AuthorityDecision<RewardState, RewardReceipt> decision = processor.process(command, record(subjectId));
+        private AuthorityDecision<StatsState, StatsReceipt> apply(AuthorityCommand<RecordStatDelta> command) {
+            StatsCounterId counterId = command.envelope().payload().counterId();
+            AuthorityDecision<StatsState, StatsReceipt> decision = authority.handle(command, record(counterId));
             if (decision.status() == AuthorityDecisionStatus.ACCEPTED) {
-                records.put(subjectId, new AuthorityRecord<>(decision.revision(), REWARD_FENCING_EPOCH, decision.state()));
+                records.put(counterId, new AuthorityRecord<>(decision.revision(), REWARD_FENCING_EPOCH, decision.state()));
+                if (!decision.replayed()) {
+                    events.add(new StatsDeltaRecorded(
+                            decision.response().ledgerEntry().orElseThrow(),
+                            decision.revision()));
+                }
             }
             return decision;
         }
 
-        private AuthorityMutationResult<RewardState, RewardReceipt> applyMutation(
-                AuthorityCommand<RewardCommand> command,
-                AuthorityRecord<RewardState> current) {
-            RewardCommand payload = command.envelope().payload();
-            if (!payload.domain().equals(domain)) {
-                throw new IllegalArgumentException("reward command domain mismatch");
-            }
-            if (!command.envelope().aggregateId().equals(aggregateId(payload.subjectId()))) {
-                throw new IllegalArgumentException("reward aggregate must be keyed by Subject");
-            }
-            mutationRuns.incrementAndGet();
-            Revision revision = new Revision(current.revision().value() + 1);
-            RewardState state = current.state().add(payload.subjectId(), payload.amount());
-            int total = state.totals().get(payload.subjectId());
-            events.add(new RewardApplied(domain, payload.subjectId(), payload.amount(), revision));
-            RewardReceipt receipt = new RewardReceipt(true, payload.subjectId(), total, revision, Optional.empty());
-            return new AuthorityMutationResult<>(
-                    revision,
-                    state,
-                    receipt,
-                    List.of(
-                            new AuthorityEmission(AuthorityEmissionKind.EVENT, aggregateId(payload.subjectId()).value(), domain + "-reward-applied"),
-                            new AuthorityEmission(AuthorityEmissionKind.STATE, aggregateId(payload.subjectId()).value(), "total=" + total),
-                            new AuthorityEmission(AuthorityEmissionKind.PROJECTION, aggregateId(payload.subjectId()).value(), "total=" + total),
-                            new AuthorityEmission(AuthorityEmissionKind.RESPONSE, command.envelope().commandId().value(), "accepted=true"),
-                            new AuthorityEmission(AuthorityEmissionKind.CACHE_WRITE, domain + ":" + payload.subjectId().value(), "total=" + total)));
+        private AuthorityRecord<StatsState> record(StatsCounterId counterId) {
+            return records.computeIfAbsent(counterId, ignored -> StatsAuthority.emptyRecord(REWARD_FENCING_EPOCH));
         }
 
-        private AuthorityRecord<RewardState> record(SubjectId subjectId) {
-            return records.computeIfAbsent(subjectId, ignored -> new AuthorityRecord<>(
-                    new Revision(0),
-                    REWARD_FENCING_EPOCH,
-                    RewardState.empty()));
+        private Map<SubjectId, Long> projectionTotals() {
+            return StatsProjection.rebuild(events).counters().entrySet().stream()
+                    .collect(Collectors.toMap(
+                            entry -> entry.getKey().subjectId(),
+                            entry -> entry.getValue().total()));
         }
 
-        private AggregateId aggregateId(SubjectId subjectId) {
-            return new AggregateId(domain + ":" + subjectId.value());
-        }
-
-        private Map<SubjectId, Integer> projectionTotals() {
-            Map<SubjectId, Integer> totals = new HashMap<>();
-            records.forEach((subjectId, record) -> totals.put(subjectId, record.state().totals().getOrDefault(subjectId, 0)));
-            return Map.copyOf(totals);
-        }
-
-        private List<RewardApplied> events() {
-            return List.copyOf(events);
+        private Map<SubjectId, Long> experienceProjectionTotals(ExperienceId experienceId) {
+            StatsProjection projection = StatsProjection.rebuild(events);
+            return records.keySet().stream()
+                    .collect(Collectors.toMap(
+                            StatsCounterId::subjectId,
+                            counterId -> projection.experienceCounter(counterId, experienceId).orElseThrow().total()));
         }
 
         private int mutationRuns() {
-            return mutationRuns.get();
+            return events.size();
         }
     }
 
