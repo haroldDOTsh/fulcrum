@@ -37,6 +37,7 @@ include(
     "adapters:agones-fake",
     "capability:capability-api",
     "control:allocation-bridge",
+    "control:fault-controller",
     "control:queue-controller",
     "control:route-controller",
     "host:host-api",
