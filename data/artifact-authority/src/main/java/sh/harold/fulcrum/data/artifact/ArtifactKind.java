@@ -1,0 +1,11 @@
+package sh.harold.fulcrum.data.artifact;
+
+public enum ArtifactKind {
+    EXPERIENCE_CODE_BUNDLE,
+    CAPABILITY_BUNDLE,
+    HOST_EXTENSION_BUNDLE,
+    MAP_TEMPLATE_ARTIFACT,
+    CONFIG_MODE_ARTIFACT,
+    CONTENT_PACK_ARTIFACT,
+    REALM_SNAPSHOT
+}

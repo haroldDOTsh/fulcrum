@@ -40,6 +40,7 @@ final class ArchitectureValidationTest {
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
             Map.entry(":core:manifest-core", Set.of(":api:contract-api", ":api:kernel-api")),
+            Map.entry(":data:artifact-authority", Set.of(":api:contract-api", ":data:authority-core")),
             Map.entry(":data:authority-core", Set.of(":api:contract-api")),
             Map.entry(":data:contract-codegen", Set.of(":api:contract-api", ":data:contract-declarations")),
             Map.entry(":data:contract-declarations", Set.of(":api:contract-api")),
@@ -178,6 +179,36 @@ final class ArchitectureValidationTest {
             assertTrue(text.contains("\"agonesMode\""), descriptor + " must declare allocation adapter mode");
             assertTrue(text.contains("\"objectStorage\""), descriptor + " must declare object storage shape");
         }
+    }
+
+    @Test
+    void artifactAuthorityStaysMetadataOnly() throws IOException {
+        Path artifactAuthority = ROOT.resolve("data/artifact-authority/src/main/java");
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "ResolvedManifest",
+                "placement",
+                "rotation",
+                "operator",
+                "loot",
+                "shop",
+                "quest",
+                "team size",
+                "map rotation"
+        );
+        if (!Files.exists(artifactAuthority)) {
+            return;
+        }
+        try (Stream<Path> files = Files.walk(artifactAuthority)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Artifact authority crossed metadata boundary: " + violations);
     }
 
     private static List<Path> productionJavaSources() throws IOException {
