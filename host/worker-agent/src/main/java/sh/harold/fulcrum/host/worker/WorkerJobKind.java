@@ -1,0 +1,12 @@
+package sh.harold.fulcrum.host.worker;
+
+public enum WorkerJobKind {
+    PROJECTION_REBUILD,
+    CONTENT_VALIDATION,
+    MAP_VALIDATION,
+    SNAPSHOT_COMPACTION,
+    REALM_DEMOTION,
+    LEADERBOARD_MATERIALIZATION,
+    ANALYTICS_SINK,
+    RESTORE_DRILL
+}

@@ -52,6 +52,7 @@ include(
     "host:paper-agent",
     "host:tick-runtime-api",
     "host:velocity-agent",
+    "host:worker-agent",
     "standard-capabilities:standard-contracts",
     "standard-capabilities:player-profile",
     "standard-capabilities:rank",

@@ -69,6 +69,7 @@ final class ArchitectureValidationTest {
             Map.entry(":host:paper-agent", Set.of(":core:artifact-layout", ":host:host-api")),
             Map.entry(":host:tick-runtime-api", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:velocity-agent", Set.of(":host:host-api", ":data:route-contract")),
+            Map.entry(":host:worker-agent", Set.of(":api:contract-api", ":api:kernel-api", ":host:host-api")),
             Map.entry(":platform:fulcrum-bom", Set.of()),
             Map.entry(":standard-capabilities:chat-decoration", Set.of(":capability:capability-api", ":capability:capability-runtime", ":standard-capabilities:player-profile", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts")),
             Map.entry(":standard-capabilities:player-profile", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:standard-contracts")),
@@ -625,6 +626,44 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Host tick runtime API crossed host boundary: " + violations);
+    }
+
+    @Test
+    void workerAgentBaseHasNoGameOrStoreClients() throws IOException {
+        Path workerAgent = ROOT.resolve("host/worker-agent/src/main/java");
+        if (!Files.exists(workerAgent)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "HttpClient",
+                "Thread.sleep",
+                "CompletableFuture",
+                "Future<",
+                "ExecutorService",
+                "AuthorityCommandProcessor",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(workerAgent)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Worker agent base crossed host boundary: " + violations);
     }
 
     @Test

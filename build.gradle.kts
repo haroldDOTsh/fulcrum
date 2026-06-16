@@ -40,6 +40,7 @@ val step2CheckedProjects = step1CheckedProjects + listOf(
     ":adapters:agones-fake",
     ":host:paper-agent",
     ":host:velocity-agent",
+    ":host:worker-agent",
 )
 
 val step3CheckedProjects = step2CheckedProjects + listOf(
