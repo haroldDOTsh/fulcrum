@@ -10,6 +10,7 @@ application {
 dependencies {
     runtimeOnly(project(":adapters:agones-allocator"))
     runtimeOnly(project(":adapters:agones-fake"))
+    runtimeOnly(project(":adapters:object-storage"))
     runtimeOnly(project(":capability:capability-runtime"))
     runtimeOnly(project(":control:allocation-bridge"))
     runtimeOnly(project(":control:capability-enablement-controller"))

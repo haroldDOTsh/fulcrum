@@ -42,6 +42,7 @@ include(
     "data:subject-authority",
     "adapters:agones-allocator",
     "adapters:agones-fake",
+    "adapters:object-storage",
     "capability:capability-api",
     "capability:capability-runtime",
     "control:allocation-bridge",

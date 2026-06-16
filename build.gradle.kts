@@ -83,6 +83,7 @@ val step6CheckedProjects = step5CheckedProjects + listOf(
 )
 
 val step7CheckedProjects = step6CheckedProjects + listOf(
+    ":adapters:object-storage",
     ":core:artifact-layout",
     ":core:content-resolver",
     ":standard-capabilities:realm",

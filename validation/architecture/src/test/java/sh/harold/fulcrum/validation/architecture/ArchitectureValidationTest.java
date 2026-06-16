@@ -38,6 +38,7 @@ final class ArchitectureValidationTest {
     private static final Map<String, Set<String>> ALLOWED_PROJECT_EDGES = Map.ofEntries(
             Map.entry(":adapters:agones-allocator", Set.of(":host:host-api")),
             Map.entry(":adapters:agones-fake", Set.of(":host:host-api")),
+            Map.entry(":adapters:object-storage", Set.of(":core:artifact-layout", ":core:manifest-core")),
             Map.entry(":api:contract-api", Set.of(":api:kernel-api")),
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
@@ -68,7 +69,7 @@ final class ArchitectureValidationTest {
             Map.entry(":data:store-valkey", Set.of(":data:authority-runtime")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
-            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":standard-capabilities:auction", ":standard-capabilities:chat-decoration", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:realm", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats")),
+            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":adapters:object-storage", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":standard-capabilities:auction", ":standard-capabilities:chat-decoration", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:realm", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats")),
             Map.entry(":host:effect-admission", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
             Map.entry(":host:paper-agent", Set.of(":core:artifact-layout", ":host:host-api")),
@@ -92,7 +93,7 @@ final class ArchitectureValidationTest {
             Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
             Map.entry(":validation:architecture", Set.of()),
             Map.entry(":validation:fleet-e2e", Set.of(":adapters:agones-allocator", ":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":control:allocation-bridge", ":control:queue-controller", ":control:route-controller", ":core:content-resolver", ":core:manifest-core", ":core:session-runtime", ":data:authority-core", ":data:authority-runtime", ":data:route-contract", ":data:session-authority", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":standard-capabilities:auction", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats", ":testkit:substrate-testkit")),
-            Map.entry(":validation:store-adapter-certification", Set.of()),
+            Map.entry(":validation:store-adapter-certification", Set.of(":adapters:object-storage", ":api:kernel-api", ":core:artifact-layout", ":core:manifest-core")),
             Map.entry(":validation:synthetic-load", Set.of(":adapters:agones-fake", ":api:contract-api", ":api:kernel-api", ":control:route-controller", ":data:authority-core", ":host:host-api", ":standard-capabilities:rank")),
             Map.entry(":validation:standard-capabilities", Set.of(":capability:capability-runtime", ":standard-capabilities:auction", ":standard-capabilities:chat-decoration", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats"))
     );
@@ -291,6 +292,7 @@ final class ArchitectureValidationTest {
         assertSourceContains("data/store-cassandra/src/main/java", "CqlSession");
         assertSourceContains("data/store-postgresql/src/main/java", "DataSource", "PreparedStatement");
         assertSourceContains("data/store-valkey/src/main/java", "UnifiedJedis");
+        assertSourceContains("adapters/object-storage/src/main/java", "LocalObjectStorageAdapter", "ArtifactBlobLayout");
     }
 
     @Test
