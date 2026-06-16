@@ -69,6 +69,7 @@ val step6CheckedProjects = step5CheckedProjects + listOf(
 )
 
 val step7CheckedProjects = step6CheckedProjects + listOf(
+    ":core:artifact-layout",
     ":core:content-resolver",
 )
 

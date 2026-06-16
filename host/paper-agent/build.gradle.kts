@@ -3,5 +3,6 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":core:artifact-layout"))
     api(project(":host:host-api"))
 }

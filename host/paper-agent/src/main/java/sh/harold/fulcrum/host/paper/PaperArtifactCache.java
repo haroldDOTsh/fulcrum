@@ -1,5 +1,7 @@
 package sh.harold.fulcrum.host.paper;
 
+import sh.harold.fulcrum.core.artifact.ArtifactBlobLayout;
+import sh.harold.fulcrum.core.artifact.ArtifactDigestReference;
 import sh.harold.fulcrum.core.manifest.ArtifactPin;
 
 import java.io.IOException;
@@ -10,12 +12,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 public final class PaperArtifactCache {
-    private static final String DIGEST_PREFIX = "sha256:";
-    private static final Pattern SHA_256_HEX = Pattern.compile("[0-9a-f]{64}");
-
     private final Path cacheDirectory;
     private final ArtifactSource artifactSource;
 
@@ -28,11 +26,11 @@ public final class PaperArtifactCache {
         Objects.requireNonNull(artifactPin, "artifactPin");
         Files.createDirectories(cacheDirectory);
 
-        String expectedDigest = normalizeDigest(artifactPin.digest());
-        Path cachedPath = cacheDirectory.resolve(expectedDigest + ".artifact");
+        ArtifactDigestReference expectedDigest = sha256Digest(artifactPin);
+        Path cachedPath = ArtifactBlobLayout.cachePath(cacheDirectory, artifactPin);
         if (Files.exists(cachedPath)) {
             String cachedDigest = digest(Files.readAllBytes(cachedPath));
-            if (expectedDigest.equals(cachedDigest)) {
+            if (expectedDigest.value().equals(cachedDigest)) {
                 return new CachedArtifact(artifactPin, cachedPath, cachedDigest, true);
             }
             Files.delete(cachedPath);
@@ -40,23 +38,21 @@ public final class PaperArtifactCache {
 
         byte[] artifactBytes = artifactSource.read(artifactPin.artifactId());
         String actualDigest = digest(artifactBytes);
-        if (!expectedDigest.equals(actualDigest)) {
+        if (!expectedDigest.value().equals(actualDigest)) {
             throw new ArtifactVerificationException("Artifact digest mismatch for " + artifactPin.artifactId().value());
         }
 
+        Files.createDirectories(cachedPath.getParent());
         Files.write(cachedPath, artifactBytes, StandardOpenOption.CREATE_NEW);
         return new CachedArtifact(artifactPin, cachedPath, actualDigest, false);
     }
 
-    private static String normalizeDigest(String digest) {
-        String checked = PaperArtifactNames.requireNonBlank(digest, "digest").toLowerCase();
-        if (checked.startsWith(DIGEST_PREFIX)) {
-            checked = checked.substring(DIGEST_PREFIX.length());
+    private static ArtifactDigestReference sha256Digest(ArtifactPin artifactPin) {
+        ArtifactDigestReference digest = ArtifactBlobLayout.digestFor(artifactPin);
+        if (!digest.algorithm().equals("sha-256") || digest.value().length() != 64) {
+            throw new IllegalArgumentException("Paper artifact cache requires a SHA-256 digest pin");
         }
-        if (!SHA_256_HEX.matcher(checked).matches()) {
-            throw new IllegalArgumentException("digest must be a SHA-256 hex value");
-        }
-        return checked;
+        return digest;
     }
 
     private static String digest(byte[] artifactBytes) {

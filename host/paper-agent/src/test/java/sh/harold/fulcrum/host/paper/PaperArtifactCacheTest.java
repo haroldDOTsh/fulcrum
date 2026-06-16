@@ -85,6 +85,26 @@ final class PaperArtifactCacheTest {
         assertArrayEquals(artifactBytes, Files.readAllBytes(secondPull.cachedPath()));
     }
 
+    @Test
+    void cacheSeparatesSameDigestUnderDifferentPinCompatibility() throws IOException {
+        byte[] artifactBytes = bytes("bounded-map-template");
+        AtomicInteger reads = new AtomicInteger();
+        PaperArtifactCache cache = new PaperArtifactCache(cacheDirectory, source(Map.of(ARTIFACT_ID, artifactBytes), reads));
+        ArtifactPin firstPin = new ArtifactPin(ARTIFACT_ID, sha256(artifactBytes), "map-template-v1");
+        ArtifactPin secondPin = new ArtifactPin(ARTIFACT_ID, sha256(artifactBytes), "map-template-v2");
+
+        CachedArtifact firstPull = cache.pullVerified(firstPin);
+        CachedArtifact secondPull = cache.pullVerified(secondPin);
+
+        assertFalse(firstPull.cacheHit());
+        assertFalse(secondPull.cacheHit());
+        assertEquals(2, reads.get());
+        assertEquals(firstPull.verifiedDigest(), secondPull.verifiedDigest());
+        assertTrue(firstPull.cachedPath().startsWith(cacheDirectory.toAbsolutePath().normalize()));
+        assertTrue(secondPull.cachedPath().startsWith(cacheDirectory.toAbsolutePath().normalize()));
+        assertFalse(firstPull.cachedPath().equals(secondPull.cachedPath()));
+    }
+
     private static ArtifactSource source(Map<ArtifactId, byte[]> artifacts, AtomicInteger reads) {
         return artifactId -> {
             reads.incrementAndGet();
