@@ -117,6 +117,26 @@ final class StandardCapabilityContractsTest {
     }
 
     @Test
+    void auctionContractDeclaresListingEscrowAndAuditProjections() {
+        ContractDeclaration contract = AuctionContracts.contract();
+
+        assertEquals(AuctionContracts.CONTRACT, contract.name());
+        assertEquals(3, contract.projections().size());
+        assertEquals(
+                java.util.List.of(
+                        AuctionContracts.LISTING_PROJECTION,
+                        AuctionContracts.ESCROW_PROJECTION,
+                        AuctionContracts.AUDIT_PROJECTION),
+                contract.projections().stream().map(projection -> projection.relationName()).toList());
+        assertEquals(
+                java.util.List.of("open-auction", "place-auction-bid"),
+                contract.commands().stream().map(command -> command.name().value()).toList());
+        assertEquals(
+                java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
+                contract.topics().stream().map(topic -> topic.family()).toList());
+    }
+
+    @Test
     void realmContractDeclaresSnapshotMetadataProjection() {
         ContractDeclaration contract = RealmContracts.contract();
 

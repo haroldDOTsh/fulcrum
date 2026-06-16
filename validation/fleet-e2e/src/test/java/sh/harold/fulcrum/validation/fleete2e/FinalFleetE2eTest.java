@@ -122,12 +122,15 @@ import sh.harold.fulcrum.host.tick.HostTickRuntimeContext;
 import sh.harold.fulcrum.host.tick.HostTickSessionRuntime;
 import sh.harold.fulcrum.host.velocity.VelocityRouteCommandFactory;
 import sh.harold.fulcrum.host.velocity.VelocityRouteTransfer;
+import sh.harold.fulcrum.standard.auction.AuctionCapability;
+import sh.harold.fulcrum.standard.contracts.AuctionContracts;
+import sh.harold.fulcrum.standard.contracts.EconomyContracts;
+import sh.harold.fulcrum.standard.contracts.FriendsContracts;
+import sh.harold.fulcrum.standard.contracts.GuildContracts;
+import sh.harold.fulcrum.standard.contracts.PartyContracts;
 import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
-import sh.harold.fulcrum.standard.contracts.PartyContracts;
-import sh.harold.fulcrum.standard.contracts.FriendsContracts;
-import sh.harold.fulcrum.standard.contracts.EconomyContracts;
 import sh.harold.fulcrum.standard.contracts.StatsContracts;
 import sh.harold.fulcrum.standard.economy.EconomyAccountId;
 import sh.harold.fulcrum.standard.economy.EconomyAuthority;
@@ -138,7 +141,6 @@ import sh.harold.fulcrum.standard.economy.EconomyReceipt;
 import sh.harold.fulcrum.standard.economy.EconomyState;
 import sh.harold.fulcrum.standard.economy.PostLedgerEntry;
 import sh.harold.fulcrum.standard.friends.FriendsCapability;
-import sh.harold.fulcrum.standard.contracts.GuildContracts;
 import sh.harold.fulcrum.standard.guild.GuildCapability;
 import sh.harold.fulcrum.standard.party.PartyCapability;
 import sh.harold.fulcrum.standard.profile.PlayerProfileCapability;
@@ -838,9 +840,19 @@ final class FinalFleetE2eTest {
                 GuildCapability.descriptor(),
                 EconomyCapability.descriptor(),
                 StatsCapability.descriptor(),
+                AuctionCapability.descriptor(),
                 PunishmentCapability.descriptor());
         assertEquals(
-                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, FriendsCapability.CAPABILITY_ID, GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID, StatsCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
+                Set.of(
+                        PlayerProfileCapability.CAPABILITY_ID,
+                        RankCapability.CAPABILITY_ID,
+                        PartyCapability.CAPABILITY_ID,
+                        FriendsCapability.CAPABILITY_ID,
+                        GuildCapability.CAPABILITY_ID,
+                        EconomyCapability.CAPABILITY_ID,
+                        StatsCapability.CAPABILITY_ID,
+                        AuctionCapability.CAPABILITY_ID,
+                        PunishmentCapability.CAPABILITY_ID),
                 descriptors.stream().map(CapabilityDescriptor::capabilityId).collect(Collectors.toSet()));
         assertTrue(descriptors.stream().flatMap(descriptor -> descriptor.authorityDomains().stream())
                 .allMatch(domain -> domain.resourceClass().equals("standard")));
@@ -851,6 +863,7 @@ final class FinalFleetE2eTest {
         assertEquals(GuildContracts.CONTRACT, GuildCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(EconomyContracts.CONTRACT, EconomyCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(StatsContracts.CONTRACT, StatsCapability.descriptor().declaredContracts().getFirst().name());
+        assertEquals(AuctionContracts.CONTRACT, AuctionCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(PunishmentContracts.CONTRACT, PunishmentCapability.descriptor().declaredContracts().getFirst().name());
     }
 
@@ -891,6 +904,7 @@ final class FinalFleetE2eTest {
                 new ContractPin(RankContracts.CONTRACT, "1.0.0"),
                 new ContractPin(EconomyContracts.CONTRACT, "1.0.0"),
                 new ContractPin(StatsContracts.CONTRACT, "1.0.0"),
+                new ContractPin(AuctionContracts.CONTRACT, "1.0.0"),
                 new ContractPin(PunishmentContracts.CONTRACT, "1.0.0"));
     }
 

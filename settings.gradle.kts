@@ -67,6 +67,7 @@ include(
     "standard-capabilities:guild",
     "standard-capabilities:economy",
     "standard-capabilities:stats",
+    "standard-capabilities:auction",
     "standard-capabilities:realm",
     "distribution:profiles",
     "distribution:service-launcher",

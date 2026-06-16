@@ -12,9 +12,19 @@ import sh.harold.fulcrum.capability.api.CapabilityValidationResult;
 import sh.harold.fulcrum.capability.runtime.CapabilityContributionComposer;
 import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlan;
 import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlanner;
+import sh.harold.fulcrum.standard.auction.AuctionAuditEntry;
+import sh.harold.fulcrum.standard.auction.AuctionCapability;
+import sh.harold.fulcrum.standard.auction.AuctionEscrowAction;
+import sh.harold.fulcrum.standard.auction.AuctionEscrowEntry;
+import sh.harold.fulcrum.standard.auction.AuctionEventRecorded;
+import sh.harold.fulcrum.standard.auction.AuctionId;
+import sh.harold.fulcrum.standard.auction.AuctionProjection;
+import sh.harold.fulcrum.standard.auction.AuctionSnapshot;
+import sh.harold.fulcrum.standard.auction.AuctionStatus;
 import sh.harold.fulcrum.standard.chat.ChatDecorationCapability;
 import sh.harold.fulcrum.standard.chat.ChatDecorationInput;
 import sh.harold.fulcrum.standard.chat.ChatDecorationRenderer;
+import sh.harold.fulcrum.standard.contracts.AuctionContracts;
 import sh.harold.fulcrum.standard.contracts.EconomyContracts;
 import sh.harold.fulcrum.standard.contracts.PartyContracts;
 import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
@@ -75,9 +85,9 @@ final class StandardCapabilityIntegrationTest {
     private static final PrincipalId PRINCIPAL = new PrincipalId("standard-suite-validation");
 
     @Test
-    void tierOneTierTwoAndEconomyDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
-        CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(standardDescriptorsWithEconomy());
-        CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(standardDescriptorsWithEconomy());
+    void standardDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
+        CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(standardDescriptors());
+        CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(standardDescriptors());
         CapabilityMaterializationPlan plan = CapabilityMaterializationPlanner.plan(graph);
 
         assertTrue(graphResult.valid(), () -> graphResult.errors().toString());
@@ -89,6 +99,7 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(Optional.of(GuildCapability.CAPABILITY_ID), graph.providerOf(GuildContracts.CONTRACT));
         assertEquals(Optional.of(EconomyCapability.CAPABILITY_ID), graph.providerOf(EconomyContracts.CONTRACT));
         assertEquals(Optional.of(StatsCapability.CAPABILITY_ID), graph.providerOf(StatsContracts.CONTRACT));
+        assertEquals(Optional.of(AuctionCapability.CAPABILITY_ID), graph.providerOf(AuctionContracts.CONTRACT));
         assertEquals(Optional.of(PunishmentCapability.CAPABILITY_ID),
                 graph.providerOf(PunishmentContracts.CONTRACT));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
@@ -103,6 +114,8 @@ final class StandardCapabilityIntegrationTest {
                 graph.dependenciesFor(EconomyCapability.CAPABILITY_ID));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
                 graph.dependenciesFor(StatsCapability.CAPABILITY_ID));
+        assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID),
+                graph.dependenciesFor(AuctionCapability.CAPABILITY_ID));
         assertEquals(List.of(RankCapability.CAPABILITY_ID),
                 graph.dependenciesFor(ChatDecorationCapability.CAPABILITY_ID));
         assertTrue(graph.dependenciesFor(PunishmentCapability.CAPABILITY_ID).isEmpty());
@@ -121,6 +134,9 @@ final class StandardCapabilityIntegrationTest {
                         StatsContracts.COUNTER_PROJECTION,
                         StatsContracts.EXPERIENCE_COUNTER_PROJECTION,
                         StatsContracts.LEDGER_PROJECTION,
+                        AuctionContracts.LISTING_PROJECTION,
+                        AuctionContracts.ESCROW_PROJECTION,
+                        AuctionContracts.AUDIT_PROJECTION,
                         PunishmentContracts.ACTIVE_PROJECTION),
                 plan.projections().stream()
                         .map(resource -> resource.declaration().relationName())
@@ -155,9 +171,15 @@ final class StandardCapabilityIntegrationTest {
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
-        assertEquals(List.of(GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID, StatsCapability.CAPABILITY_ID),
+        assertEquals(List.of(GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID, StatsCapability.CAPABILITY_ID, AuctionCapability.CAPABILITY_ID),
                 CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
                         .registrationsFor(CapabilityExtensionPoint.PAPER_MENUS)
+                        .stream()
+                        .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
+                        .toList());
+        assertEquals(List.of(AuctionCapability.CAPABILITY_ID),
+                CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
+                        .registrationsFor(CapabilityExtensionPoint.EXPERIENCE_UI_SURFACE)
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
@@ -285,7 +307,59 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(1, projection.experienceCounter(counterId, realm).orElseThrow().total());
     }
 
-    private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptorsWithEconomy() {
+    @Test
+    void auctionProjectionFeedsEscrowAndAuditSurfacesWithoutCallingAuctionAuthority() {
+        AuctionId auctionId = new AuctionId("auction-suite-validation");
+        AuctionSnapshot openedSnapshot = new AuctionSnapshot(
+                auctionId,
+                SUBJECT,
+                "item:validation",
+                "coins",
+                Optional.empty(),
+                0,
+                AuctionStatus.OPEN,
+                PRINCIPAL,
+                NOW);
+        AuctionSnapshot bidSnapshot = new AuctionSnapshot(
+                auctionId,
+                SUBJECT,
+                "item:validation",
+                "coins",
+                Optional.of(FRIEND_SUBJECT),
+                100,
+                AuctionStatus.OPEN,
+                PRINCIPAL,
+                NOW.plusSeconds(1));
+        AuctionProjection projection = AuctionProjection.rebuild(List.of(
+                new AuctionEventRecorded(
+                        openedSnapshot,
+                        List.of(),
+                        new AuctionAuditEntry("auction-suite-audit-open", auctionId, "OPENED", Optional.of(SUBJECT), 0, "coins", PRINCIPAL, NOW, new Revision(1)),
+                        new Revision(1)),
+                new AuctionEventRecorded(
+                        bidSnapshot,
+                        List.of(new AuctionEscrowEntry(
+                                "auction-suite-escrow-hold",
+                                auctionId,
+                                FRIEND_SUBJECT,
+                                AuctionEscrowAction.HOLD,
+                                100,
+                                "coins",
+                                PRINCIPAL,
+                                NOW.plusSeconds(1),
+                                "auction-suite-idem-bid",
+                                "auction-suite-command-bid",
+                                new Revision(2))),
+                        new AuctionAuditEntry("auction-suite-audit-bid", auctionId, "BID_ACCEPTED", Optional.of(FRIEND_SUBJECT), 100, "coins", PRINCIPAL, NOW.plusSeconds(1), new Revision(2)),
+                        new Revision(2))));
+
+        assertEquals(100, projection.auction(auctionId).orElseThrow().snapshot().highestBidMinorUnits());
+        assertEquals(100, projection.escrowedAmount(auctionId, FRIEND_SUBJECT, "coins"));
+        assertEquals(List.of("OPENED", "BID_ACCEPTED"),
+                projection.auditEntries().stream().map(AuctionAuditEntry::action).toList());
+    }
+
+    private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptors() {
         return List.of(
                 PlayerProfileCapability.descriptor(),
                 RankCapability.descriptor(),
@@ -295,6 +369,7 @@ final class StandardCapabilityIntegrationTest {
                 GuildCapability.descriptor(),
                 EconomyCapability.descriptor(),
                 StatsCapability.descriptor(),
+                AuctionCapability.descriptor(),
                 PunishmentCapability.descriptor());
     }
 }

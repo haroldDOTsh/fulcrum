@@ -36,6 +36,7 @@ dependencies {
     runtimeOnly(project(":standard-capabilities:guild"))
     runtimeOnly(project(":standard-capabilities:economy"))
     runtimeOnly(project(":standard-capabilities:stats"))
+    runtimeOnly(project(":standard-capabilities:auction"))
     runtimeOnly(project(":standard-capabilities:player-profile"))
     runtimeOnly(project(":standard-capabilities:punishment"))
     runtimeOnly(project(":standard-capabilities:rank"))
