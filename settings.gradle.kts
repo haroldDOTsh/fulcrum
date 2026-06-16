@@ -23,6 +23,7 @@ include(
     "api:kernel-api",
     "api:contract-api",
     "core:manifest-core",
+    "core:content-resolver",
     "core:session-runtime",
     "data:contract-declarations",
     "data:contract-codegen",

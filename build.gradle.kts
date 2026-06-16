@@ -68,6 +68,10 @@ val step6CheckedProjects = step5CheckedProjects + listOf(
     ":validation:standard-capabilities",
 )
 
+val step7CheckedProjects = step6CheckedProjects + listOf(
+    ":core:content-resolver",
+)
+
 allprojects {
     group = "sh.harold.fulcrum"
     version = "0.1.0-SNAPSHOT"
@@ -140,6 +144,12 @@ tasks.register("step6Check") {
     dependsOn(step6CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("step7Check") {
+    group = "verification"
+    description = "Runs the automated Step 7 artifact and content checks that exist so far."
+    dependsOn(step7CheckedProjects.map { "$it:check" })
+}
+
 tasks.named("check") {
-    dependsOn("step6Check")
+    dependsOn("step7Check")
 }

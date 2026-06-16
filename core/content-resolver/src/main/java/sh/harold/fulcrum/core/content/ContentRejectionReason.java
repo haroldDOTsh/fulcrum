@@ -1,0 +1,13 @@
+package sh.harold.fulcrum.core.content;
+
+public enum ContentRejectionReason {
+    KIND_NOT_REQUIRED,
+    NOT_VALIDATED,
+    DISABLED_BY_POLICY,
+    EXPERIENCE_MISMATCH,
+    MODE_MISMATCH,
+    POOL_MISMATCH,
+    HOST_RUNTIME_ABI_MISMATCH,
+    CONTRACT_MISMATCH,
+    STATE_COMPATIBILITY_MISMATCH
+}
