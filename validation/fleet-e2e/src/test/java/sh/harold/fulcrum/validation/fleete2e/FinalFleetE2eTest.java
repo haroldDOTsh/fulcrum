@@ -134,6 +134,15 @@ import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
 import sh.harold.fulcrum.standard.contracts.PartyContracts;
 import sh.harold.fulcrum.standard.contracts.FriendsContracts;
+import sh.harold.fulcrum.standard.contracts.EconomyContracts;
+import sh.harold.fulcrum.standard.economy.EconomyAccountId;
+import sh.harold.fulcrum.standard.economy.EconomyAuthority;
+import sh.harold.fulcrum.standard.economy.EconomyCapability;
+import sh.harold.fulcrum.standard.economy.EconomyLedgerEntryRecorded;
+import sh.harold.fulcrum.standard.economy.EconomyProjection;
+import sh.harold.fulcrum.standard.economy.EconomyReceipt;
+import sh.harold.fulcrum.standard.economy.EconomyState;
+import sh.harold.fulcrum.standard.economy.PostLedgerEntry;
 import sh.harold.fulcrum.standard.friends.FriendsCapability;
 import sh.harold.fulcrum.standard.contracts.GuildContracts;
 import sh.harold.fulcrum.standard.guild.GuildCapability;
@@ -204,8 +213,9 @@ final class FinalFleetE2eTest {
     private static final long ROUTE_FENCING_EPOCH = 102;
     private static final long SESSION_FENCING_EPOCH = 103;
     private static final long REWARD_FENCING_EPOCH = 104;
-    private static final CapabilityId ECONOMY_CAPABILITY = new CapabilityId("economy");
+    private static final CapabilityId ECONOMY_CAPABILITY = EconomyCapability.CAPABILITY_ID;
     private static final CapabilityId STATS_CAPABILITY = new CapabilityId("stats");
+    private static final String ECONOMY_CURRENCY = "coins";
     private static final HostResourceGrant ECONOMY_COMMAND_GRANT =
             new HostResourceGrant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "cmd.standard.economy");
     private static final HostResourceGrant STATS_COMMAND_GRANT =
@@ -261,7 +271,7 @@ final class FinalFleetE2eTest {
             assertEquals(4, runtimeFlow.platformEffects().size());
             timeline.record("fixture-reducer", trace("fixture-reducer", claim.instanceIdentity().instanceId()), SESSION_ID.value());
 
-            RewardAuthority economyAuthority = new RewardAuthority("economy", ECONOMY_CAPABILITY);
+            EconomyRewardAuthority economyAuthority = new EconomyRewardAuthority();
             RewardAuthority statsAuthority = new RewardAuthority("stats", STATS_CAPABILITY);
             EffectAdmissionGate admissionGate = new EffectAdmissionGate(EffectAdmissionPolicy.of(
                     new EffectAdmissionRule(EffectClass.AUTHORITY, "economy:", Optional.of(ECONOMY_CAPABILITY), ECONOMY_COMMAND_GRANT),
@@ -272,17 +282,24 @@ final class FinalFleetE2eTest {
                 EffectAdmissionReceipt admission = admissionGate.admit(paperSecurity, attachment, effect);
                 assertEquals(EffectAdmissionStatus.ACCEPTED, admission.status());
                 RewardEffectPayload payload = (RewardEffectPayload) effect.payload();
-                RewardAuthority authority = payload.domain().equals("economy") ? economyAuthority : statsAuthority;
-                AuthorityCommand<RewardCommand> command = authority.commandFrom(effect, admission);
-                commandEnvelopes.add(command.envelope());
-                AuthorityDecision<RewardState, RewardReceipt> first = authority.apply(command);
-                AuthorityDecision<RewardState, RewardReceipt> duplicate = authority.apply(command);
-                assertEquals(AuthorityDecisionStatus.ACCEPTED, first.status());
-                assertTrue(duplicate.replayed());
+                if (payload.domain().equals("economy")) {
+                    AuthorityCommand<PostLedgerEntry> command = economyAuthority.commandFrom(effect, admission);
+                    commandEnvelopes.add(command.envelope());
+                    AuthorityDecision<EconomyState, EconomyReceipt> first = economyAuthority.apply(command);
+                    AuthorityDecision<EconomyState, EconomyReceipt> duplicate = economyAuthority.apply(command);
+                    assertEquals(AuthorityDecisionStatus.ACCEPTED, first.status());
+                    assertTrue(duplicate.replayed());
+                } else {
+                    AuthorityCommand<RewardCommand> command = statsAuthority.commandFrom(effect, admission);
+                    commandEnvelopes.add(command.envelope());
+                    AuthorityDecision<RewardState, RewardReceipt> first = statsAuthority.apply(command);
+                    AuthorityDecision<RewardState, RewardReceipt> duplicate = statsAuthority.apply(command);
+                    assertEquals(AuthorityDecisionStatus.ACCEPTED, first.status());
+                    assertTrue(duplicate.replayed());
+                }
             }
-            assertEquals(Map.of(SUBJECT_ONE, 100, SUBJECT_TWO, 100), economyAuthority.projectionTotals());
+            assertEquals(Map.of(SUBJECT_ONE, 100L, SUBJECT_TWO, 100L), economyAuthority.projectionTotals());
             assertEquals(Map.of(SUBJECT_ONE, 1, SUBJECT_TWO, 1), statsAuthority.projectionTotals());
-            assertEquals(economyAuthority.projectionTotals(), RewardProjection.rebuild(economyAuthority.events()).totals());
             assertEquals(statsAuthority.projectionTotals(), RewardProjection.rebuild(statsAuthority.events()).totals());
             assertEquals(SUBJECTS.size(), economyAuthority.mutationRuns());
             assertEquals(SUBJECTS.size(), statsAuthority.mutationRuns());
@@ -818,9 +835,10 @@ final class FinalFleetE2eTest {
                 PartyCapability.descriptor(),
                 FriendsCapability.descriptor(),
                 GuildCapability.descriptor(),
+                EconomyCapability.descriptor(),
                 PunishmentCapability.descriptor());
         assertEquals(
-                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, FriendsCapability.CAPABILITY_ID, GuildCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
+                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, FriendsCapability.CAPABILITY_ID, GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
                 descriptors.stream().map(CapabilityDescriptor::capabilityId).collect(Collectors.toSet()));
         assertTrue(descriptors.stream().flatMap(descriptor -> descriptor.authorityDomains().stream())
                 .allMatch(domain -> domain.resourceClass().equals("standard")));
@@ -829,6 +847,7 @@ final class FinalFleetE2eTest {
         assertEquals(PartyContracts.CONTRACT, PartyCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(FriendsContracts.CONTRACT, FriendsCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(GuildContracts.CONTRACT, GuildCapability.descriptor().declaredContracts().getFirst().name());
+        assertEquals(EconomyContracts.CONTRACT, EconomyCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(PunishmentContracts.CONTRACT, PunishmentCapability.descriptor().declaredContracts().getFirst().name());
     }
 
@@ -867,6 +886,7 @@ final class FinalFleetE2eTest {
         return List.of(
                 new ContractPin(PlayerProfileContracts.CONTRACT, "1.0.0"),
                 new ContractPin(RankContracts.CONTRACT, "1.0.0"),
+                new ContractPin(EconomyContracts.CONTRACT, "1.0.0"),
                 new ContractPin(PunishmentContracts.CONTRACT, "1.0.0"));
     }
 
@@ -974,6 +994,75 @@ final class FinalFleetE2eTest {
         @Override
         public String payloadType() {
             return "fixture.reward-effect";
+        }
+    }
+
+    private static final class EconomyRewardAuthority {
+        private final EconomyAuthority authority = new EconomyAuthority(new InMemoryIdempotencyLedger<>());
+        private final Map<EconomyAccountId, AuthorityRecord<EconomyState>> records = new HashMap<>();
+        private final List<EconomyLedgerEntryRecorded> events = new ArrayList<>();
+
+        private AuthorityCommand<PostLedgerEntry> commandFrom(
+                EffectEnvelope<? extends EffectPayload> effect,
+                EffectAdmissionReceipt admission) {
+            RewardEffectPayload payload = (RewardEffectPayload) effect.payload();
+            assertEquals("economy", payload.domain());
+            assertEquals(Optional.of(ECONOMY_CAPABILITY), admission.requiredCapability());
+            EconomyAccountId accountId = EconomyAuthority.accountId(payload.subjectId(), ECONOMY_CURRENCY);
+            AuthorityRecord<EconomyState> currentRecord = record(accountId);
+            PostLedgerEntry commandPayload = new PostLedgerEntry(
+                    payload.subjectId(),
+                    ECONOMY_CURRENCY,
+                    payload.amount(),
+                    "session-reward",
+                    effect.issuedAt(),
+                    currentRecord.revision().value());
+            CommandEnvelope<PostLedgerEntry> envelope = new CommandEnvelope<>(
+                    new CommandId("cmd-economy-" + payload.subjectId().value()),
+                    effect.idempotencyKey(),
+                    admission.authenticatedPrincipal(),
+                    EconomyAuthority.aggregateId(accountId),
+                    EconomyContracts.CONTRACT,
+                    new CommandName("post-ledger-entry"),
+                    effect.traceEnvelope(),
+                    effect.deadlineAt(),
+                    commandPayload);
+            return new AuthorityCommand<>(
+                    envelope,
+                    admission.authenticatedPrincipal(),
+                    REWARD_FENCING_EPOCH,
+                    Optional.of(currentRecord.revision()),
+                    "economy:" + payload.subjectId().value() + ":" + ECONOMY_CURRENCY + ":" + payload.amount(),
+                    effect.issuedAt());
+        }
+
+        private AuthorityDecision<EconomyState, EconomyReceipt> apply(AuthorityCommand<PostLedgerEntry> command) {
+            EconomyAccountId accountId = command.envelope().payload().accountId();
+            AuthorityDecision<EconomyState, EconomyReceipt> decision = authority.handle(command, record(accountId));
+            if (decision.status() == AuthorityDecisionStatus.ACCEPTED) {
+                records.put(accountId, new AuthorityRecord<>(decision.revision(), REWARD_FENCING_EPOCH, decision.state()));
+                if (!decision.replayed()) {
+                    events.add(new EconomyLedgerEntryRecorded(
+                            decision.response().ledgerEntry().orElseThrow(),
+                            decision.revision()));
+                }
+            }
+            return decision;
+        }
+
+        private AuthorityRecord<EconomyState> record(EconomyAccountId accountId) {
+            return records.computeIfAbsent(accountId, ignored -> EconomyAuthority.emptyRecord(REWARD_FENCING_EPOCH));
+        }
+
+        private Map<SubjectId, Long> projectionTotals() {
+            return EconomyProjection.rebuild(events).balances().entrySet().stream()
+                    .collect(Collectors.toMap(
+                            entry -> entry.getKey().subjectId(),
+                            entry -> entry.getValue().balanceMinorUnits()));
+        }
+
+        private int mutationRuns() {
+            return events.size();
         }
     }
 

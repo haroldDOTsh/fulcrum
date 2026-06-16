@@ -15,11 +15,17 @@ import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlanner;
 import sh.harold.fulcrum.standard.chat.ChatDecorationCapability;
 import sh.harold.fulcrum.standard.chat.ChatDecorationInput;
 import sh.harold.fulcrum.standard.chat.ChatDecorationRenderer;
+import sh.harold.fulcrum.standard.contracts.EconomyContracts;
 import sh.harold.fulcrum.standard.contracts.PartyContracts;
 import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
 import sh.harold.fulcrum.standard.contracts.FriendsContracts;
+import sh.harold.fulcrum.standard.economy.EconomyAccountId;
+import sh.harold.fulcrum.standard.economy.EconomyCapability;
+import sh.harold.fulcrum.standard.economy.EconomyLedgerEntry;
+import sh.harold.fulcrum.standard.economy.EconomyLedgerEntryRecorded;
+import sh.harold.fulcrum.standard.economy.EconomyProjection;
 import sh.harold.fulcrum.standard.friends.FriendInviteAccepted;
 import sh.harold.fulcrum.standard.friends.FriendsCapability;
 import sh.harold.fulcrum.standard.friends.FriendsProjection;
@@ -63,9 +69,9 @@ final class StandardCapabilityIntegrationTest {
     private static final PrincipalId PRINCIPAL = new PrincipalId("standard-suite-validation");
 
     @Test
-    void tierOneAndTierTwoDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
-        CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(standardDescriptorsWithTierTwoSocial());
-        CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(standardDescriptorsWithTierTwoSocial());
+    void tierOneTierTwoAndEconomyDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
+        CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(standardDescriptorsWithEconomy());
+        CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(standardDescriptorsWithEconomy());
         CapabilityMaterializationPlan plan = CapabilityMaterializationPlanner.plan(graph);
 
         assertTrue(graphResult.valid(), () -> graphResult.errors().toString());
@@ -75,6 +81,7 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(Optional.of(PartyCapability.CAPABILITY_ID), graph.providerOf(PartyContracts.CONTRACT));
         assertEquals(Optional.of(FriendsCapability.CAPABILITY_ID), graph.providerOf(FriendsContracts.CONTRACT));
         assertEquals(Optional.of(GuildCapability.CAPABILITY_ID), graph.providerOf(GuildContracts.CONTRACT));
+        assertEquals(Optional.of(EconomyCapability.CAPABILITY_ID), graph.providerOf(EconomyContracts.CONTRACT));
         assertEquals(Optional.of(PunishmentCapability.CAPABILITY_ID),
                 graph.providerOf(PunishmentContracts.CONTRACT));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
@@ -85,6 +92,8 @@ final class StandardCapabilityIntegrationTest {
                 graph.dependenciesFor(FriendsCapability.CAPABILITY_ID));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
                 graph.dependenciesFor(GuildCapability.CAPABILITY_ID));
+        assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
+                graph.dependenciesFor(EconomyCapability.CAPABILITY_ID));
         assertEquals(List.of(RankCapability.CAPABILITY_ID),
                 graph.dependenciesFor(ChatDecorationCapability.CAPABILITY_ID));
         assertTrue(graph.dependenciesFor(PunishmentCapability.CAPABILITY_ID).isEmpty());
@@ -98,6 +107,8 @@ final class StandardCapabilityIntegrationTest {
                         FriendsContracts.SUBJECT_INDEX_PROJECTION,
                         GuildContracts.ROSTER_PROJECTION,
                         GuildContracts.SUBJECT_INDEX_PROJECTION,
+                        EconomyContracts.BALANCE_PROJECTION,
+                        EconomyContracts.LEDGER_PROJECTION,
                         PunishmentContracts.ACTIVE_PROJECTION),
                 plan.projections().stream()
                         .map(resource -> resource.declaration().relationName())
@@ -132,9 +143,15 @@ final class StandardCapabilityIntegrationTest {
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
-        assertEquals(List.of(GuildCapability.CAPABILITY_ID),
+        assertEquals(List.of(GuildCapability.CAPABILITY_ID, EconomyCapability.CAPABILITY_ID),
                 CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
                         .registrationsFor(CapabilityExtensionPoint.PAPER_MENUS)
+                        .stream()
+                        .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
+                        .toList());
+        assertEquals(List.of(EconomyCapability.CAPABILITY_ID),
+                CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
+                        .registrationsFor(CapabilityExtensionPoint.PAPER_SCOREBOARD)
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
@@ -199,7 +216,30 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(List.of(SUBJECT, GUILD_MEMBER), projection.membersFor(SUBJECT));
     }
 
-    private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptorsWithTierTwoSocial() {
+    @Test
+    void economyProjectionFeedsBalanceSurfacesFromAuditableLedgerWithoutCallingEconomyAuthority() {
+        EconomyAccountId accountId = new EconomyAccountId(SUBJECT, "coins");
+        EconomyProjection projection = EconomyProjection.rebuild(List.of(new EconomyLedgerEntryRecorded(
+                new EconomyLedgerEntry(
+                        "economy-suite-entry-1",
+                        accountId,
+                        100,
+                        100,
+                        "suite-reward",
+                        PRINCIPAL,
+                        NOW,
+                        "economy-suite-idem-1",
+                        "economy-suite-command-1",
+                        new Revision(1)),
+                new Revision(1))));
+
+        assertEquals(100, projection.balance(accountId).orElseThrow().balanceMinorUnits());
+        assertEquals(List.of("economy-suite-entry-1"), projection.ledgerEntriesFor(accountId).stream()
+                .map(row -> row.entryId())
+                .toList());
+    }
+
+    private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptorsWithEconomy() {
         return List.of(
                 PlayerProfileCapability.descriptor(),
                 RankCapability.descriptor(),
@@ -207,6 +247,7 @@ final class StandardCapabilityIntegrationTest {
                 PartyCapability.descriptor(),
                 FriendsCapability.descriptor(),
                 GuildCapability.descriptor(),
+                EconomyCapability.descriptor(),
                 PunishmentCapability.descriptor());
     }
 }

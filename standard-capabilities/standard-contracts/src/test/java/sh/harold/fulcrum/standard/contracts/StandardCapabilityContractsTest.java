@@ -86,6 +86,20 @@ final class StandardCapabilityContractsTest {
     }
 
     @Test
+    void economyContractDeclaresBalanceAndLedgerProjections() {
+        ContractDeclaration contract = EconomyContracts.contract();
+
+        assertEquals(EconomyContracts.CONTRACT, contract.name());
+        assertEquals(2, contract.projections().size());
+        assertEquals(
+                java.util.List.of(EconomyContracts.BALANCE_PROJECTION, EconomyContracts.LEDGER_PROJECTION),
+                contract.projections().stream().map(projection -> projection.relationName()).toList());
+        assertEquals(
+                java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
+                contract.topics().stream().map(topic -> topic.family()).toList());
+    }
+
+    @Test
     void realmContractDeclaresSnapshotMetadataProjection() {
         ContractDeclaration contract = RealmContracts.contract();
 
