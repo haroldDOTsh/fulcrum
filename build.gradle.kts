@@ -15,6 +15,7 @@ val step0CheckedProjects = listOf(
     ":api:contract-api",
     ":core:manifest-core",
     ":data:contract-declarations",
+    ":data:contract-codegen",
     ":capability:capability-api",
     ":host:host-api",
     ":distribution:profiles",

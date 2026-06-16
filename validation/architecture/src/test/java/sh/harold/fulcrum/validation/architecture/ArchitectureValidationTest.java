@@ -40,6 +40,7 @@ final class ArchitectureValidationTest {
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
             Map.entry(":core:manifest-core", Set.of(":api:contract-api", ":api:kernel-api")),
+            Map.entry(":data:contract-codegen", Set.of(":api:contract-api", ":data:contract-declarations")),
             Map.entry(":data:contract-declarations", Set.of(":api:contract-api")),
             Map.entry(":distribution:profiles", Set.of()),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
@@ -117,7 +118,9 @@ final class ArchitectureValidationTest {
         List<String> violations = new ArrayList<>();
         for (Path source : productionJavaSources()) {
             String text = Files.readString(source, StandardCharsets.UTF_8).toLowerCase();
-            if (text.contains("ensuretable") || text.contains("create table")) {
+            String normalized = ROOT.relativize(source).toString().replace('\\', '/');
+            boolean generatedMigrationCode = normalized.startsWith("data/contract-codegen/");
+            if (text.contains("ensuretable") || (!generatedMigrationCode && text.contains("create table"))) {
                 violations.add(ROOT.relativize(source).toString());
             }
         }
