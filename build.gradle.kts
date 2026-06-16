@@ -54,6 +54,10 @@ val step4CheckedProjects = step3CheckedProjects + listOf(
     ":control:route-controller",
 )
 
+val step5CheckedProjects = step4CheckedProjects + listOf(
+    ":capability:capability-api",
+)
+
 allprojects {
     group = "sh.harold.fulcrum"
     version = "0.1.0-SNAPSHOT"
@@ -114,6 +118,12 @@ tasks.register("step4Check") {
     dependsOn(step4CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("step5Check") {
+    group = "verification"
+    description = "Runs the automated Step 5 capability substrate checks that exist so far."
+    dependsOn(step5CheckedProjects.map { "$it:check" })
+}
+
 tasks.named("check") {
-    dependsOn("step4Check")
+    dependsOn("step5Check")
 }
