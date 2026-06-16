@@ -142,6 +142,17 @@ final class ContractCodeGeneratorTest {
             Object decoded = decode.invoke(serializer, encoded);
 
             assertEquals(payload, decoded);
+
+            Class<?> eventClass = loader.loadClass("sh.harold.fulcrum.generated.contracts.GreetingAccepted");
+            Constructor<?> eventConstructor = eventClass.getConstructor(String.class, Instant.class);
+            Object event = eventConstructor.newInstance("hi=there\nfriend", Instant.parse("2026-06-16T07:01:00Z"));
+            Method encodeEvent = serializerClass.getMethod("encodeGreetingAccepted", eventClass);
+            Method decodeEvent = serializerClass.getMethod("decodeGreetingAccepted", String.class);
+
+            String encodedEvent = (String) encodeEvent.invoke(serializer, event);
+            Object decodedEvent = decodeEvent.invoke(serializer, encodedEvent);
+
+            assertEquals(event, decodedEvent);
         }
     }
 

@@ -85,6 +85,56 @@ public final class FulcrumSubstrateStack implements AutoCloseable {
         return result.getExitCode() == 0 && result.getStdout().contains("PONG");
     }
 
+    public void executePostgres(String sql) {
+        Container.ExecResult result = exec(postgres,
+                "psql",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-U",
+                postgres.getUsername(),
+                "-d",
+                postgres.getDatabaseName(),
+                "-c",
+                sql);
+        if (result.getExitCode() != 0) {
+            throw new IllegalStateException("PostgreSQL command failed: " + result.getStderr());
+        }
+    }
+
+    public String queryPostgresScalar(String sql) {
+        Container.ExecResult result = exec(postgres,
+                "psql",
+                "-t",
+                "-A",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-U",
+                postgres.getUsername(),
+                "-d",
+                postgres.getDatabaseName(),
+                "-c",
+                sql);
+        if (result.getExitCode() != 0) {
+            throw new IllegalStateException("PostgreSQL query failed: " + result.getStderr());
+        }
+        return result.getStdout().strip();
+    }
+
+    public void setValkey(String key, String value) {
+        Container.ExecResult result = exec(valkey, "valkey-cli", "SET", key, value);
+        if (result.getExitCode() != 0) {
+            throw new IllegalStateException("Valkey SET failed: " + result.getStderr());
+        }
+    }
+
+    public String getValkey(String key) {
+        Container.ExecResult result = exec(valkey, "valkey-cli", "GET", key);
+        if (result.getExitCode() != 0) {
+            throw new IllegalStateException("Valkey GET failed: " + result.getStderr());
+        }
+        return result.getStdout().strip();
+    }
+
     @Override
     public void close() {
         Stream.of(valkey, cassandra, postgres, kafka).parallel().forEach(GenericContainer::stop);

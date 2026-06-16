@@ -153,6 +153,18 @@ public final class ContractCodeGenerator {
                         return new %s(%s);
                     }
 
+                    public String encode%s(%s payload) {
+                        Objects.requireNonNull(payload, "payload");
+                        StringJoiner joiner = new StringJoiner("\\n");
+                %s
+                        return joiner.toString();
+                    }
+
+                    public %s decode%s(String encoded) {
+                        Map<String, String> values = fields(encoded);
+                        return new %s(%s);
+                    }
+
                     private static Map<String, String> fields(String encoded) {
                         Map<String, String> values = new LinkedHashMap<>();
                         for (String line : encoded.split("\\\\R")) {
@@ -198,7 +210,14 @@ public final class ContractCodeGenerator {
                 command.payloadType(),
                 command.payloadType(),
                 command.payloadType(),
-                decodeArguments(command.fields()));
+                decodeArguments(command.fields()),
+                event.payloadType(),
+                event.payloadType(),
+                encodeLines(event.fields(), "payload"),
+                event.payloadType(),
+                event.payloadType(),
+                event.payloadType(),
+                decodeArguments(event.fields()));
     }
 
     private static String authorityStubSource(ContractDeclaration declaration, String classPrefix) {

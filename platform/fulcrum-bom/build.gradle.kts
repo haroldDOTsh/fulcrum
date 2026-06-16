@@ -8,6 +8,7 @@ javaPlatform {
 
 dependencies {
     constraints {
+        api(libs.kafka.clients)
         api(libs.testcontainers)
         api(libs.testcontainers.cassandra)
         api(libs.testcontainers.junit.jupiter)
