@@ -43,6 +43,7 @@ final class ArchitectureValidationTest {
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
             Map.entry(":control:allocation-bridge", Set.of(":api:contract-api", ":api:kernel-api", ":control:queue-controller", ":host:host-api")),
             Map.entry(":control:fault-controller", Set.of(":api:contract-api")),
+            Map.entry(":control:lifecycle-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":control:queue-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":control:route-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":core:manifest-core", Set.of(":api:contract-api", ":api:kernel-api")),
@@ -766,6 +767,57 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Fault controller crossed overlay boundary: " + violations);
+    }
+
+    @Test
+    void lifecycleControllerStaysTraceAndSessionOnly() throws IOException {
+        Path lifecycleController = ROOT.resolve("control/lifecycle-controller/src/main/java");
+        if (!Files.exists(lifecycleController)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "io.kubernetes",
+                "KubernetesClient",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "HostAllocationPort",
+                "FakeAgonesAllocationAdapter",
+                "AgonesAllocatorRestClient",
+                "FleetAutoscaler",
+                "fleet reconciliation",
+                "warm buffer",
+                "rollout",
+                "health integration",
+                "create table",
+                "rank",
+                "profile",
+                "punishment",
+                "party",
+                "guild",
+                "friends",
+                "chat",
+                "economy",
+                "stats"
+        );
+        try (Stream<Path> files = Files.walk(lifecycleController)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8).toLowerCase();
+                forbidden.stream()
+                        .filter(term -> text.contains(term.toLowerCase()))
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Lifecycle controller crossed trace/session boundary: " + violations);
     }
 
     private static List<Path> productionJavaSources() throws IOException {

@@ -1,0 +1,12 @@
+package sh.harold.fulcrum.control.lifecycle;
+
+public enum LifecyclePhase {
+    QUEUE_INTENT_SUBMITTED,
+    ROSTER_INTENT_FORMED,
+    ALLOCATION_CLAIMED,
+    ROUTE_ATTEMPT_CREATED,
+    HOST_ATTACH_OBSERVED,
+    SESSION_ACTIVE,
+    SESSION_ENDED,
+    FAULT_QUARANTINED
+}

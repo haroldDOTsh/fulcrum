@@ -38,6 +38,7 @@ include(
     "capability:capability-api",
     "control:allocation-bridge",
     "control:fault-controller",
+    "control:lifecycle-controller",
     "control:queue-controller",
     "control:route-controller",
     "host:host-api",
