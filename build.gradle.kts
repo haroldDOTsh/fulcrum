@@ -46,6 +46,10 @@ val step3CheckedProjects = step2CheckedProjects + listOf(
     ":host:tick-runtime-api",
 )
 
+val step4CheckedProjects = step3CheckedProjects + listOf(
+    ":control:route-controller",
+)
+
 allprojects {
     group = "sh.harold.fulcrum"
     version = "0.1.0-SNAPSHOT"
@@ -100,6 +104,12 @@ tasks.register("step3Check") {
     dependsOn(step3CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("step4Check") {
+    group = "verification"
+    description = "Runs the automated Step 4 control-plane checks that exist so far."
+    dependsOn(step4CheckedProjects.map { "$it:check" })
+}
+
 tasks.named("check") {
-    dependsOn("step3Check")
+    dependsOn("step4Check")
 }

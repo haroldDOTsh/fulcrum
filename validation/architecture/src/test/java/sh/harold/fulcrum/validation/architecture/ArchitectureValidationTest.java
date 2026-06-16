@@ -41,6 +41,7 @@ final class ArchitectureValidationTest {
             Map.entry(":api:contract-api", Set.of(":api:kernel-api")),
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
+            Map.entry(":control:route-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":core:manifest-core", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":core:session-runtime", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":data:artifact-authority", Set.of(":api:contract-api", ":data:authority-core")),
@@ -572,6 +573,46 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Session runtime implemented deferred engine concepts: " + violations);
+    }
+
+    @Test
+    void routeControllerStaysControlPlaneOnly() throws IOException {
+        Path routeController = ROOT.resolve("control/route-controller/src/main/java");
+        if (!Files.exists(routeController)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "io.kubernetes",
+                "KubernetesClient",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "HostAllocationPort",
+                "FleetAutoscaler",
+                "fleet reconciliation",
+                "warm buffer",
+                "rollout",
+                "health integration",
+                "create table"
+        );
+        try (Stream<Path> files = Files.walk(routeController)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Route controller crossed control-plane boundary: " + violations);
     }
 
     private static List<Path> productionJavaSources() throws IOException {
