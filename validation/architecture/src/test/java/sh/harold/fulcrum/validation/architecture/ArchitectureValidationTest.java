@@ -76,6 +76,7 @@ final class ArchitectureValidationTest {
             Map.entry(":testkit:architecture-testkit", Set.of()),
             Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
             Map.entry(":validation:architecture", Set.of()),
+            Map.entry(":validation:synthetic-load", Set.of(":adapters:agones-fake", ":api:contract-api", ":api:kernel-api", ":control:route-controller", ":data:authority-core", ":host:host-api", ":standard-capabilities:rank")),
             Map.entry(":validation:standard-capabilities", Set.of(":capability:capability-runtime", ":standard-capabilities:chat-decoration", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts"))
     );
 
