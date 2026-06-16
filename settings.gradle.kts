@@ -60,6 +60,7 @@ include(
     "standard-capabilities:punishment",
     "standard-capabilities:realm",
     "distribution:profiles",
+    "distribution:service-launcher",
     "testkit:architecture-testkit",
     "testkit:substrate-testkit",
     "validation:architecture",

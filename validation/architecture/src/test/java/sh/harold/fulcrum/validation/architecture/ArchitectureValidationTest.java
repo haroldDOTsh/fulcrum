@@ -64,6 +64,7 @@ final class ArchitectureValidationTest {
             Map.entry(":data:session-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
+            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":standard-capabilities:chat-decoration", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:realm", ":standard-capabilities:standard-contracts")),
             Map.entry(":host:effect-admission", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
             Map.entry(":host:paper-agent", Set.of(":core:artifact-layout", ":host:host-api")),
@@ -211,6 +212,37 @@ final class ArchitectureValidationTest {
             assertTrue(text.contains("\"contractSet\": \"fulcrum-step0-contracts\""), descriptor + " changes contract set");
             assertTrue(text.contains("\"agonesMode\""), descriptor + " must declare allocation adapter mode");
             assertTrue(text.contains("\"objectStorage\""), descriptor + " must declare object storage shape");
+        }
+    }
+
+    @Test
+    void serviceLauncherBuildsRunnableDistributionEntrypoints() throws IOException {
+        Path buildFile = ROOT.resolve("distribution/service-launcher/build.gradle.kts");
+        Path launcher = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/FulcrumLauncher.java");
+        Path roles = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/LaunchRole.java");
+        Path registry = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/RuntimeEntrypointRegistry.java");
+
+        assertTrue(Files.exists(buildFile), "service launcher build file must exist");
+        assertTrue(Files.exists(launcher), "service launcher main class must exist");
+        assertTrue(Files.exists(roles), "service launcher roles must exist");
+        assertTrue(Files.exists(registry), "service launcher entrypoint registry must exist");
+
+        String buildText = Files.readString(buildFile, StandardCharsets.UTF_8);
+        assertTrue(buildText.contains("application"), "service launcher must use Gradle application packaging");
+        assertTrue(buildText.contains("mainClass.set(\"sh.harold.fulcrum.distribution.launcher.FulcrumLauncher\")"),
+                "service launcher must declare the runtime main class");
+        assertTrue(buildText.contains("installDist"), "service launcher check must build installable start scripts");
+
+        String launcherText = Files.readString(launcher, StandardCharsets.UTF_8);
+        assertTrue(launcherText.contains("public static void main"), "service launcher must expose a main method");
+
+        String registryText = Files.readString(registry, StandardCharsets.UTF_8);
+        String roleText = Files.readString(roles, StandardCharsets.UTF_8);
+        for (String role : List.of("authority-service", "controller-service", "worker-agent", "paper-agent", "velocity-agent")) {
+            assertTrue(roleText.contains(role), "service launcher missing entrypoint role " + role);
+        }
+        for (String roleConstant : List.of("AUTHORITY_SERVICE", "CONTROLLER_SERVICE", "WORKER_AGENT", "PAPER_AGENT", "VELOCITY_AGENT")) {
+            assertTrue(registryText.contains(roleConstant), "service launcher registry missing role " + roleConstant);
         }
     }
 

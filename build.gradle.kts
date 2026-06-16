@@ -79,6 +79,7 @@ val step7CheckedProjects = step6CheckedProjects + listOf(
 )
 
 val step8CheckedProjects = step7CheckedProjects + listOf(
+    ":distribution:service-launcher",
     ":host:effect-admission",
     ":validation:fleet-e2e",
     ":validation:synthetic-load",
