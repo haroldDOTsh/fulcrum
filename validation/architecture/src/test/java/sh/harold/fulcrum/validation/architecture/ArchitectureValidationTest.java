@@ -247,6 +247,23 @@ final class ArchitectureValidationTest {
     }
 
     @Test
+    void edgeIngressAndRoutingDecisionIsCapturedInAdr() throws IOException {
+        Path adr = ROOT.resolve("adrs/ADR-0017-edge-ingress-and-routing.md");
+        assertTrue(Files.exists(adr), "edge ingress and routing ADR must exist");
+
+        String text = Files.readString(adr, StandardCharsets.UTF_8);
+        for (String required : List.of(
+                "L4 TCP load balancing",
+                "Velocity Instances",
+                "RouteController",
+                "Paper Instances are not public ingress targets",
+                "Presence, Route, and Session projections"
+        )) {
+            assertTrue(text.contains(required), "ADR missing required decision text: " + required);
+        }
+    }
+
+    @Test
     void artifactAuthorityStaysMetadataOnly() throws IOException {
         Path artifactAuthority = ROOT.resolve("data/artifact-authority/src/main/java");
         List<String> violations = new ArrayList<>();
