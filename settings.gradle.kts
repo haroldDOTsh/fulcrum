@@ -55,6 +55,7 @@ include(
     "testkit:architecture-testkit",
     "testkit:substrate-testkit",
     "validation:architecture",
+    "validation:standard-capabilities",
 )
 
 project(":data:contract-declarations").projectDir = file("data/contract-api")
