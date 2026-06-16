@@ -50,6 +50,7 @@ include(
     "standard-capabilities:player-profile",
     "standard-capabilities:rank",
     "standard-capabilities:chat-decoration",
+    "standard-capabilities:punishment",
     "distribution:profiles",
     "testkit:architecture-testkit",
     "testkit:substrate-testkit",

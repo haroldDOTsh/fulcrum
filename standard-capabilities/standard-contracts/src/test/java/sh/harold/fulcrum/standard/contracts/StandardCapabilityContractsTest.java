@@ -30,4 +30,16 @@ final class StandardCapabilityContractsTest {
                 java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
                 contract.topics().stream().map(topic -> topic.family()).toList());
     }
+
+    @Test
+    void punishmentContractDeclaresActivePunishmentProjectionForLoginGate() {
+        ContractDeclaration contract = PunishmentContracts.contract();
+
+        assertEquals(PunishmentContracts.CONTRACT, contract.name());
+        assertEquals(1, contract.projections().size());
+        assertEquals(PunishmentContracts.ACTIVE_PROJECTION, contract.projections().getFirst().relationName());
+        assertEquals(
+                java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
+                contract.topics().stream().map(topic -> topic.family()).toList());
+    }
 }

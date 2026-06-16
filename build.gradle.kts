@@ -64,6 +64,7 @@ val step6CheckedProjects = step5CheckedProjects + listOf(
     ":standard-capabilities:player-profile",
     ":standard-capabilities:rank",
     ":standard-capabilities:chat-decoration",
+    ":standard-capabilities:punishment",
 )
 
 allprojects {
