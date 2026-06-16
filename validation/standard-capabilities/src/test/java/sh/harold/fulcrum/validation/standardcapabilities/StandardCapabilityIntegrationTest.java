@@ -19,6 +19,11 @@ import sh.harold.fulcrum.standard.contracts.PartyContracts;
 import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
+import sh.harold.fulcrum.standard.contracts.FriendsContracts;
+import sh.harold.fulcrum.standard.friends.FriendInviteAccepted;
+import sh.harold.fulcrum.standard.friends.FriendsCapability;
+import sh.harold.fulcrum.standard.friends.FriendsProjection;
+import sh.harold.fulcrum.standard.friends.FriendConnectionSnapshot;
 import sh.harold.fulcrum.standard.party.PartyCapability;
 import sh.harold.fulcrum.standard.party.PartyFormed;
 import sh.harold.fulcrum.standard.party.PartyId;
@@ -47,12 +52,13 @@ final class StandardCapabilityIntegrationTest {
     private static final Instant NOW = Instant.parse("2026-06-16T18:00:00Z");
     private static final SubjectId SUBJECT = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000701"));
     private static final SubjectId PARTY_MEMBER = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000702"));
+    private static final SubjectId FRIEND_SUBJECT = new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000703"));
     private static final PrincipalId PRINCIPAL = new PrincipalId("standard-suite-validation");
 
     @Test
-    void tierOneAndPartyDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
-        CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(standardDescriptorsWithParty());
-        CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(standardDescriptorsWithParty());
+    void tierOnePartyAndFriendsDescriptorsIntegrateThroughDeclaredContractsAndClosedContributionPipelines() {
+        CapabilityValidationResult graphResult = CapabilityDependencyGraphResolver.validate(standardDescriptorsWithTierTwoSocial());
+        CapabilityDependencyGraph graph = CapabilityDependencyGraphResolver.resolve(standardDescriptorsWithTierTwoSocial());
         CapabilityMaterializationPlan plan = CapabilityMaterializationPlanner.plan(graph);
 
         assertTrue(graphResult.valid(), () -> graphResult.errors().toString());
@@ -60,12 +66,15 @@ final class StandardCapabilityIntegrationTest {
                 graph.providerOf(PlayerProfileContracts.CONTRACT));
         assertEquals(Optional.of(RankCapability.CAPABILITY_ID), graph.providerOf(RankContracts.CONTRACT));
         assertEquals(Optional.of(PartyCapability.CAPABILITY_ID), graph.providerOf(PartyContracts.CONTRACT));
+        assertEquals(Optional.of(FriendsCapability.CAPABILITY_ID), graph.providerOf(FriendsContracts.CONTRACT));
         assertEquals(Optional.of(PunishmentCapability.CAPABILITY_ID),
                 graph.providerOf(PunishmentContracts.CONTRACT));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
                 graph.dependenciesFor(RankCapability.CAPABILITY_ID));
         assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
                 graph.dependenciesFor(PartyCapability.CAPABILITY_ID));
+        assertEquals(List.of(PlayerProfileCapability.CAPABILITY_ID),
+                graph.dependenciesFor(FriendsCapability.CAPABILITY_ID));
         assertEquals(List.of(RankCapability.CAPABILITY_ID),
                 graph.dependenciesFor(ChatDecorationCapability.CAPABILITY_ID));
         assertTrue(graph.dependenciesFor(PunishmentCapability.CAPABILITY_ID).isEmpty());
@@ -75,6 +84,8 @@ final class StandardCapabilityIntegrationTest {
                         RankContracts.EFFECTIVE_PROJECTION,
                         PartyContracts.ROSTER_PROJECTION,
                         PartyContracts.SUBJECT_INDEX_PROJECTION,
+                        FriendsContracts.CONNECTION_PROJECTION,
+                        FriendsContracts.SUBJECT_INDEX_PROJECTION,
                         PunishmentContracts.ACTIVE_PROJECTION),
                 plan.projections().stream()
                         .map(resource -> resource.declaration().relationName())
@@ -100,6 +111,12 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(List.of(RankCapability.CAPABILITY_ID, ChatDecorationCapability.CAPABILITY_ID),
                 CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
                         .registrationsFor(CapabilityExtensionPoint.PAPER_CHAT_PIPELINE)
+                        .stream()
+                        .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
+                        .toList());
+        assertEquals(List.of(FriendsCapability.CAPABILITY_ID),
+                CapabilityContributionComposer.compose(plan, CapabilityScope.NETWORK)
+                        .registrationsFor(CapabilityExtensionPoint.PROXY_PLAYER_FANOUT)
                         .stream()
                         .map(CapabilityMaterializationPlan.ContributionRegistration::capabilityId)
                         .toList());
@@ -143,12 +160,23 @@ final class StandardCapabilityIntegrationTest {
         assertEquals(List.of(SUBJECT, PARTY_MEMBER), projection.membersFor(SUBJECT));
     }
 
-    private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptorsWithParty() {
+    @Test
+    void friendsProjectionFeedsFanoutLogicWithoutCallingFriendsAuthority() {
+        FriendsProjection projection = FriendsProjection.rebuild(List.of(new FriendInviteAccepted(
+                FriendConnectionSnapshot.accepted(SUBJECT, FRIEND_SUBJECT, PRINCIPAL, NOW),
+                new Revision(1))));
+
+        assertEquals(List.of(FRIEND_SUBJECT), projection.friendsOf(SUBJECT));
+        assertEquals(List.of(SUBJECT), projection.friendsOf(FRIEND_SUBJECT));
+    }
+
+    private static List<sh.harold.fulcrum.capability.api.CapabilityDescriptor> standardDescriptorsWithTierTwoSocial() {
         return List.of(
                 PlayerProfileCapability.descriptor(),
                 RankCapability.descriptor(),
                 ChatDecorationCapability.descriptor(),
                 PartyCapability.descriptor(),
+                FriendsCapability.descriptor(),
                 PunishmentCapability.descriptor());
     }
 }

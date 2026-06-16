@@ -133,6 +133,8 @@ import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
 import sh.harold.fulcrum.standard.contracts.PartyContracts;
+import sh.harold.fulcrum.standard.contracts.FriendsContracts;
+import sh.harold.fulcrum.standard.friends.FriendsCapability;
 import sh.harold.fulcrum.standard.party.PartyCapability;
 import sh.harold.fulcrum.standard.profile.PlayerProfileCapability;
 import sh.harold.fulcrum.standard.punishment.PunishmentCapability;
@@ -812,15 +814,17 @@ final class FinalFleetE2eTest {
                 PlayerProfileCapability.descriptor(),
                 RankCapability.descriptor(),
                 PartyCapability.descriptor(),
+                FriendsCapability.descriptor(),
                 PunishmentCapability.descriptor());
         assertEquals(
-                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
+                Set.of(PlayerProfileCapability.CAPABILITY_ID, RankCapability.CAPABILITY_ID, PartyCapability.CAPABILITY_ID, FriendsCapability.CAPABILITY_ID, PunishmentCapability.CAPABILITY_ID),
                 descriptors.stream().map(CapabilityDescriptor::capabilityId).collect(Collectors.toSet()));
         assertTrue(descriptors.stream().flatMap(descriptor -> descriptor.authorityDomains().stream())
                 .allMatch(domain -> domain.resourceClass().equals("standard")));
         assertEquals(PlayerProfileContracts.CONTRACT, PlayerProfileCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(RankContracts.CONTRACT, RankCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(PartyContracts.CONTRACT, PartyCapability.descriptor().declaredContracts().getFirst().name());
+        assertEquals(FriendsContracts.CONTRACT, FriendsCapability.descriptor().declaredContracts().getFirst().name());
         assertEquals(PunishmentContracts.CONTRACT, PunishmentCapability.descriptor().declaredContracts().getFirst().name());
     }
 

@@ -63,6 +63,7 @@ include(
     "standard-capabilities:chat-decoration",
     "standard-capabilities:punishment",
     "standard-capabilities:party",
+    "standard-capabilities:friends",
     "standard-capabilities:realm",
     "distribution:profiles",
     "distribution:service-launcher",

@@ -58,6 +58,20 @@ final class StandardCapabilityContractsTest {
     }
 
     @Test
+    void friendsContractDeclaresConnectionAndSubjectIndexProjections() {
+        ContractDeclaration contract = FriendsContracts.contract();
+
+        assertEquals(FriendsContracts.CONTRACT, contract.name());
+        assertEquals(2, contract.projections().size());
+        assertEquals(
+                java.util.List.of(FriendsContracts.CONNECTION_PROJECTION, FriendsContracts.SUBJECT_INDEX_PROJECTION),
+                contract.projections().stream().map(projection -> projection.relationName()).toList());
+        assertEquals(
+                java.util.List.of(TopicFamily.COMMAND, TopicFamily.EVENT, TopicFamily.STATE, TopicFamily.RESPONSE),
+                contract.topics().stream().map(topic -> topic.family()).toList());
+    }
+
+    @Test
     void realmContractDeclaresSnapshotMetadataProjection() {
         ContractDeclaration contract = RealmContracts.contract();
 
