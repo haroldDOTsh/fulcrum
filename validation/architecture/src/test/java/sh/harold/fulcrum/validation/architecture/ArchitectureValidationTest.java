@@ -48,7 +48,7 @@ final class ArchitectureValidationTest {
             Map.entry(":control:queue-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":control:route-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":core:artifact-layout", Set.of(":core:manifest-core")),
-            Map.entry(":core:content-resolver", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
+            Map.entry(":core:content-resolver", Set.of(":api:contract-api", ":api:kernel-api", ":core:artifact-layout", ":core:manifest-core")),
             Map.entry(":core:manifest-core", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":core:session-runtime", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":data:artifact-authority", Set.of(":api:contract-api", ":data:authority-core")),
