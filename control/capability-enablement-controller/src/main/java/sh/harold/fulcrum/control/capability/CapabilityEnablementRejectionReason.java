@@ -1,0 +1,15 @@
+package sh.harold.fulcrum.control.capability;
+
+public enum CapabilityEnablementRejectionReason {
+    DEADLINE_EXPIRED,
+    PRINCIPAL_MISMATCH,
+    STALE_FENCING_EPOCH,
+    REVISION_MISMATCH,
+    IDEMPOTENCY_CONFLICT,
+    AGGREGATE_MISMATCH,
+    CONTRACT_MISMATCH,
+    SCOPE_MISMATCH,
+    CAPABILITY_ALREADY_ENABLED,
+    CAPABILITY_NOT_ENABLED,
+    UNKNOWN_COMMAND
+}

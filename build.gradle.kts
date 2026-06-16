@@ -49,7 +49,9 @@ val step3CheckedProjects = step2CheckedProjects + listOf(
 
 val step4CheckedProjects = step3CheckedProjects + listOf(
     ":control:allocation-bridge",
+    ":control:capability-enablement-controller",
     ":control:fault-controller",
+    ":control:instance-registry-controller",
     ":control:lifecycle-controller",
     ":control:queue-controller",
     ":control:route-controller",

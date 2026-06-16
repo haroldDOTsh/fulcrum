@@ -43,7 +43,9 @@ final class ArchitectureValidationTest {
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
             Map.entry(":capability:capability-runtime", Set.of(":capability:capability-api")),
             Map.entry(":control:allocation-bridge", Set.of(":api:contract-api", ":api:kernel-api", ":control:queue-controller", ":host:host-api")),
+            Map.entry(":control:capability-enablement-controller", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api")),
             Map.entry(":control:fault-controller", Set.of(":api:contract-api")),
+            Map.entry(":control:instance-registry-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":control:lifecycle-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":control:queue-controller", Set.of(":api:contract-api", ":api:kernel-api")),
             Map.entry(":control:route-controller", Set.of(":api:contract-api", ":api:kernel-api")),
@@ -772,6 +774,107 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Route controller crossed control-plane boundary: " + violations);
+    }
+
+    @Test
+    void instanceRegistryControllerStaysOverlayOnly() throws IOException {
+        Path instanceRegistry = ROOT.resolve("control/instance-registry-controller/src/main/java");
+        if (!Files.exists(instanceRegistry)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "io.kubernetes",
+                "KubernetesClient",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "HostAllocationPort",
+                "FakeAgonesAllocationAdapter",
+                "AgonesAllocatorRestClient",
+                "GameServerAllocation",
+                "FleetAutoscaler",
+                "warm buffer",
+                "rollout",
+                "health integration",
+                "create table",
+                "rank",
+                "profile",
+                "punishment",
+                "party",
+                "guild",
+                "friends",
+                "chat",
+                "economy",
+                "stats"
+        );
+        try (Stream<Path> files = Files.walk(instanceRegistry)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8).toLowerCase();
+                forbidden.stream()
+                        .filter(term -> text.contains(term.toLowerCase()))
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Instance registry crossed overlay boundary: " + violations);
+    }
+
+    @Test
+    void capabilityEnablementControllerStaysControlPlaneOnly() throws IOException {
+        Path capabilityEnablement = ROOT.resolve("control/capability-enablement-controller/src/main/java");
+        if (!Files.exists(capabilityEnablement)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        List<String> forbidden = List.of(
+                "io.papermc",
+                "org.bukkit",
+                "com.velocitypowered",
+                "net.minecraft",
+                "io.kubernetes",
+                "KubernetesClient",
+                "Kafka",
+                "Cassandra",
+                "PostgreSQL",
+                "Valkey",
+                "java.sql",
+                "HostAllocationPort",
+                "FakeAgonesAllocationAdapter",
+                "AgonesAllocatorRestClient",
+                "GameServerAllocation",
+                "FleetAutoscaler",
+                "warm buffer",
+                "rollout",
+                "health integration",
+                "create table",
+                "player-profile",
+                "punishment",
+                "party",
+                "guild",
+                "friends",
+                "economy",
+                "auction",
+                "stats"
+        );
+        try (Stream<Path> files = Files.walk(capabilityEnablement)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8).toLowerCase();
+                forbidden.stream()
+                        .filter(term -> text.contains(term.toLowerCase()))
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Capability enablement crossed control-plane boundary: " + violations);
     }
 
     @Test
