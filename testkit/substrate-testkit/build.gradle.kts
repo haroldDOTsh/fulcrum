@@ -10,6 +10,7 @@ dependencies {
 
     testImplementation(project(":data:contract-codegen"))
     testImplementation(project(":data:artifact-authority"))
+    testImplementation(project(":data:presence-authority"))
     testImplementation(libs.kafka.clients)
     testImplementation(libs.testcontainers.junit.jupiter)
 }

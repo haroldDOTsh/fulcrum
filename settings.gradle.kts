@@ -27,6 +27,7 @@ include(
     "data:contract-codegen",
     "data:authority-core",
     "data:artifact-authority",
+    "data:presence-authority",
     "capability:capability-api",
     "host:host-api",
     "distribution:profiles",

@@ -120,6 +120,21 @@ public final class FulcrumSubstrateStack implements AutoCloseable {
         return result.getStdout().strip();
     }
 
+    public void executeCassandra(String cql) {
+        Container.ExecResult result = exec(cassandra, "cqlsh", "-e", cql.strip());
+        if (result.getExitCode() != 0) {
+            throw new IllegalStateException("Cassandra command failed: " + result.getStderr());
+        }
+    }
+
+    public String queryCassandra(String cql) {
+        Container.ExecResult result = exec(cassandra, "cqlsh", "-e", cql.strip());
+        if (result.getExitCode() != 0) {
+            throw new IllegalStateException("Cassandra query failed: " + result.getStderr());
+        }
+        return result.getStdout().strip();
+    }
+
     public void setValkey(String key, String value) {
         Container.ExecResult result = exec(valkey, "valkey-cli", "SET", key, value);
         if (result.getExitCode() != 0) {
