@@ -40,12 +40,12 @@ final class PunishmentAuthorityTest {
         PunishmentAuthority authority = new PunishmentAuthority(new InMemoryIdempotencyLedger<>());
 
         AuthorityDecision<PunishmentState, PunishmentReceipt> decision = authority.handle(
-                command("command-punishment-1", "punishment-idem-1", SUBJECT, PRINCIPAL, PRINCIPAL, 9, 0, "punishment-1", "ban evasion", "payload-1"),
+                command("command-punishment-1", "punishment-idem-1", SUBJECT, PRINCIPAL, PRINCIPAL, 9, 0, "punishment=1", "ban\nevasion", "payload-1"),
                 PunishmentAuthority.emptyRecord(9));
 
         assertEquals(AuthorityDecisionStatus.ACCEPTED, decision.status());
         assertEquals(new Revision(1), decision.revision());
-        assertEquals("ban evasion", decision.state().active().orElseThrow().reason());
+        assertEquals("ban\nevasion", decision.state().active().orElseThrow().reason());
         assertFalse(PunishmentLoginGate.evaluate(
                 new PunishmentLoginRequest(SUBJECT, NOW.plusSeconds(30)),
                 decision.state().active()).allowed());
@@ -69,6 +69,13 @@ final class PunishmentAuthorityTest {
                         .findFirst()
                         .orElseThrow()
                         .key());
+        PunishmentState cachedState = PunishmentState.parse(decision.emissions().stream()
+                .filter(emission -> emission.kind() == AuthorityEmissionKind.CACHE_WRITE)
+                .findFirst()
+                .orElseThrow()
+                .payload());
+        assertEquals(decision.state(), cachedState);
+        assertEquals("punishment=1", cachedState.active().orElseThrow().punishmentId());
     }
 
     @Test

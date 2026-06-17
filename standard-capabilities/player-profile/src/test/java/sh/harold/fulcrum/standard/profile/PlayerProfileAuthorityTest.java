@@ -40,12 +40,12 @@ final class PlayerProfileAuthorityTest {
         PlayerProfileAuthority authority = new PlayerProfileAuthority(new InMemoryIdempotencyLedger<>());
 
         AuthorityDecision<PlayerProfileState, PlayerProfileReceipt> decision = authority.handle(
-                command("command-profile-1", "profile-idem-1", SUBJECT, PRINCIPAL, PRINCIPAL, 3, 0, "RicherToast", "payload-1"),
+                command("command-profile-1", "profile-idem-1", SUBJECT, PRINCIPAL, PRINCIPAL, 3, 0, "Richer=Toast\nOne", "payload-1"),
                 PlayerProfileAuthority.emptyRecord(3));
 
         assertEquals(AuthorityDecisionStatus.ACCEPTED, decision.status());
         assertEquals(new Revision(1), decision.revision());
-        assertEquals("RicherToast", decision.state().current().orElseThrow().displayName());
+        assertEquals("Richer=Toast\nOne", decision.state().current().orElseThrow().displayName());
         assertEquals(List.of(
                         AuthorityEmissionKind.EVENT,
                         AuthorityEmissionKind.STATE,
@@ -66,6 +66,12 @@ final class PlayerProfileAuthorityTest {
                         .findFirst()
                         .orElseThrow()
                         .key());
+        PlayerProfileState cachedState = PlayerProfileState.parse(decision.emissions().stream()
+                .filter(emission -> emission.kind() == AuthorityEmissionKind.CACHE_WRITE)
+                .findFirst()
+                .orElseThrow()
+                .payload());
+        assertEquals(decision.state(), cachedState);
     }
 
     @Test

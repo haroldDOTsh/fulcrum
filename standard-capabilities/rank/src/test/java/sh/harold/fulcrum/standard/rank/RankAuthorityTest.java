@@ -40,12 +40,12 @@ final class RankAuthorityTest {
         RankAuthority authority = new RankAuthority(new InMemoryIdempotencyLedger<>());
 
         AuthorityDecision<RankState, RankReceipt> decision = authority.handle(
-                command("command-rank-1", "rank-idem-1", SUBJECT, PRINCIPAL, PRINCIPAL, 5, 0, "admin", "payload-1"),
+                command("command-rank-1", "rank-idem-1", SUBJECT, PRINCIPAL, PRINCIPAL, 5, 0, "admin=owner", "payload-1"),
                 RankAuthority.emptyRecord(5));
 
         assertEquals(AuthorityDecisionStatus.ACCEPTED, decision.status());
         assertEquals(new Revision(1), decision.revision());
-        assertEquals("admin", decision.state().current().orElseThrow().primaryRankKey());
+        assertEquals("admin=owner", decision.state().current().orElseThrow().primaryRankKey());
         assertEquals(List.of(
                         AuthorityEmissionKind.EVENT,
                         AuthorityEmissionKind.STATE,
@@ -69,6 +69,12 @@ final class RankAuthorityTest {
                         .findFirst()
                         .orElseThrow()
                         .key());
+        RankState cachedState = RankState.parse(decision.emissions().stream()
+                .filter(emission -> emission.kind() == AuthorityEmissionKind.CACHE_WRITE)
+                .findFirst()
+                .orElseThrow()
+                .payload());
+        assertEquals(decision.state(), cachedState);
     }
 
     @Test
