@@ -75,6 +75,8 @@ public final class RosterAllocationBridge {
                                 + "|sessionId=" + claim.sessionId().value()
                                 + "|instanceId=" + claim.instanceIdentity().instanceId().value()
                                 + "|poolId=" + claim.instanceIdentity().poolId().value()
+                                + "|minecraftHost=" + claim.minecraftEndpoint().host()
+                                + "|minecraftPort=" + claim.minecraftEndpoint().port()
                                 + "|traceId=" + claim.traceEnvelope().traceId()),
                 new RosterAllocationEmission(
                         RosterAllocationEmissionKind.RESPONSE,

@@ -7,6 +7,7 @@ import sh.harold.fulcrum.host.api.HostAllocationClaim;
 import sh.harold.fulcrum.host.api.HostAllocationPort;
 import sh.harold.fulcrum.host.api.HostAllocationRequest;
 import sh.harold.fulcrum.host.api.HostInstanceKinds;
+import sh.harold.fulcrum.host.api.HostNetworkEndpoint;
 import sh.harold.fulcrum.host.api.HostReadinessReport;
 
 import java.util.ArrayDeque;
@@ -48,10 +49,16 @@ public final class FakeAgonesAllocationAdapter implements HostAllocationPort {
                 request.sessionId(),
                 report.instanceIdentity(),
                 request.resolvedManifestId(),
+                endpointFor(instanceId),
                 request.traceEnvelope(),
                 request.requestedAt());
         activeClaims.put(instanceId, claim);
         return claim;
+    }
+
+    private static HostNetworkEndpoint endpointFor(InstanceId instanceId) {
+        int port = 20_000 + Math.floorMod(instanceId.value().hashCode(), 10_000);
+        return new HostNetworkEndpoint("127.0.0.1", port);
     }
 
     public synchronized Optional<HostAllocationClaim> activeClaim(InstanceId instanceId) {

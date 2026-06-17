@@ -13,6 +13,7 @@ public record HostAllocationClaim(
         SessionId sessionId,
         HostInstanceIdentity instanceIdentity,
         ResolvedManifestId resolvedManifestId,
+        HostNetworkEndpoint minecraftEndpoint,
         TraceEnvelope traceEnvelope,
         Instant allocatedAt) {
     public HostAllocationClaim {
@@ -20,6 +21,7 @@ public record HostAllocationClaim(
         sessionId = Objects.requireNonNull(sessionId, "sessionId");
         instanceIdentity = Objects.requireNonNull(instanceIdentity, "instanceIdentity");
         resolvedManifestId = Objects.requireNonNull(resolvedManifestId, "resolvedManifestId");
+        minecraftEndpoint = Objects.requireNonNull(minecraftEndpoint, "minecraftEndpoint");
         traceEnvelope = Objects.requireNonNull(traceEnvelope, "traceEnvelope");
         allocatedAt = Objects.requireNonNull(allocatedAt, "allocatedAt");
     }

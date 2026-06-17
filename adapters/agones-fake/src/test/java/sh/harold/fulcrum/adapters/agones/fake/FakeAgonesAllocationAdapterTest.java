@@ -38,6 +38,9 @@ final class FakeAgonesAllocationAdapterTest {
         assertEquals(report.instanceIdentity(), claim.instanceIdentity());
         assertEquals(MANIFEST_ID, claim.resolvedManifestId());
         assertEquals("slot-instance-paper-1", claim.slotId().value());
+        assertEquals("127.0.0.1", claim.minecraftEndpoint().host());
+        assertTrue(claim.minecraftEndpoint().port() >= 20_000);
+        assertTrue(claim.minecraftEndpoint().port() < 30_000);
         assertEquals(Optional.of(claim), adapter.activeClaim(new InstanceId("instance-paper-1")));
         assertThrows(IllegalStateException.class, () -> adapter.allocate(allocationRequest("session-2")));
     }

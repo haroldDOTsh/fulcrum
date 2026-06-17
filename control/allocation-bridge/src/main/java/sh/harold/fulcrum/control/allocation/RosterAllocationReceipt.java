@@ -31,6 +31,8 @@ public record RosterAllocationReceipt(
         return "accepted=" + accepted
                 + "|rosterIntentId=" + rosterIntentId.value()
                 + "|slotId=" + claim.map(value -> value.slotId().value()).orElse("none")
+                + "|minecraftHost=" + claim.map(value -> value.minecraftEndpoint().host()).orElse("none")
+                + "|minecraftPort=" + claim.map(value -> Integer.toString(value.minecraftEndpoint().port())).orElse("none")
                 + "|reason=" + rejectionReason.map(Enum::name).orElse("none");
     }
 }

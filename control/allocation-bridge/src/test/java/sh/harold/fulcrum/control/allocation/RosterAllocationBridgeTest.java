@@ -20,6 +20,7 @@ import sh.harold.fulcrum.host.api.HostAllocationPort;
 import sh.harold.fulcrum.host.api.HostAllocationRequest;
 import sh.harold.fulcrum.host.api.HostInstanceIdentity;
 import sh.harold.fulcrum.host.api.HostInstanceKinds;
+import sh.harold.fulcrum.host.api.HostNetworkEndpoint;
 
 import java.time.Instant;
 import java.util.List;
@@ -52,6 +53,8 @@ final class RosterAllocationBridgeTest {
         assertEquals(new SlotId("slot-instance-paper-1"), decision.claim().orElseThrow().slotId());
         assertTrue(decision.emissions().stream().anyMatch(emission -> emission.kind() == RosterAllocationEmissionKind.HOST_ALLOCATION_REQUEST));
         assertTrue(decision.emissions().stream().anyMatch(emission -> emission.kind() == RosterAllocationEmissionKind.HOST_ALLOCATION_CLAIM));
+        assertTrue(decision.receipt().wireValue().contains("minecraftHost=paper-arena.internal"));
+        assertTrue(decision.receipt().wireValue().contains("minecraftPort=25567"));
     }
 
     @Test
@@ -148,6 +151,7 @@ final class RosterAllocationBridgeTest {
                         new MachineRef("machine-a"),
                         new PrincipalId("principal-paper-1")),
                 resolvedManifestId,
+                new HostNetworkEndpoint("paper-arena.internal", 25_567),
                 trace(),
                 BASE_TIME.plusSeconds(1));
     }
