@@ -9,13 +9,16 @@ import sh.harold.fulcrum.data.authority.runtime.AuthorityCommandSource;
 import sh.harold.fulcrum.data.authority.runtime.AuthorityOffset;
 
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 
 public final class KafkaAuthorityCommandSource<C extends CommandPayload> implements AuthorityCommandSource<C> {
     private final Consumer<String, String> consumer;
     private final Duration pollTimeout;
     private final KafkaAuthorityCommandDecoder<C> decoder;
+    private final Queue<ConsumerRecord<String, String>> pendingRecords = new ArrayDeque<>();
 
     public KafkaAuthorityCommandSource(
             Consumer<String, String> consumer,
@@ -31,11 +34,16 @@ public final class KafkaAuthorityCommandSource<C extends CommandPayload> impleme
 
     @Override
     public Optional<AuthorityCommandDelivery<C>> poll() {
-        ConsumerRecords<String, String> records = consumer.poll(pollTimeout);
-        if (records.isEmpty()) {
+        if (pendingRecords.isEmpty()) {
+            ConsumerRecords<String, String> records = consumer.poll(pollTimeout);
+            for (ConsumerRecord<String, String> record : records) {
+                pendingRecords.add(record);
+            }
+        }
+        ConsumerRecord<String, String> record = pendingRecords.poll();
+        if (record == null) {
             return Optional.empty();
         }
-        ConsumerRecord<String, String> record = records.iterator().next();
         return Optional.of(new AuthorityCommandDelivery<>(
                 decoder.decode(record),
                 new AuthorityOffset(record.topic(), record.partition(), record.offset())));

@@ -42,6 +42,7 @@ public final class JdbcAuthorityDecisionRecorder<S, C extends CommandPayload, R>
                     trace_id,
                     decision_payload
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (command_id) DO NOTHING
                 """.formatted(config.tableName());
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {

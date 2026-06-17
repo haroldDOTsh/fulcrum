@@ -4,5 +4,5 @@ plugins {
 
 dependencies {
     api(project(":data:authority-runtime"))
-    implementation(libs.cassandra.driver.core)
+    api(libs.cassandra.driver.core)
 }

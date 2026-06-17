@@ -4,5 +4,5 @@ plugins {
 
 dependencies {
     api(project(":data:authority-runtime"))
-    implementation(libs.kafka.clients)
+    api(libs.kafka.clients)
 }

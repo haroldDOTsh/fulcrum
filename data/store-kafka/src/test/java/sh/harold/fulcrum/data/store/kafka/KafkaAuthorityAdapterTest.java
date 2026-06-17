@@ -55,6 +55,29 @@ final class KafkaAuthorityAdapterTest {
     }
 
     @Test
+    void commandSourceRetainsEveryRecordReturnedByOneKafkaPoll() {
+        MockConsumer<String, String> consumer = new MockConsumer<>(OffsetResetStrategy.EARLIEST);
+        TopicPartition partition = new TopicPartition("cmd.test", 0);
+        consumer.assign(List.of(partition));
+        consumer.updateBeginningOffsets(Map.of(partition, 0L));
+        consumer.addRecord(new ConsumerRecord<>("cmd.test", 0, 0L, "aggregate-1", "payload-1"));
+        consumer.addRecord(new ConsumerRecord<>("cmd.test", 0, 1L, "aggregate-2", "payload-2"));
+
+        KafkaAuthorityCommandSource<TestPayload> source = new KafkaAuthorityCommandSource<>(
+                consumer,
+                Duration.ofMillis(1),
+                record -> command(record.key()));
+
+        var first = source.poll().orElseThrow();
+        var second = source.poll().orElseThrow();
+
+        assertEquals(0L, first.offset().position());
+        assertEquals(new AggregateId("aggregate-1"), first.command().envelope().aggregateId());
+        assertEquals(1L, second.offset().position());
+        assertEquals(new AggregateId("aggregate-2"), second.command().envelope().aggregateId());
+    }
+
+    @Test
     void emissionSinkPublishesLogEmissionsAndLeavesCacheWritesForValkey() {
         MockProducer<String, String> producer = new MockProducer<>(true, null, new StringSerializer(), new StringSerializer());
         KafkaAuthorityEmissionSink sink = new KafkaAuthorityEmissionSink(

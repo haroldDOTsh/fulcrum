@@ -4,5 +4,5 @@ plugins {
 
 dependencies {
     api(project(":data:authority-runtime"))
-    implementation(libs.valkey.java)
+    api(libs.valkey.java)
 }
