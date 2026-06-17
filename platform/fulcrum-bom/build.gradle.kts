@@ -9,10 +9,12 @@ javaPlatform {
 dependencies {
     constraints {
         api(libs.kafka.clients)
+        api(libs.paper.api)
         api(libs.testcontainers)
         api(libs.testcontainers.cassandra)
         api(libs.testcontainers.junit.jupiter)
         api(libs.testcontainers.kafka)
         api(libs.testcontainers.postgresql)
+        api(libs.velocity.api)
     }
 }
