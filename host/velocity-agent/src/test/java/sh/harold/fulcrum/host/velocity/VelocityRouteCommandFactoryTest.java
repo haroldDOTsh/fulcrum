@@ -38,6 +38,7 @@ final class VelocityRouteCommandFactoryTest {
     private static final SubjectId SUBJECT_ID = new SubjectId(UUID.fromString("33333333-3333-3333-3333-333333333333"));
     private static final SessionId TARGET_SESSION = new SessionId("session-target-1");
     private static final InstanceId TARGET_INSTANCE = new InstanceId("instance-paper-target-1");
+    private static final String CUSTOM_ROUTE_TOPIC = "cmd.route.custom";
 
     @Test
     void acknowledgementCommandUsesVelocityIdentityAndRouteContract() {
@@ -73,6 +74,24 @@ final class VelocityRouteCommandFactoryTest {
                         new IdempotencyKey("idempotency-route-ack-2"),
                         traceEnvelope(),
                         transfer()));
+    }
+
+    @Test
+    void acknowledgementGrantCanTargetConfiguredRouteCommandTopic() {
+        VelocityRouteCommandFactory factory = new VelocityRouteCommandFactory(
+                securityContext(HostInstanceKinds.VELOCITY, HostCredentialScope.of(new HostResourceGrant(
+                        HostResourceFamily.TOPIC,
+                        HostAccessMode.PRODUCE,
+                        CUSTOM_ROUTE_TOPIC))),
+                CUSTOM_ROUTE_TOPIC);
+
+        CommandEnvelope<RouteCommand> envelope = factory.acknowledgeRoute(
+                new CommandId("command-route-ack-custom"),
+                new IdempotencyKey("idempotency-route-ack-custom"),
+                traceEnvelope(),
+                transfer());
+
+        assertEquals("acknowledge-route", envelope.commandName().value());
     }
 
     @Test

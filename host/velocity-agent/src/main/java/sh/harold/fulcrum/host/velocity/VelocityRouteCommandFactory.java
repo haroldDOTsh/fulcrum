@@ -17,9 +17,15 @@ import java.util.Optional;
 
 public final class VelocityRouteCommandFactory {
     private final HostSecurityContext securityContext;
+    private final String routeCommandTopic;
 
     public VelocityRouteCommandFactory(HostSecurityContext securityContext) {
+        this(securityContext, RouteContracts.COMMAND_TOPIC);
+    }
+
+    public VelocityRouteCommandFactory(HostSecurityContext securityContext, String routeCommandTopic) {
         this.securityContext = Objects.requireNonNull(securityContext, "securityContext");
+        this.routeCommandTopic = requireNonBlank(routeCommandTopic, "routeCommandTopic");
         if (!HostInstanceKinds.VELOCITY.equals(securityContext.identity().instanceKind())) {
             throw new IllegalArgumentException("Velocity route commands require a Velocity Instance identity");
         }
@@ -58,8 +64,16 @@ public final class VelocityRouteCommandFactory {
         if (!securityContext.credentialScope().permits(
                 HostResourceFamily.TOPIC,
                 HostAccessMode.PRODUCE,
-                RouteContracts.COMMAND_TOPIC)) {
+                routeCommandTopic)) {
             throw new SecurityException("Velocity Instance is not allowed to produce route commands");
         }
+    }
+
+    private static String requireNonBlank(String value, String label) {
+        String checked = Objects.requireNonNull(value, label).trim();
+        if (checked.isEmpty()) {
+            throw new IllegalArgumentException(label + " must not be blank");
+        }
+        return checked;
     }
 }
