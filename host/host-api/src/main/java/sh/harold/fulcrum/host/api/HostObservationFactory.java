@@ -38,4 +38,20 @@ public final class HostObservationFactory {
                         "subjectId", attachment.subjectId().value().toString(),
                         "sessionId", attachment.sessionId().value()));
     }
+
+    public static HostObservation sessionDetached(HostSessionDetachment detachment) {
+        Objects.requireNonNull(detachment, "detachment");
+        HostInstanceIdentity identity = detachment.instanceIdentity();
+        return new HostObservation(
+                identity.instanceId(),
+                HostObservationTypes.SESSION_DETACHED,
+                detachment.traceEnvelope(),
+                detachment.detachedAt(),
+                Map.of(
+                        "instanceKind", identity.instanceKind(),
+                        "poolId", identity.poolId().value(),
+                        "routeId", detachment.routeId().value(),
+                        "subjectId", detachment.subjectId().value().toString(),
+                        "sessionId", detachment.sessionId().value()));
+    }
 }

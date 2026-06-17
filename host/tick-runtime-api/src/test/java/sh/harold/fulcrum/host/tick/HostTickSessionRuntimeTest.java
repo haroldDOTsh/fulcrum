@@ -25,7 +25,7 @@ final class HostTickSessionRuntimeTest {
         List<EffectEnvelope<? extends EffectPayload>> platformEmitted = new ArrayList<>();
 
         HostTickSessionRuntime<CounterState, HostSignal, RuntimeEvent> runtime = new HostTickSessionRuntime<>(
-                new HostTickRuntimeContext(TickRuntimeFixtures.attachment()),
+                new HostTickRuntimeContext(TickRuntimeFixtures.SESSION_ID),
                 new CounterState(0),
                 new FilteringDomainEventBridge<>(
                         signal -> signal.meaningful,
@@ -86,6 +86,22 @@ final class HostTickSessionRuntimeTest {
                 false);
 
         assertThrows(IllegalArgumentException.class, () -> runtime.applyDomainEvent(event));
+    }
+
+    @Test
+    void contextCanRetainOriginalAttachmentWhenProvided() {
+        HostTickRuntimeContext context = new HostTickRuntimeContext(TickRuntimeFixtures.attachment());
+
+        assertEquals(TickRuntimeFixtures.SESSION_ID, context.sessionId());
+        assertTrue(context.sessionAttachment().isPresent());
+        assertEquals(TickRuntimeFixtures.attachment(), context.sessionAttachment().orElseThrow());
+    }
+
+    @Test
+    void contextRejectsAttachmentForAnotherSession() {
+        assertThrows(IllegalArgumentException.class, () -> new HostTickRuntimeContext(
+                new sh.harold.fulcrum.api.kernel.SessionId("session-other"),
+                Optional.of(TickRuntimeFixtures.attachment())));
     }
 
     private record CounterState(int value) {

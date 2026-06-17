@@ -1,0 +1,7 @@
+name: FulcrumPaperAgent
+version: 0.1.0
+main: sh.harold.fulcrum.host.paper.FulcrumPaperPlugin
+description: Fulcrum Paper host agent
+author: Harold
+api-version: '26.1.2'
+load: POSTWORLD

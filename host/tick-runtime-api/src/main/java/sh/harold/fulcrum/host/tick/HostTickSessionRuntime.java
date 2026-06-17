@@ -45,7 +45,7 @@ public final class HostTickSessionRuntime<S, H, E extends SessionDomainEvent> {
 
     public SessionReduction<S> applyDomainEvent(E event) {
         Objects.requireNonNull(event, "event");
-        if (!context.sessionAttachment().sessionId().equals(event.sessionId())) {
+        if (!context.sessionId().equals(event.sessionId())) {
             throw new IllegalArgumentException("Domain event Session does not match attached Session");
         }
         SessionReduction<S> reduction = reducer.reduce(state, event);

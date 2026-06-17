@@ -45,6 +45,8 @@ final class AgonesGameServerHttpClientTest {
             assertEquals("lobby-gameserver-1", snapshot.name());
             assertEquals("fulcrum", snapshot.namespace());
             assertEquals("Allocated", snapshot.state());
+            assertEquals("session-lobby-allocated", snapshot.annotation(AgonesGameServerSnapshot.SESSION_ID_ANNOTATION).orElseThrow());
+            assertEquals("slot-lobby-allocated", snapshot.annotation(AgonesGameServerSnapshot.SLOT_ID_ANNOTATION).orElseThrow());
             assertTrue(snapshot.rawJson().contains("lobby-gameserver-1"));
         }
     }
@@ -101,7 +103,12 @@ final class AgonesGameServerHttpClientTest {
                         {
                           "objectMeta": {
                             "name": "lobby-gameserver-1",
-                            "namespace": "fulcrum"
+                            "namespace": "fulcrum",
+                            "annotations": {
+                              "sh.harold.fulcrum/session-id": "session-lobby-allocated",
+                              "sh.harold.fulcrum/slot-id": "slot-lobby-allocated",
+                              "sh.harold.fulcrum/resolved-manifest-id": "manifest-lobby"
+                            }
                           },
                           "status": {
                             "state": "Allocated"

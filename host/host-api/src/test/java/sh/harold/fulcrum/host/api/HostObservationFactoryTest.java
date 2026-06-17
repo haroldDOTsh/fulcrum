@@ -64,6 +64,41 @@ final class HostObservationFactoryTest {
         assertEquals("session-attach-1", observation.attributes().get("sessionId"));
     }
 
+    @Test
+    void sessionDetachedObservationCarriesRouteSubjectAndSession() {
+        SubjectId subjectId = new SubjectId(UUID.fromString("55555555-5555-5555-5555-555555555555"));
+        HostObservation observation = HostObservationFactory.sessionDetached(new HostSessionDetachment(
+                PAPER_IDENTITY,
+                new RouteId("route-detach-1"),
+                subjectId,
+                new SessionId("session-detach-1"),
+                traceEnvelope(),
+                NOW));
+
+        assertEquals(PAPER_IDENTITY.instanceId(), observation.instanceId());
+        assertEquals(HostObservationTypes.SESSION_DETACHED, observation.observationType());
+        assertEquals("route-detach-1", observation.attributes().get("routeId"));
+        assertEquals(subjectId.value().toString(), observation.attributes().get("subjectId"));
+        assertEquals("session-detach-1", observation.attributes().get("sessionId"));
+    }
+
+    @Test
+    void wireCodecRoundTripsHostObservation() {
+        HostObservation observation = HostObservationFactory.readiness(new HostReadinessReport(
+                PAPER_IDENTITY,
+                new ResolvedManifestId("manifest-session-1"),
+                traceEnvelope(),
+                NOW));
+
+        HostObservation decoded = HostObservationWireCodec.decode(HostObservationWireCodec.encode(observation));
+
+        assertEquals(observation.instanceId(), decoded.instanceId());
+        assertEquals(observation.observationType(), decoded.observationType());
+        assertEquals(observation.traceEnvelope(), decoded.traceEnvelope());
+        assertEquals(observation.observedAt(), decoded.observedAt());
+        assertEquals(observation.attributes(), decoded.attributes());
+    }
+
     private static TraceEnvelope traceEnvelope() {
         return new TraceEnvelope(
                 "trace-host-observation",
