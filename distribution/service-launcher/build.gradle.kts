@@ -8,6 +8,8 @@ application {
 }
 
 dependencies {
+    implementation(project(":host:host-api"))
+
     runtimeOnly(project(":adapters:agones-allocator"))
     runtimeOnly(project(":adapters:agones-fake"))
     runtimeOnly(project(":adapters:object-storage"))
