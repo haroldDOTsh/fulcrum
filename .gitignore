@@ -5,3 +5,6 @@ target/
 *.log
 .idea/
 .vscode/
+planning/
+validation/
+adrs/
