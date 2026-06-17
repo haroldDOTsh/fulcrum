@@ -1,0 +1,400 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fulcrum-lobby
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-content-provisioner
+  namespace: fulcrum-lobby
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-capability-provisioner
+  namespace: fulcrum-lobby
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-paper-agent
+  namespace: fulcrum-lobby
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fulcrum-object-store
+  namespace: fulcrum-lobby
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fulcrum-lobby-paper-assignment
+  namespace: fulcrum-lobby
+data:
+  FULCRUM_OBJECT_STORE_ROOT: "/var/fulcrum/object-store"
+  FULCRUM_PAPER_SERVER_ROOT: "/var/fulcrum/paper"
+  FULCRUM_PAPER_ALLOCATION_FILE: "/var/fulcrum/paper/fulcrum-allocated-assignment.properties"
+  FULCRUM_PAPER_KAFKA_BOOTSTRAP_SERVERS: "fulcrum-kafka:9092"
+  FULCRUM_PAPER_AGONES_SDK_URL: "http://127.0.0.1:9358/"
+  FULCRUM_PAPER_OBSERVATION_BRIDGE_URL: "http://127.0.0.1:18080/observations"
+  FULCRUM_PAPER_CAPABILITY_BRIDGE_URL: "http://127.0.0.1:18083/capabilities"
+  FULCRUM_VALKEY_ENDPOINT: "fulcrum-valkey:6379"
+  FULCRUM_PAPER_EXPERIENCE_ID: "experience-lobby"
+  FULCRUM_PAPER_SESSION_ID: "session-lobby-shared"
+  FULCRUM_PAPER_SLOT_ID: "slot-lobby-shared"
+  FULCRUM_PAPER_RESOLVED_MANIFEST_ID: "manifest-lobby-bedrock-v1"
+  FULCRUM_PAPER_CODE_ARTIFACT_ID: "artifact-paper-gameserver"
+  FULCRUM_PAPER_WORLD_ARTIFACT_ID: "artifact-lobby-bedrock-world"
+  FULCRUM_PAPER_WORLD_ARTIFACT_DIGEST: "105d948db09cb4eb6a8ac74d1ae01744366a5252e2a2b033d480c5154bde2abe"
+  FULCRUM_PAPER_WORLD_ARTIFACT_COMPATIBILITY: "lobby-world-v1"
+  FULCRUM_PAPER_SESSION_LEASE: "PT5M"
+  FULCRUM_PAPER_HOST_RUNTIME_ABI: "paper-host-runtime-v1"
+  FULCRUM_PAPER_ROUTE_ID_PREFIX: "route-paper-"
+  FULCRUM_PAPER_SPAWN_WORLD: "world"
+  FULCRUM_PAPER_SPAWN_X: "0.5"
+  FULCRUM_PAPER_SPAWN_Y: "65.0"
+  FULCRUM_PAPER_SPAWN_Z: "0.5"
+  FULCRUM_PAPER_SPAWN_YAW: "0.0"
+  FULCRUM_PAPER_SPAWN_PITCH: "0.0"
+  FULCRUM_HOST_COMMAND_TOPIC: "host.paper.commands"
+  FULCRUM_HOST_OBSERVATION_TOPIC: "host.observation"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fulcrum-lobby-paper-owner
+  namespace: fulcrum-lobby
+type: Opaque
+stringData:
+  FULCRUM_PAPER_SESSION_OWNER_TOKEN: "replace-with-runtime-issued-owner-token"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fulcrum-lobby-world-artifact
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/provisioner: "lobby-world-artifact"
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "content-provisioner"
+    spec:
+      serviceAccountName: fulcrum-content-provisioner
+      restartPolicy: OnFailure
+      containers:
+        - name: lobby-world-artifact-provisioner
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - "java"
+          args:
+            - "-cp"
+            - "/opt/fulcrum/fulcrum/lib/*"
+            - "sh.harold.fulcrum.distribution.launcher.LobbyWorldArtifactProvisioner"
+          env:
+            - name: FULCRUM_OBJECT_STORE_ROOT
+              value: "/var/fulcrum/object-store"
+            - name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS
+              value: "fulcrum-kafka:9092"
+            - name: FULCRUM_ARTIFACT_METADATA_COMMAND_TOPIC
+              value: "cmd.artifact-metadata"
+            - name: FULCRUM_LOBBY_WORLD_OBJECT_BUCKET
+              value: "artifact-store"
+            - name: FULCRUM_LOBBY_WORLD_ARTIFACT_ID
+              value: "artifact-lobby-bedrock-world"
+            - name: FULCRUM_LOBBY_WORLD_ARTIFACT_COMPATIBILITY
+              value: "lobby-world-v1"
+            - name: FULCRUM_LOBBY_WORLD_PROVENANCE
+              value: "fulcrum:lobby-bedrock-world:v1"
+            - name: FULCRUM_PRINCIPAL_ID
+              value: "principal-lobby-world-provisioner"
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: object-store
+              mountPath: /var/fulcrum/object-store
+      volumes:
+        - name: object-store
+          persistentVolumeClaim:
+            claimName: fulcrum-object-store
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fulcrum-lobby-capability-seed
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/provisioner: "lobby-capability-seed"
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "capability-provisioner"
+    spec:
+      serviceAccountName: fulcrum-capability-provisioner
+      restartPolicy: OnFailure
+      containers:
+        - name: lobby-capability-seed-provisioner
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - "java"
+          args:
+            - "-cp"
+            - "/opt/fulcrum/fulcrum/lib/*"
+            - "sh.harold.fulcrum.distribution.launcher.LobbyCapabilitySeedProvisioner"
+          env:
+            - name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS
+              value: "fulcrum-kafka:9092"
+            - name: FULCRUM_PLAYER_PROFILE_COMMAND_TOPIC
+              value: "cmd.standard.player-profile"
+            - name: FULCRUM_RANK_COMMAND_TOPIC
+              value: "cmd.standard.rank"
+            - name: FULCRUM_PUNISHMENT_COMMAND_TOPIC
+              value: "cmd.standard.punishment"
+            - name: FULCRUM_LOBBY_ACCEPTED_USERNAME
+              value: "FulcrumBotOne"
+            - name: FULCRUM_LOBBY_ACCEPTED_DISPLAY_NAME
+              value: "Fulcrum Bot One"
+            - name: FULCRUM_LOBBY_ACCEPTED_RANK_KEY
+              value: "Admin"
+            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_USERNAME
+              value: "FulcrumBotTwo"
+            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_DISPLAY_NAME
+              value: "Fulcrum Bot Two"
+            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_RANK_KEY
+              value: "Admin"
+            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_USERNAME
+              value: "FulcrumBotFour"
+            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_DISPLAY_NAME
+              value: "Fulcrum Bot Four"
+            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_RANK_KEY
+              value: "Admin"
+            - name: FULCRUM_LOBBY_DENIED_USERNAME
+              value: "FulcrumBannedOne"
+            - name: FULCRUM_LOBBY_DENIED_DISPLAY_NAME
+              value: "Fulcrum Banned One"
+            - name: FULCRUM_LOBBY_DENIED_RANK_KEY
+              value: "Member"
+            - name: FULCRUM_LOBBY_DENIED_PUNISHMENT_REASON
+              value: "Banned from the lobby"
+            - name: FULCRUM_LOBBY_DENIED_PUNISHMENT_EXPIRES_AT
+              value: "2099-01-01T00:00:00Z"
+            - name: FULCRUM_PRINCIPAL_ID
+              value: "principal-lobby-capability-seed"
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fulcrum-lobby-capability-materialization
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/provisioner: "lobby-capability-materialization"
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "capability-provisioner"
+    spec:
+      serviceAccountName: fulcrum-capability-provisioner
+      restartPolicy: OnFailure
+      containers:
+        - name: lobby-capability-materialization-verifier
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - "java"
+          args:
+            - "-cp"
+            - "/opt/fulcrum/fulcrum/lib/*"
+            - "sh.harold.fulcrum.distribution.launcher.LobbyCapabilityMaterializationVerifier"
+          env:
+            - name: FULCRUM_VALKEY_ENDPOINT
+              value: "fulcrum-valkey:6379"
+            - name: FULCRUM_LOBBY_ACCEPTED_USERNAME
+              value: "FulcrumBotOne"
+            - name: FULCRUM_LOBBY_ACCEPTED_DISPLAY_NAME
+              value: "Fulcrum Bot One"
+            - name: FULCRUM_LOBBY_ACCEPTED_RANK_KEY
+              value: "Admin"
+            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_USERNAME
+              value: "FulcrumBotTwo"
+            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_DISPLAY_NAME
+              value: "Fulcrum Bot Two"
+            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_RANK_KEY
+              value: "Admin"
+            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_USERNAME
+              value: "FulcrumBotFour"
+            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_DISPLAY_NAME
+              value: "Fulcrum Bot Four"
+            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_RANK_KEY
+              value: "Admin"
+            - name: FULCRUM_LOBBY_DENIED_USERNAME
+              value: "FulcrumBannedOne"
+            - name: FULCRUM_LOBBY_DENIED_DISPLAY_NAME
+              value: "Fulcrum Banned One"
+            - name: FULCRUM_LOBBY_DENIED_RANK_KEY
+              value: "Member"
+            - name: FULCRUM_LOBBY_DENIED_PUNISHMENT_REASON
+              value: "Banned from the lobby"
+            - name: FULCRUM_LOBBY_CAPABILITY_MATERIALIZATION_TIMEOUT
+              value: "PT180S"
+            - name: FULCRUM_PRINCIPAL_ID
+              value: "principal-lobby-capability-materialization"
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+---
+apiVersion: agones.dev/v1
+kind: Fleet
+metadata:
+  name: fulcrum-lobby-paper
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/pool-id: "pool-lobby"
+    sh.harold.fulcrum/experience-id: "experience-lobby"
+spec:
+  replicas: 1
+  scheduling: Packed
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/pool-id: "pool-lobby"
+        sh.harold.fulcrum/experience-id: "experience-lobby"
+      annotations:
+        sh.harold.fulcrum/slot-id: "slot-lobby-shared"
+        sh.harold.fulcrum/instance-kind: "paper"
+        sh.harold.fulcrum/principal-id: "principal-fulcrum-paper-agent"
+    spec:
+      ports:
+        - name: minecraft
+          portPolicy: Dynamic
+          containerPort: 25565
+          protocol: TCP
+      health:
+        disabled: false
+        initialDelaySeconds: 30
+        periodSeconds: 5
+        failureThreshold: 3
+      sdkServer:
+        logLevel: Info
+        grpcPort: 9357
+        httpPort: 9358
+      counters:
+        presences:
+          count: 0
+          capacity: 100
+      template:
+        metadata:
+          labels:
+            sh.harold.fulcrum/role: "paper-agent"
+        spec:
+          serviceAccountName: fulcrum-paper-agent
+          containers:
+            - name: paper-gameserver
+              image: ghcr.io/sh-harold/fulcrum-paper-gameserver:dev
+              imagePullPolicy: IfNotPresent
+              args:
+                - "--profile=single-machine"
+                - "--role=paper-agent"
+                - "--mode=run"
+                - "--probe-host=0.0.0.0"
+                - "--probe-port=8080"
+              ports:
+                - name: minecraft
+                  containerPort: 25565
+                  protocol: TCP
+                - name: probe
+                  containerPort: 8080
+                  protocol: TCP
+              envFrom:
+                - configMapRef:
+                    name: fulcrum-lobby-paper-assignment
+                - secretRef:
+                    name: fulcrum-lobby-paper-owner
+              env:
+                - name: FULCRUM_INSTANCE_ID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: FULCRUM_MACHINE_REF
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+                - name: FULCRUM_POOL_ID
+                  value: "pool-lobby"
+                - name: FULCRUM_PRINCIPAL_ID
+                  value: "principal-fulcrum-paper-agent"
+                - name: FULCRUM_CREDENTIAL_REF
+                  value: "service-account:fulcrum-paper-agent"
+              livenessProbe:
+                httpGet:
+                  path: /live
+                  port: probe
+                initialDelaySeconds: 10
+                periodSeconds: 10
+              readinessProbe:
+                httpGet:
+                  path: /ready
+                  port: probe
+                initialDelaySeconds: 10
+                periodSeconds: 5
+              volumeMounts:
+                - name: paper-state
+                  mountPath: /var/fulcrum/paper
+                - name: object-store
+                  mountPath: /var/fulcrum/object-store
+                  readOnly: true
+          volumes:
+            - name: paper-state
+              emptyDir: {}
+            - name: object-store
+              persistentVolumeClaim:
+                claimName: fulcrum-object-store
+                readOnly: true
+---
+apiVersion: autoscaling.agones.dev/v1
+kind: FleetAutoscaler
+metadata:
+  name: fulcrum-lobby-paper-buffer
+  namespace: fulcrum-lobby
+spec:
+  fleetName: fulcrum-lobby-paper
+  policy:
+    type: Buffer
+    buffer:
+      bufferSize: 1
+      minReplicas: 1
+      maxReplicas: 4
+  sync:
+    type: FixedInterval
+    fixedInterval:
+      seconds: 30

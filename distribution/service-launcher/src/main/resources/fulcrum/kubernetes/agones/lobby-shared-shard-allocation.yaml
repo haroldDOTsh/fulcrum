@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-shared-shard-allocation-provisioner
+  namespace: fulcrum-lobby
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fulcrum-lobby-shared-shard-allocation
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/provisioner: "lobby-shared-shard-allocation"
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "shared-shard-allocation-provisioner"
+    spec:
+      serviceAccountName: fulcrum-shared-shard-allocation-provisioner
+      restartPolicy: OnFailure
+      containers:
+        - name: lobby-shared-shard-allocation-provisioner
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - "java"
+          args:
+            - "-cp"
+            - "/opt/fulcrum/fulcrum/lib/*"
+            - "sh.harold.fulcrum.distribution.launcher.LobbySharedShardAllocationProvisioner"
+          env:
+            - name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS
+              value: "fulcrum-kafka:9092"
+            - name: FULCRUM_SHARED_SHARD_ALLOCATION_COMMAND_TOPIC
+              value: "ctrl.cmd.shared-shard-allocation"
+            - name: FULCRUM_LOBBY_EXPERIENCE_ID
+              value: "experience-lobby"
+            - name: FULCRUM_LOBBY_POOL_ID
+              value: "pool-lobby"
+            - name: FULCRUM_LOBBY_SESSION_ID
+              value: "session-lobby-shared"
+            - name: FULCRUM_LOBBY_RESOLVED_MANIFEST_ID
+              value: "manifest-lobby-bedrock-v1"
+            - name: FULCRUM_LOBBY_ALLOCATION_TRACE_ID
+              value: "trace-lobby-shared-allocation"
+            - name: FULCRUM_LOBBY_ALLOCATION_SPAN_ID
+              value: "span-lobby-shared-allocation"
+            - name: FULCRUM_LOBBY_ALLOCATION_REQUESTED_AT
+              value: "2026-01-01T00:00:00Z"
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fulcrum-lobby-shared-shard-allocation-materialization
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/provisioner: "lobby-shared-shard-allocation-materialization"
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "shared-shard-allocation-provisioner"
+    spec:
+      serviceAccountName: fulcrum-shared-shard-allocation-provisioner
+      restartPolicy: OnFailure
+      containers:
+        - name: lobby-shared-shard-allocation-materialization-verifier
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - "java"
+          args:
+            - "-cp"
+            - "/opt/fulcrum/fulcrum/lib/*"
+            - "sh.harold.fulcrum.distribution.launcher.LobbySharedShardAllocationMaterializationVerifier"
+          env:
+            - name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS
+              value: "fulcrum-kafka:9092"
+            - name: FULCRUM_SHARED_SHARD_ALLOCATION_STATE_TOPIC
+              value: "ctrl.state.shared-shard-allocation"
+            - name: FULCRUM_LOBBY_EXPERIENCE_ID
+              value: "experience-lobby"
+            - name: FULCRUM_LOBBY_POOL_ID
+              value: "pool-lobby"
+            - name: FULCRUM_LOBBY_SESSION_ID
+              value: "session-lobby-shared"
+            - name: FULCRUM_LOBBY_RESOLVED_MANIFEST_ID
+              value: "manifest-lobby-bedrock-v1"
+            - name: FULCRUM_LOBBY_ALLOCATION_MATERIALIZATION_TIMEOUT
+              value: "PT180S"
+            - name: FULCRUM_LOBBY_ALLOCATION_MATERIALIZATION_POLL_INTERVAL
+              value: "PT1S"
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name

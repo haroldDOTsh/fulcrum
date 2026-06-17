@@ -1,0 +1,25 @@
+apiVersion: allocation.agones.dev/v1
+kind: GameServerAllocation
+metadata:
+  generateName: fulcrum-lobby-paper-
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/verification: "paper-agones-phase2"
+spec:
+  selectors:
+    - matchLabels:
+        agones.dev/fleet: fulcrum-lobby-paper
+        sh.harold.fulcrum/pool-id: "pool-lobby"
+      gameServerState: Ready
+      counters:
+        presences:
+          minAvailable: 1
+  scheduling: Packed
+  metadata:
+    labels:
+      sh.harold.fulcrum/session-id: "session-lobby-shared"
+      sh.harold.fulcrum/slot-id: "slot-lobby-shared"
+      sh.harold.fulcrum/resolved-manifest-id: "manifest-lobby-bedrock-v1"
+    annotations:
+      sh.harold.fulcrum/trace-id: "trace-paper-agones-phase2-allocation"
+      sh.harold.fulcrum/route-id-prefix: "route-paper-"

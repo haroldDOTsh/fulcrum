@@ -1,0 +1,9 @@
+project=velocity
+apiVersion=3.4.0
+version=3.4.0-SNAPSHOT
+build=559
+channel=STABLE
+time=2025-12-27T18:45:27.635Z
+downloadName=velocity-3.4.0-SNAPSHOT-559.jar
+downloadUrl=https://api.papermc.io/v2/projects/velocity/versions/3.4.0-SNAPSHOT/builds/559/downloads/velocity-3.4.0-SNAPSHOT-559.jar
+sha256=ccc49f71751ece26568d3476392d6130c8b43f2e5f3a88313325b9278a52babd

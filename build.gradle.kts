@@ -181,6 +181,12 @@ tasks.register("step8Check") {
     dependsOn(step8CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("clusterE2e") {
+    group = "verification"
+    description = "Runs the current production-shaped cluster E2E gate: deploys Paper Agones plus Velocity L4, then verifies the public Minecraft endpoint."
+    dependsOn(":distribution:service-launcher:lobbyClusterE2eVerify")
+}
+
 tasks.named("check") {
     dependsOn("step8Check")
 }

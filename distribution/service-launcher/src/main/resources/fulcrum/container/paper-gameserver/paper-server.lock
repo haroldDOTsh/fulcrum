@@ -1,0 +1,10 @@
+project=paper
+minecraftVersion=26.1.2
+build=70
+channel=STABLE
+downloadName=paper-26.1.2-70.jar
+downloadUrl=https://fill-data.papermc.io/v1/objects/6c59eefe2752f97ee79f83ad0a61fe14865a0976e4ac06597f53de6c44afd6c5/paper-26.1.2-70.jar
+sha256=6c59eefe2752f97ee79f83ad0a61fe14865a0976e4ac06597f53de6c44afd6c5
+size=52893162
+metadataSource=https://fill.papermc.io/v3/projects/paper/versions/26.1.2/builds
+metadataCheckedAt=2026-06-17

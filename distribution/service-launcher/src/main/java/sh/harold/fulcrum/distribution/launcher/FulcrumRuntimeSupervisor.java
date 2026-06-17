@@ -11,6 +11,7 @@ final class FulcrumRuntimeSupervisor implements AutoCloseable {
     private final RuntimeEnvironment environment;
     private final String probeHost;
     private final int requestedProbePort;
+    private final RuntimeExternalClients externalClients;
     private final List<ManagedRuntimeService> services;
     private RuntimeProbeServer probeServer;
 
@@ -19,8 +20,14 @@ final class FulcrumRuntimeSupervisor implements AutoCloseable {
         this.environment = Objects.requireNonNull(environment, "environment");
         this.probeHost = Objects.requireNonNull(probeHost, "probeHost");
         this.requestedProbePort = requestedProbePort;
+        RuntimeConnectionSettings connectionSettings = RuntimeConnectionSettings.resolve(plan, environment);
+        this.externalClients = RuntimeExternalClients.create(connectionSettings);
         this.services = plan.entries().stream()
-                .map(entry -> new ManagedRuntimeService(entry, RuntimeIdentityIssuer.issue(plan.profile(), entry, environment)))
+                .map(entry -> new ManagedRuntimeService(
+                        entry,
+                        RuntimeIdentityIssuer.issue(plan.profile(), entry, environment),
+                        connectionSettings,
+                        externalClients))
                 .toList();
     }
 
@@ -74,6 +81,7 @@ final class FulcrumRuntimeSupervisor implements AutoCloseable {
             probeServer.close();
         }
         services.forEach(ManagedRuntimeService::close);
+        externalClients.close();
     }
 
     private static void sleep(Duration duration) {

@@ -60,6 +60,9 @@ public final class FulcrumLauncher {
                 }
             }
             return OK;
+        } catch (RuntimeConfigurationException exception) {
+            err.println(exception.getMessage());
+            return CONFIGURATION_BLOCKED;
         } catch (IllegalArgumentException exception) {
             err.println(exception.getMessage());
             err.print(usage());

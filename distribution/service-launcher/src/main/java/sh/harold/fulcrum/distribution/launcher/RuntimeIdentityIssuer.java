@@ -32,7 +32,7 @@ final class RuntimeIdentityIssuer {
         return new HostSecurityContext(
                 identity,
                 "service-account:" + roleId,
-                new HostCredentialScope(grants(entry.role())));
+                new HostCredentialScope(grants(entry.role(), environment)));
     }
 
     private static String instanceKind(LaunchRole role) {
@@ -46,7 +46,7 @@ final class RuntimeIdentityIssuer {
         };
     }
 
-    private static Set<HostResourceGrant> grants(LaunchRole role) {
+    private static Set<HostResourceGrant> grants(LaunchRole role, RuntimeEnvironment environment) {
         return Set.copyOf(switch (role) {
             case AUTHORITY_SERVICE -> List.of(
                     grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME, "cmd.*"),
@@ -55,25 +55,44 @@ final class RuntimeIdentityIssuer {
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "rsp.*"));
             case CONTROLLER_SERVICE -> List.of(
                     grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME, "ctrl.cmd.*"),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME,
+                            environment.value("FULCRUM_HOST_OBSERVATION_TOPIC").orElse("host.observation")),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "ctrl.cmd.route-attempt"),
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "ctrl.evt.*"),
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "ctrl.state.*"),
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "host.route.*"));
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
+                            environment.value("FULCRUM_HOST_COMMAND_TOPIC").orElse("host.paper.commands")),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
+                            environment.value("FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC").orElse("host.velocity.routes")));
             case WORKER_AGENT -> List.of(
                     grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME, "worker.jobs"),
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "worker.results"),
                     grant(HostResourceFamily.ARTIFACT, HostAccessMode.READ, "artifact.*"));
             case PAPER_AGENT -> List.of(
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME, "host.paper.commands"),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME,
+                            environment.value("FULCRUM_HOST_COMMAND_TOPIC").orElse("host.paper.commands")),
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "cmd.session"),
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "host.observation"),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
+                            environment.value("FULCRUM_HOST_OBSERVATION_TOPIC").orElse("host.observation")),
                     grant(HostResourceFamily.CACHE, HostAccessMode.READ, "session.*"),
+                    grant(HostResourceFamily.CACHE, HostAccessMode.READ, ValkeyPaperCapabilityBridge.PLAYER_PROFILE_CACHE_RESOURCE),
+                    grant(HostResourceFamily.CACHE, HostAccessMode.READ, ValkeyPaperCapabilityBridge.RANK_CACHE_RESOURCE),
                     grant(HostResourceFamily.HOT_PROJECTION, HostAccessMode.READ, "standard.rank.effective"),
                     grant(HostResourceFamily.HOT_PROJECTION, HostAccessMode.READ, "standard.player-profile.summary"),
                     grant(HostResourceFamily.ARTIFACT, HostAccessMode.READ, "artifact.lobby-bedrock"));
             case VELOCITY_AGENT -> List.of(
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME, "host.velocity.routes"),
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "cmd.presence"),
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "cmd.route"),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME,
+                            environment.value("FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC").orElse("host.velocity.routes")),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME,
+                            environment.value("FULCRUM_SHARED_SHARD_ALLOCATION_STATE_TOPIC").orElse("ctrl.state.shared-shard-allocation")),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
+                            environment.value("FULCRUM_PRESENCE_COMMAND_TOPIC").orElse("cmd.presence")),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
+                            environment.value("FULCRUM_SHARED_SHARD_PLACEMENT_COMMAND_TOPIC").orElse("ctrl.cmd.shared-shard-placement")),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
+                            environment.value("FULCRUM_ROUTE_ATTEMPT_COMMAND_TOPIC").orElse("ctrl.cmd.route-attempt")),
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
+                            environment.value("FULCRUM_ROUTE_COMMAND_TOPIC").orElse("cmd.route")),
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "host.observation"),
                     grant(HostResourceFamily.CACHE, HostAccessMode.READ, "standard.punishment.active"),
                     grant(HostResourceFamily.HOT_PROJECTION, HostAccessMode.READ, "standard.punishment.active"));

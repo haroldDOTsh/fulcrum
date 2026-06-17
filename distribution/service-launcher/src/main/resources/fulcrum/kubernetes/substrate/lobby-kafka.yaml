@@ -1,0 +1,600 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-kafka
+  namespace: fulcrum-lobby
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fulcrum-kafka
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "kafka-command-log"
+spec:
+  clusterIP: None
+  selector:
+    sh.harold.fulcrum/service: "kafka-command-log"
+  ports:
+    - name: broker
+      port: 9092
+      targetPort: broker
+      protocol: TCP
+    - name: controller
+      port: 9093
+      targetPort: controller
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fulcrum-kafka
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "kafka-command-log"
+spec:
+  serviceName: fulcrum-kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: "kafka-command-log"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: "kafka-command-log"
+    spec:
+      serviceAccountName: fulcrum-kafka
+      containers:
+        - name: kafka
+          image: apache/kafka-native:4.3.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: broker
+              containerPort: 9092
+              protocol: TCP
+            - name: controller
+              containerPort: 9093
+              protocol: TCP
+          env:
+            - name: CLUSTER_ID
+              value: "w6vQq2v0RkqGQe6wXtX6sQ"
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@fulcrum-kafka-0.fulcrum-kafka.fulcrum-lobby.svc.cluster.local:9093"
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://fulcrum-kafka.fulcrum-lobby.svc.cluster.local:9092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xms256m -Xmx512m"
+          livenessProbe:
+            tcpSocket:
+              port: broker
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: broker
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "768Mi"
+            limits:
+              memory: "1536Mi"
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fulcrum-valkey
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "valkey-cache"
+spec:
+  selector:
+    sh.harold.fulcrum/service: "valkey-cache"
+  ports:
+    - name: cache
+      port: 6379
+      targetPort: cache
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fulcrum-valkey
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "valkey-cache"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: "valkey-cache"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: "valkey-cache"
+    spec:
+      containers:
+        - name: valkey
+          image: valkey/valkey:9.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: cache
+              containerPort: 6379
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: cache
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: cache
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-authority-service
+  namespace: fulcrum-lobby
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-controller-service
+  namespace: fulcrum-lobby
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fulcrum-postgres-credentials
+  namespace: fulcrum-lobby
+type: Opaque
+stringData:
+  POSTGRES_DB: "fulcrum"
+  POSTGRES_USER: "fulcrum"
+  POSTGRES_PASSWORD: "fulcrum-dev-password"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fulcrum-postgres
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "postgres-record-store"
+spec:
+  selector:
+    sh.harold.fulcrum/service: "postgres-record-store"
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fulcrum-postgres
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "postgres-record-store"
+spec:
+  serviceName: fulcrum-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: "postgres-record-store"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: "postgres-record-store"
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: fulcrum-postgres-credentials
+          env:
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          livenessProbe:
+            tcpSocket:
+              port: postgres
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: postgres
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "1024Mi"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fulcrum-cassandra
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "cassandra-hot-projections"
+spec:
+  selector:
+    sh.harold.fulcrum/service: "cassandra-hot-projections"
+  ports:
+    - name: cql
+      port: 9042
+      targetPort: cql
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fulcrum-cassandra
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "cassandra-hot-projections"
+spec:
+  serviceName: fulcrum-cassandra
+  replicas: 1
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: "cassandra-hot-projections"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: "cassandra-hot-projections"
+    spec:
+      containers:
+        - name: cassandra
+          image: cassandra:5.0.8
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: cql
+              containerPort: 9042
+              protocol: TCP
+          env:
+            - name: CASSANDRA_CLUSTER_NAME
+              value: "fulcrum-lobby"
+            - name: CASSANDRA_DC
+              value: "datacenter1"
+            - name: CASSANDRA_ENDPOINT_SNITCH
+              value: "GossipingPropertyFileSnitch"
+            - name: MAX_HEAP_SIZE
+              value: "768M"
+            - name: HEAP_NEWSIZE
+              value: "256M"
+          startupProbe:
+            tcpSocket:
+              port: cql
+            failureThreshold: 60
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: cql
+            initialDelaySeconds: 90
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: cql
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1536Mi"
+            limits:
+              memory: "2560Mi"
+          volumeMounts:
+            - name: cassandra-data
+              mountPath: /var/lib/cassandra
+  volumeClaimTemplates:
+    - metadata:
+        name: cassandra-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 4Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fulcrum-authority-schema
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/provisioner: "authority-schema"
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "authority-schema-provisioner"
+    spec:
+      serviceAccountName: fulcrum-authority-service
+      restartPolicy: OnFailure
+      containers:
+        - name: authority-schema-provisioner
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - "java"
+          args:
+            - "-cp"
+            - "/opt/fulcrum/fulcrum/lib/*"
+            - "sh.harold.fulcrum.distribution.launcher.LobbyAuthoritySchemaProvisioner"
+          env:
+            - name: FULCRUM_POSTGRES_JDBC_URL
+              value: "jdbc:postgresql://fulcrum-postgres:5432/fulcrum"
+            - name: FULCRUM_POSTGRES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-postgres-credentials
+                  key: POSTGRES_USER
+            - name: FULCRUM_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: FULCRUM_CASSANDRA_CONTACT_POINTS
+              value: "fulcrum-cassandra:9042"
+            - name: FULCRUM_CASSANDRA_LOCAL_DATACENTER
+              value: "datacenter1"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fulcrum-authority-service
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/role: "authority-service"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: "authority-service"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "authority-service"
+    spec:
+      serviceAccountName: fulcrum-authority-service
+      containers:
+        - name: authority-service
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--profile=single-machine"
+            - "--role=authority-service"
+            - "--mode=run"
+            - "--probe-host=0.0.0.0"
+            - "--probe-port=8080"
+          ports:
+            - name: probe
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS
+              value: "fulcrum-kafka:9092"
+            - name: FULCRUM_POSTGRES_JDBC_URL
+              value: "jdbc:postgresql://fulcrum-postgres:5432/fulcrum"
+            - name: FULCRUM_POSTGRES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-postgres-credentials
+                  key: POSTGRES_USER
+            - name: FULCRUM_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: FULCRUM_CASSANDRA_CONTACT_POINTS
+              value: "fulcrum-cassandra:9042"
+            - name: FULCRUM_CASSANDRA_LOCAL_DATACENTER
+              value: "datacenter1"
+            - name: FULCRUM_VALKEY_ENDPOINT
+              value: "fulcrum-valkey:6379"
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: FULCRUM_MACHINE_REF
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: FULCRUM_PRINCIPAL_ID
+              value: "principal-fulcrum-authority-service"
+            - name: FULCRUM_CREDENTIAL_REF
+              value: "service-account:fulcrum-authority-service"
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: probe
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: probe
+            initialDelaySeconds: 20
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              memory: "1024Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fulcrum-controller-service
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/role: "controller-service"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: "controller-service"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "controller-service"
+    spec:
+      serviceAccountName: fulcrum-controller-service
+      containers:
+        - name: controller-service
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--profile=single-machine"
+            - "--role=controller-service"
+            - "--mode=run"
+            - "--probe-host=0.0.0.0"
+            - "--probe-port=8080"
+          ports:
+            - name: probe
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS
+              value: "fulcrum-kafka:9092"
+            - name: FULCRUM_AGONES_ALLOCATOR_URL
+              value: "https://agones-allocator.agones-system.svc.cluster.local"
+            - name: FULCRUM_AGONES_NAMESPACE
+              value: "fulcrum-lobby"
+            - name: FULCRUM_AGONES_ALLOCATOR_CLIENT_CERT_PATH
+              value: "/var/run/secrets/fulcrum/agones-allocator/client/tls.crt"
+            - name: FULCRUM_AGONES_ALLOCATOR_CLIENT_KEY_PATH
+              value: "/var/run/secrets/fulcrum/agones-allocator/client/tls.key"
+            - name: FULCRUM_AGONES_ALLOCATOR_CA_CERT_PATH
+              value: "/var/run/secrets/fulcrum/agones-allocator/ca/tls-ca.crt"
+            - name: FULCRUM_CONTROL_STATE_TOPIC
+              value: "ctrl.state"
+            - name: FULCRUM_HOST_COMMAND_TOPIC
+              value: "host.paper.commands"
+            - name: FULCRUM_HOST_OBSERVATION_TOPIC
+              value: "host.observation"
+            - name: FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC
+              value: "host.velocity.routes"
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: FULCRUM_MACHINE_REF
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: FULCRUM_POOL_ID
+              value: "pool-control"
+            - name: FULCRUM_PRINCIPAL_ID
+              value: "principal-fulcrum-controller-service"
+            - name: FULCRUM_CREDENTIAL_REF
+              value: "service-account:fulcrum-controller-service"
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: probe
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: probe
+            initialDelaySeconds: 20
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              memory: "1024Mi"
+          volumeMounts:
+            - name: agones-allocator-client
+              mountPath: /var/run/secrets/fulcrum/agones-allocator/client
+              readOnly: true
+            - name: agones-allocator-ca
+              mountPath: /var/run/secrets/fulcrum/agones-allocator/ca
+              readOnly: true
+      volumes:
+        - name: agones-allocator-client
+          secret:
+            secretName: allocator-client.default
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+        - name: agones-allocator-ca
+          secret:
+            secretName: fulcrum-agones-allocator-tls-ca
+            items:
+              - key: tls-ca.crt
+                path: tls-ca.crt

@@ -4,40 +4,42 @@ import sh.harold.fulcrum.host.api.HostSecurityContext;
 
 import java.time.Instant;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 
 final class ManagedRuntimeService implements AutoCloseable {
     private final LaunchEntry entry;
     private final HostSecurityContext securityContext;
-    private final AtomicBoolean running = new AtomicBoolean(false);
-    private final AtomicBoolean ready = new AtomicBoolean(false);
-    private final AtomicLong loopCount = new AtomicLong();
-    private Thread thread;
+    private final RuntimeServiceEngine engine;
     private Instant startedAt;
 
-    ManagedRuntimeService(LaunchEntry entry, HostSecurityContext securityContext) {
+    ManagedRuntimeService(
+            LaunchEntry entry,
+            HostSecurityContext securityContext,
+            RuntimeConnectionSettings connectionSettings,
+            RuntimeExternalClients externalClients) {
+        this(entry, securityContext, RuntimeServiceEngines.create(
+                entry,
+                securityContext,
+                connectionSettings,
+                externalClients));
+    }
+
+    ManagedRuntimeService(LaunchEntry entry, HostSecurityContext securityContext, RuntimeServiceEngine engine) {
         this.entry = Objects.requireNonNull(entry, "entry");
         this.securityContext = Objects.requireNonNull(securityContext, "securityContext");
+        this.engine = Objects.requireNonNull(engine, "engine");
     }
 
     void start() {
-        if (!running.compareAndSet(false, true)) {
-            throw new IllegalStateException(entry.role().id() + " is already running");
-        }
         startedAt = Instant.now();
-        thread = new Thread(this::runLoop, "fulcrum-" + entry.role().id());
-        thread.setDaemon(false);
-        thread.start();
+        engine.start();
     }
 
     boolean live() {
-        Thread current = thread;
-        return running.get() && current != null && current.isAlive();
+        return engine.live();
     }
 
     boolean ready() {
-        return ready.get();
+        return engine.ready();
     }
 
     RuntimeServiceSnapshot snapshot() {
@@ -50,38 +52,12 @@ final class ManagedRuntimeService implements AutoCloseable {
                 securityContext.credentialRef(),
                 live(),
                 ready(),
-                loopCount.get(),
+                engine.loopCount(),
                 startedAt);
     }
 
     @Override
     public void close() {
-        if (!running.getAndSet(false)) {
-            return;
-        }
-        ready.set(false);
-        Thread current = thread;
-        if (current != null) {
-            current.interrupt();
-            try {
-                current.join(5_000);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    private void runLoop() {
-        ready.set(true);
-        while (running.get()) {
-            loopCount.incrementAndGet();
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                running.set(false);
-            }
-        }
-        ready.set(false);
+        engine.close();
     }
 }
