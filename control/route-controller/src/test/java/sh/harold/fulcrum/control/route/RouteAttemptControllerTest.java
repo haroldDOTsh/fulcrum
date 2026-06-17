@@ -42,6 +42,9 @@ final class RouteAttemptControllerTest {
                 ControlRouteNames.ISSUE_PROXY_ROUTE, "cmd-proxy", BASE_TIME.plusSeconds(1), events);
         record = proxyDecision.record();
         assertTrue(proxyDecision.emissions().stream().anyMatch(emission -> emission.kind() == RouteAttemptControlEmissionKind.PROXY_COMMAND));
+        assertTrue(proxyDecision.emissions().stream()
+                .filter(emission -> emission.kind() == RouteAttemptControlEmissionKind.PROXY_COMMAND)
+                .anyMatch(emission -> emission.value().contains("|subjectId=00000000-0000-0000-0000-000000000001|")));
 
         RouteAttemptDecision hostDecision = accept(controller, record, new PrepareHostRoute(ROUTE_ATTEMPT_ID, BASE_TIME.plusSeconds(2)),
                 ControlRouteNames.PREPARE_HOST_ROUTE, "cmd-host", BASE_TIME.plusSeconds(2), events);

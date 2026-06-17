@@ -1,32 +1,40 @@
 package sh.harold.fulcrum.control.instance;
 
 import sh.harold.fulcrum.api.kernel.SessionId;
+import sh.harold.fulcrum.api.kernel.SlotId;
 
 import java.time.Instant;
 import java.util.Objects;
 
 public record SharedShardPlacementCandidate(
         InstanceSnapshot instanceSnapshot,
-        SessionId sessionId,
-        int currentOccupancy,
-        int hardCapacity,
-        Instant observedAt) {
+        SharedShardOccupancySnapshot occupancySnapshot) {
     public SharedShardPlacementCandidate {
         instanceSnapshot = Objects.requireNonNull(instanceSnapshot, "instanceSnapshot");
-        sessionId = Objects.requireNonNull(sessionId, "sessionId");
-        if (currentOccupancy < 0) {
-            throw new IllegalArgumentException("currentOccupancy must not be negative");
-        }
-        if (hardCapacity <= 0) {
-            throw new IllegalArgumentException("hardCapacity must be positive");
-        }
-        if (currentOccupancy > hardCapacity) {
-            throw new IllegalArgumentException("currentOccupancy must not exceed hardCapacity");
-        }
-        observedAt = Objects.requireNonNull(observedAt, "observedAt");
+        occupancySnapshot = Objects.requireNonNull(occupancySnapshot, "occupancySnapshot");
     }
 
     boolean hasCapacityFor(SharedShardPlacementRequest request) {
-        return currentOccupancy < Math.min(hardCapacity, request.hardCapacity());
+        return occupancySnapshot.hasCapacityBelow(request.experience().hardCapacity());
+    }
+
+    SessionId sessionId() {
+        return occupancySnapshot.sessionId();
+    }
+
+    SlotId slotId() {
+        return occupancySnapshot.slotId();
+    }
+
+    int currentOccupancy() {
+        return occupancySnapshot.currentPresences();
+    }
+
+    int hardCapacity() {
+        return occupancySnapshot.hardCapacity();
+    }
+
+    Instant observedAt() {
+        return occupancySnapshot.observedAt();
     }
 }

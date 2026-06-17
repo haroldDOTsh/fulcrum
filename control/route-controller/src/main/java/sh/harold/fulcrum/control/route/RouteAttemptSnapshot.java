@@ -120,9 +120,17 @@ public record RouteAttemptSnapshot(
         return "proxy.route"
                 + "|routeAttemptId=" + routeAttemptId.value()
                 + "|routeId=" + routeId.value()
+                + "|subjectId=" + proxySubjectId().value()
                 + "|sessionId=" + sessionId.value()
                 + "|targetInstanceId=" + targetInstanceId.value()
                 + "|traceId=" + traceEnvelope.traceId();
+    }
+
+    private SubjectId proxySubjectId() {
+        if (subjectIds.size() != 1) {
+            throw new IllegalStateException("proxy route command emission requires exactly one Subject");
+        }
+        return subjectIds.getFirst();
     }
 
     public String hostCommandValue() {

@@ -25,8 +25,8 @@ public final class SharedShardPlacementController {
             SharedShardPlacementCandidate candidate) {
         InstanceSnapshot snapshot = candidate.instanceSnapshot();
         return snapshot.status() == InstanceRegistryStatus.READY
-                && snapshot.poolId().equals(request.poolId())
-                && snapshot.resolvedManifestId().filter(request.resolvedManifestId()::equals).isPresent()
+                && snapshot.poolId().equals(request.experience().poolId())
+                && snapshot.resolvedManifestId().filter(request.experience().resolvedManifestId()::equals).isPresent()
                 && candidate.hasCapacityFor(request);
     }
 }
