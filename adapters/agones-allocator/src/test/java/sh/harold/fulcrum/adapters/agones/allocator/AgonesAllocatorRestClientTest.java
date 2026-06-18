@@ -2,6 +2,8 @@ package sh.harold.fulcrum.adapters.agones.allocator;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import sh.harold.fulcrum.api.contract.TraceEnvelope;
@@ -13,17 +15,28 @@ import sh.harold.fulcrum.host.api.HostAllocationClaim;
 import sh.harold.fulcrum.host.api.HostAllocationRequest;
 import sh.harold.fulcrum.host.api.HostInstanceKinds;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.security.KeyFactory;
+import java.security.KeyStore;
+import java.security.PrivateKey;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -160,6 +173,40 @@ final class AgonesAllocatorRestClientTest {
         assertNotNull(client);
     }
 
+    @Test
+    void tlsHttpClientLoadsCaPemFileWithoutClientCertificate() throws Exception {
+        Path ca = tempDir.resolve("tls-ca.crt");
+        Files.writeString(ca, TEST_CERTIFICATE, StandardCharsets.US_ASCII);
+
+        HttpClient client = AgonesAllocatorRestClient.tlsHttpClient(ca);
+
+        assertNotNull(client);
+    }
+
+    @Test
+    void tlsClientCanDisableHostnameVerificationForIdentitylessAllocatorCerts() throws Exception {
+        Path ca = tempDir.resolve("tls-ca.crt");
+        Files.writeString(ca, TEST_CERTIFICATE, StandardCharsets.US_ASCII);
+
+        try (AllocatorFixture fixture = AllocatorFixture.respondingHttps(200, allocationResponse("paper"))) {
+            AgonesAllocatorRestClient strictClient =
+                    AgonesAllocatorRestClient.tls(fixture.uri(), "default", ca);
+
+            IllegalStateException strictFailure =
+                    assertThrows(IllegalStateException.class, () -> strictClient.allocate(allocationRequest()));
+
+            assertTrue(strictFailure.getMessage().contains("Agones allocation request failed"));
+
+            AgonesAllocatorRestClient relaxedClient =
+                    AgonesAllocatorRestClient.tls(fixture.uri(), "default", ca, true);
+
+            HostAllocationClaim claim = relaxedClient.allocate(allocationRequest());
+
+            assertEquals("slot-host-1", claim.slotId().value());
+        }
+
+    }
+
     private static HostAllocationRequest allocationRequest() {
         return new HostAllocationRequest(
                 new PoolId("pool-paper-small"),
@@ -250,24 +297,35 @@ final class AgonesAllocatorRestClientTest {
 
     private static final class AllocatorFixture implements AutoCloseable {
         private final HttpServer server;
+        private final String scheme;
         private final AtomicReference<String> method = new AtomicReference<>();
         private final AtomicReference<String> contentType = new AtomicReference<>();
         private final AtomicReference<String> requestBody = new AtomicReference<>();
 
-        private AllocatorFixture(HttpServer server) {
+        private AllocatorFixture(HttpServer server, String scheme) {
             this.server = server;
+            this.scheme = scheme;
         }
 
         static AllocatorFixture responding(int statusCode, String responseBody) throws IOException {
             HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-            AllocatorFixture fixture = new AllocatorFixture(server);
+            AllocatorFixture fixture = new AllocatorFixture(server, "http");
+            server.createContext("/gameserverallocation", exchange -> fixture.handle(exchange, statusCode, responseBody));
+            server.start();
+            return fixture;
+        }
+
+        static AllocatorFixture respondingHttps(int statusCode, String responseBody) throws Exception {
+            HttpsServer server = HttpsServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+            server.setHttpsConfigurator(new HttpsConfigurator(serverSslContext()));
+            AllocatorFixture fixture = new AllocatorFixture(server, "https");
             server.createContext("/gameserverallocation", exchange -> fixture.handle(exchange, statusCode, responseBody));
             server.start();
             return fixture;
         }
 
         URI uri() {
-            return URI.create("http://127.0.0.1:" + server.getAddress().getPort());
+            return URI.create(scheme + "://127.0.0.1:" + server.getAddress().getPort());
         }
 
         String method() {
@@ -296,6 +354,33 @@ final class AgonesAllocatorRestClientTest {
             exchange.sendResponseHeaders(statusCode, bytes.length);
             exchange.getResponseBody().write(bytes);
             exchange.close();
+        }
+
+        private static SSLContext serverSslContext() throws Exception {
+            Certificate certificate;
+            try (ByteArrayInputStream input =
+                         new ByteArrayInputStream(TEST_CERTIFICATE.getBytes(StandardCharsets.US_ASCII))) {
+                certificate = CertificateFactory.getInstance("X.509").generateCertificate(input);
+            }
+            PrivateKey privateKey = KeyFactory.getInstance("RSA")
+                    .generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes()));
+            KeyStore keyStore = KeyStore.getInstance("PKCS12");
+            keyStore.load(null, null);
+            keyStore.setKeyEntry("allocator-test", privateKey, new char[0], new Certificate[]{certificate});
+            KeyManagerFactory keyManagerFactory =
+                    KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            keyManagerFactory.init(keyStore, new char[0]);
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(keyManagerFactory.getKeyManagers(), null, null);
+            return context;
+        }
+
+        private static byte[] privateKeyBytes() {
+            String base64 = TEST_PRIVATE_KEY
+                    .replace("-----BEGIN PRIVATE KEY-----", "")
+                    .replace("-----END PRIVATE KEY-----", "")
+                    .replaceAll("\\s", "");
+            return Base64.getDecoder().decode(base64);
         }
     }
 }

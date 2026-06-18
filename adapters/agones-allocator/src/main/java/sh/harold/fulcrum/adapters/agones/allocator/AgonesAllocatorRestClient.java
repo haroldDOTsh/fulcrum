@@ -12,6 +12,9 @@ import sh.harold.fulcrum.host.api.HostInstanceKinds;
 import sh.harold.fulcrum.host.api.HostNetworkEndpoint;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -36,24 +39,30 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 public final class AgonesAllocatorRestClient implements HostAllocationPort {
     private static final String ALLOCATION_PATH = "/gameserverallocation";
 
     private final URI allocatorEndpoint;
     private final String namespace;
-    private final HttpClient httpClient;
+    private final AllocatorHttpTransport transport;
 
     public AgonesAllocatorRestClient(URI allocatorEndpoint, String namespace) {
         this(allocatorEndpoint, namespace, HttpClient.newHttpClient());
     }
 
     public AgonesAllocatorRestClient(URI allocatorEndpoint, String namespace, HttpClient httpClient) {
+        this(allocatorEndpoint, namespace, new JdkHttpClientTransport(Objects.requireNonNull(httpClient, "httpClient")));
+    }
+
+    private AgonesAllocatorRestClient(URI allocatorEndpoint, String namespace, AllocatorHttpTransport transport) {
         this.allocatorEndpoint = Objects.requireNonNull(allocatorEndpoint, "allocatorEndpoint");
         this.namespace = AgonesAllocatorJson.requireNonBlank(namespace, "namespace");
-        this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
+        this.transport = Objects.requireNonNull(transport, "transport");
     }
 
     public static AgonesAllocatorRestClient mtls(
@@ -62,42 +71,109 @@ public final class AgonesAllocatorRestClient implements HostAllocationPort {
             Path clientCertificatePath,
             Path clientKeyPath,
             Path caCertificatePath) {
+        return mtls(allocatorEndpoint, namespace, clientCertificatePath, clientKeyPath, caCertificatePath, false);
+    }
+
+    public static AgonesAllocatorRestClient mtls(
+            URI allocatorEndpoint,
+            String namespace,
+            Path clientCertificatePath,
+            Path clientKeyPath,
+            Path caCertificatePath,
+            boolean disableHostnameVerification) {
         return new AgonesAllocatorRestClient(
                 allocatorEndpoint,
                 namespace,
-                mtlsHttpClient(clientCertificatePath, clientKeyPath, caCertificatePath));
+                tlsTransport(
+                        mtlsSslContext(
+                                clientCertificatePath,
+                                clientKeyPath,
+                                caCertificatePath,
+                                disableHostnameVerification),
+                        disableHostnameVerification));
+    }
+
+    public static AgonesAllocatorRestClient tls(
+            URI allocatorEndpoint,
+            String namespace,
+            Path caCertificatePath) {
+        return tls(allocatorEndpoint, namespace, caCertificatePath, false);
+    }
+
+    public static AgonesAllocatorRestClient tls(
+            URI allocatorEndpoint,
+            String namespace,
+            Path caCertificatePath,
+            boolean disableHostnameVerification) {
+        return new AgonesAllocatorRestClient(
+                allocatorEndpoint,
+                namespace,
+                tlsTransport(tlsSslContext(caCertificatePath, disableHostnameVerification), disableHostnameVerification));
     }
 
     public static HttpClient mtlsHttpClient(
             Path clientCertificatePath,
             Path clientKeyPath,
             Path caCertificatePath) {
+        return httpClient(mtlsSslContext(clientCertificatePath, clientKeyPath, caCertificatePath));
+    }
+
+    public static HttpClient tlsHttpClient(Path caCertificatePath) {
+        return httpClient(tlsSslContext(caCertificatePath, false));
+    }
+
+    private static SSLContext mtlsSslContext(
+            Path clientCertificatePath,
+            Path clientKeyPath,
+            Path caCertificatePath) {
+        return mtlsSslContext(clientCertificatePath, clientKeyPath, caCertificatePath, false);
+    }
+
+    private static SSLContext mtlsSslContext(
+            Path clientCertificatePath,
+            Path clientKeyPath,
+            Path caCertificatePath,
+            boolean pinnedCaTrustOnly) {
         try {
             SSLContext context = SSLContext.getInstance("TLS");
             context.init(
                     keyManagers(clientCertificatePath, clientKeyPath),
-                    trustManagers(caCertificatePath),
+                    trustManagers(caCertificatePath, pinnedCaTrustOnly),
                     null);
-            return HttpClient.newBuilder()
-                    .sslContext(context)
-                    .build();
+            return context;
         } catch (GeneralSecurityException | IOException exception) {
             throw new IllegalStateException("Failed to configure Agones allocator mTLS client", exception);
         }
+    }
+
+    private static SSLContext tlsSslContext(Path caCertificatePath, boolean pinnedCaTrustOnly) {
+        try {
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(null, trustManagers(caCertificatePath, pinnedCaTrustOnly), null);
+            return context;
+        } catch (GeneralSecurityException | IOException exception) {
+            throw new IllegalStateException("Failed to configure Agones allocator TLS client", exception);
+        }
+    }
+
+    private static HttpClient httpClient(SSLContext context) {
+        return HttpClient.newBuilder().sslContext(context).build();
+    }
+
+    private static AllocatorHttpTransport tlsTransport(SSLContext context, boolean disableHostnameVerification) {
+        if (disableHostnameVerification) {
+            return new UrlConnectionTransport(context, true);
+        }
+        return new JdkHttpClientTransport(httpClient(context));
     }
 
     @Override
     public HostAllocationClaim allocate(HostAllocationRequest request) {
         Objects.requireNonNull(request, "request");
         String requestBody = AgonesAllocatorJson.allocationRequest(namespace, request);
-        HttpRequest httpRequest = HttpRequest.newBuilder(allocatorEndpoint.resolve(ALLOCATION_PATH))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
-                .build();
-
-        HttpResponse<String> httpResponse;
+        AllocatorHttpResponse httpResponse;
         try {
-            httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            httpResponse = transport.send(allocatorEndpoint.resolve(ALLOCATION_PATH), requestBody);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Agones allocation request was interrupted", exception);
@@ -131,6 +207,68 @@ public final class AgonesAllocatorRestClient implements HostAllocationPort {
                 request.requestedAt());
     }
 
+    private interface AllocatorHttpTransport {
+        AllocatorHttpResponse send(URI uri, String requestBody) throws IOException, InterruptedException;
+    }
+
+    private record AllocatorHttpResponse(int statusCode, String body) {
+    }
+
+    private record JdkHttpClientTransport(HttpClient httpClient) implements AllocatorHttpTransport {
+        private JdkHttpClientTransport {
+            httpClient = Objects.requireNonNull(httpClient, "httpClient");
+        }
+
+        @Override
+        public AllocatorHttpResponse send(URI uri, String requestBody) throws IOException, InterruptedException {
+            HttpRequest httpRequest = HttpRequest.newBuilder(uri)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response =
+                    httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            return new AllocatorHttpResponse(response.statusCode(), response.body());
+        }
+    }
+
+    private record UrlConnectionTransport(
+            SSLContext sslContext,
+            boolean disableHostnameVerification) implements AllocatorHttpTransport {
+        private UrlConnectionTransport {
+            sslContext = Objects.requireNonNull(sslContext, "sslContext");
+        }
+
+        @Override
+        public AllocatorHttpResponse send(URI uri, String requestBody) throws IOException {
+            HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
+            if (connection instanceof HttpsURLConnection httpsConnection) {
+                httpsConnection.setSSLSocketFactory(sslContext.getSocketFactory());
+                if (disableHostnameVerification) {
+                    httpsConnection.setHostnameVerifier((hostname, session) -> true);
+                }
+            }
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json");
+            byte[] bytes = requestBody.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(bytes);
+            }
+
+            int statusCode = connection.getResponseCode();
+            InputStream input = statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            String responseBody = "";
+            if (input != null) {
+                try (input) {
+                    responseBody = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+                }
+            }
+            connection.disconnect();
+            return new AllocatorHttpResponse(statusCode, responseBody);
+        }
+    }
+
     private static javax.net.ssl.KeyManager[] keyManagers(
             Path clientCertificatePath,
             Path clientKeyPath) throws GeneralSecurityException, IOException {
@@ -146,7 +284,16 @@ public final class AgonesAllocatorRestClient implements HostAllocationPort {
 
     private static javax.net.ssl.TrustManager[] trustManagers(
             Path caCertificatePath) throws GeneralSecurityException, IOException {
+        return trustManagers(caCertificatePath, false);
+    }
+
+    private static javax.net.ssl.TrustManager[] trustManagers(
+            Path caCertificatePath,
+            boolean pinnedCaTrustOnly) throws GeneralSecurityException, IOException {
         X509Certificate[] certificates = certificates(caCertificatePath);
+        if (pinnedCaTrustOnly) {
+            return new javax.net.ssl.TrustManager[]{new PinnedCaTrustManager(certificates)};
+        }
         KeyStore trustStore = KeyStore.getInstance("PKCS12");
         trustStore.load(null, null);
         for (int index = 0; index < certificates.length; index++) {
@@ -261,6 +408,83 @@ public final class AgonesAllocatorRestClient implements HostAllocationPort {
         @Override
         public byte[] decoded() {
             return decoded.clone();
+        }
+    }
+
+    private static final class PinnedCaTrustManager implements X509TrustManager {
+        private static final String SERVER_AUTH_EXTENDED_KEY_USAGE = "1.3.6.1.5.5.7.3.1";
+
+        private final X509Certificate[] acceptedIssuers;
+
+        private PinnedCaTrustManager(X509Certificate[] acceptedIssuers) {
+            this.acceptedIssuers = acceptedIssuers.clone();
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws java.security.cert.CertificateException {
+            throw new java.security.cert.CertificateException("Pinned Agones allocator trust is server-only");
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) throws java.security.cert.CertificateException {
+            if (chain == null || chain.length == 0) {
+                throw new java.security.cert.CertificateException("Agones allocator did not present a certificate chain");
+            }
+            java.security.cert.CertificateException failure = null;
+            for (X509Certificate acceptedIssuer : acceptedIssuers) {
+                try {
+                    verifyChain(chain, acceptedIssuer);
+                    verifyServerUsage(chain[0]);
+                    return;
+                } catch (java.security.cert.CertificateException exception) {
+                    failure = exception;
+                }
+            }
+            throw new java.security.cert.CertificateException(
+                    "Agones allocator certificate was not signed by a pinned CA",
+                    failure);
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return acceptedIssuers.clone();
+        }
+
+        private static void verifyChain(
+                X509Certificate[] chain,
+                X509Certificate acceptedIssuer) throws java.security.cert.CertificateException {
+            try {
+                for (X509Certificate certificate : chain) {
+                    certificate.checkValidity();
+                }
+                acceptedIssuer.checkValidity();
+                for (int index = 0; index < chain.length - 1; index++) {
+                    verifyIssuedBy(chain[index], chain[index + 1]);
+                }
+                verifyIssuedBy(chain[chain.length - 1], acceptedIssuer);
+            } catch (GeneralSecurityException exception) {
+                throw new java.security.cert.CertificateException(
+                        "Agones allocator certificate chain failed pinned-CA validation",
+                        exception);
+            }
+        }
+
+        private static void verifyIssuedBy(
+                X509Certificate certificate,
+                X509Certificate issuer) throws GeneralSecurityException {
+            if (!certificate.getIssuerX500Principal().equals(issuer.getSubjectX500Principal())) {
+                throw new java.security.cert.CertificateException(
+                        "Certificate issuer does not match pinned issuer subject");
+            }
+            certificate.verify(issuer.getPublicKey());
+        }
+
+        private static void verifyServerUsage(X509Certificate certificate) throws java.security.cert.CertificateException {
+            List<String> extendedKeyUsage = certificate.getExtendedKeyUsage();
+            if (extendedKeyUsage != null && !extendedKeyUsage.contains(SERVER_AUTH_EXTENDED_KEY_USAGE)) {
+                throw new java.security.cert.CertificateException(
+                        "Agones allocator certificate is not valid for TLS server authentication");
+            }
         }
     }
 }
