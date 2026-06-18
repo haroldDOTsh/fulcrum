@@ -176,6 +176,114 @@ spec:
               memory: "512Mi"
 ---
 apiVersion: v1
+kind: Secret
+metadata:
+  name: fulcrum-object-store-credentials
+  namespace: fulcrum-lobby
+type: Opaque
+stringData:
+  FULCRUM_OBJECT_STORE_ACCESS_KEY: "fulcrum-object-access"
+  FULCRUM_OBJECT_STORE_SECRET_KEY: "fulcrum-object-secret"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fulcrum-object-store
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "object-storage"
+spec:
+  selector:
+    sh.harold.fulcrum/service: "object-storage"
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+      protocol: TCP
+    - name: console
+      port: 9001
+      targetPort: console
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fulcrum-object-store
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "object-storage"
+spec:
+  serviceName: fulcrum-object-store
+  replicas: 1
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: "object-storage"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: "object-storage"
+    spec:
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+          imagePullPolicy: IfNotPresent
+          args:
+            - "server"
+            - "/data"
+            - "--address"
+            - ":9000"
+            - "--console-address"
+            - ":9001"
+          ports:
+            - name: s3
+              containerPort: 9000
+              protocol: TCP
+            - name: console
+              containerPort: 9001
+              protocol: TCP
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-object-store-credentials
+                  key: FULCRUM_OBJECT_STORE_ACCESS_KEY
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-object-store-credentials
+                  key: FULCRUM_OBJECT_STORE_SECRET_KEY
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: s3
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "1024Mi"
+          volumeMounts:
+            - name: object-store-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: object-store-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: fulcrum-authority-service
@@ -185,6 +293,12 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: fulcrum-controller-service
+  namespace: fulcrum-lobby
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-worker-agent
   namespace: fulcrum-lobby
 ---
 apiVersion: v1
@@ -234,7 +348,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:18.2
+          image: postgres:18.4
           imagePullPolicy: IfNotPresent
           ports:
             - name: postgres
@@ -530,12 +644,10 @@ spec:
               value: "https://agones-allocator.agones-system.svc.cluster.local"
             - name: FULCRUM_AGONES_NAMESPACE
               value: "fulcrum-lobby"
-            - name: FULCRUM_AGONES_ALLOCATOR_CLIENT_CERT_PATH
-              value: "/var/run/secrets/fulcrum/agones-allocator/client/tls.crt"
-            - name: FULCRUM_AGONES_ALLOCATOR_CLIENT_KEY_PATH
-              value: "/var/run/secrets/fulcrum/agones-allocator/client/tls.key"
             - name: FULCRUM_AGONES_ALLOCATOR_CA_CERT_PATH
               value: "/var/run/secrets/fulcrum/agones-allocator/ca/tls-ca.crt"
+            - name: FULCRUM_AGONES_ALLOCATOR_DISABLE_HOSTNAME_VERIFICATION
+              value: "true"
             - name: FULCRUM_CONTROL_STATE_TOPIC
               value: "ctrl.state"
             - name: FULCRUM_HOST_COMMAND_TOPIC
@@ -577,24 +689,103 @@ spec:
             limits:
               memory: "1024Mi"
           volumeMounts:
-            - name: agones-allocator-client
-              mountPath: /var/run/secrets/fulcrum/agones-allocator/client
-              readOnly: true
             - name: agones-allocator-ca
               mountPath: /var/run/secrets/fulcrum/agones-allocator/ca
               readOnly: true
       volumes:
-        - name: agones-allocator-client
-          secret:
-            secretName: allocator-client.default
-            items:
-              - key: tls.crt
-                path: tls.crt
-              - key: tls.key
-                path: tls.key
         - name: agones-allocator-ca
           secret:
             secretName: fulcrum-agones-allocator-tls-ca
             items:
               - key: tls-ca.crt
                 path: tls-ca.crt
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fulcrum-worker-agent
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/role: "worker-agent"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: "worker-agent"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "worker-agent"
+    spec:
+      serviceAccountName: fulcrum-worker-agent
+      containers:
+        - name: worker-agent
+          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--profile=single-machine"
+            - "--role=worker-agent"
+            - "--mode=run"
+            - "--probe-host=0.0.0.0"
+            - "--probe-port=8080"
+          ports:
+            - name: probe
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: FULCRUM_WORKER_KAFKA_BOOTSTRAP_SERVERS
+              value: "fulcrum-kafka:9092"
+            - name: FULCRUM_WORKER_JOB_TOPIC
+              value: "worker.jobs"
+            - name: FULCRUM_WORKER_RESULT_TOPIC
+              value: "worker.results"
+            - name: FULCRUM_WORKER_OBJECT_BUCKET
+              value: "worker-results"
+            - name: FULCRUM_OBJECT_STORE_MODE
+              value: "s3"
+            - name: FULCRUM_OBJECT_STORE_ENDPOINT
+              value: "http://fulcrum-object-store:9000"
+            - name: FULCRUM_OBJECT_STORE_REGION
+              value: "us-east-1"
+            - name: FULCRUM_OBJECT_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-object-store-credentials
+                  key: FULCRUM_OBJECT_STORE_ACCESS_KEY
+            - name: FULCRUM_OBJECT_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-object-store-credentials
+                  key: FULCRUM_OBJECT_STORE_SECRET_KEY
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: FULCRUM_MACHINE_REF
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: FULCRUM_POOL_ID
+              value: "pool-worker"
+            - name: FULCRUM_PRINCIPAL_ID
+              value: "principal-fulcrum-worker-agent"
+            - name: FULCRUM_CREDENTIAL_REF
+              value: "service-account:fulcrum-worker-agent"
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: probe
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: probe
+            initialDelaySeconds: 20
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              memory: "1024Mi"

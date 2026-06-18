@@ -3,7 +3,7 @@ set -eu
 
 : "${FULCRUM_PROFILE:=single-machine}"
 : "${FULCRUM_PROBE_HOST:=0.0.0.0}"
-: "${FULCRUM_PROBE_PORT:=8080}"
+: "${FULCRUM_PROBE_PORT:=18081}"
 : "${PAPER_SERVER_JAR:=/opt/fulcrum/paper/paper-server.jar}"
 : "${PAPER_JAVA_OPTS:=-Xms512m -Xmx2g}"
 : "${PAPER_ARGS:=nogui}"

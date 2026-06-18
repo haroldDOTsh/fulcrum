@@ -21,6 +21,6 @@ RUN apt-get update \
     && apt-get purge -y --auto-remove curl \
     && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 25565 8080
+EXPOSE 25565 18081
 
 ENTRYPOINT ["/opt/fulcrum/bin/paper-gameserver"]

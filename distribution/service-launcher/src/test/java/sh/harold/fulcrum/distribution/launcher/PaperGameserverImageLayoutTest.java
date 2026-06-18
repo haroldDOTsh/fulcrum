@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
@@ -43,10 +45,11 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(dockerfile.contains("-H \"User-Agent: ${PAPER_DOWNLOAD_USER_AGENT}\""));
         assertTrue(dockerfile.contains("sha256sum -c -"));
         assertTrue(dockerfile.contains("-o /opt/fulcrum/paper/paper-server.jar"));
-        assertTrue(dockerfile.contains("EXPOSE 25565 8080"));
+        assertTrue(dockerfile.contains("EXPOSE 25565 18081"));
         assertTrue(dockerfile.contains("ENTRYPOINT [\"/opt/fulcrum/bin/paper-gameserver\"]"));
 
         assertTrue(entrypoint.contains("/opt/fulcrum/fulcrum/bin/fulcrum"));
+        assertTrue(entrypoint.contains(": \"${FULCRUM_PROBE_PORT:=18081}\""));
         assertTrue(entrypoint.contains("if [ \"$#\" -eq 0 ]; then"));
         assertTrue(entrypoint.contains("--role=paper-agent"));
         assertTrue(entrypoint.contains("--probe-port=\"${FULCRUM_PROBE_PORT}\""));
@@ -67,11 +70,25 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(readme.contains("stable Paper build"));
         assertTrue(readme.contains("FULCRUM_PAPER_OBSERVATION_BRIDGE_URL"));
         assertTrue(readme.contains("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL"));
+        assertTrue(readme.contains("FULCRUM_PAPER_REWARD_BRIDGE_URL"));
         assertTrue(readme.contains("online-mode=false"));
 
         assertEquals("paper-26.1.2-70.jar", paperServer.getProperty("downloadName"));
         assertEquals("STABLE", paperServer.getProperty("channel"));
         assertTrue(paperServer.getProperty("sha256").matches("[a-f0-9]{64}"));
+    }
+
+    @Test
+    void hostPluginJarsIncludeRuntimeClasspathForServerClassloaders() throws IOException {
+        String paperBuild = Files.readString(Path.of("..", "..", "host", "paper-agent", "build.gradle.kts"));
+        String velocityBuild = Files.readString(Path.of("..", "..", "host", "velocity-agent", "build.gradle.kts"));
+
+        assertTrue(paperBuild.contains("tasks.named<Jar>(\"jar\")"));
+        assertTrue(paperBuild.contains("configurations.runtimeClasspath.get()"));
+        assertTrue(paperBuild.contains("map { zipTree(it) }"));
+        assertTrue(velocityBuild.contains("tasks.named<Jar>(\"jar\")"));
+        assertTrue(velocityBuild.contains("configurations.runtimeClasspath.get()"));
+        assertTrue(velocityBuild.contains("map { zipTree(it) }"));
     }
 
     @Test

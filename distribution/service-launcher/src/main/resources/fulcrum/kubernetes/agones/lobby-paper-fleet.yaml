@@ -21,17 +21,32 @@ metadata:
   name: fulcrum-paper-agent
   namespace: fulcrum-lobby
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
 metadata:
-  name: fulcrum-object-store
+  name: fulcrum-paper-agones-sdk
   namespace: fulcrum-lobby
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
+rules:
+  - apiGroups: ["agones.dev"]
+    resources: ["gameservers"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fulcrum-paper-agones-sdk
+  namespace: fulcrum-lobby
+subjects:
+  - kind: ServiceAccount
+    name: fulcrum-paper-agent
+    namespace: fulcrum-lobby
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fulcrum-paper-agones-sdk
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -39,13 +54,16 @@ metadata:
   name: fulcrum-lobby-paper-assignment
   namespace: fulcrum-lobby
 data:
-  FULCRUM_OBJECT_STORE_ROOT: "/var/fulcrum/object-store"
+  FULCRUM_OBJECT_STORE_MODE: "s3"
+  FULCRUM_OBJECT_STORE_ENDPOINT: "http://fulcrum-object-store:9000"
+  FULCRUM_OBJECT_STORE_REGION: "us-east-1"
   FULCRUM_PAPER_SERVER_ROOT: "/var/fulcrum/paper"
   FULCRUM_PAPER_ALLOCATION_FILE: "/var/fulcrum/paper/fulcrum-allocated-assignment.properties"
   FULCRUM_PAPER_KAFKA_BOOTSTRAP_SERVERS: "fulcrum-kafka:9092"
   FULCRUM_PAPER_AGONES_SDK_URL: "http://127.0.0.1:9358/"
   FULCRUM_PAPER_OBSERVATION_BRIDGE_URL: "http://127.0.0.1:18080/observations"
   FULCRUM_PAPER_CAPABILITY_BRIDGE_URL: "http://127.0.0.1:18083/capabilities"
+  FULCRUM_PAPER_REWARD_BRIDGE_URL: "http://127.0.0.1:18084/rewards"
   FULCRUM_VALKEY_ENDPOINT: "fulcrum-valkey:6379"
   FULCRUM_PAPER_EXPERIENCE_ID: "experience-lobby"
   FULCRUM_PAPER_SESSION_ID: "session-lobby-shared"
@@ -57,7 +75,7 @@ data:
   FULCRUM_PAPER_WORLD_ARTIFACT_COMPATIBILITY: "lobby-world-v1"
   FULCRUM_PAPER_SESSION_LEASE: "PT5M"
   FULCRUM_PAPER_HOST_RUNTIME_ABI: "paper-host-runtime-v1"
-  FULCRUM_PAPER_ROUTE_ID_PREFIX: "route-paper-"
+  FULCRUM_PAPER_ROUTE_ID_PREFIX: "route-velocity-login-"
   FULCRUM_PAPER_SPAWN_WORLD: "world"
   FULCRUM_PAPER_SPAWN_X: "0.5"
   FULCRUM_PAPER_SPAWN_Y: "65.0"
@@ -66,6 +84,12 @@ data:
   FULCRUM_PAPER_SPAWN_PITCH: "0.0"
   FULCRUM_HOST_COMMAND_TOPIC: "host.paper.commands"
   FULCRUM_HOST_OBSERVATION_TOPIC: "host.observation"
+  FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC: "cmd.standard.economy"
+  FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC: "cmd.standard.stats"
+  FULCRUM_PAPER_REWARD_CURRENCY_KEY: "coins"
+  FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS: "250"
+  FULCRUM_PAPER_REWARD_STAT_KEY: "session-completions"
+  FULCRUM_PAPER_REWARD_DELIVERY_COPIES: "2"
 ---
 apiVersion: v1
 kind: Secret
@@ -104,8 +128,22 @@ spec:
             - "/opt/fulcrum/fulcrum/lib/*"
             - "sh.harold.fulcrum.distribution.launcher.LobbyWorldArtifactProvisioner"
           env:
-            - name: FULCRUM_OBJECT_STORE_ROOT
-              value: "/var/fulcrum/object-store"
+            - name: FULCRUM_OBJECT_STORE_MODE
+              value: "s3"
+            - name: FULCRUM_OBJECT_STORE_ENDPOINT
+              value: "http://fulcrum-object-store:9000"
+            - name: FULCRUM_OBJECT_STORE_REGION
+              value: "us-east-1"
+            - name: FULCRUM_OBJECT_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-object-store-credentials
+                  key: FULCRUM_OBJECT_STORE_ACCESS_KEY
+            - name: FULCRUM_OBJECT_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-object-store-credentials
+                  key: FULCRUM_OBJECT_STORE_SECRET_KEY
             - name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS
               value: "fulcrum-kafka:9092"
             - name: FULCRUM_ARTIFACT_METADATA_COMMAND_TOPIC
@@ -124,13 +162,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-          volumeMounts:
-            - name: object-store
-              mountPath: /var/fulcrum/object-store
-      volumes:
-        - name: object-store
-          persistentVolumeClaim:
-            claimName: fulcrum-object-store
 ---
 apiVersion: batch/v1
 kind: Job
@@ -283,7 +314,7 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 0
+      maxUnavailable: 1
   template:
     metadata:
       labels:
@@ -327,19 +358,21 @@ spec:
                 - "--role=paper-agent"
                 - "--mode=run"
                 - "--probe-host=0.0.0.0"
-                - "--probe-port=8080"
+                - "--probe-port=18081"
               ports:
                 - name: minecraft
                   containerPort: 25565
                   protocol: TCP
                 - name: probe
-                  containerPort: 8080
+                  containerPort: 18081
                   protocol: TCP
               envFrom:
                 - configMapRef:
                     name: fulcrum-lobby-paper-assignment
                 - secretRef:
                     name: fulcrum-lobby-paper-owner
+                - secretRef:
+                    name: fulcrum-object-store-credentials
               env:
                 - name: FULCRUM_INSTANCE_ID
                   valueFrom:
@@ -355,6 +388,8 @@ spec:
                   value: "principal-fulcrum-paper-agent"
                 - name: FULCRUM_CREDENTIAL_REF
                   value: "service-account:fulcrum-paper-agent"
+                - name: MINECRAFT_EULA
+                  value: "true"
               livenessProbe:
                 httpGet:
                   path: /live
@@ -370,16 +405,9 @@ spec:
               volumeMounts:
                 - name: paper-state
                   mountPath: /var/fulcrum/paper
-                - name: object-store
-                  mountPath: /var/fulcrum/object-store
-                  readOnly: true
           volumes:
             - name: paper-state
               emptyDir: {}
-            - name: object-store
-              persistentVolumeClaim:
-                claimName: fulcrum-object-store
-                readOnly: true
 ---
 apiVersion: autoscaling.agones.dev/v1
 kind: FleetAutoscaler
