@@ -25,6 +25,7 @@ final class PaperPluginRuntimeConfigurationTest {
         values.put("FULCRUM_HOST_OBSERVATION_TOPIC", "host.observation.custom");
         values.put("FULCRUM_PAPER_OBSERVATION_BRIDGE_URL", "http://127.0.0.1:18080/observations");
         values.put("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL", "http://127.0.0.1:18083/capabilities");
+        values.put("FULCRUM_PAPER_REWARD_BRIDGE_URL", "http://127.0.0.1:18084/rewards");
 
         PaperPluginRuntimeConfiguration configuration =
                 PaperPluginRuntimeConfiguration.fromEnvironment(values);
@@ -46,6 +47,9 @@ final class PaperPluginRuntimeConfigurationTest {
         assertEquals(
                 URI.create("http://127.0.0.1:18083/capabilities"),
                 configuration.capabilityBridgeUrl().orElseThrow());
+        assertEquals(
+                URI.create("http://127.0.0.1:18084/rewards"),
+                configuration.rewardBridgeUrl().orElseThrow());
     }
 
     @Test
@@ -70,6 +74,15 @@ final class PaperPluginRuntimeConfigurationTest {
     void rejectsCapabilityBridgeWithoutExplicitPort() {
         Map<String, String> values = bindings();
         values.put("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL", "http://localhost/capabilities");
+
+        assertThrows(IllegalArgumentException.class, () ->
+                PaperPluginRuntimeConfiguration.fromEnvironment(values));
+    }
+
+    @Test
+    void rejectsRewardBridgeWithoutExplicitPort() {
+        Map<String, String> values = bindings();
+        values.put("FULCRUM_PAPER_REWARD_BRIDGE_URL", "http://localhost/rewards");
 
         assertThrows(IllegalArgumentException.class, () ->
                 PaperPluginRuntimeConfiguration.fromEnvironment(values));

@@ -188,8 +188,9 @@ public final class PaperJoinAttachmentHandler {
         observationSink.publish(observationEffect.observation());
     }
 
-    private RouteId routeId(PaperJoiningSubject subject) {
-        return new RouteId(routeIdPrefix + subject.playerUuid());
+    RouteId routeId(PaperJoiningSubject subject) {
+        Objects.requireNonNull(subject, "subject");
+        return new RouteId(routeIdPrefix + subject.playerUuid().toString().replace("-", ""));
     }
 
     private TraceEnvelope trace(PaperSessionHostEventType type, PaperJoiningSubject subject, Instant now) {

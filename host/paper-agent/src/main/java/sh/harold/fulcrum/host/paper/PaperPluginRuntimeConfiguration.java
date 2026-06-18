@@ -27,7 +27,8 @@ public record PaperPluginRuntimeConfiguration(
         String routeIdPrefix,
         PaperSpawnPoint spawnPoint,
         Optional<URI> observationBridgeUrl,
-        Optional<URI> capabilityBridgeUrl) {
+        Optional<URI> capabilityBridgeUrl,
+        Optional<URI> rewardBridgeUrl) {
     public PaperPluginRuntimeConfiguration {
         securityContext = Objects.requireNonNull(securityContext, "securityContext");
         sessionId = Objects.requireNonNull(sessionId, "sessionId");
@@ -36,6 +37,7 @@ public record PaperPluginRuntimeConfiguration(
         spawnPoint = Objects.requireNonNull(spawnPoint, "spawnPoint");
         observationBridgeUrl = Objects.requireNonNull(observationBridgeUrl, "observationBridgeUrl");
         capabilityBridgeUrl = Objects.requireNonNull(capabilityBridgeUrl, "capabilityBridgeUrl");
+        rewardBridgeUrl = Objects.requireNonNull(rewardBridgeUrl, "rewardBridgeUrl");
     }
 
     public static PaperPluginRuntimeConfiguration fromEnvironment(Map<String, String> environment) {
@@ -58,7 +60,7 @@ public record PaperPluginRuntimeConfiguration(
                 securityContext,
                 new SessionId(required(environment, "FULCRUM_PAPER_SESSION_ID")),
                 allocatedAssignmentFile(environment),
-                optional(environment, "FULCRUM_PAPER_ROUTE_ID_PREFIX", "route-paper-"),
+                optional(environment, "FULCRUM_PAPER_ROUTE_ID_PREFIX", "route-velocity-login-"),
                 new PaperSpawnPoint(
                         optional(environment, "FULCRUM_PAPER_SPAWN_WORLD", "world"),
                         doubleValue(environment, "FULCRUM_PAPER_SPAWN_X", 0.5D),
@@ -67,7 +69,8 @@ public record PaperPluginRuntimeConfiguration(
                         floatValue(environment, "FULCRUM_PAPER_SPAWN_YAW", 0.0F),
                         floatValue(environment, "FULCRUM_PAPER_SPAWN_PITCH", 0.0F)),
                 optionalHttpUri(environment, "FULCRUM_PAPER_OBSERVATION_BRIDGE_URL"),
-                optionalHttpUriWithExplicitPort(environment, "FULCRUM_PAPER_CAPABILITY_BRIDGE_URL"));
+                optionalHttpUriWithExplicitPort(environment, "FULCRUM_PAPER_CAPABILITY_BRIDGE_URL"),
+                optionalHttpUriWithExplicitPort(environment, "FULCRUM_PAPER_REWARD_BRIDGE_URL"));
     }
 
     private static Path allocatedAssignmentFile(Map<String, String> environment) {

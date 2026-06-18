@@ -9,6 +9,7 @@ public final class FulcrumPaperPlugin extends JavaPlugin {
     private PaperPlayerSessionListener sessionListener;
     private PaperObservationSink observationSink;
     private PaperCapabilityBridge capabilityBridge;
+    private PaperRewardSink rewardSink;
 
     @Override
     public void onEnable() {
@@ -17,6 +18,7 @@ public final class FulcrumPaperPlugin extends JavaPlugin {
         mainThread = new PaperHostMainThread(this);
         observationSink = createObservationSink(configuration);
         capabilityBridge = createCapabilityBridge(configuration);
+        rewardSink = createRewardSink(configuration);
         getServer().getMessenger().registerOutgoingPluginChannel(this, PaperLobbyProofMessage.CHANNEL);
         sessionListener = new PaperPlayerSessionListener(
                 this,
@@ -27,8 +29,12 @@ public final class FulcrumPaperPlugin extends JavaPlugin {
                         observationSink,
                         Clock.systemUTC(),
                         mainThread),
+                () -> PaperAllocatedAssignmentFile.requireSlotId(configuration.allocatedAssignmentFile()),
+                () -> PaperAllocatedAssignmentFile.requireResolvedManifestId(configuration.allocatedAssignmentFile()),
+                () -> PaperAllocatedAssignmentFile.requireTraceId(configuration.allocatedAssignmentFile()),
                 configuration.spawnPoint(),
-                capabilityBridge);
+                capabilityBridge,
+                rewardSink);
         getServer().getPluginManager().registerEvents(sessionListener, this);
     }
 
@@ -47,6 +53,16 @@ public final class FulcrumPaperPlugin extends JavaPlugin {
                 .orElseGet(NoopPaperCapabilityBridge::new);
     }
 
+    private PaperRewardSink createRewardSink(PaperPluginRuntimeConfiguration configuration) {
+        return configuration.rewardBridgeUrl()
+                .<PaperRewardSink>map(PaperHttpRewardSink::new)
+                .orElseGet(() -> report -> getLogger().info(
+                        "reported Paper reward for "
+                                + report.subjectId().value()
+                                + " in "
+                                + report.sessionId().value()));
+    }
+
     PaperHostMainThread mainThread() {
         return mainThread;
     }
@@ -61,5 +77,9 @@ public final class FulcrumPaperPlugin extends JavaPlugin {
 
     PaperCapabilityBridge capabilityBridge() {
         return capabilityBridge;
+    }
+
+    PaperRewardSink rewardSink() {
+        return rewardSink;
     }
 }

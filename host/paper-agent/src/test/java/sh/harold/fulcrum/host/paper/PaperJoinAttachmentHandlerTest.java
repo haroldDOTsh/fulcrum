@@ -38,7 +38,7 @@ final class PaperJoinAttachmentHandlerTest {
         HostObservation observation = handler.attach(new PaperJoiningSubject(PLAYER_UUID, "ExamplePlayer"));
 
         assertEquals(HostObservationTypes.SESSION_ATTACHED, observation.observationType());
-        assertEquals("route-paper-" + PLAYER_UUID, observation.attributes().get("routeId"));
+        assertEquals("route-paper-" + compact(PLAYER_UUID), observation.attributes().get("routeId"));
         assertEquals(PLAYER_UUID.toString(), observation.attributes().get("subjectId"));
         assertEquals("session-lobby", observation.attributes().get("sessionId"));
         assertTrue(handler.state().attachedSubjects().contains(observationSubject()));
@@ -53,7 +53,7 @@ final class PaperJoinAttachmentHandlerTest {
         HostObservation observation = handler.detach(new PaperJoiningSubject(PLAYER_UUID, "ExamplePlayer"));
 
         assertEquals(HostObservationTypes.SESSION_DETACHED, observation.observationType());
-        assertEquals("route-paper-" + PLAYER_UUID, observation.attributes().get("routeId"));
+        assertEquals("route-paper-" + compact(PLAYER_UUID), observation.attributes().get("routeId"));
         assertEquals(PLAYER_UUID.toString(), observation.attributes().get("subjectId"));
         assertEquals("session-lobby", observation.attributes().get("sessionId"));
         assertFalse(handler.state().attachedSubjects().contains(observationSubject()));
@@ -117,6 +117,10 @@ final class PaperJoinAttachmentHandlerTest {
 
     private static SubjectId observationSubject() {
         return new SubjectId(PLAYER_UUID);
+    }
+
+    private static String compact(UUID uuid) {
+        return uuid.toString().replace("-", "");
     }
 
     private static final class RecordingObservationSink implements PaperObservationSink {

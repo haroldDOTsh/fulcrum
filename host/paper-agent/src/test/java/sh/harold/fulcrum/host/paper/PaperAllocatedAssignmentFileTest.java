@@ -23,16 +23,17 @@ final class PaperAllocatedAssignmentFileTest {
     private Path tempDir;
 
     @Test
-    void writesAndReadsAllocatedSessionSlotAndManifest() {
+    void writesAndReadsAllocatedSessionSlotManifestAndTrace() {
         Path file = PaperAllocatedAssignmentFile.defaultPath(tempDir);
 
-        PaperAllocatedAssignmentFile.write(file, assignment());
+        PaperAllocatedAssignmentFile.write(file, assignment(), "trace-paper-session-lobby-shared");
 
         PaperAllocatedAssignmentFile.AllocatedAssignment read =
                 PaperAllocatedAssignmentFile.read(file).orElseThrow();
         assertEquals(new SessionId("session-lobby-allocated"), read.sessionId());
         assertEquals(new SlotId("slot-lobby-allocated"), read.slotId());
         assertEquals(new ResolvedManifestId("manifest-lobby"), read.resolvedManifestId());
+        assertEquals("trace-paper-session-lobby-shared", read.traceId());
     }
 
     @Test
@@ -50,6 +51,33 @@ final class PaperAllocatedAssignmentFileTest {
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
                 () -> PaperAllocatedAssignmentFile.requireSessionId(tempDir.resolve("missing.properties")));
+
+        assertTrue(exception.getMessage().contains("allocated assignment file"));
+    }
+
+    @Test
+    void requireSlotIdFailsWhenAllocationFileIsMissing() {
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> PaperAllocatedAssignmentFile.requireSlotId(tempDir.resolve("missing.properties")));
+
+        assertTrue(exception.getMessage().contains("allocated assignment file"));
+    }
+
+    @Test
+    void requireResolvedManifestIdFailsWhenAllocationFileIsMissing() {
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> PaperAllocatedAssignmentFile.requireResolvedManifestId(tempDir.resolve("missing.properties")));
+
+        assertTrue(exception.getMessage().contains("allocated assignment file"));
+    }
+
+    @Test
+    void requireTraceIdFailsWhenAllocationFileIsMissing() {
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> PaperAllocatedAssignmentFile.requireTraceId(tempDir.resolve("missing.properties")));
 
         assertTrue(exception.getMessage().contains("allocated assignment file"));
     }

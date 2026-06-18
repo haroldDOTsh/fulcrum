@@ -1,7 +1,10 @@
 package sh.harold.fulcrum.host.paper;
 
 import sh.harold.fulcrum.api.kernel.InstanceId;
+import sh.harold.fulcrum.api.kernel.ResolvedManifestId;
+import sh.harold.fulcrum.api.kernel.RouteId;
 import sh.harold.fulcrum.api.kernel.SessionId;
+import sh.harold.fulcrum.api.kernel.SlotId;
 import sh.harold.fulcrum.api.kernel.SubjectId;
 
 import java.nio.charset.StandardCharsets;
@@ -15,6 +18,10 @@ import java.util.UUID;
 public record PaperLobbyProofMessage(
         InstanceId instanceId,
         SessionId sessionId,
+        RouteId routeId,
+        SlotId slotId,
+        ResolvedManifestId resolvedManifestId,
+        String traceId,
         SubjectId subjectId,
         String spawnWorld,
         int bedrockBlockX,
@@ -36,6 +43,10 @@ public record PaperLobbyProofMessage(
     public PaperLobbyProofMessage {
         instanceId = Objects.requireNonNull(instanceId, "instanceId");
         sessionId = Objects.requireNonNull(sessionId, "sessionId");
+        routeId = Objects.requireNonNull(routeId, "routeId");
+        slotId = Objects.requireNonNull(slotId, "slotId");
+        resolvedManifestId = Objects.requireNonNull(resolvedManifestId, "resolvedManifestId");
+        traceId = PaperArtifactNames.requireNonBlank(traceId, "traceId");
         subjectId = Objects.requireNonNull(subjectId, "subjectId");
         spawnWorld = PaperArtifactNames.requireNonBlank(spawnWorld, "spawnWorld");
         requireFinite(playerX, "playerX");
@@ -52,6 +63,10 @@ public record PaperLobbyProofMessage(
     static PaperLobbyProofMessage from(
             InstanceId instanceId,
             SessionId sessionId,
+            RouteId routeId,
+            SlotId slotId,
+            ResolvedManifestId resolvedManifestId,
+            String traceId,
             PaperSpawnPoint spawnPoint,
             double playerX,
             double playerY,
@@ -62,12 +77,20 @@ public record PaperLobbyProofMessage(
             PaperChatDecorationResponse chatDecoration) {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(sessionId, "sessionId");
+        Objects.requireNonNull(routeId, "routeId");
+        Objects.requireNonNull(slotId, "slotId");
+        Objects.requireNonNull(resolvedManifestId, "resolvedManifestId");
+        PaperArtifactNames.requireNonBlank(traceId, "traceId");
         Objects.requireNonNull(spawnPoint, "spawnPoint");
         Objects.requireNonNull(subjectView, "subjectView");
         Objects.requireNonNull(chatDecoration, "chatDecoration");
         return new PaperLobbyProofMessage(
                 instanceId,
                 sessionId,
+                routeId,
+                slotId,
+                resolvedManifestId,
+                traceId,
                 subjectView.subjectId(),
                 spawnPoint.worldName(),
                 spawnPoint.bedrockBlockX(),
@@ -92,6 +115,10 @@ public record PaperLobbyProofMessage(
                 MARKER,
                 "instanceId=" + encodeValue(instanceId.value()),
                 "sessionId=" + encodeValue(sessionId.value()),
+                "routeId=" + encodeValue(routeId.value()),
+                "slotId=" + encodeValue(slotId.value()),
+                "resolvedManifestId=" + encodeValue(resolvedManifestId.value()),
+                "traceId=" + encodeValue(traceId),
                 "subjectId=" + subjectId.value(),
                 "spawnWorld=" + encodeValue(spawnWorld),
                 "spawnBlock=" + SPAWN_BLOCK,
@@ -136,6 +163,10 @@ public record PaperLobbyProofMessage(
         return new PaperLobbyProofMessage(
                 new InstanceId(decodeValue(required(fields, "instanceId"))),
                 new SessionId(decodeValue(required(fields, "sessionId"))),
+                new RouteId(decodeValue(required(fields, "routeId"))),
+                new SlotId(decodeValue(required(fields, "slotId"))),
+                new ResolvedManifestId(decodeValue(required(fields, "resolvedManifestId"))),
+                decodeValue(required(fields, "traceId")),
                 new SubjectId(UUID.fromString(required(fields, "subjectId"))),
                 decodeValue(required(fields, "spawnWorld")),
                 Integer.parseInt(required(fields, "bedrockBlockX")),

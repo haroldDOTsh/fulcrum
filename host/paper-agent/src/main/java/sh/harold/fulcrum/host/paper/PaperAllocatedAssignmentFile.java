@@ -26,12 +26,14 @@ public final class PaperAllocatedAssignmentFile {
         return Objects.requireNonNull(paperServerRoot, "paperServerRoot").resolve(FILE_NAME);
     }
 
-    public static void write(Path file, PaperGameServerAssignment assignment) {
+    public static void write(Path file, PaperGameServerAssignment assignment, String traceId) {
         Objects.requireNonNull(file, "file");
         Objects.requireNonNull(assignment, "assignment");
+        String checkedTraceId = PaperArtifactNames.requireNonBlank(traceId, "traceId");
         String content = "sessionId=" + assignment.sessionId().value() + "\n"
                 + "slotId=" + assignment.slotId().value() + "\n"
-                + "resolvedManifestId=" + assignment.resolvedManifestId().value() + "\n";
+                + "resolvedManifestId=" + assignment.resolvedManifestId().value() + "\n"
+                + "traceId=" + checkedTraceId + "\n";
         try {
             Path parent = file.getParent();
             if (parent != null) {
@@ -55,7 +57,8 @@ public final class PaperAllocatedAssignmentFile {
             return Optional.of(new AllocatedAssignment(
                     new SessionId(required(fields, "sessionId")),
                     new SlotId(required(fields, "slotId")),
-                    new ResolvedManifestId(required(fields, "resolvedManifestId"))));
+                    new ResolvedManifestId(required(fields, "resolvedManifestId")),
+                    required(fields, "traceId")));
         } catch (IOException exception) {
             throw new UncheckedIOException("Could not read Paper allocated assignment file " + file, exception);
         }
@@ -69,6 +72,24 @@ public final class PaperAllocatedAssignmentFile {
     public static SessionId requireSessionId(Path file) {
         return read(file)
                 .map(AllocatedAssignment::sessionId)
+                .orElseThrow(() -> new IllegalStateException("Paper allocated assignment file is not available: " + file));
+    }
+
+    public static SlotId requireSlotId(Path file) {
+        return read(file)
+                .map(AllocatedAssignment::slotId)
+                .orElseThrow(() -> new IllegalStateException("Paper allocated assignment file is not available: " + file));
+    }
+
+    public static ResolvedManifestId requireResolvedManifestId(Path file) {
+        return read(file)
+                .map(AllocatedAssignment::resolvedManifestId)
+                .orElseThrow(() -> new IllegalStateException("Paper allocated assignment file is not available: " + file));
+    }
+
+    public static String requireTraceId(Path file) {
+        return read(file)
+                .map(AllocatedAssignment::traceId)
                 .orElseThrow(() -> new IllegalStateException("Paper allocated assignment file is not available: " + file));
     }
 
@@ -107,11 +128,13 @@ public final class PaperAllocatedAssignmentFile {
     public record AllocatedAssignment(
             SessionId sessionId,
             SlotId slotId,
-            ResolvedManifestId resolvedManifestId) {
+            ResolvedManifestId resolvedManifestId,
+            String traceId) {
         public AllocatedAssignment {
             sessionId = Objects.requireNonNull(sessionId, "sessionId");
             slotId = Objects.requireNonNull(slotId, "slotId");
             resolvedManifestId = Objects.requireNonNull(resolvedManifestId, "resolvedManifestId");
+            traceId = PaperArtifactNames.requireNonBlank(traceId, "traceId");
         }
     }
 }

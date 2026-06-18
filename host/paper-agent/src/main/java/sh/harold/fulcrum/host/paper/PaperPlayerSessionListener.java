@@ -12,25 +12,44 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import sh.harold.fulcrum.api.kernel.ResolvedManifestId;
+import sh.harold.fulcrum.api.kernel.RouteId;
+import sh.harold.fulcrum.api.kernel.SlotId;
 import sh.harold.fulcrum.api.kernel.SubjectId;
+import sh.harold.fulcrum.host.api.HostObservation;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 
 public final class PaperPlayerSessionListener implements Listener {
     private final JavaPlugin plugin;
     private final PaperJoinAttachmentHandler attachmentHandler;
+    private final Supplier<SlotId> slotIdSupplier;
+    private final Supplier<ResolvedManifestId> resolvedManifestIdSupplier;
+    private final Supplier<String> traceIdSupplier;
     private final PaperSpawnPoint spawnPoint;
     private final PaperCapabilityBridge capabilityBridge;
+    private final PaperRewardSink rewardSink;
 
     public PaperPlayerSessionListener(
             JavaPlugin plugin,
             PaperJoinAttachmentHandler attachmentHandler,
+            Supplier<SlotId> slotIdSupplier,
+            Supplier<ResolvedManifestId> resolvedManifestIdSupplier,
+            Supplier<String> traceIdSupplier,
             PaperSpawnPoint spawnPoint,
-            PaperCapabilityBridge capabilityBridge) {
+            PaperCapabilityBridge capabilityBridge,
+            PaperRewardSink rewardSink) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.attachmentHandler = Objects.requireNonNull(attachmentHandler, "attachmentHandler");
+        this.slotIdSupplier = Objects.requireNonNull(slotIdSupplier, "slotIdSupplier");
+        this.resolvedManifestIdSupplier = Objects.requireNonNull(
+                resolvedManifestIdSupplier,
+                "resolvedManifestIdSupplier");
+        this.traceIdSupplier = Objects.requireNonNull(traceIdSupplier, "traceIdSupplier");
         this.spawnPoint = Objects.requireNonNull(spawnPoint, "spawnPoint");
         this.capabilityBridge = Objects.requireNonNull(capabilityBridge, "capabilityBridge");
+        this.rewardSink = Objects.requireNonNull(rewardSink, "rewardSink");
     }
 
     @EventHandler
@@ -52,7 +71,10 @@ public final class PaperPlayerSessionListener implements Listener {
             throw new IllegalStateException("Paper failed to teleport " + player.getName()
                     + " to lobby spawn " + spawnPoint.worldName());
         }
-        attachmentHandler.attach(new PaperJoiningSubject(player.getUniqueId(), player.getName()));
+        PaperJoiningSubject joiningSubject = new PaperJoiningSubject(player.getUniqueId(), player.getName());
+        RouteId routeId = attachmentHandler.routeId(joiningSubject);
+        HostObservation attachment = attachmentHandler.attach(joiningSubject);
+        rewardSink.publish(PaperSessionRewardReport.fromAttachmentObservation(attachment));
         PaperSubjectCapabilityView view = subjectView(new SubjectId(player.getUniqueId()), player.getName());
         Component decoratedName = Component.text(view.decoratedDisplayName());
         player.displayName(decoratedName);
@@ -65,6 +87,10 @@ public final class PaperPlayerSessionListener implements Listener {
                 PaperLobbyProofMessage.from(
                         attachmentHandler.instanceId(),
                         attachmentHandler.sessionId(),
+                        routeId,
+                        Objects.requireNonNull(slotIdSupplier.get(), "slotId"),
+                        Objects.requireNonNull(resolvedManifestIdSupplier.get(), "resolvedManifestId"),
+                        Objects.requireNonNull(traceIdSupplier.get(), "traceId"),
                         spawnPoint,
                         playerLocation.getX(),
                         playerLocation.getY(),

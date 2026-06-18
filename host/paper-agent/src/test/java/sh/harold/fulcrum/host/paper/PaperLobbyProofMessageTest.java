@@ -2,7 +2,10 @@ package sh.harold.fulcrum.host.paper;
 
 import org.junit.jupiter.api.Test;
 import sh.harold.fulcrum.api.kernel.InstanceId;
+import sh.harold.fulcrum.api.kernel.ResolvedManifestId;
+import sh.harold.fulcrum.api.kernel.RouteId;
 import sh.harold.fulcrum.api.kernel.SessionId;
+import sh.harold.fulcrum.api.kernel.SlotId;
 import sh.harold.fulcrum.api.kernel.SubjectId;
 
 import java.nio.charset.StandardCharsets;
@@ -19,6 +22,10 @@ final class PaperLobbyProofMessageTest {
         PaperLobbyProofMessage message = PaperLobbyProofMessage.from(
                 new InstanceId("paper-instance-lobby-one"),
                 new SessionId("session-lobby-shared"),
+                new RouteId("route-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                new SlotId("slot-lobby-shared"),
+                new ResolvedManifestId("manifest-lobby-bedrock-v1"),
+                "trace-paper-session-lobby-shared",
                 new PaperSpawnPoint("world", 0.5D, 65.0D, 0.5D, 0.0F, 0.0F),
                 0.5D,
                 65.0D,
@@ -33,6 +40,10 @@ final class PaperLobbyProofMessageTest {
 
         assertEquals(new InstanceId("paper-instance-lobby-one"), decoded.instanceId());
         assertEquals(new SessionId("session-lobby-shared"), decoded.sessionId());
+        assertEquals(new RouteId("route-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), decoded.routeId());
+        assertEquals(new SlotId("slot-lobby-shared"), decoded.slotId());
+        assertEquals(new ResolvedManifestId("manifest-lobby-bedrock-v1"), decoded.resolvedManifestId());
+        assertEquals("trace-paper-session-lobby-shared", decoded.traceId());
         assertEquals(subjectId, decoded.subjectId());
         assertEquals("world", decoded.spawnWorld());
         assertEquals(0, decoded.bedrockBlockX());
@@ -54,6 +65,10 @@ final class PaperLobbyProofMessageTest {
         PaperLobbyProofMessage message = new PaperLobbyProofMessage(
                 new InstanceId("paper-instance-lobby-one"),
                 new SessionId("session-lobby-shared"),
+                new RouteId("route-velocity-login-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                new SlotId("slot-lobby-shared"),
+                new ResolvedManifestId("manifest-lobby-bedrock-v1"),
+                "trace-paper-session-lobby-shared",
                 new SubjectId(UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")),
                 "world",
                 0,
@@ -73,6 +88,10 @@ final class PaperLobbyProofMessageTest {
 
         assertEquals(new InstanceId("paper-instance-lobby-one"), decoded.instanceId());
         assertEquals(new SessionId("session-lobby-shared"), decoded.sessionId());
+        assertEquals(new RouteId("route-velocity-login-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), decoded.routeId());
+        assertEquals(new SlotId("slot-lobby-shared"), decoded.slotId());
+        assertEquals(new ResolvedManifestId("manifest-lobby-bedrock-v1"), decoded.resolvedManifestId());
+        assertEquals("trace-paper-session-lobby-shared", decoded.traceId());
         assertEquals("Fulcrum Bot Two", decoded.displayName());
         assertTrue(decoded.rankLabel().isEmpty());
         assertEquals("Fulcrum Bot Two: fulcrum-proof-chat", decoded.decoratedChat());
