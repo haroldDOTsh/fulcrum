@@ -15,6 +15,8 @@ application {
 }
 
 dependencies {
+    implementation(project(":api:contract-api"))
+    implementation(project(":api:kernel-api"))
     implementation(project(":adapters:agones-allocator"))
     implementation(project(":adapters:object-storage"))
     implementation(project(":data:artifact-authority"))
@@ -39,9 +41,11 @@ dependencies {
     implementation(project(":host:velocity-agent"))
     implementation(project(":host:worker-agent"))
     implementation(project(":standard-capabilities:chat-decoration"))
+    implementation(project(":standard-capabilities:economy"))
     implementation(project(":standard-capabilities:player-profile"))
     implementation(project(":standard-capabilities:punishment"))
     implementation(project(":standard-capabilities:rank"))
+    implementation(project(":standard-capabilities:stats"))
 
     runtimeOnly(project(":adapters:agones-fake"))
     runtimeOnly(project(":capability:capability-runtime"))

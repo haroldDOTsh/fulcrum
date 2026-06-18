@@ -10,15 +10,22 @@ import sh.harold.fulcrum.api.contract.IdempotencyKey;
 import sh.harold.fulcrum.api.contract.PrincipalId;
 import sh.harold.fulcrum.api.contract.Revision;
 import sh.harold.fulcrum.api.contract.TraceEnvelope;
+import sh.harold.fulcrum.api.kernel.ExperienceId;
 import sh.harold.fulcrum.api.kernel.InstanceId;
 import sh.harold.fulcrum.api.kernel.SubjectId;
 import sh.harold.fulcrum.data.authority.AuthorityCommand;
 import sh.harold.fulcrum.data.authority.AuthorityDecisionStatus;
 import sh.harold.fulcrum.data.authority.InMemoryIdempotencyLedger;
 import sh.harold.fulcrum.data.authority.StoredAuthorityDecision;
+import sh.harold.fulcrum.standard.contracts.EconomyContracts;
 import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
+import sh.harold.fulcrum.standard.contracts.StatsContracts;
+import sh.harold.fulcrum.standard.economy.EconomyAuthority;
+import sh.harold.fulcrum.standard.economy.EconomyReceipt;
+import sh.harold.fulcrum.standard.economy.EconomyState;
+import sh.harold.fulcrum.standard.economy.PostLedgerEntry;
 import sh.harold.fulcrum.standard.profile.PlayerProfileAuthority;
 import sh.harold.fulcrum.standard.profile.PlayerProfileReceipt;
 import sh.harold.fulcrum.standard.profile.PlayerProfileState;
@@ -31,6 +38,10 @@ import sh.harold.fulcrum.standard.rank.GrantRank;
 import sh.harold.fulcrum.standard.rank.RankAuthority;
 import sh.harold.fulcrum.standard.rank.RankReceipt;
 import sh.harold.fulcrum.standard.rank.RankState;
+import sh.harold.fulcrum.standard.stats.RecordStatDelta;
+import sh.harold.fulcrum.standard.stats.StatsAuthority;
+import sh.harold.fulcrum.standard.stats.StatsReceipt;
+import sh.harold.fulcrum.standard.stats.StatsState;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -139,6 +150,68 @@ final class StandardCapabilityAuthorityWireCodecTest {
         assertEquals(SUBJECT, storedDecoded.decision().response().snapshot().orElseThrow().subjectId());
     }
 
+    @Test
+    void economyCommandAndStoredDecisionRoundTrip() {
+        AuthorityCommand<PostLedgerEntry> command = economyCommand();
+
+        AuthorityCommand<PostLedgerEntry> decoded =
+                StandardCapabilityAuthorityWireCodec.decodeEconomyCommand(new ConsumerRecord<>(
+                        EconomyContracts.COMMAND_TOPIC,
+                        0,
+                        15L,
+                        command.envelope().aggregateId().value(),
+                        StandardCapabilityAuthorityWireCodec.encodeEconomyCommand(command)));
+
+        assertEquals(command.envelope().payload(), decoded.envelope().payload());
+        assertEquals(command.envelope().contractName(), decoded.envelope().contractName());
+        assertEquals(command.expectedRevision(), decoded.expectedRevision());
+
+        var decision = new EconomyAuthority(new InMemoryIdempotencyLedger<EconomyState, EconomyReceipt>())
+                .handle(command, EconomyAuthority.emptyRecord(7));
+        StoredAuthorityDecision<EconomyState, EconomyReceipt> stored =
+                new StoredAuthorityDecision<>("payload-economy", decision);
+        StoredAuthorityDecision<EconomyState, EconomyReceipt> storedDecoded =
+                StandardCapabilityAuthorityWireCodec.decodeEconomyStoredDecision(
+                        StandardCapabilityAuthorityWireCodec.encodeEconomyStoredDecision(stored));
+
+        assertEquals("payload-economy", storedDecoded.payloadFingerprint());
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, storedDecoded.decision().status());
+        assertEquals(new Revision(1), storedDecoded.decision().revision());
+        assertEquals(250L, storedDecoded.decision().state().current().orElseThrow().balanceMinorUnits());
+        assertEquals("coins", storedDecoded.decision().response().snapshot().orElseThrow().accountId().currencyKey());
+    }
+
+    @Test
+    void statsCommandAndStoredDecisionRoundTrip() {
+        AuthorityCommand<RecordStatDelta> command = statsCommand();
+
+        AuthorityCommand<RecordStatDelta> decoded =
+                StandardCapabilityAuthorityWireCodec.decodeStatsCommand(new ConsumerRecord<>(
+                        StatsContracts.COMMAND_TOPIC,
+                        0,
+                        16L,
+                        command.envelope().aggregateId().value(),
+                        StandardCapabilityAuthorityWireCodec.encodeStatsCommand(command)));
+
+        assertEquals(command.envelope().payload(), decoded.envelope().payload());
+        assertEquals(command.envelope().contractName(), decoded.envelope().contractName());
+        assertEquals(command.expectedRevision(), decoded.expectedRevision());
+
+        var decision = new StatsAuthority(new InMemoryIdempotencyLedger<StatsState, StatsReceipt>())
+                .handle(command, StatsAuthority.emptyRecord(7));
+        StoredAuthorityDecision<StatsState, StatsReceipt> stored =
+                new StoredAuthorityDecision<>("payload-stats", decision);
+        StoredAuthorityDecision<StatsState, StatsReceipt> storedDecoded =
+                StandardCapabilityAuthorityWireCodec.decodeStatsStoredDecision(
+                        StandardCapabilityAuthorityWireCodec.encodeStatsStoredDecision(stored));
+
+        assertEquals("payload-stats", storedDecoded.payloadFingerprint());
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, storedDecoded.decision().status());
+        assertEquals(new Revision(1), storedDecoded.decision().revision());
+        assertEquals(1L, storedDecoded.decision().state().current().orElseThrow().total());
+        assertEquals("session-completions", storedDecoded.decision().response().snapshot().orElseThrow().counterId().statKey());
+    }
+
     private static AuthorityCommand<UpsertPlayerProfile> profileCommand() {
         UpsertPlayerProfile payload = new UpsertPlayerProfile(SUBJECT, "Builder=One", NOW, 0);
         return command(
@@ -179,6 +252,36 @@ final class StandardCapabilityAuthorityWireCodecTest {
                 new CommandName(StandardCapabilityAuthorityWireCodec.ISSUE_PUNISHMENT_COMMAND),
                 payload,
                 "payload-issue-punishment");
+    }
+
+    private static AuthorityCommand<PostLedgerEntry> economyCommand() {
+        PostLedgerEntry payload = new PostLedgerEntry(SUBJECT, "Coins", 250, "session=reward", NOW, 0);
+        return command(
+                new CommandId("command-post-ledger-entry"),
+                new IdempotencyKey("idem-post-ledger-entry"),
+                EconomyAuthority.aggregateId(payload.accountId()),
+                EconomyContracts.CONTRACT,
+                new CommandName(StandardCapabilityAuthorityWireCodec.POST_LEDGER_ENTRY_COMMAND),
+                payload,
+                "payload-post-ledger-entry");
+    }
+
+    private static AuthorityCommand<RecordStatDelta> statsCommand() {
+        RecordStatDelta payload = new RecordStatDelta(
+                SUBJECT,
+                new ExperienceId("experience-lobby"),
+                "Session-Completions",
+                1,
+                NOW,
+                0);
+        return command(
+                new CommandId("command-record-stat-delta"),
+                new IdempotencyKey("idem-record-stat-delta"),
+                StatsAuthority.aggregateId(payload.counterId()),
+                StatsContracts.CONTRACT,
+                new CommandName(StandardCapabilityAuthorityWireCodec.RECORD_STAT_DELTA_COMMAND),
+                payload,
+                "payload-record-stat-delta");
     }
 
     private static <C extends sh.harold.fulcrum.api.contract.CommandPayload> AuthorityCommand<C> command(
