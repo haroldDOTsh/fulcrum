@@ -160,7 +160,15 @@ final class RuntimeExternalClients implements AutoCloseable {
                     settings.agonesNamespace(),
                     settings.agonesAllocatorClientCertificatePath().orElseThrow(),
                     settings.agonesAllocatorClientKeyPath().orElseThrow(),
-                    settings.agonesAllocatorCaCertificatePath().orElseThrow());
+                    settings.agonesAllocatorCaCertificatePath().orElseThrow(),
+                    settings.agonesAllocatorDisableHostnameVerification());
+        }
+        if (settings.agonesAllocatorCaCertificatePath().isPresent()) {
+            return AgonesAllocatorRestClient.tls(
+                    settings.agonesAllocatorUrl(),
+                    settings.agonesNamespace(),
+                    settings.agonesAllocatorCaCertificatePath().orElseThrow(),
+                    settings.agonesAllocatorDisableHostnameVerification());
         }
         return new AgonesAllocatorRestClient(settings.agonesAllocatorUrl(), settings.agonesNamespace());
     }
@@ -319,6 +327,7 @@ final class RuntimeExternalClients implements AutoCloseable {
                     role().id() + ": agonesAllocatorUrl=" + settings.agonesAllocatorUrl(),
                     role().id() + ": agonesNamespace=" + settings.agonesNamespace(),
                     role().id() + ": agonesAllocatorMtls=" + settings.agonesAllocatorClientCertificatePath().isPresent(),
+                    role().id() + ": agonesAllocatorHostnameVerification=" + !settings.agonesAllocatorDisableHostnameVerification(),
                     role().id() + ": hostCommandTopic=" + settings.hostCommandTopic(),
                     role().id() + ": hostObservationTopic=" + settings.hostObservationTopic(),
                     role().id() + ": proxyRouteCommandTopic=" + settings.proxyRouteCommandTopic());
@@ -389,8 +398,11 @@ final class RuntimeExternalClients implements AutoCloseable {
                     role().id() + ": objectStoreMode=" + settings.objectStore().mode().name().toLowerCase(java.util.Locale.ROOT),
                     role().id() + ": observationBridgeUrl=" + settings.observationBridgeUrl(),
                     role().id() + ": capabilityBridgeUrl=" + settings.capabilityBridgeUrl(),
+                    role().id() + ": rewardBridgeUrl=" + settings.rewardBridgeUrl(),
                     role().id() + ": valkeyClient=" + valkey.description(),
-                    role().id() + ": hostTopics=" + settings.hostCommandTopic() + "," + settings.hostObservationTopic());
+                    role().id() + ": hostTopics=" + settings.hostCommandTopic() + "," + settings.hostObservationTopic(),
+                    role().id() + ": rewardCommands=" + settings.rewardEconomyCommandTopic()
+                            + "," + settings.rewardStatsCommandTopic());
         }
 
         @Override

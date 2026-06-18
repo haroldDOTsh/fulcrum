@@ -131,17 +131,21 @@ final class PaperRuntimeServiceEngineTest {
                 assertEquals(new SlotId("slot-lobby-runtime-allocated"), open.slotId());
                 assertEquals(new InstanceId("instance-paper-runtime"), open.ownerInstanceId());
                 assertEquals("owner-token-lobby-runtime", open.ownerToken());
+                assertEquals("trace-paper-session-lobby-runtime", open.traceEnvelope().traceId());
                 assertEquals(open.sessionId(), activation.sessionId());
+                assertEquals(open.traceEnvelope().traceId(), activation.traceEnvelope().traceId());
                 assertEquals(open.leaseExpiresAt(), activation.leaseExpiresAt());
                 assertEquals(1, activation.ownerEpoch());
                 assertEquals(1, observations.observations().size());
                 assertTrue(Files.exists(tempDir.resolve("paper").resolve("world").resolve("level.dat")));
                 assertTrue(Files.exists(tempDir.resolve("paper").resolve("world").resolve("region").resolve("r.0.0.mca")));
-                assertEquals(
-                        new SessionId("session-lobby-runtime-allocated"),
+                PaperAllocatedAssignmentFile.AllocatedAssignment allocatedAssignment =
                         PaperAllocatedAssignmentFile.read(tempDir.resolve("paper").resolve(PaperAllocatedAssignmentFile.FILE_NAME))
-                                .orElseThrow()
-                                .sessionId());
+                                .orElseThrow();
+                assertEquals(new SessionId("session-lobby-runtime-allocated"), allocatedAssignment.sessionId());
+                assertEquals(new SlotId("slot-lobby-runtime-allocated"), allocatedAssignment.slotId());
+                assertEquals(new ResolvedManifestId("manifest-lobby-runtime"), allocatedAssignment.resolvedManifestId());
+                assertEquals("trace-paper-session-lobby-runtime", allocatedAssignment.traceId());
                 assertEquals(List.of(
                                 "POST /ready {}",
                                 "POST /health {}",
@@ -249,6 +253,7 @@ final class PaperRuntimeServiceEngineTest {
         values.put("FULCRUM_PAPER_AGONES_SDK_URL", sdkUri.toString());
         values.put("FULCRUM_PAPER_OBSERVATION_BRIDGE_URL", "http://127.0.0.1:" + freePort() + "/observations");
         values.put("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL", "http://127.0.0.1:" + freePort() + "/capabilities");
+        values.put("FULCRUM_PAPER_REWARD_BRIDGE_URL", "http://127.0.0.1:" + freePort() + "/rewards");
         values.put("FULCRUM_VALKEY_ENDPOINT", valkeyEndpoint);
         values.put("FULCRUM_PAPER_EXPERIENCE_ID", "experience-lobby-runtime");
         values.put("FULCRUM_PAPER_SESSION_ID", "session-lobby-runtime");
@@ -263,6 +268,11 @@ final class PaperRuntimeServiceEngineTest {
         values.put("FULCRUM_PAPER_HOST_RUNTIME_ABI", "paper-host-runtime-v1");
         values.put("FULCRUM_HOST_COMMAND_TOPIC", "host.paper.commands");
         values.put("FULCRUM_HOST_OBSERVATION_TOPIC", "host.observation");
+        values.put("FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC", "cmd.standard.economy");
+        values.put("FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC", "cmd.standard.stats");
+        values.put("FULCRUM_PAPER_REWARD_CURRENCY_KEY", "coins");
+        values.put("FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS", "250");
+        values.put("FULCRUM_PAPER_REWARD_STAT_KEY", "session-completions");
         values.put("FULCRUM_MACHINE_REF", "machine-test");
         return values;
     }

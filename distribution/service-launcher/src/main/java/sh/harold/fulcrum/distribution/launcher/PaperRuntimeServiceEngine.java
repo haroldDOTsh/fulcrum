@@ -30,6 +30,7 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
     private final Path allocatedAssignmentFile;
     private final PaperObservationBridgeServer observationBridge;
     private final PaperCapabilityBridgeServer capabilityBridge;
+    private final PaperRewardBridgeServer rewardBridge;
     private final Duration healthInterval;
     private final Clock clock;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -46,7 +47,7 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
             PaperGameServerAssignment assignment,
             Duration healthInterval,
             Clock clock) {
-        this(securityContext, lifecycle, assignment, null, null, null, healthInterval, clock);
+        this(securityContext, lifecycle, assignment, null, null, null, null, healthInterval, clock);
     }
 
     PaperRuntimeServiceEngine(
@@ -56,7 +57,7 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
             Path allocatedAssignmentFile,
             Duration healthInterval,
             Clock clock) {
-        this(securityContext, lifecycle, assignment, allocatedAssignmentFile, null, null, healthInterval, clock);
+        this(securityContext, lifecycle, assignment, allocatedAssignmentFile, null, null, null, healthInterval, clock);
     }
 
     private PaperRuntimeServiceEngine(
@@ -66,6 +67,7 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
             Path allocatedAssignmentFile,
             PaperObservationBridgeServer observationBridge,
             PaperCapabilityBridgeServer capabilityBridge,
+            PaperRewardBridgeServer rewardBridge,
             Duration healthInterval,
             Clock clock) {
         this.securityContext = Objects.requireNonNull(securityContext, "securityContext");
@@ -74,6 +76,7 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
         this.allocatedAssignmentFile = allocatedAssignmentFile;
         this.observationBridge = observationBridge;
         this.capabilityBridge = capabilityBridge;
+        this.rewardBridge = rewardBridge;
         this.healthInterval = Objects.requireNonNull(healthInterval, "healthInterval");
         this.clock = Objects.requireNonNull(clock, "clock");
         if (healthInterval.isNegative() || healthInterval.isZero()) {
@@ -109,6 +112,15 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
                 securityContext,
                 clients.paperKafka().producer(),
                 settings.hostObservationTopic());
+        PaperRewardCommandPublisher rewardSink = new PaperRewardCommandPublisher(
+                securityContext,
+                clients.paperKafka().producer(),
+                settings.rewardEconomyCommandTopic(),
+                settings.rewardStatsCommandTopic(),
+                settings.experienceId(),
+                settings.rewardCurrencyKey(),
+                settings.rewardAmountMinorUnits(),
+                settings.rewardStatKey());
         PaperGameServerLifecycle lifecycle = new PaperGameServerLifecycle(
                 securityContext,
                 new AgonesGameServerHttpClient(settings.agonesSdkUrl()),
@@ -126,6 +138,10 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
                 new PaperCapabilityBridgeServer(
                         settings.capabilityBridgeUrl(),
                         new ValkeyPaperCapabilityBridge(securityContext, clients.valkey())),
+                new PaperRewardBridgeServer(
+                        settings.rewardBridgeUrl(),
+                        rewardSink,
+                        settings.rewardDeliveryCopies()),
                 Duration.ofSeconds(1),
                 Clock.systemUTC());
     }
@@ -147,6 +163,20 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
             try {
                 capabilityBridge.start();
             } catch (RuntimeException exception) {
+                if (observationBridge != null) {
+                    observationBridge.close();
+                }
+                running.set(false);
+                throw exception;
+            }
+        }
+        if (rewardBridge != null) {
+            try {
+                rewardBridge.start();
+            } catch (RuntimeException exception) {
+                if (capabilityBridge != null) {
+                    capabilityBridge.close();
+                }
                 if (observationBridge != null) {
                     observationBridge.close();
                 }
@@ -197,6 +227,9 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
         if (capabilityBridge != null) {
             capabilityBridge.close();
         }
+        if (rewardBridge != null) {
+            rewardBridge.close();
+        }
     }
 
     Throwable failure() {
@@ -204,7 +237,11 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
         if (runtimeFailure != null) {
             return runtimeFailure;
         }
-        return observationBridge == null ? null : observationBridge.failure();
+        Throwable observationFailure = observationBridge == null ? null : observationBridge.failure();
+        if (observationFailure != null) {
+            return observationFailure;
+        }
+        return rewardBridge == null ? null : rewardBridge.failure();
     }
 
     private void runLoop() {
@@ -214,7 +251,7 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
             prepared.set(true);
             PaperGameServerAssignment allocatedAssignment = waitForAllocation(traceEnvelope);
             if (allocatedAssignmentFile != null) {
-                PaperAllocatedAssignmentFile.write(allocatedAssignmentFile, allocatedAssignment);
+                PaperAllocatedAssignmentFile.write(allocatedAssignmentFile, allocatedAssignment, traceEnvelope.traceId());
             }
             ready.set(true);
             while (running.get()) {

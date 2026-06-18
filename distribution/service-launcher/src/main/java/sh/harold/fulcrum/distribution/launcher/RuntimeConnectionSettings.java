@@ -95,6 +95,7 @@ final class RuntimeConnectionSettings {
                     optionalPath(environment, "FULCRUM_AGONES_ALLOCATOR_CLIENT_CERT_PATH"),
                     optionalPath(environment, "FULCRUM_AGONES_ALLOCATOR_CLIENT_KEY_PATH"),
                     optionalPath(environment, "FULCRUM_AGONES_ALLOCATOR_CA_CERT_PATH"),
+                    optionalBoolean(environment, "FULCRUM_AGONES_ALLOCATOR_DISABLE_HOSTNAME_VERIFICATION", false),
                     required(environment, "FULCRUM_CONTROL_STATE_TOPIC"),
                     required(environment, "FULCRUM_HOST_COMMAND_TOPIC"),
                     required(environment, "FULCRUM_HOST_OBSERVATION_TOPIC"),
@@ -135,9 +136,22 @@ final class RuntimeConnectionSettings {
                         requireHttpUriWithExplicitPort(
                                 "FULCRUM_PAPER_CAPABILITY_BRIDGE_URL",
                                 required(environment, "FULCRUM_PAPER_CAPABILITY_BRIDGE_URL")),
+                        requireHttpUriWithExplicitPort(
+                                "FULCRUM_PAPER_REWARD_BRIDGE_URL",
+                                required(environment, "FULCRUM_PAPER_REWARD_BRIDGE_URL")),
                         parseHostPort("FULCRUM_VALKEY_ENDPOINT", required(environment, "FULCRUM_VALKEY_ENDPOINT")),
                         required(environment, "FULCRUM_HOST_COMMAND_TOPIC"),
                         required(environment, "FULCRUM_HOST_OBSERVATION_TOPIC"),
+                        required(environment, "FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC"),
+                        required(environment, "FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC"),
+                        required(environment, "FULCRUM_PAPER_REWARD_CURRENCY_KEY"),
+                        requirePositiveLong(
+                                "FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS",
+                                required(environment, "FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS")),
+                        required(environment, "FULCRUM_PAPER_REWARD_STAT_KEY"),
+                        requirePositiveInt(
+                                "FULCRUM_PAPER_REWARD_DELIVERY_COPIES",
+                                optional(environment, "FULCRUM_PAPER_REWARD_DELIVERY_COPIES", "1")),
                         new ExperienceId(required(environment, "FULCRUM_PAPER_EXPERIENCE_ID")),
                         new SessionId(required(environment, "FULCRUM_PAPER_SESSION_ID")),
                         new SlotId(required(environment, "FULCRUM_PAPER_SLOT_ID")),
@@ -189,6 +203,12 @@ final class RuntimeConnectionSettings {
         return environment.value(name)
                 .map(value -> requireNonBlank(value, name))
                 .orElseGet(() -> requireNonBlank(defaultValue, name));
+    }
+
+    private static boolean optionalBoolean(RuntimeEnvironment environment, String name, boolean defaultValue) {
+        return environment.value(name)
+                .map(value -> requireBoolean(name, value))
+                .orElse(defaultValue);
     }
 
     static ObjectStoreConnection objectStore(RuntimeEnvironment environment) {
@@ -275,6 +295,19 @@ final class RuntimeConnectionSettings {
         return parsed;
     }
 
+    private static long requirePositiveLong(String name, String value) {
+        long parsed;
+        try {
+            parsed = Long.parseLong(requireNonBlank(value, name));
+        } catch (NumberFormatException exception) {
+            throw new RuntimeConfigurationException(name + " must be an integer", exception);
+        }
+        if (parsed <= 0) {
+            throw new RuntimeConfigurationException(name + " must be positive");
+        }
+        return parsed;
+    }
+
     private static List<HostPort> parseHostPorts(String name, String value) {
         List<HostPort> endpoints = new ArrayList<>();
         for (String part : requireNonBlank(value, name).split(",")) {
@@ -308,6 +341,14 @@ final class RuntimeConnectionSettings {
             throw new RuntimeConfigurationException(label + " must not be blank");
         }
         return checked;
+    }
+
+    private static boolean requireBoolean(String name, String value) {
+        return switch (requireNonBlank(value, name).toLowerCase(java.util.Locale.ROOT)) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new RuntimeConfigurationException(name + " must be true or false");
+        };
     }
 
     interface ServiceConnections {
@@ -352,6 +393,7 @@ final class RuntimeConnectionSettings {
             Optional<Path> agonesAllocatorClientCertificatePath,
             Optional<Path> agonesAllocatorClientKeyPath,
             Optional<Path> agonesAllocatorCaCertificatePath,
+            boolean agonesAllocatorDisableHostnameVerification,
             String controlStateTopic,
             String hostCommandTopic,
             String hostObservationTopic,
@@ -369,16 +411,16 @@ final class RuntimeConnectionSettings {
             agonesAllocatorCaCertificatePath = Objects.requireNonNull(
                     agonesAllocatorCaCertificatePath,
                     "agonesAllocatorCaCertificatePath");
-            long configuredMtlsPaths = List.of(
-                            agonesAllocatorClientCertificatePath,
-                            agonesAllocatorClientKeyPath,
-                            agonesAllocatorCaCertificatePath)
-                    .stream()
-                    .filter(Optional::isPresent)
-                    .count();
-            if (configuredMtlsPaths != 0 && configuredMtlsPaths != 3) {
+            boolean clientCertificateConfigured = agonesAllocatorClientCertificatePath.isPresent();
+            boolean clientKeyConfigured = agonesAllocatorClientKeyPath.isPresent();
+            boolean caCertificateConfigured = agonesAllocatorCaCertificatePath.isPresent();
+            if (clientCertificateConfigured != clientKeyConfigured) {
                 throw new RuntimeConfigurationException(
-                        "Agones allocator mTLS requires client certificate, client key, and CA certificate paths together");
+                        "Agones allocator mTLS requires client certificate and client key paths together");
+            }
+            if ((clientCertificateConfigured || clientKeyConfigured) && !caCertificateConfigured) {
+                throw new RuntimeConfigurationException(
+                        "Agones allocator mTLS requires a CA certificate path with the client certificate and key paths");
             }
             controlStateTopic = requireNonBlank(controlStateTopic, "controlStateTopic");
             hostCommandTopic = requireNonBlank(hostCommandTopic, "hostCommandTopic");
@@ -398,6 +440,7 @@ final class RuntimeConnectionSettings {
                     role().id() + ": agonesAllocatorUrl=" + agonesAllocatorUrl,
                     role().id() + ": agonesNamespace=" + agonesNamespace,
                     role().id() + ": agonesAllocatorMtls=" + agonesAllocatorClientCertificatePath.isPresent(),
+                    role().id() + ": agonesAllocatorHostnameVerification=" + !agonesAllocatorDisableHostnameVerification,
                     role().id() + ": controlStateTopic=" + controlStateTopic,
                     role().id() + ": hostCommandTopic=" + hostCommandTopic,
                     role().id() + ": hostObservationTopic=" + hostObservationTopic,
@@ -448,9 +491,16 @@ final class RuntimeConnectionSettings {
             URI agonesSdkUrl,
             URI observationBridgeUrl,
             URI capabilityBridgeUrl,
+            URI rewardBridgeUrl,
             HostPort valkeyEndpoint,
             String hostCommandTopic,
             String hostObservationTopic,
+            String rewardEconomyCommandTopic,
+            String rewardStatsCommandTopic,
+            String rewardCurrencyKey,
+            long rewardAmountMinorUnits,
+            String rewardStatKey,
+            int rewardDeliveryCopies,
             ExperienceId experienceId,
             SessionId sessionId,
             SlotId slotId,
@@ -466,9 +516,20 @@ final class RuntimeConnectionSettings {
             agonesSdkUrl = Objects.requireNonNull(agonesSdkUrl, "agonesSdkUrl");
             observationBridgeUrl = Objects.requireNonNull(observationBridgeUrl, "observationBridgeUrl");
             capabilityBridgeUrl = Objects.requireNonNull(capabilityBridgeUrl, "capabilityBridgeUrl");
+            rewardBridgeUrl = Objects.requireNonNull(rewardBridgeUrl, "rewardBridgeUrl");
             valkeyEndpoint = Objects.requireNonNull(valkeyEndpoint, "valkeyEndpoint");
             hostCommandTopic = requireNonBlank(hostCommandTopic, "hostCommandTopic");
             hostObservationTopic = requireNonBlank(hostObservationTopic, "hostObservationTopic");
+            rewardEconomyCommandTopic = requireNonBlank(rewardEconomyCommandTopic, "rewardEconomyCommandTopic");
+            rewardStatsCommandTopic = requireNonBlank(rewardStatsCommandTopic, "rewardStatsCommandTopic");
+            rewardCurrencyKey = requireNonBlank(rewardCurrencyKey, "rewardCurrencyKey");
+            rewardStatKey = requireNonBlank(rewardStatKey, "rewardStatKey");
+            if (rewardAmountMinorUnits <= 0) {
+                throw new IllegalArgumentException("rewardAmountMinorUnits must be positive");
+            }
+            if (rewardDeliveryCopies <= 0) {
+                throw new IllegalArgumentException("rewardDeliveryCopies must be positive");
+            }
             experienceId = Objects.requireNonNull(experienceId, "experienceId");
             sessionId = Objects.requireNonNull(sessionId, "sessionId");
             slotId = Objects.requireNonNull(slotId, "slotId");
@@ -495,8 +556,14 @@ final class RuntimeConnectionSettings {
                     role().id() + ": agonesSdkUrl=" + agonesSdkUrl,
                     role().id() + ": observationBridgeUrl=" + observationBridgeUrl,
                     role().id() + ": capabilityBridgeUrl=" + capabilityBridgeUrl,
+                    role().id() + ": rewardBridgeUrl=" + rewardBridgeUrl,
                     role().id() + ": valkey=" + valkeyEndpoint,
                     role().id() + ": hostTopics=" + hostCommandTopic + "," + hostObservationTopic,
+                    role().id() + ": rewardCommands=" + rewardEconomyCommandTopic + "," + rewardStatsCommandTopic,
+                    role().id() + ": rewardPolicy=currency:" + rewardCurrencyKey
+                            + "|amountMinorUnits:" + rewardAmountMinorUnits
+                            + "|stat:" + rewardStatKey
+                            + "|deliveryCopies:" + rewardDeliveryCopies,
                     role().id() + ": assignment=sessionId=" + sessionId.value()
                             + "|experienceId=" + experienceId.value()
                             + "|slotId=" + slotId.value()

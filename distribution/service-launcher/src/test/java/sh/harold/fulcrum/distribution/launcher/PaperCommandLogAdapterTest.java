@@ -13,8 +13,10 @@ import sh.harold.fulcrum.api.kernel.InstanceId;
 import sh.harold.fulcrum.api.kernel.MachineRef;
 import sh.harold.fulcrum.api.kernel.PoolId;
 import sh.harold.fulcrum.api.kernel.ResolvedManifestId;
+import sh.harold.fulcrum.api.kernel.RouteId;
 import sh.harold.fulcrum.api.kernel.SessionId;
 import sh.harold.fulcrum.api.kernel.SlotId;
+import sh.harold.fulcrum.api.kernel.SubjectId;
 import sh.harold.fulcrum.data.authority.AuthorityCommand;
 import sh.harold.fulcrum.data.session.ActivateSession;
 import sh.harold.fulcrum.data.session.OpenSession;
@@ -30,12 +32,18 @@ import sh.harold.fulcrum.host.api.HostReadinessReport;
 import sh.harold.fulcrum.host.api.HostResourceFamily;
 import sh.harold.fulcrum.host.api.HostResourceGrant;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
+import sh.harold.fulcrum.host.paper.PaperSessionRewardReport;
 import sh.harold.fulcrum.host.paper.PaperSessionActivationRequest;
 import sh.harold.fulcrum.host.paper.PaperSessionOpenRequest;
+import sh.harold.fulcrum.standard.contracts.EconomyContracts;
+import sh.harold.fulcrum.standard.contracts.StatsContracts;
+import sh.harold.fulcrum.standard.economy.PostLedgerEntry;
+import sh.harold.fulcrum.standard.stats.RecordStatDelta;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -43,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 final class PaperCommandLogAdapterTest {
     private static final Instant NOW = Instant.parse("2026-06-17T12:00:00Z");
     private static final SessionId SESSION = new SessionId("session-paper-command-log");
+    private static final SubjectId SUBJECT = new SubjectId(UUID.fromString("11111111-1111-1111-1111-111111111111"));
     private static final String OWNER_TOKEN = "owner-token-paper-command-log";
 
     @Test
@@ -127,6 +136,64 @@ final class PaperCommandLogAdapterTest {
         assertEquals(List.of(), producer.history());
     }
 
+    @Test
+    void rewardPublisherPublishesEconomyAndStatsCommands() {
+        MockProducer<String, String> producer = producer();
+        PaperRewardCommandPublisher publisher = new PaperRewardCommandPublisher(
+                securityContext(economyRewardGrant(), statsRewardGrant()),
+                producer,
+                EconomyContracts.COMMAND_TOPIC,
+                StatsContracts.COMMAND_TOPIC,
+                new ExperienceId("experience-paper-command-log"),
+                "coins",
+                250,
+                "session-completions");
+
+        publisher.publish(rewardReport());
+
+        List<ProducerRecord<String, String>> history = producer.history();
+        assertEquals(2, history.size());
+        assertEquals(EconomyContracts.COMMAND_TOPIC, history.getFirst().topic());
+        assertEquals(StatsContracts.COMMAND_TOPIC, history.get(1).topic());
+
+        AuthorityCommand<PostLedgerEntry> economy = StandardCapabilityAuthorityWireCodec.decodeEconomyCommand(
+                consumerRecord(history.getFirst()));
+        AuthorityCommand<RecordStatDelta> stats = StandardCapabilityAuthorityWireCodec.decodeStatsCommand(
+                consumerRecord(history.get(1)));
+
+        assertEquals(SUBJECT, economy.envelope().payload().subjectId());
+        assertEquals("coins", economy.envelope().payload().currencyKey());
+        assertEquals(250, economy.envelope().payload().deltaMinorUnits());
+        assertEquals(Optional.empty(), economy.expectedRevision());
+        assertEquals(1, economy.fencingEpoch());
+        assertEquals(securityContext(economyRewardGrant(), statsRewardGrant()).identity().principalId(),
+                economy.authenticatedPrincipal());
+
+        assertEquals(SUBJECT, stats.envelope().payload().subjectId());
+        assertEquals(new ExperienceId("experience-paper-command-log"), stats.envelope().payload().experienceId());
+        assertEquals("session-completions", stats.envelope().payload().statKey());
+        assertEquals(1, stats.envelope().payload().delta());
+        assertEquals(Optional.empty(), stats.expectedRevision());
+        assertEquals(1, stats.fencingEpoch());
+    }
+
+    @Test
+    void rewardPublisherRejectsMissingTopicGrantBeforePublishing() {
+        MockProducer<String, String> producer = producer();
+        PaperRewardCommandPublisher publisher = new PaperRewardCommandPublisher(
+                securityContext(economyRewardGrant()),
+                producer,
+                EconomyContracts.COMMAND_TOPIC,
+                StatsContracts.COMMAND_TOPIC,
+                new ExperienceId("experience-paper-command-log"),
+                "coins",
+                250,
+                "session-completions");
+
+        assertThrows(SecurityException.class, () -> publisher.publish(rewardReport()));
+        assertEquals(List.of(), producer.history());
+    }
+
     private static AuthorityCommand<SessionCommand> decode(ProducerRecord<String, String> record) {
         return SessionAuthorityWireCodec.decodeCommand(new ConsumerRecord<>(
                 record.topic(),
@@ -134,6 +201,10 @@ final class PaperCommandLogAdapterTest {
                 0,
                 record.key(),
                 record.value()));
+    }
+
+    private static ConsumerRecord<String, String> consumerRecord(ProducerRecord<String, String> record) {
+        return new ConsumerRecord<>(record.topic(), 0, 0, record.key(), record.value());
     }
 
     private static PaperSessionOpenRequest openRequest() {
@@ -157,6 +228,16 @@ final class PaperCommandLogAdapterTest {
                 NOW.plusSeconds(1),
                 NOW.plusSeconds(300),
                 trace());
+    }
+
+    private static PaperSessionRewardReport rewardReport() {
+        return new PaperSessionRewardReport(
+                new InstanceId("instance-paper-command-log"),
+                SESSION,
+                new RouteId("route-paper-command-log"),
+                SUBJECT,
+                trace(),
+                NOW);
     }
 
     private static TraceEnvelope trace() {
@@ -190,6 +271,14 @@ final class PaperCommandLogAdapterTest {
 
     private static HostResourceGrant observationGrant() {
         return new HostResourceGrant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "host.observation");
+    }
+
+    private static HostResourceGrant economyRewardGrant() {
+        return new HostResourceGrant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, EconomyContracts.COMMAND_TOPIC);
+    }
+
+    private static HostResourceGrant statsRewardGrant() {
+        return new HostResourceGrant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, StatsContracts.COMMAND_TOPIC);
     }
 
     private static MockProducer<String, String> producer() {
