@@ -67,6 +67,18 @@ final class VelocityDeploymentManifestTest {
     }
 
     @Test
+    void velocityContainerConfigRegistersNonRoutedPlaceholder() throws IOException {
+        String config = resource("fulcrum/container/velocity-proxy/velocity.toml");
+
+        assertTrue(config.contains("config-version = \"2.8\""));
+        assertTrue(config.contains("[advanced]"));
+        assertTrue(config.contains("login-ratelimit = 0"));
+        assertTrue(config.contains("[servers]"));
+        assertTrue(config.contains("lobby = \"127.0.0.1:25566\""));
+        assertTrue(config.contains("try = []"));
+    }
+
+    @Test
     void velocityReadmeDocumentsPhase3DeployPath() throws IOException {
         String readme = resource("fulcrum/kubernetes/velocity/README.md");
 
@@ -74,8 +86,9 @@ final class VelocityDeploymentManifestTest {
         assertTrue(readme.contains(".\\gradlew.bat clusterE2e"));
         assertTrue(readme.contains(".\\gradlew.bat clusterK3sE2e"));
         assertTrue(readme.contains(".\\gradlew.bat clusterExistingE2e"));
-        assertTrue(readme.contains("Gradle-owned K3s profile"));
-        assertTrue(readme.contains("locally built Fulcrum images into the K3s container runtime"));
+        assertTrue(readme.contains("generated k3d cluster by default"));
+        assertTrue(readme.contains("locally built"));
+        assertTrue(readme.contains("Fulcrum images into that cluster"));
         assertTrue(readme.contains("existing-cluster profile remains available"));
         assertTrue(readme.contains("velocityL4WaitForReady"));
         assertTrue(readme.contains("lobbyClusterE2eVerify"));
@@ -190,7 +203,7 @@ final class VelocityDeploymentManifestTest {
         assertTrue(readme.contains("-Pfulcrum.verifyLobbyScaleOut=true"));
         assertTrue(readme.contains("-Pfulcrum.lobbyTargetCapacity=1"));
         assertTrue(readme.contains("-Pfulcrum.lobbyHardCapacity=2"));
-        assertTrue(readme.contains("-Pfulcrum.minecraftProtocolVersion=0"));
+        assertTrue(readme.contains("-Pfulcrum.minecraftProtocolVersion=775"));
         assertTrue(readme.contains("-Pfulcrum.lobbyLoginUsername=FulcrumBotOne"));
         assertTrue(readme.contains("-Pfulcrum.secondLobbyLoginUsername=FulcrumBotTwo"));
         assertTrue(readme.contains("-Pfulcrum.scaleOutTriggerLobbyLoginUsername=FulcrumBotThree"));

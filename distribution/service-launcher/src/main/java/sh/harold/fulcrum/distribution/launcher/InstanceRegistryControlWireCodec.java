@@ -26,6 +26,21 @@ final class InstanceRegistryControlWireCodec {
     private InstanceRegistryControlWireCodec() {
     }
 
+    static Optional<ControlCommandLedgerKey> commandLedgerKey(ConsumerRecord<String, String> record) {
+        Map<String, String> fields = fields(record.value());
+        Optional<String> commandId = optional(fields, "commandId");
+        Optional<String> idempotencyKey = optional(fields, "idempotencyKey");
+        Optional<String> payloadFingerprint = optional(fields, "payloadFingerprint");
+        if (commandId.isEmpty() || idempotencyKey.isEmpty() || payloadFingerprint.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new ControlCommandLedgerKey(
+                commandId.orElseThrow(),
+                idempotencyKey.orElseThrow(),
+                payloadFingerprint.orElseThrow(),
+                optional(fields, "traceId").orElse("unknown")));
+    }
+
     static InstanceRegistryControlCommand<RegisterInstance> decodeRegisterCommand(ConsumerRecord<String, String> record) {
         Map<String, String> fields = fields(record.value());
         if (!ControlInstanceNames.REGISTER.value().equals(required(fields, "commandName"))) {

@@ -14,8 +14,15 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class KafkaClientBundle implements AutoCloseable {
+    private static final Duration CLIENT_CLOSE_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration CLOSE_JOIN_TIMEOUT = Duration.ofSeconds(10);
+
     private final String bootstrapServers;
     private final String clientId;
     private final String groupId;
@@ -65,8 +72,45 @@ public final class KafkaClientBundle implements AutoCloseable {
 
     @Override
     public void close() {
-        consumer.close(Duration.ofSeconds(5));
-        producer.close(Duration.ofSeconds(5));
+        RuntimeException failure = null;
+        try {
+            closeClient("consumer", () -> consumer.close(CLIENT_CLOSE_TIMEOUT));
+        } catch (RuntimeException exception) {
+            failure = exception;
+        }
+        try {
+            closeClient("producer", () -> producer.close(CLIENT_CLOSE_TIMEOUT));
+        } catch (RuntimeException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private void closeClient(String label, Runnable closeAction) {
+        ExecutorService executor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "fulcrum-kafka-" + label + "-close-" + clientId);
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            executor.submit(closeAction).get(CLOSE_JOIN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException exception) {
+            System.err.println("Timed out closing Kafka " + label + " for " + description()
+                    + " after " + CLOSE_JOIN_TIMEOUT);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while closing Kafka " + label + " for " + description(), exception);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to close Kafka " + label + " for " + description(), exception);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private static Properties producerProperties(String bootstrapServers, String clientId) {

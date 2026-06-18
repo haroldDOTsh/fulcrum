@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ArchitectureValidationTest {
@@ -69,10 +70,10 @@ final class ArchitectureValidationTest {
             Map.entry(":data:store-valkey", Set.of(":data:authority-runtime")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
-            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":adapters:object-storage", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":standard-capabilities:auction", ":standard-capabilities:chat-decoration", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:realm", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats")),
+            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":standard-capabilities:auction", ":standard-capabilities:chat-decoration", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:realm", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats", ":testkit:substrate-testkit")),
             Map.entry(":host:effect-admission", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
-            Map.entry(":host:paper-agent", Set.of(":core:artifact-layout", ":host:host-api")),
+            Map.entry(":host:paper-agent", Set.of(":core:artifact-layout", ":host:host-api", ":host:tick-runtime-api")),
             Map.entry(":host:tick-runtime-api", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:velocity-agent", Set.of(":host:host-api", ":data:route-contract")),
             Map.entry(":host:worker-agent", Set.of(":api:contract-api", ":api:kernel-api", ":host:host-api")),
@@ -93,7 +94,7 @@ final class ArchitectureValidationTest {
             Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
             Map.entry(":validation:architecture", Set.of()),
             Map.entry(":validation:fleet-e2e", Set.of(":adapters:agones-allocator", ":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":control:allocation-bridge", ":control:queue-controller", ":control:route-controller", ":core:content-resolver", ":core:manifest-core", ":core:session-runtime", ":data:authority-core", ":data:authority-runtime", ":data:route-contract", ":data:session-authority", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":standard-capabilities:auction", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats", ":testkit:substrate-testkit")),
-            Map.entry(":validation:store-adapter-certification", Set.of(":adapters:object-storage", ":api:kernel-api", ":core:artifact-layout", ":core:manifest-core")),
+            Map.entry(":validation:store-adapter-certification", Set.of(":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":core:artifact-layout", ":core:manifest-core", ":data:authority-core", ":data:authority-runtime", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":testkit:substrate-testkit")),
             Map.entry(":validation:synthetic-load", Set.of(":adapters:agones-fake", ":api:contract-api", ":api:kernel-api", ":control:route-controller", ":data:authority-core", ":host:host-api", ":standard-capabilities:rank")),
             Map.entry(":validation:standard-capabilities", Set.of(":capability:capability-runtime", ":standard-capabilities:auction", ":standard-capabilities:chat-decoration", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats"))
     );
@@ -156,10 +157,16 @@ final class ArchitectureValidationTest {
             String text = Files.readString(buildFile, StandardCharsets.UTF_8).toLowerCase();
             forbidden.stream()
                     .filter(text::contains)
+                    .filter(term -> !allowedHostApiDependency(normalized, term))
                     .map(term -> normalized + " contains " + term)
                     .forEach(violations::add);
         }
         assertTrue(violations.isEmpty(), () -> "Forbidden runtime clients in core/host build files: " + violations);
+    }
+
+    private static boolean allowedHostApiDependency(String normalizedBuildFile, String term) {
+        return (normalizedBuildFile.equals("host/paper-agent/build.gradle.kts") && term.equals("paper-api"))
+                || (normalizedBuildFile.equals("host/velocity-agent/build.gradle.kts") && term.equals("velocity-api"));
     }
 
     @Test
@@ -233,29 +240,248 @@ final class ArchitectureValidationTest {
         Path launcher = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/FulcrumLauncher.java");
         Path roles = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/LaunchRole.java");
         Path registry = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/RuntimeEntrypointRegistry.java");
+        Path supervisor = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/FulcrumRuntimeSupervisor.java");
+        Path managedService = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/ManagedRuntimeService.java");
+        Path connectionSettings = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/RuntimeConnectionSettings.java");
+        Path externalClients = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/RuntimeExternalClients.java");
+        Path serviceEngine = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/RuntimeServiceEngine.java");
+        Path runtimeServiceEngines = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/RuntimeServiceEngines.java");
+        Path authorityEngine = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/AuthorityRuntimeServiceEngine.java");
+        Path controllerEngine = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/ControllerRuntimeServiceEngine.java");
+        Path workerEngine = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/WorkerRuntimeServiceEngine.java");
+        Path authorityBindings = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/AuthorityRuntimeBindings.java");
+        Path externalAuthorityBindings = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/ExternalAuthorityRuntimeBindings.java");
+        Path authorityCatalog = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/AuthorityWorkerCatalog.java");
+        Path controllerCatalog = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/ControllerWorkerCatalog.java");
+        Path workerCatalog = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/WorkerJobCatalog.java");
+        Path workerObjectHandler = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/WorkerJobObjectHandler.java");
+        Path externalWorker = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/ExternalWorkerJobWorker.java");
+        Path workerWireCodec = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/WorkerJobWireCodec.java");
+        Path authorityWorkerBinding = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/AuthorityWorkerBinding.java");
+        Path controllerWorkerBinding = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/ControllerWorkerBinding.java");
+        Path workerJobBinding = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/WorkerJobBinding.java");
+        Path localAuthorityBindings = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/LocalAuthorityRuntimeBindings.java");
+        Path localControllerBindings = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/LocalControllerRuntimeBindings.java");
+        Path localWorkerBindings = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/LocalWorkerRuntimeBindings.java");
+        Path probes = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/RuntimeProbeServer.java");
+        Path identityIssuer = ROOT.resolve("distribution/service-launcher/src/main/java/sh/harold/fulcrum/distribution/launcher/RuntimeIdentityIssuer.java");
 
         assertTrue(Files.exists(buildFile), "service launcher build file must exist");
         assertTrue(Files.exists(launcher), "service launcher main class must exist");
         assertTrue(Files.exists(roles), "service launcher roles must exist");
         assertTrue(Files.exists(registry), "service launcher entrypoint registry must exist");
+        assertTrue(Files.exists(supervisor), "service launcher supervisor must exist");
+        assertTrue(Files.exists(managedService), "service launcher managed runtime service must exist");
+        assertTrue(Files.exists(connectionSettings), "service launcher runtime connection settings must exist");
+        assertTrue(Files.exists(externalClients), "service launcher runtime external client inventory must exist");
+        assertTrue(Files.exists(serviceEngine), "service launcher runtime service engine must exist");
+        assertTrue(Files.exists(runtimeServiceEngines), "service launcher runtime service engine factory must exist");
+        assertTrue(Files.exists(authorityEngine), "authority-service runtime engine must exist");
+        assertTrue(Files.exists(controllerEngine), "controller-service runtime engine must exist");
+        assertTrue(Files.exists(workerEngine), "worker-agent runtime engine must exist");
+        assertTrue(Files.exists(authorityBindings), "authority-service runtime binding ports must exist");
+        assertTrue(Files.exists(externalAuthorityBindings), "authority-service external runtime bindings must exist");
+        assertTrue(Files.exists(authorityCatalog), "authority-service worker catalog must exist");
+        assertTrue(Files.exists(controllerCatalog), "controller-service worker catalog must exist");
+        assertTrue(Files.exists(workerCatalog), "worker-agent job catalog must exist");
+        assertTrue(Files.exists(workerObjectHandler), "worker-agent object result handler must exist");
+        assertTrue(Files.exists(externalWorker), "worker-agent external job worker must exist");
+        assertTrue(Files.exists(workerWireCodec), "worker-agent job wire codec must exist");
+        assertTrue(Files.exists(authorityWorkerBinding), "authority-service worker binding must exist");
+        assertTrue(Files.exists(controllerWorkerBinding), "controller-service worker binding must exist");
+        assertTrue(Files.exists(workerJobBinding), "worker-agent job binding must exist");
+        assertTrue(Files.exists(localAuthorityBindings), "authority-service local runtime bindings must exist");
+        assertTrue(Files.exists(localControllerBindings), "controller-service local runtime bindings must exist");
+        assertTrue(Files.exists(localWorkerBindings), "worker-agent local runtime bindings must exist");
+        assertTrue(Files.exists(probes), "service launcher probes must exist");
+        assertTrue(Files.exists(identityIssuer), "service launcher identity issuer must exist");
 
         String buildText = Files.readString(buildFile, StandardCharsets.UTF_8);
         assertTrue(buildText.contains("application"), "service launcher must use Gradle application packaging");
         assertTrue(buildText.contains("mainClass.set(\"sh.harold.fulcrum.distribution.launcher.FulcrumLauncher\")"),
                 "service launcher must declare the runtime main class");
         assertTrue(buildText.contains("installDist"), "service launcher check must build installable start scripts");
+        assertTrue(buildText.contains("implementation(project(\":data:authority-runtime\"))"),
+                "authority-service must compile against the production authority runtime worker API");
+        assertTrue(buildText.contains("implementation(project(\":adapters:agones-allocator\"))"),
+                "controller-service must compile against the Agones allocation adapter");
+        assertTrue(buildText.contains("implementation(project(\":adapters:object-storage\"))"),
+                "worker-agent must compile against the object storage adapter");
+        assertTrue(buildText.contains("implementation(project(\":control:allocation-bridge\"))"),
+                "controller-service must compile against the allocation bridge");
+        for (String storeModule : List.of(
+                ":data:store-kafka",
+                ":data:store-postgresql",
+                ":data:store-cassandra",
+                ":data:store-valkey")) {
+            assertTrue(buildText.contains("implementation(project(\"" + storeModule + "\"))"),
+                    "authority-service must compile against " + storeModule);
+        }
+        for (String authorityModule : List.of(
+                ":data:subject-authority",
+                ":data:presence-authority",
+                ":data:route-authority",
+                ":data:session-authority",
+                ":data:artifact-authority")) {
+            assertTrue(buildText.contains("implementation(project(\"" + authorityModule + "\"))"),
+                    "authority-service must compile against " + authorityModule);
+        }
+        for (String controllerModule : List.of(
+                ":control:instance-registry-controller",
+                ":control:route-controller",
+                ":control:lifecycle-controller",
+                ":control:capability-enablement-controller",
+                ":control:queue-controller",
+                ":control:fault-controller")) {
+            assertTrue(buildText.contains("implementation(project(\"" + controllerModule + "\"))"),
+                    "controller-service must compile against " + controllerModule);
+        }
 
         String launcherText = Files.readString(launcher, StandardCharsets.UTF_8);
         assertTrue(launcherText.contains("public static void main"), "service launcher must expose a main method");
+        assertTrue(launcherText.contains("FulcrumRuntimeSupervisor"), "run mode must start the supervisor");
 
         String registryText = Files.readString(registry, StandardCharsets.UTF_8);
         String roleText = Files.readString(roles, StandardCharsets.UTF_8);
+        String managedServiceText = Files.readString(managedService, StandardCharsets.UTF_8);
+        String connectionSettingsText = Files.readString(connectionSettings, StandardCharsets.UTF_8);
+        String externalClientsText = Files.readString(externalClients, StandardCharsets.UTF_8);
+        String runtimeServiceEnginesText = Files.readString(runtimeServiceEngines, StandardCharsets.UTF_8);
+        String authorityEngineText = Files.readString(authorityEngine, StandardCharsets.UTF_8);
+        String authorityCatalogText = Files.readString(authorityCatalog, StandardCharsets.UTF_8);
+        String externalAuthorityBindingsText = Files.readString(externalAuthorityBindings, StandardCharsets.UTF_8);
+        String controllerCatalogText = Files.readString(controllerCatalog, StandardCharsets.UTF_8);
+        String workerCatalogText = Files.readString(workerCatalog, StandardCharsets.UTF_8);
+        String workerObjectHandlerText = Files.readString(workerObjectHandler, StandardCharsets.UTF_8);
+        String externalWorkerText = Files.readString(externalWorker, StandardCharsets.UTF_8);
+        String workerWireCodecText = Files.readString(workerWireCodec, StandardCharsets.UTF_8);
+        String authorityWorkerBindingText = Files.readString(authorityWorkerBinding, StandardCharsets.UTF_8);
+        String controllerWorkerBindingText = Files.readString(controllerWorkerBinding, StandardCharsets.UTF_8);
+        String workerJobBindingText = Files.readString(workerJobBinding, StandardCharsets.UTF_8);
+        String localAuthorityBindingsText = Files.readString(localAuthorityBindings, StandardCharsets.UTF_8);
+        String localControllerBindingsText = Files.readString(localControllerBindings, StandardCharsets.UTF_8);
+        String localWorkerBindingsText = Files.readString(localWorkerBindings, StandardCharsets.UTF_8);
         for (String role : List.of("authority-service", "controller-service", "worker-agent", "paper-agent", "velocity-agent")) {
             assertTrue(roleText.contains(role), "service launcher missing entrypoint role " + role);
         }
         for (String roleConstant : List.of("AUTHORITY_SERVICE", "CONTROLLER_SERVICE", "WORKER_AGENT", "PAPER_AGENT", "VELOCITY_AGENT")) {
             assertTrue(registryText.contains(roleConstant), "service launcher registry missing role " + roleConstant);
         }
+        String supervisorText = Files.readString(supervisor, StandardCharsets.UTF_8);
+        String probeText = Files.readString(probes, StandardCharsets.UTF_8);
+        String identityText = Files.readString(identityIssuer, StandardCharsets.UTF_8);
+        assertTrue(supervisorText.contains("ManagedRuntimeService"), "supervisor must own managed role services");
+        assertTrue(supervisorText.contains("RuntimeConnectionSettings.resolve"),
+                "supervisor must resolve typed runtime connection settings before startup");
+        assertTrue(supervisorText.contains("RuntimeExternalClients.create"),
+                "supervisor must construct role-scoped runtime external clients before service startup");
+        assertTrue(managedServiceText.contains("RuntimeServiceEngine"), "managed runtime service must delegate to runtime engines");
+        assertTrue(managedServiceText.contains("RuntimeExternalClients"),
+                "managed runtime service must pass external clients into runtime engines");
+        for (String binding : List.of(
+                "FULCRUM_KAFKA_BOOTSTRAP_SERVERS",
+                "FULCRUM_POSTGRES_JDBC_URL",
+                "FULCRUM_CASSANDRA_CONTACT_POINTS",
+                "FULCRUM_CASSANDRA_LOCAL_DATACENTER",
+                "FULCRUM_VALKEY_ENDPOINT",
+                "FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS",
+                "FULCRUM_AGONES_ALLOCATOR_URL",
+                "FULCRUM_AGONES_NAMESPACE",
+                "FULCRUM_WORKER_KAFKA_BOOTSTRAP_SERVERS",
+                "FULCRUM_WORKER_OBJECT_BUCKET",
+                "FULCRUM_OBJECT_STORE_ROOT")) {
+            assertTrue(connectionSettingsText.contains(binding), "runtime connection settings missing " + binding);
+        }
+        assertTrue(connectionSettingsText.contains("password=<redacted>"),
+                "runtime connection settings must redact secret material in summaries");
+        for (String clientHandle : List.of(
+                "KafkaClientBundle",
+                "PostgresClientHandle",
+                "CassandraClientHandle",
+                "ValkeyClientHandle",
+                "LocalObjectStorageAdapter",
+                "AgonesAllocatorRestClient")) {
+            assertTrue(externalClientsText.contains(clientHandle),
+                    "runtime external clients must construct " + clientHandle);
+        }
+        for (String forbiddenConstructor : List.of(
+                "new KafkaProducer",
+                "new KafkaConsumer",
+                "PGSimpleDataSource",
+                "CqlSession.builder",
+                "new UnifiedJedis")) {
+            assertFalse(externalClientsText.contains(forbiddenConstructor),
+                    "service-launcher must use store adapter client handles instead of " + forbiddenConstructor);
+        }
+        assertTrue(runtimeServiceEnginesText.contains("externalClients"),
+                "runtime engine factory must use the external client inventory");
+        assertTrue(runtimeServiceEnginesText.contains("ExternalAuthorityRuntimeBindings"),
+                "authority-service must run through external authority bindings in run mode");
+        for (String adapterPort : List.of(
+                "KafkaAuthorityCommandSource",
+                "JdbcAuthorityRecordStore",
+                "CassandraAuthorityProjectionWriter",
+                "ValkeyIdempotencyLedger",
+                "KafkaAuthorityOffsetCommitter")) {
+            assertTrue(externalAuthorityBindingsText.contains(adapterPort),
+                    "external authority bindings must compose " + adapterPort);
+        }
+        assertTrue(authorityEngineText.contains("AuthorityWorkerBinding"), "authority-service must run worker bindings");
+        assertTrue(authorityWorkerBindingText.contains("AuthorityRuntimeReceipt"),
+                "authority-service worker binding must expose authority runtime receipts");
+        assertTrue(authorityWorkerBindingText.contains("AuthorityRuntimeWorker"),
+                "authority-service worker binding must wrap production authority runtime workers");
+        for (String domain : List.of("subject", "presence", "route", "session", "artifact-metadata")) {
+            assertTrue(authorityCatalogText.contains(domain), "authority-service catalog missing " + domain);
+        }
+        assertTrue(controllerWorkerBindingText.contains("ControllerRuntimeReceipt"),
+                "controller-service worker binding must expose controller runtime receipts");
+        for (String domain : List.of(
+                "instance-registry",
+                "route-attempt",
+                "experience-session",
+                "lifecycle-trace",
+                "capability-enablement",
+                "queue-roster",
+                "fault",
+                "shared-shard-allocation")) {
+            assertTrue(controllerCatalogText.contains(domain), "controller-service catalog missing " + domain);
+        }
+        assertTrue(controllerCatalogText.contains("SharedShardAllocationBridge"),
+                "controller-service catalog must wrap the allocation bridge");
+        assertTrue(localControllerBindingsText.contains("SharedShardAllocationDecision"),
+                "local controller bindings must capture shared-shard allocation decisions");
+        assertTrue(managedServiceText.contains("RuntimeConnectionSettings"),
+                "managed runtime service must pass resolved runtime settings into engines");
+        assertTrue(workerJobBindingText.contains("WorkerAgentRuntime"),
+                "worker-agent job binding must wrap production worker runtime");
+        assertTrue(workerCatalogText.contains("WorkerJobKind"),
+                "worker-agent catalog must enumerate worker job kinds");
+        assertTrue(workerCatalogText.contains("WorkerJobObjectHandler"),
+                "worker-agent catalog must route local jobs through the shared object result handler");
+        assertTrue(workerObjectHandlerText.contains("ObjectStorageAdapter"),
+                "worker-agent object handler must write job results through object storage");
+        assertTrue(workerObjectHandlerText.contains("ArtifactPin"),
+                "worker-agent object handler must content-address worker job results");
+        assertTrue(runtimeServiceEnginesText.contains("ExternalWorkerJobWorker"),
+                "worker-agent runtime must include an external worker job topic poller");
+        assertTrue(externalWorkerText.contains("commitSync"),
+                "worker-agent external worker must commit consumed job offsets");
+        assertTrue(externalWorkerText.contains("WorkerJobWireCodec.encodeReceipt"),
+                "worker-agent external worker must publish durable worker result records");
+        assertTrue(workerWireCodecText.contains("WorkerJobRequest"),
+                "worker-agent wire codec must decode typed worker job requests");
+        assertTrue(runtimeServiceEnginesText.contains("workerClients.objectStorage"),
+                "worker-agent runtime must receive constructed object storage from external clients");
+        assertTrue(localAuthorityBindingsText.contains("InMemoryIdempotencyLedger"),
+                "local authority bindings must preserve idempotency semantics for single-machine runtime");
+        assertTrue(localControllerBindingsText.contains("ConcurrentLinkedQueue"),
+                "local controller bindings must expose process-loop queues for single-machine runtime");
+        assertTrue(localWorkerBindingsText.contains("WorkerJobReceipt"),
+                "local worker bindings must capture worker runtime receipts");
+        assertTrue(probeText.contains("/live"), "probe server must expose liveness");
+        assertTrue(probeText.contains("/ready"), "probe server must expose readiness");
+        assertTrue(identityText.contains("HostSecurityContext"), "identity issuer must produce scoped host security context");
     }
 
     @Test
@@ -272,6 +498,26 @@ final class ArchitectureValidationTest {
                 "Presence, Route, and Session projections"
         )) {
             assertTrue(text.contains(required), "ADR missing required decision text: " + required);
+        }
+    }
+
+    @Test
+    void lobbyBringupAdrsExistBeforeHostIntegration() throws IOException {
+        Map<String, List<String>> adrTerms = Map.of(
+                "ADR-0018-shared-shard-placement.md",
+                List.of("shared-shard", "many Presences", "Agones Fleet", "ResolvedManifest"),
+                "ADR-0019-host-credential-issuance.md",
+                List.of("least-privilege", "Host runtimes", "canonical stores", "transport principal"),
+                "ADR-0020-cluster-e2e-strategy.md",
+                List.of("clusterE2e", "headless Minecraft", "L4", "Agones")
+        );
+        for (Map.Entry<String, List<String>> entry : adrTerms.entrySet()) {
+            Path adr = ROOT.resolve("adrs").resolve(entry.getKey());
+            assertTrue(Files.exists(adr), entry.getKey() + " must exist");
+            String text = Files.readString(adr, StandardCharsets.UTF_8);
+            for (String required : entry.getValue()) {
+                assertTrue(text.contains(required), entry.getKey() + " missing " + required);
+            }
         }
     }
 

@@ -4,6 +4,7 @@ import org.gradle.api.tasks.Sync
 import org.gradle.jvm.tasks.Jar
 import java.io.File
 import java.io.IOException
+import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 
 plugins {
@@ -102,28 +103,47 @@ val cassandraImageTag = providers.gradleProperty("fulcrum.cassandraImage")
 val defaultValkeyImage = "valkey/valkey:${libs.versions.valkeyImage.get()}"
 val valkeyImageTag = providers.gradleProperty("fulcrum.valkeyImage")
     .orElse(defaultValkeyImage)
+val defaultDependencyWaitImage = "busybox:${libs.versions.busybox.get()}"
+val dependencyWaitImageTag = providers.gradleProperty("fulcrum.dependencyWaitImage")
+    .orElse(defaultDependencyWaitImage)
 val agonesReleaseName = providers.gradleProperty("fulcrum.agonesReleaseName")
     .orElse("agones")
 val agonesSystemNamespace = providers.gradleProperty("fulcrum.agonesSystemNamespace")
     .orElse("agones-system")
+fun agonesRuntimeImages(): List<String> {
+    val version = agonesChartVersion.get()
+    return listOf(
+        "agones-controller",
+        "agones-extensions",
+        "agones-allocator",
+        "agones-ping",
+        "agones-sdk").map { image ->
+        "us-docker.pkg.dev/agones-images/release/$image:$version"
+    }
+}
 val kubeconfig = providers.gradleProperty("fulcrum.kubeconfig")
 val generatedClusterKubeconfig = layout.buildDirectory.file("cluster-e2e/kubeconfig.yaml")
-val clusterK3sImage = providers.gradleProperty("fulcrum.k3sImage")
-    .orElse("rancher/k3s:${libs.versions.k3s.get()}")
-val clusterK3sContainerName = providers.gradleProperty("fulcrum.k3sContainerName")
+val clusterProvider = providers.gradleProperty("fulcrum.clusterProvider")
+    .orElse("k3d")
+val clusterK3dImage = providers.gradleProperty("fulcrum.k3dImage")
+    .orElse("rancher/k3s:${libs.versions.k3dK3s.get()}")
+val clusterName = providers.gradleProperty("fulcrum.clusterName")
+    .orElse(providers.gradleProperty("fulcrum.k3dClusterName"))
+    .orElse(providers.gradleProperty("fulcrum.kindClusterName"))
     .orElse("fulcrum-cluster-e2e")
-val clusterK3sApiPort = providers.gradleProperty("fulcrum.k3sApiPort")
-    .orElse("16443")
-val clusterK3sMinecraftPort = providers.gradleProperty("fulcrum.k3sMinecraftPort")
-    .orElse("25565")
-val clusterK3sCgroupNamespace = providers.gradleProperty("fulcrum.k3sCgroupNamespace")
-    .orElse("host")
-val keepK3s = providers.gradleProperty("fulcrum.keepK3s")
+val clusterApiPort = providers.gradleProperty("fulcrum.clusterApiPort")
+    .orElse("")
+val clusterMinecraftPort = providers.gradleProperty("fulcrum.clusterMinecraftPort")
+    .orElse("")
+val clusterCreateTimeout = providers.gradleProperty("fulcrum.clusterCreateTimeout")
+    .orElse("600s")
+val keepGeneratedCluster = providers.gradleProperty("fulcrum.keepCluster")
     .orElse("false")
-val clusterK3sImageArchive = layout.buildDirectory.file("cluster-e2e/fulcrum-images.tar")
+val generatedKindConfig = layout.buildDirectory.file("cluster-e2e/kind-config.yaml")
+val generatedClusterMinecraftPortFile = layout.buildDirectory.file("cluster-e2e/minecraft-port.txt")
 val lobbyEndpointHost = providers.gradleProperty("fulcrum.lobbyEndpointHost")
 val lobbyEndpointPort = providers.gradleProperty("fulcrum.lobbyEndpointPort")
-    .orElse(clusterK3sMinecraftPort)
+    .orElse(clusterMinecraftPort)
 val lobbyNamespace = providers.gradleProperty("fulcrum.lobbyNamespace")
     .orElse("fulcrum-lobby")
 val lobbyVelocityService = providers.gradleProperty("fulcrum.lobbyVelocityService")
@@ -280,7 +300,7 @@ val lobbyKafkaBootstrapServer = providers.gradleProperty("fulcrum.lobbyKafkaBoot
 val lobbyKafkaConsoleConsumerPath = providers.gradleProperty("fulcrum.lobbyKafkaConsoleConsumerPath")
     .orElse("/opt/kafka/bin/kafka-console-consumer.sh")
 val lobbyMinecraftProtocolVersion = providers.gradleProperty("fulcrum.minecraftProtocolVersion")
-    .orElse("0")
+    .orElse("775")
 val lobbyLoginUsername = providers.gradleProperty("fulcrum.lobbyLoginUsername")
     .orElse("FulcrumBotOne")
 val secondLobbyLoginUsername = providers.gradleProperty("fulcrum.secondLobbyLoginUsername")
@@ -352,7 +372,7 @@ val deniedLobbyLoginUsername = providers.gradleProperty("fulcrum.deniedLobbyLogi
 val deniedLobbyLoginReason = providers.gradleProperty("fulcrum.deniedLobbyLoginReasonContains")
     .orElse("Banned from the lobby")
 val lobbyVerifierTimeout = providers.gradleProperty("fulcrum.lobbyVerifierTimeout")
-    .orElse("PT10S")
+    .orElse("PT90S")
 val lobbyEndpointReadyTimeout = providers.gradleProperty("fulcrum.lobbyEndpointReadyTimeout")
     .orElse("PT120S")
 val lobbyRouteAttemptStateTimeout = providers.gradleProperty("fulcrum.lobbyRouteAttemptStateTimeout")
@@ -389,7 +409,11 @@ fun taskNameTargets(taskName: String, target: String): Boolean =
 val generatedClusterRequested = providers.provider {
     val taskNames = gradle.startParameter.taskNames
     val requestedGeneratedCluster = taskNames.any {
-        taskNameTargets(it, "clusterE2e") || taskNameTargets(it, "clusterK3sE2e")
+        taskNameTargets(it, "clusterE2e")
+                || taskNameTargets(it, "clusterK3sE2e")
+                || taskNameTargets(it, "clusterK3sPreflight")
+                || taskNameTargets(it, "clusterK3sStart")
+                || taskNameTargets(it, "clusterK3sImportImages")
     }
     val requestedExistingCluster = taskNames.any { taskNameTargets(it, "clusterExistingE2e") }
     requestedGeneratedCluster && !requestedExistingCluster
@@ -397,7 +421,7 @@ val generatedClusterRequested = providers.provider {
 
 fun effectiveKubeconfigPath(): String? {
     val explicitKubeconfig = kubeconfig.orNull?.takeIf { it.isNotBlank() }
-    return explicitKubeconfig
+    return explicitKubeconfig?.let { rootProject.file(it).absolutePath }
         ?: if (generatedClusterRequested.get()) generatedClusterKubeconfig.get().asFile.absolutePath else null
 }
 
@@ -445,6 +469,69 @@ fun verifierKubeArgs(runArgs: MutableList<String>) {
 fun dockerCommand(vararg args: String): List<String> = buildList {
     add("docker")
     addAll(args)
+}
+
+fun k3dCommand(vararg args: String): List<String> = buildList {
+    add("k3d")
+    addAll(args)
+}
+
+fun kindCommand(vararg args: String): List<String> = buildList {
+    add("kind")
+    addAll(args)
+}
+
+fun generatedClusterProvider(): String = clusterProvider.get().lowercase()
+
+fun generatedClusterCli(vararg args: String): List<String> =
+    when (generatedClusterProvider()) {
+        "k3d" -> k3dCommand(*args)
+        "kind" -> kindCommand(*args)
+        else -> throw GradleException(
+            "Unsupported generated cluster provider `${clusterProvider.get()}`. "
+                + "Use -Pfulcrum.clusterProvider=k3d or -Pfulcrum.clusterProvider=kind.")
+    }
+
+fun generatedClusterExists(): Boolean =
+    when (generatedClusterProvider()) {
+        "k3d" -> runClusterProcess(k3dCommand("cluster", "get", clusterName.get()), 30).exitCode == 0
+        "kind" -> runClusterProcess(kindCommand("get", "clusters"), 30)
+            .output
+            .lineSequence()
+            .any { it.trim() == clusterName.get() }
+        else -> false
+    }
+
+fun deleteGeneratedClusterIfExists(reason: String) {
+    val provider = generatedClusterProvider()
+    val name = clusterName.get()
+    if (!generatedClusterExists()) {
+        return
+    }
+    logger.lifecycle("$reason generated $provider cluster $name")
+    when (provider) {
+        "k3d" -> requireClusterProcess(k3dCommand("cluster", "delete", name), 120)
+        "kind" -> requireClusterProcess(kindCommand("delete", "cluster", "--name", name), 120)
+        else -> throw GradleException("Unsupported generated cluster provider `$provider`.")
+    }
+}
+
+fun reserveFreeHostPort(): Int = ServerSocket(0).use { socket ->
+    socket.reuseAddress = true
+    socket.localPort
+}
+
+fun selectedLobbyEndpointPort(): String {
+    lobbyEndpointPort.orNull?.takeIf { it.isNotBlank() }?.let {
+        return it
+    }
+    if (generatedClusterRequested.get()) {
+        val portFile = generatedClusterMinecraftPortFile.get().asFile
+        if (portFile.isFile) {
+            return portFile.readText().trim()
+        }
+    }
+    return "25565"
 }
 
 data class ClusterProcessResult(
@@ -495,6 +582,49 @@ fun requireClusterProcess(
                 + formattedOutput)
     }
     return result.output
+}
+
+fun waitForClusterProcess(
+    label: String,
+    command: List<String>,
+    timeoutSeconds: Long,
+    pollSeconds: Long = 10,
+    workingDir: File = project.projectDir) {
+    val startedAt = System.nanoTime()
+    val timeoutNanos = TimeUnit.SECONDS.toNanos(timeoutSeconds)
+    var attempt = 1
+    var lastOutput = ""
+    while (System.nanoTime() - startedAt < timeoutNanos) {
+        val result = runClusterProcess(command, pollSeconds + 10, workingDir)
+        lastOutput = result.output
+        if (result.exitCode == 0) {
+            logger.lifecycle("$label is ready")
+            return
+        }
+        val elapsedSeconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startedAt)
+        val detail = lastOutput
+            .lineSequence()
+            .filter { it.isNotBlank() }
+            .lastOrNull()
+            ?: "exit ${result.exitCode}"
+        logger.lifecycle(
+            "$label not ready yet after ${elapsedSeconds}s "
+                + "(attempt $attempt, timeout ${timeoutSeconds}s): $detail")
+        attempt += 1
+        try {
+            Thread.sleep(TimeUnit.SECONDS.toMillis(pollSeconds))
+        } catch (exception: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw GradleException("Interrupted while waiting for $label.", exception)
+        }
+    }
+    val formattedOutput = lastOutput.ifBlank { "<no output>" }.prependIndent("  ")
+    throw GradleException(
+        "$label did not become ready within ${timeoutSeconds}s."
+            + System.lineSeparator()
+            + "Last output:"
+            + System.lineSeparator()
+            + formattedOutput)
 }
 
 fun dockerContainerExists(containerName: String): Boolean =
@@ -688,197 +818,236 @@ val lobbyKafkaManifest = layout.projectDirectory.file(
     "src/main/resources/fulcrum/kubernetes/substrate/lobby-kafka.yaml")
 val renderedLobbyKafkaManifest = layout.buildDirectory.file("kubernetes/substrate/lobby-kafka.yaml")
 val renderedAgonesAllocatorCaSecret = layout.buildDirectory.file("kubernetes/substrate/agones-allocator-ca-secret.yaml")
-val renderedAgonesHelmChart = layout.buildDirectory.file("kubernetes/paper-agones/agones-helm-chart.yaml")
 
 tasks.register("clusterK3sPreflight") {
     group = "verification"
-    description = "Verifies Docker can run the Gradle-owned K3s cluster used by clusterE2e."
+    description = "Verifies the generated k3d/kind cluster tooling used by clusterE2e."
     doLast {
-        if (clusterK3sImage.get().isBlank()) {
-            throw GradleException("K3s image reference is empty; set -Pfulcrum.k3sImage=<image-ref>.")
+        val provider = generatedClusterProvider()
+        if (provider !in setOf("k3d", "kind")) {
+            throw GradleException(
+                "Unsupported generated cluster provider `${clusterProvider.get()}`. "
+                    + "Use -Pfulcrum.clusterProvider=k3d or -Pfulcrum.clusterProvider=kind.")
         }
         runClusterPreflightChecks(listOf(
             ClusterPreflightCheck(
+                "${provider} CLI check",
+                generatedClusterCli("version"),
+                "Install $provider and ensure `$provider` is on PATH before running clusterE2e."),
+            ClusterPreflightCheck(
+                "kubectl client check",
+                kubectlCommand("version", "--client"),
+                "Install kubectl and ensure it is on PATH before running clusterE2e."),
+            ClusterPreflightCheck(
+                "Helm availability check",
+                helmCommand("version", "--short"),
+                "Install Helm and ensure `helm` is on PATH before Agones installation."),
+            ClusterPreflightCheck(
                 "Docker daemon check",
                 dockerCommand("version", "--format", "{{.Client.Version}} {{.Server.Version}}"),
-                "Start Docker Desktop and ensure this user can access the Linux engine before running clusterE2e.")))
+                "Start Docker and ensure this user can access the Linux engine before running clusterE2e.")))
+    }
+}
+
+tasks.register("clusterK3sDeleteExisting") {
+    group = "deployment"
+    description = "Deletes an existing generated k3d/kind cluster before clusterE2e starts resource-heavy validation."
+    dependsOn(tasks.named("clusterK3sPreflight"))
+    doLast {
+        deleteGeneratedClusterIfExists("Deleting existing")
     }
 }
 
 tasks.register("clusterK3sStart") {
     group = "deployment"
-    description = "Starts the Gradle-owned K3s container and writes its generated kubeconfig under build/cluster-e2e."
+    description = "Creates the generated k3d/kind cluster and writes its kubeconfig under build/cluster-e2e."
     dependsOn(tasks.named("clusterK3sPreflight"))
+    dependsOn(tasks.named("clusterK3sDeleteExisting"))
     doLast {
-        val containerName = clusterK3sContainerName.get()
-        fun runK3sContainer() {
-            val runArgs = mutableListOf(
-                "run",
-                "-d",
-                "--name",
-                containerName,
-                "--privileged")
-            clusterK3sCgroupNamespace.get()
-                .takeIf { it.isNotBlank() }
-                ?.let { namespace ->
-                    runArgs.add("--cgroupns")
-                    runArgs.add(namespace)
+        val provider = generatedClusterProvider()
+        val name = clusterName.get()
+        deleteGeneratedClusterIfExists("Deleting existing")
+
+        val kubeconfigFile = generatedClusterKubeconfig.get().asFile
+        kubeconfigFile.parentFile.mkdirs()
+        val selectedApiPort = clusterApiPort.get().takeIf { it.isNotBlank() }
+            ?: reserveFreeHostPort().toString()
+        val selectedMinecraftPort = clusterMinecraftPort.get().takeIf { it.isNotBlank() }
+            ?: reserveFreeHostPort().toString()
+        val minecraftPortFile = generatedClusterMinecraftPortFile.get().asFile
+        minecraftPortFile.parentFile.mkdirs()
+        minecraftPortFile.writeText(selectedMinecraftPort)
+        logger.lifecycle("Using generated $provider Kubernetes API port 127.0.0.1:$selectedApiPort")
+        logger.lifecycle("Using generated $provider Minecraft port 127.0.0.1:$selectedMinecraftPort")
+        when (provider) {
+            "k3d" -> {
+                val createArgs = mutableListOf(
+                    "cluster",
+                    "create",
+                    name)
+                clusterK3dImage.get().takeIf { it.isNotBlank() }?.let {
+                    createArgs.add("--image")
+                    createArgs.add(it)
                 }
-            runArgs.addAll(listOf(
-                "-p",
-                "127.0.0.1:${clusterK3sApiPort.get()}:6443",
-                "-p",
-                "127.0.0.1:${clusterK3sMinecraftPort.get()}:25565",
-                clusterK3sImage.get(),
-                "server",
-                "--disable=traefik",
-                "--tls-san=127.0.0.1",
-                "--write-kubeconfig-mode=644"))
-            requireClusterProcess(dockerCommand(*runArgs.toTypedArray()), 180)
-        }
-
-        if (!dockerContainerExists(containerName)) {
-            runK3sContainer()
-        } else if (!dockerContainerRunning(containerName)) {
-            logger.lifecycle("Removing stopped K3s container $containerName before recreating it")
-            requireClusterProcess(dockerCommand("rm", "-f", containerName), 60)
-            runK3sContainer()
-        } else {
-            logger.lifecycle("Reusing running K3s container $containerName")
-        }
-
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(240)
-        val failures = mutableListOf<String>()
-        while (System.nanoTime() < deadline) {
-            if (!dockerContainerRunning(containerName)) {
-                val logs = runClusterProcess(
-                    dockerCommand("logs", "--tail", "120", containerName),
-                    30)
-                    .output
-                    .ifBlank { "<no K3s logs>" }
-                    .prependIndent("  ")
-                throw GradleException(
-                    "K3s container $containerName exited before node readiness."
-                        + System.lineSeparator()
-                        + "Logs:"
-                        + System.lineSeparator()
-                        + logs)
-            }
-            val result = runClusterProcess(
-                dockerCommand(
-                    "exec",
-                    containerName,
-                    "kubectl",
-                    "wait",
-                    "--for=condition=Ready",
-                    "node",
-                    "--all",
-                    "--timeout=10s"),
-                20)
-            if (result.exitCode == 0) {
-                val rawKubeconfig = requireClusterProcess(
-                    dockerCommand("exec", containerName, "cat", "/etc/rancher/k3s/k3s.yaml"),
-                    30)
-                val hostApi = "https://127.0.0.1:${clusterK3sApiPort.get()}"
-                val renderedKubeconfig = rawKubeconfig
-                    .replace("https://127.0.0.1:6443", hostApi)
-                    .replace("https://localhost:6443", hostApi)
-                val kubeconfigFile = generatedClusterKubeconfig.get().asFile
-                kubeconfigFile.parentFile.mkdirs()
+                createArgs.add("--api-port")
+                createArgs.add("127.0.0.1:$selectedApiPort")
+                createArgs.addAll(listOf(
+                    "--port",
+                    "127.0.0.1:$selectedMinecraftPort:25565@loadbalancer",
+                    "--k3s-arg",
+                    "--disable=traefik@server:0",
+                    "--wait",
+                    "--timeout",
+                    clusterCreateTimeout.get(),
+                    "--kubeconfig-update-default=false"))
+                requireClusterProcess(
+                    k3dCommand(*createArgs.toTypedArray()),
+                    720)
+                val renderedKubeconfig = requireClusterProcess(k3dCommand("kubeconfig", "get", name), 30)
+                    .replace("https://host.docker.internal:", "https://127.0.0.1:")
                 kubeconfigFile.writeText(renderedKubeconfig)
-                logger.lifecycle("Wrote generated K3s kubeconfig to ${kubeconfigFile.absolutePath}")
-                return@doLast
             }
-            failures.add(result.output.ifBlank { "K3s node readiness returned exit code ${result.exitCode}" })
-            Thread.sleep(3_000)
+            "kind" -> {
+                val kindConfig = generatedKindConfig.get().asFile
+                kindConfig.parentFile.mkdirs()
+                kindConfig.writeText("""
+                    |kind: Cluster
+                    |apiVersion: kind.x-k8s.io/v1alpha4
+                    |networking:
+                    |  apiServerAddress: "127.0.0.1"
+                    |  apiServerPort: $selectedApiPort
+                    |nodes:
+                    |  - role: control-plane
+                    |    extraPortMappings:
+                    |      - listenAddress: "127.0.0.1"
+                    |        hostPort: ${selectedMinecraftPort.toInt()}
+                    |        containerPort: 25565
+                    |        protocol: TCP
+                    |""".trimMargin())
+                requireClusterProcess(
+                    kindCommand(
+                        "create",
+                        "cluster",
+                        "--name",
+                        name,
+                        "--config",
+                        kindConfig.absolutePath,
+                        "--kubeconfig",
+                        kubeconfigFile.absolutePath,
+                        "--wait",
+                        clusterCreateTimeout.get()),
+                    720)
+            }
+            else -> throw GradleException("Unsupported generated cluster provider `$provider`.")
         }
-        throw GradleException(
-            "Timed out waiting for K3s node readiness in container $containerName. Last failures: "
-                + failures.takeLast(5).joinToString(" | "))
+
+        val result = runClusterProcess(
+            kubectlCommand("wait", "--for=condition=Ready", "node", "--all", "--timeout=240s"),
+            260)
+        if (result.exitCode != 0) {
+            val output = result.output.ifBlank { "<no kubectl wait output>" }.prependIndent("  ")
+            throw GradleException(
+                "Generated $provider cluster $name did not report Ready nodes."
+                    + System.lineSeparator()
+                    + "Output:"
+                    + System.lineSeparator()
+                    + output)
+        } else {
+            logger.lifecycle("Wrote generated $provider kubeconfig to ${kubeconfigFile.absolutePath}")
+        }
     }
 }
 
 tasks.register("clusterK3sImportImages") {
     group = "deployment"
-    description = "Imports the locally built Fulcrum service, Paper, and Velocity images into the K3s container runtime."
+    description = "Imports the locally built Fulcrum and pinned Agones images into the generated k3d/kind cluster."
     dependsOn(
         tasks.named("clusterK3sStart"),
         tasks.named("serviceLauncherImage"),
         tasks.named("paperGameserverImage"),
         tasks.named("velocityProxyImage"))
     doLast {
-        val archive = clusterK3sImageArchive.get().asFile
-        archive.parentFile.mkdirs()
-        requireClusterProcess(
-            dockerCommand(
-                "save",
-                "-o",
-                archive.absolutePath,
-                serviceLauncherImageTag.get(),
-                paperGameserverImageTag.get(),
-                velocityProxyImageTag.get()),
-            300)
-        val archivePath = project.relativePath(archive).replace(File.separatorChar, '/')
-        val containerName = clusterK3sContainerName.get()
-        requireClusterProcess(
-            dockerCommand("cp", archivePath, "$containerName:/tmp/fulcrum-cluster-e2e-images.tar"),
-            120)
-        requireClusterProcess(
-            dockerCommand(
-                "exec",
-                containerName,
-                "ctr",
-                "-n",
-                "k8s.io",
-                "images",
-                "import",
-                "/tmp/fulcrum-cluster-e2e-images.tar"),
-            300)
-        logger.lifecycle("Imported Fulcrum images into K3s container $containerName")
+        val fulcrumImages = listOf(
+            serviceLauncherImageTag.get(),
+            paperGameserverImageTag.get(),
+            velocityProxyImageTag.get())
+        val agonesImages = agonesRuntimeImages()
+        agonesImages.forEach { image ->
+            val inspect = runClusterProcess(dockerCommand("image", "inspect", image), 30)
+            if (inspect.exitCode != 0) {
+                logger.lifecycle("Pulling Agones image $image before importing into generated cluster")
+                requireClusterProcess(dockerCommand("pull", image), 300)
+            }
+        }
+        val images = fulcrumImages + agonesImages
+        val provider = generatedClusterProvider()
+        when (provider) {
+            "k3d" -> {
+                requireClusterProcess(
+                    k3dCommand("image", "import", *fulcrumImages.toTypedArray(), "--cluster", clusterName.get()),
+                    600)
+                requireClusterProcess(
+                    k3dCommand("image", "import", *agonesImages.toTypedArray(), "--cluster", clusterName.get()),
+                    600)
+            }
+            "kind" -> requireClusterProcess(
+                kindCommand("load", "docker-image", "--name", clusterName.get(), *images.toTypedArray()),
+                600)
+            else -> throw GradleException("Unsupported generated cluster provider `$provider`.")
+        }
+        logger.lifecycle("Imported Fulcrum and Agones images into generated $provider cluster ${clusterName.get()}")
     }
+}
+
+tasks.named("clusterK3sStart") {
+    mustRunAfter(
+        tasks.named("serviceLauncherImage"),
+        tasks.named("paperGameserverImage"),
+        tasks.named("velocityProxyImage"))
 }
 
 tasks.register("clusterK3sStop") {
     group = "deployment"
-    description = "Removes the Gradle-owned K3s container unless -Pfulcrum.keepK3s=true is set."
+    description = "Deletes the generated k3d/kind cluster unless -Pfulcrum.keepCluster=true is set."
     doLast {
-        val containerName = clusterK3sContainerName.get()
-        if (keepK3s.get().equals("true", ignoreCase = true)) {
-            logger.lifecycle("Keeping K3s container $containerName because -Pfulcrum.keepK3s=true")
-        } else if (dockerContainerExists(containerName)) {
-            requireClusterProcess(dockerCommand("rm", "-f", containerName), 60)
+        val provider = generatedClusterProvider()
+        val name = clusterName.get()
+        if (keepGeneratedCluster.get().equals("true", ignoreCase = true)) {
+            logger.lifecycle("Keeping generated $provider cluster $name because -Pfulcrum.keepCluster=true")
+        } else if (generatedClusterExists()) {
+            when (provider) {
+                "k3d" -> requireClusterProcess(k3dCommand("cluster", "delete", name), 120)
+                "kind" -> requireClusterProcess(kindCommand("delete", "cluster", "--name", name), 120)
+                else -> throw GradleException("Unsupported generated cluster provider `$provider`.")
+            }
         } else {
-            logger.lifecycle("No K3s container named $containerName exists")
+            logger.lifecycle("No generated $provider cluster named $name exists")
         }
     }
 }
 
 tasks.register("paperAgonesClusterPreflight") {
     group = "verification"
-    description = "Verifies kubectl, Docker, and Helm when needed before deploying Paper Agones resources."
+    description = "Verifies kubectl, Docker, and host Helm before deploying Paper Agones resources."
     doLast {
         val checks = mutableListOf(
             ClusterPreflightCheck(
                 "Kubernetes context check",
                 kubectlCommand("config", "current-context"),
-                "Enable Docker Desktop Kubernetes, pass -Pfulcrum.kubeContext=<context>, or pass -Pfulcrum.kubeconfig=<path> for a generated cluster."),
+                "Create a generated k3d/kind cluster, pass -Pfulcrum.kubeContext=<context>, or pass -Pfulcrum.kubeconfig=<path>."),
             ClusterPreflightCheck(
                 "Kubernetes API reachability check",
                 kubectlCommand("version", "--output=yaml"),
                 "Verify kubectl can reach the target cluster before running clusterE2e."))
-        if (generatedClusterRequested.get()) {
-            logger.lifecycle("Skipping host Helm availability check; K3s clusterE2e uses the in-cluster HelmChart controller for Agones.")
-        } else {
-            checks.add(ClusterPreflightCheck(
-                "Helm availability check",
-                helmCommand("version", "--short"),
-                "Install Helm and ensure `helm` is on PATH before Agones installation."))
-        }
+        checks.add(ClusterPreflightCheck(
+            "Helm availability check",
+            helmCommand("version", "--short"),
+            "Install Helm and ensure `helm` is on PATH before Agones installation."))
         checks.add(
             ClusterPreflightCheck(
-                "Docker Desktop daemon check",
+                "Docker daemon check",
                 dockerCommand("version", "--format", "{{.Client.Version}} {{.Server.Version}}"),
-                "Start Docker Desktop and ensure this user can access the Linux engine before building clusterE2e images."))
+                "Start Docker and ensure this user can access the Linux engine before building clusterE2e images."))
         runClusterPreflightChecks(checks)
     }
 }
@@ -896,66 +1065,46 @@ tasks.register("paperAgonesInstallAgones") {
     description = "Installs or upgrades Agones for the Fulcrum lobby GameServer namespace."
     dependsOn(tasks.named("paperAgonesApplyNamespace"))
     doLast {
-        if (generatedClusterRequested.get()) {
-            val valuesContent = agonesHelmValues.asFile.readText().prependIndent("    ")
-            val helmChart = renderedAgonesHelmChart.get().asFile
-            helmChart.parentFile.mkdirs()
-            helmChart.writeText("""
-                |apiVersion: helm.cattle.io/v1
-                |kind: HelmChart
-                |metadata:
-                |  name: ${agonesReleaseName.get()}
-                |  namespace: kube-system
-                |spec:
-                |  repo: https://agones.dev/chart/stable
-                |  chart: agones
-                |  version: ${agonesChartVersion.get()}
-                |  targetNamespace: ${agonesSystemNamespace.get()}
-                |  createNamespace: true
-                |  valuesContent: |-
-                |$valuesContent
-                |""".trimMargin())
-            providers.exec {
-                commandLine(kubectlCommand("apply", "-f", helmChart.absolutePath))
-            }.result.get().assertNormalExitValue()
-            waitForAgonesCrds("K3s HelmChart Agones install")
-        } else {
-            providers.exec {
-                commandLine(helmCommand(
-                    "upgrade",
-                    "--install",
-                    agonesReleaseName.get(),
-                    "agones/agones",
-                    "--repo",
-                    "https://agones.dev/chart/stable",
-                    "--version",
-                    agonesChartVersion.get(),
-                    "--namespace",
-                    agonesSystemNamespace.get(),
-                    "--create-namespace",
-                    "--values",
-                    agonesHelmValues.asFile.absolutePath,
-                    "--wait",
-                    "--timeout",
-                    "300s"))
-            }.result.get().assertNormalExitValue()
-        }
+        providers.exec {
+            commandLine("helm", "repo", "add", "agones", "https://agones.dev/chart/stable", "--force-update")
+        }.result.get().assertNormalExitValue()
+        providers.exec {
+            commandLine("helm", "repo", "update", "agones")
+        }.result.get().assertNormalExitValue()
+        providers.exec {
+            commandLine(helmCommand(
+                "upgrade",
+                "--install",
+                agonesReleaseName.get(),
+                "agones",
+                "--repo",
+                "https://agones.dev/chart/stable",
+                "--version",
+                agonesChartVersion.get(),
+                "--namespace",
+                agonesSystemNamespace.get(),
+                "--create-namespace",
+                "--values",
+                agonesHelmValues.asFile.absolutePath,
+                "--force-conflicts"))
+        }.result.get().assertNormalExitValue()
+        waitForAgonesCrds("host Helm Agones install")
     }
 }
 
 tasks.register("paperAgonesConfigureAllocatorTls") {
     group = "deployment"
-    description = "Configures the Agones allocator for CA-verified HTTPS used by controller-service."
+    description = "Waits for Agones controller webhooks and allocator endpoints used by the lobby deploy."
     dependsOn(tasks.named("paperAgonesInstallAgones"))
     doLast {
         providers.exec {
             commandLine(kubectlCommand(
                 "-n",
                 agonesSystemNamespace.get(),
-                "set",
-                "env",
-                "deployment/agones-allocator",
-                "DISABLE_MTLS=true"))
+                "rollout",
+                "status",
+                "deployment/agones-controller",
+                "--timeout=180s"))
         }.result.get().assertNormalExitValue()
         providers.exec {
             commandLine(kubectlCommand(
@@ -1000,6 +1149,7 @@ tasks.register<Sync>("paperAgonesRenderSubstrateManifests") {
     inputs.property("cassandraImageTag", cassandraImageTag)
     inputs.property("valkeyImageTag", valkeyImageTag)
     inputs.property("objectStoreImageTag", objectStoreImageTag)
+    inputs.property("dependencyWaitImageTag", dependencyWaitImageTag)
     into(layout.buildDirectory.dir("kubernetes/substrate"))
     from(lobbyKafkaManifest) {
         filter { line: String ->
@@ -1010,6 +1160,7 @@ tasks.register<Sync>("paperAgonesRenderSubstrateManifests") {
                 .replace(defaultCassandraImage, cassandraImageTag.get())
                 .replace(defaultValkeyImage, valkeyImageTag.get())
                 .replace(defaultObjectStoreImage, objectStoreImageTag.get())
+                .replace(defaultDependencyWaitImage, dependencyWaitImageTag.get())
         }
     }
 }
@@ -1084,129 +1235,129 @@ tasks.register<Exec>("paperAgonesApplySubstrate") {
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForKafka") {
+tasks.register("paperAgonesWaitForKafka") {
     group = "verification"
     description = "Waits for the in-cluster Kafka command-log dependency used by the lobby Paper deployment."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("Kafka command log", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "statefulset/fulcrum-kafka",
-            "--timeout=300s"))
+            "--timeout=5s"), 300, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForValkey") {
+tasks.register("paperAgonesWaitForValkey") {
     group = "verification"
     description = "Waits for the in-cluster Valkey cache dependency used by the Velocity login gate."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("Valkey cache", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "deployment/fulcrum-valkey",
-            "--timeout=180s"))
+            "--timeout=5s"), 180, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForObjectStorage") {
+tasks.register("paperAgonesWaitForObjectStorage") {
     group = "verification"
     description = "Waits for the in-cluster S3-compatible object storage dependency used by artifact provisioning and Paper."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("object storage", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "statefulset/fulcrum-object-store",
-            "--timeout=240s"))
+            "--timeout=5s"), 240, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForPostgres") {
+tasks.register("paperAgonesWaitForPostgres") {
     group = "verification"
     description = "Waits for the in-cluster PostgreSQL record-store dependency used by authority workers."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("PostgreSQL record store", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "statefulset/fulcrum-postgres",
-            "--timeout=300s"))
+            "--timeout=5s"), 300, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForCassandra") {
+tasks.register("paperAgonesWaitForCassandra") {
     group = "verification"
     description = "Waits for the in-cluster Cassandra hot-projection dependency used by authority workers."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("Cassandra hot projections", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "statefulset/fulcrum-cassandra",
-            "--timeout=600s"))
+            "--timeout=5s"), 600, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForAuthoritySchema") {
+tasks.register("paperAgonesWaitForAuthoritySchema") {
     group = "verification"
     description = "Waits for the authority schema provisioner Job to apply record-store and hot-projection migration resources."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("authority schema provisioner", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "wait",
             "--for=condition=complete",
             "job/fulcrum-authority-schema",
-            "--timeout=300s"))
+            "--timeout=5s"), 300, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForAuthorityService") {
+tasks.register("paperAgonesWaitForAuthorityService") {
     group = "verification"
     description = "Waits for the external authority-service Deployment to become available."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("authority service", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "deployment/fulcrum-authority-service",
-            "--timeout=240s"))
+            "--timeout=5s"), 240, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForControllerService") {
+tasks.register("paperAgonesWaitForControllerService") {
     group = "verification"
     description = "Waits for the external controller-service Deployment to become available."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("controller service", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "deployment/fulcrum-controller-service",
-            "--timeout=240s"))
+            "--timeout=5s"), 240, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForWorkerAgent") {
+tasks.register("paperAgonesWaitForWorkerAgent") {
     group = "verification"
     description = "Waits for the background worker-agent Deployment to become available."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("worker agent", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "deployment/fulcrum-worker-agent",
-            "--timeout=240s"))
+            "--timeout=5s"), 240, 5)
     }
 }
 
@@ -1244,6 +1395,16 @@ tasks.register("paperAgonesDeleteSharedShardAllocationJobs") {
                 "fulcrum-lobby-shared-shard-allocation-materialization",
                 "--ignore-not-found=true"))
         }.result.get().assertNormalExitValue()
+        providers.exec {
+            commandLine(kubectlCommand(
+                "-n",
+                "fulcrum-lobby",
+                "wait",
+                "--for=delete",
+                "job/fulcrum-lobby-shared-shard-allocation",
+                "job/fulcrum-lobby-shared-shard-allocation-materialization",
+                "--timeout=60s"))
+        }.result.get().assertNormalExitValue()
     }
 }
 
@@ -1267,93 +1428,96 @@ tasks.register<Exec>("paperAgonesStatus") {
             "-n",
             "fulcrum-lobby",
             "get",
-            "services,deployments,statefulsets,jobs,pods,fleets,fleetautoscalers,gameservers,gameserverallocations",
+            "services,deployments,statefulsets,jobs,pods,"
+                + "fleets.agones.dev,"
+                + "fleetautoscalers.autoscaling.agones.dev,"
+                + "gameservers.agones.dev",
             "-o",
             "wide"))
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForWorldArtifact") {
+tasks.register("paperAgonesWaitForWorldArtifact") {
     group = "verification"
     description = "Waits for the lobby world artifact provisioner Job to complete in the configured Kubernetes cluster."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("lobby world artifact provisioner", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "wait",
             "--for=condition=complete",
             "job/fulcrum-lobby-world-artifact",
-            "--timeout=180s"))
+            "--timeout=5s"), 180, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForCapabilitySeed") {
+tasks.register("paperAgonesWaitForCapabilitySeed") {
     group = "verification"
     description = "Waits for the lobby capability seed provisioner Job to publish standard capability commands."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("lobby capability seed provisioner", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "wait",
             "--for=condition=complete",
             "job/fulcrum-lobby-capability-seed",
-            "--timeout=180s"))
+            "--timeout=5s"), 180, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForCapabilityMaterialization") {
+tasks.register("paperAgonesWaitForCapabilityMaterialization") {
     group = "verification"
     description = "Waits for the lobby capability materialization verifier Job to observe standard capability cache writes."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("lobby capability materialization verifier", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "wait",
             "--for=condition=complete",
             "job/fulcrum-lobby-capability-materialization",
-            "--timeout=300s"))
+            "--timeout=5s"), 300, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForFleetReady") {
+tasks.register("paperAgonesWaitForFleetReady") {
     group = "verification"
     description = "Waits for the lobby Paper Fleet to report one Ready GameServer."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("lobby Paper Fleet", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "wait",
             "--for=jsonpath={.status.readyReplicas}=1",
             "fleet/fulcrum-lobby-paper",
-            "--timeout=300s"))
+            "--timeout=5s"), 300, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForSharedShardAllocation") {
+tasks.register("paperAgonesWaitForSharedShardAllocation") {
     group = "verification"
     description = "Waits for the lobby shared-shard allocation provisioner Job to publish the typed control command."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("lobby shared-shard allocation provisioner", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "wait",
             "--for=condition=complete",
             "job/fulcrum-lobby-shared-shard-allocation",
-            "--timeout=180s"))
+            "--timeout=5s"), 180, 5)
     }
 }
 
-tasks.register<Exec>("paperAgonesWaitForSharedShardAllocationState") {
+tasks.register("paperAgonesWaitForSharedShardAllocationState") {
     group = "verification"
     description = "Waits for controller-service to materialize shared-shard allocation endpoint state."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("lobby shared-shard allocation materialization", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "wait",
             "--for=condition=complete",
             "job/fulcrum-lobby-shared-shard-allocation-materialization",
-            "--timeout=300s"))
+            "--timeout=5s"), 300, 5)
     }
 }
 
@@ -1369,15 +1533,13 @@ tasks.register("paperAgonesRestartControllerServiceForReplay") {
                 "restart",
                 "deployment/fulcrum-controller-service"))
         }.result.get().assertNormalExitValue()
-        providers.exec {
-            commandLine(kubectlCommand(
-                "-n",
-                "fulcrum-lobby",
-                "rollout",
-                "status",
-                "deployment/fulcrum-controller-service",
-                "--timeout=240s"))
-        }.result.get().assertNormalExitValue()
+        waitForClusterProcess("controller service replay restart", kubectlCommand(
+            "-n",
+            "fulcrum-lobby",
+            "rollout",
+            "status",
+            "deployment/fulcrum-controller-service",
+            "--timeout=5s"), 240, 5)
     }
 }
 
@@ -1437,17 +1599,17 @@ tasks.register<Exec>("velocityL4Apply") {
     }
 }
 
-tasks.register<Exec>("velocityL4WaitForReady") {
+tasks.register("velocityL4WaitForReady") {
     group = "verification"
     description = "Waits for the Fulcrum Velocity proxy Deployment to become available behind the L4 Service."
-    doFirst {
-        commandLine(kubectlCommand(
+    doLast {
+        waitForClusterProcess("Velocity L4 deployment", kubectlCommand(
             "-n",
             "fulcrum-lobby",
             "rollout",
             "status",
             "deployment/fulcrum-velocity",
-            "--timeout=240s"))
+            "--timeout=5s"), 240, 5)
     }
 }
 
@@ -1517,7 +1679,7 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
     mainClass.set("sh.harold.fulcrum.distribution.launcher.LobbyClusterE2eVerifier")
     doFirst {
         val runArgs = mutableListOf(
-            "--endpoint-port=${lobbyEndpointPort.get()}",
+            "--endpoint-port=${selectedLobbyEndpointPort()}",
             "--namespace=${lobbyNamespace.get()}",
             "--service=${lobbyVelocityService.get()}",
             "--node-host=${lobbyNodeHost.get()}",
@@ -1622,7 +1784,9 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
             "--session-authority-state-freshness-skew=${lobbySessionAuthorityStateFreshnessSkew.get()}",
             "--shared-shard-allocation-state-timeout=${lobbySharedShardAllocationStateTimeout.get()}",
             "--timeout=${lobbyVerifierTimeout.get()}")
-        lobbyEndpointHost.orNull?.takeIf { it.isNotBlank() }?.let {
+        val resolvedEndpointHost = lobbyEndpointHost.orNull?.takeIf { it.isNotBlank() }
+            ?: if (generatedClusterRequested.get()) lobbyNodeHost.get() else null
+        resolvedEndpointHost?.let {
             runArgs.add("--endpoint-host=$it")
         }
         verifierKubeArgs(runArgs)
@@ -1719,7 +1883,7 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
 
 tasks.register("clusterK3sE2e") {
     group = "verification"
-    description = "Runs the K3s-backed cluster E2E gate and tears down the Gradle-owned cluster by default."
+    description = "Runs the generated k3d/kind cluster E2E gate and tears it down by default."
     dependsOn(
         tasks.named("clusterK3sImportImages"),
         tasks.named("lobbyClusterE2eVerify"))
@@ -1785,6 +1949,7 @@ tasks.named("paperAgonesClusterPreflight") {
 
 tasks.named("paperAgonesInstallAgones") {
     mustRunAfter(tasks.named("paperAgonesApplyNamespace"))
+    mustRunAfter(tasks.named("clusterK3sImportImages"))
 }
 
 tasks.named("paperAgonesConfigureAllocatorTls") {

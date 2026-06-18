@@ -81,24 +81,26 @@ public final class PaperPlayerSessionListener implements Listener {
         player.playerListName(decoratedName);
         PaperChatDecorationResponse chat = decorateProofChat(player.getUniqueId(), player.getName());
         Location playerLocation = player.getLocation();
-        player.sendPluginMessage(
-                plugin,
-                PaperLobbyProofMessage.CHANNEL,
-                PaperLobbyProofMessage.from(
-                        attachmentHandler.instanceId(),
-                        attachmentHandler.sessionId(),
-                        routeId,
-                        Objects.requireNonNull(slotIdSupplier.get(), "slotId"),
-                        Objects.requireNonNull(resolvedManifestIdSupplier.get(), "resolvedManifestId"),
-                        Objects.requireNonNull(traceIdSupplier.get(), "traceId"),
-                        spawnPoint,
-                        playerLocation.getX(),
-                        playerLocation.getY(),
-                        playerLocation.getZ(),
-                        playerLocation.getYaw(),
-                        playerLocation.getPitch(),
-                        view,
-                        chat).encode());
+        PaperLobbyProofMessage proof = PaperLobbyProofMessage.from(
+                attachmentHandler.instanceId(),
+                attachmentHandler.sessionId(),
+                routeId,
+                Objects.requireNonNull(slotIdSupplier.get(), "slotId"),
+                Objects.requireNonNull(resolvedManifestIdSupplier.get(), "resolvedManifestId"),
+                Objects.requireNonNull(traceIdSupplier.get(), "traceId"),
+                spawnPoint,
+                playerLocation.getX(),
+                playerLocation.getY(),
+                playerLocation.getZ(),
+                playerLocation.getYaw(),
+                playerLocation.getPitch(),
+                view,
+                chat);
+        sendProof(player, proof);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> sendProof(player, proof), 1L);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> sendProof(player, proof), 20L);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> sendProof(player, proof), 40L);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> sendProof(player, proof), 100L);
     }
 
     @EventHandler
@@ -161,5 +163,17 @@ public final class PaperPlayerSessionListener implements Listener {
                     subjectId,
                     username + ": " + PaperLobbyProofMessage.PROOF_CHAT_MESSAGE);
         }
+    }
+
+    private void sendProof(org.bukkit.entity.Player player, PaperLobbyProofMessage proof) {
+        if (!player.isOnline()) {
+            return;
+        }
+        player.sendPluginMessage(
+                plugin,
+                PaperLobbyProofMessage.CHANNEL,
+                proof.encode());
+        plugin.getLogger().info("Sent lobby proof to " + player.getName()
+                + " on " + PaperLobbyProofMessage.CHANNEL);
     }
 }

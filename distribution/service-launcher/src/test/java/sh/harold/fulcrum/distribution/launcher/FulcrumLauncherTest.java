@@ -1785,7 +1785,8 @@ final class FulcrumLauncherTest {
                 awaitTrue(
                         () -> committedOffset(
                                 stack.kafkaBootstrapServers(),
-                                "fulcrum-controller-service",
+                                controllerServiceGroupIdForCommandTopic(
+                                        ExternalInstanceRegistryControllerWorker.COMMAND_TOPIC),
                                 ExternalInstanceRegistryControllerWorker.COMMAND_TOPIC,
                                 0).orElse(-1L) == 1L,
                         Duration.ofSeconds(30),
@@ -1922,7 +1923,7 @@ final class FulcrumLauncherTest {
                     awaitTrue(
                             () -> committedOffset(
                                     stack.kafkaBootstrapServers(),
-                                    "fulcrum-controller-service",
+                                    controllerServiceGroupId(domain),
                                     "ctrl.cmd." + domain,
                                     0).orElse(-1L) == 1L,
                             Duration.ofSeconds(30),
@@ -2368,8 +2369,8 @@ final class FulcrumLauncherTest {
                     ExternalInstanceRegistryControllerWorker.RESPONSE_TOPIC,
                     2);
             assertTrue(responses.getFirst().contains("accepted=true"));
-            assertTrue(responses.get(1).contains("accepted=false"));
-            assertTrue(responses.get(1).contains("REVISION_MISMATCH"));
+            assertTrue(responses.get(1).contains("accepted=true"));
+            assertFalse(responses.get(1).contains("REVISION_MISMATCH"));
         }
     }
 
@@ -2434,7 +2435,8 @@ final class FulcrumLauncherTest {
                     ControllerWorkerCatalog.FAULT)) {
                 List<String> responses = drainTopic(stack.kafkaBootstrapServers(), "ctrl.rsp." + domain, 2);
                 assertTrue(responses.getFirst().contains("accepted=true"));
-                assertTrue(responses.get(1).contains("accepted=false"), domain + " replay response: " + responses);
+                assertTrue(responses.get(1).contains("accepted=true"), domain + " replay response: " + responses);
+                assertFalse(responses.get(1).contains("IDEMPOTENCY_CONFLICT"), domain + " replay response: " + responses);
             }
 
             List<String> placementResponses = drainTopic(
@@ -2473,6 +2475,11 @@ final class FulcrumLauncherTest {
             });
             LaunchPlan plan = RuntimeEntrypointRegistry.plan(command, Thread.currentThread().getContextClassLoader());
             RuntimeEnvironment environment = RuntimeEnvironment.of(workerBindingsMap(stack));
+            WorkerJobRequest request = workerJobRequest(
+                    new WorkerJobId("job-worker-external"),
+                    WorkerJobKind.CONTENT_VALIDATION,
+                    new ResolvedManifestId("manifest-host-worker"),
+                    Instant.now().minusMillis(100));
 
             try (FulcrumRuntimeSupervisor supervisor = new FulcrumRuntimeSupervisor(
                     plan,
@@ -2484,12 +2491,6 @@ final class FulcrumLauncherTest {
                         "http://127.0.0.1:" + supervisor.probePort() + "/ready",
                         "worker-agent",
                         Duration.ofSeconds(20));
-
-                WorkerJobRequest request = workerJobRequest(
-                        new WorkerJobId("job-worker-external"),
-                        WorkerJobKind.CONTENT_VALIDATION,
-                        new ResolvedManifestId("manifest-host-worker"),
-                        Instant.now().minusMillis(100));
                 sendControlCommand(
                         stack.kafkaBootstrapServers(),
                         "worker.jobs",
@@ -2504,17 +2505,45 @@ final class FulcrumLauncherTest {
                                 0).orElse(-1L) == 1L,
                         Duration.ofSeconds(30),
                         "worker job offset was not committed");
-
-                List<String> results = drainTopic(stack.kafkaBootstrapServers(), "worker.results", 1);
-                String result = results.getFirst();
-                String outputRef = wireField(result, "outputRef");
-
-                assertTrue(result.contains("status=ACCEPTED"));
-                assertTrue(result.contains("accepted=true"));
-                assertTrue(outputRef.startsWith("object://worker-results/"));
-                assertTrue(new LocalObjectStorageAdapter(tempDir.resolve("object-store"), "worker-results")
-                        .exists(new ArtifactObjectAddress(outputRef)));
             }
+
+            try (FulcrumRuntimeSupervisor supervisor = new FulcrumRuntimeSupervisor(
+                    plan,
+                    environment,
+                    command.probeHost(),
+                    command.probePort())) {
+                supervisor.start();
+                awaitRuntimeProgress(
+                        "http://127.0.0.1:" + supervisor.probePort() + "/ready",
+                        "worker-agent",
+                        Duration.ofSeconds(20));
+                sendControlCommand(
+                        stack.kafkaBootstrapServers(),
+                        "worker.jobs",
+                        request.jobId().value(),
+                        WorkerJobWireCodec.encodeRequest(request));
+
+                awaitTrue(
+                        () -> committedOffset(
+                                stack.kafkaBootstrapServers(),
+                                ExternalWorkerJobWorker.GROUP_ID,
+                                "worker.jobs",
+                                0).orElse(-1L) == 2L,
+                        Duration.ofSeconds(30),
+                        "replayed worker job offset was not committed");
+            }
+
+            List<String> results = drainTopic(stack.kafkaBootstrapServers(), "worker.results", 3);
+            String result = results.getFirst();
+            String outputRef = wireField(result, "outputRef");
+
+            assertTrue(result.contains("status=ACCEPTED"));
+            assertTrue(result.contains("accepted=true"));
+            assertTrue(results.stream().anyMatch(value -> value.contains("recordType=worker-idempotency")));
+            assertTrue(results.stream().anyMatch(value -> value.contains("status=REPLAYED")));
+            assertTrue(outputRef.startsWith("object://worker-results/"));
+            assertTrue(new LocalObjectStorageAdapter(tempDir.resolve("object-store"), "worker-results")
+                    .exists(new ArtifactObjectAddress(outputRef)));
         }
     }
 
@@ -3383,12 +3412,16 @@ final class FulcrumLauncherTest {
     }
 
     private static List<String> drainTopic(String bootstrapServers, String topic, int expectedMinimum) {
-        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(Map.of(
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(Map.of(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers,
                 ConsumerConfig.GROUP_ID_CONFIG, topic + "-drain-" + UUID.randomUUID(),
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
+                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false",
+                ConsumerConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "2000",
+                ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, "2000",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName(),
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName()))) {
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName()));
+        try {
             consumer.subscribe(List.of(topic));
             List<String> values = new ArrayList<>();
             long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
@@ -3399,6 +3432,8 @@ final class FulcrumLauncherTest {
                 }
             }
             return values;
+        } finally {
+            consumer.close(Duration.ofSeconds(2));
         }
     }
 
@@ -3425,11 +3460,23 @@ final class FulcrumLauncherTest {
         awaitTrue(
                 () -> committedOffset(
                         bootstrapServers,
-                        "fulcrum-controller-service",
+                        controllerServiceGroupIdForCommandTopic(topic),
                         topic,
                         0).orElse(-1L) >= expectedOffset,
                 Duration.ofSeconds(30),
                 failureMessage);
+    }
+
+    private static String controllerServiceGroupIdForCommandTopic(String topic) {
+        String prefix = "ctrl.cmd.";
+        if (!topic.startsWith(prefix)) {
+            throw new IllegalArgumentException("controller command topic must start with " + prefix + ": " + topic);
+        }
+        return controllerServiceGroupId(topic.substring(prefix.length()));
+    }
+
+    private static String controllerServiceGroupId(String domain) {
+        return "fulcrum-controller-service-" + domain;
     }
 
     private static void awaitRemainingControllerOffsets(String bootstrapServers, long expectedOffset) throws Exception {

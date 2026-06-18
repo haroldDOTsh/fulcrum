@@ -18,6 +18,7 @@ import sh.harold.fulcrum.host.api.HostSecurityContext;
 
 import java.net.InetSocketAddress;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -26,8 +27,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -69,6 +72,137 @@ final class VelocityRouteExecutorTest {
         assertEquals(NOW, transfer.orElseThrow().acknowledgedAt());
         assertEquals(List.of(new RegisteredBackend("fulcrum-instance-paper-target-1", endpoint.socketAddress())), gateway.registrations);
         assertEquals(List.of(new TransferRequest(SUBJECT_ID, "fulcrum-instance-paper-target-1")), gateway.transfers);
+    }
+
+    @Test
+    void initialRouteCoordinatorSelectsBackendWhenDirectTransferIsUnavailable() throws Exception {
+        RecordingGateway gateway = new RecordingGateway(false);
+        try (VelocityInitialRouteCoordinator coordinator = new VelocityInitialRouteCoordinator(Duration.ofSeconds(5))) {
+            VelocityRouteExecutor executor = new VelocityRouteExecutor(
+                    securityContext(HostInstanceKinds.VELOCITY, HostCredentialScope.of(proxyConsumeGrant())),
+                    PROXY_ROUTE_TOPIC,
+                    new VelocityBackendRegistry(gateway),
+                    clock(),
+                    coordinator);
+            VelocityBackendEndpoint endpoint = new VelocityBackendEndpoint(TARGET_INSTANCE, "10.96.10.25", 25565);
+
+            CompletionStage<Optional<VelocityRouteTransfer>> transfer = executor.execute(
+                    VelocityProxyRouteCommand.parse(proxyCommandWireValue()),
+                    endpoint);
+            Optional<VelocityInitialRouteSelection> selection = coordinator.await(SUBJECT_ID)
+                    .toCompletableFuture()
+                    .get(1, TimeUnit.SECONDS);
+
+            assertTrue(selection.isPresent());
+            assertEquals("fulcrum-instance-paper-target-1", selection.orElseThrow().backendName());
+            assertEquals(List.of(new RegisteredBackend("fulcrum-instance-paper-target-1", endpoint.socketAddress())), gateway.registrations);
+            assertEquals(List.of(new TransferRequest(SUBJECT_ID, "fulcrum-instance-paper-target-1")), gateway.transfers);
+
+            selection.orElseThrow().acknowledge(true);
+
+            assertTrue(transfer.toCompletableFuture().get(1, TimeUnit.SECONDS).isPresent());
+            assertEquals(List.of(new TransferRequest(SUBJECT_ID, "fulcrum-instance-paper-target-1")), gateway.transfers);
+        }
+    }
+
+    @Test
+    void initialRouteSelectionAcknowledgesBeforeDirectTransferCompletes() throws Exception {
+        DeferredGateway gateway = new DeferredGateway();
+        try (VelocityInitialRouteCoordinator coordinator = new VelocityInitialRouteCoordinator(Duration.ofSeconds(5))) {
+            VelocityRouteExecutor executor = new VelocityRouteExecutor(
+                    securityContext(HostInstanceKinds.VELOCITY, HostCredentialScope.of(proxyConsumeGrant())),
+                    PROXY_ROUTE_TOPIC,
+                    new VelocityBackendRegistry(gateway),
+                    clock(),
+                    coordinator);
+            VelocityBackendEndpoint endpoint = new VelocityBackendEndpoint(TARGET_INSTANCE, "10.96.10.25", 25565);
+
+            CompletionStage<Optional<VelocityRouteTransfer>> transfer = executor.execute(
+                    VelocityProxyRouteCommand.parse(proxyCommandWireValue()),
+                    endpoint);
+            Optional<VelocityInitialRouteSelection> selection = coordinator.await(SUBJECT_ID)
+                    .toCompletableFuture()
+                    .get(1, TimeUnit.SECONDS);
+
+            assertTrue(selection.isPresent());
+            assertEquals("fulcrum-instance-paper-target-1", selection.orElseThrow().backendName());
+
+            selection.orElseThrow().acknowledge(true);
+
+            assertTrue(transfer.toCompletableFuture().get(1, TimeUnit.SECONDS).isPresent());
+            assertFalse(gateway.directTransfer.isDone());
+        }
+    }
+
+    @Test
+    void initialRouteCoordinatorMatchesWaitingUsernameAlias() throws Exception {
+        SubjectId eventSubject = new SubjectId(UUID.fromString("44444444-4444-4444-4444-444444444444"));
+        VelocityLoginSubjectRegistry subjects = new VelocityLoginSubjectRegistry();
+        subjects.record("FulcrumBotOne", SUBJECT_ID);
+        try (VelocityInitialRouteCoordinator coordinator =
+                new VelocityInitialRouteCoordinator(Duration.ofSeconds(5), subjects::username)) {
+
+            CompletionStage<Optional<VelocityInitialRouteSelection>> waiting =
+                    coordinator.await(eventSubject, "FulcrumBotOne");
+            CompletionStage<Boolean> accepted =
+                    coordinator.offer(SUBJECT_ID, "fulcrum-instance-paper-target-1");
+            Optional<VelocityInitialRouteSelection> selection =
+                    waiting.toCompletableFuture().get(1, TimeUnit.SECONDS);
+
+            assertTrue(selection.isPresent());
+            assertEquals("fulcrum-instance-paper-target-1", selection.orElseThrow().backendName());
+
+            selection.orElseThrow().acknowledge(true);
+
+            assertTrue(accepted.toCompletableFuture().get(1, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void initialRouteCoordinatorMatchesPendingUsernameAlias() throws Exception {
+        SubjectId eventSubject = new SubjectId(UUID.fromString("44444444-4444-4444-4444-444444444444"));
+        VelocityLoginSubjectRegistry subjects = new VelocityLoginSubjectRegistry();
+        subjects.record("FulcrumBotOne", SUBJECT_ID);
+        try (VelocityInitialRouteCoordinator coordinator =
+                new VelocityInitialRouteCoordinator(Duration.ofSeconds(5), subjects::username)) {
+
+            CompletionStage<Boolean> accepted =
+                    coordinator.offer(SUBJECT_ID, "fulcrum-instance-paper-target-1");
+            Optional<VelocityInitialRouteSelection> selection = coordinator.await(eventSubject, "FulcrumBotOne")
+                    .toCompletableFuture()
+                    .get(1, TimeUnit.SECONDS);
+
+            assertTrue(selection.isPresent());
+            assertEquals("fulcrum-instance-paper-target-1", selection.orElseThrow().backendName());
+
+            selection.orElseThrow().acknowledge(true);
+
+            assertTrue(accepted.toCompletableFuture().get(1, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void initialRouteCoordinatorFallsBackToDirectTransferForAlreadyConnectedPlayer() {
+        RecordingGateway gateway = new RecordingGateway(true);
+        try (VelocityInitialRouteCoordinator coordinator = new VelocityInitialRouteCoordinator(Duration.ofSeconds(5))) {
+            VelocityRouteExecutor executor = new VelocityRouteExecutor(
+                    securityContext(HostInstanceKinds.VELOCITY, HostCredentialScope.of(proxyConsumeGrant())),
+                    PROXY_ROUTE_TOPIC,
+                    new VelocityBackendRegistry(gateway),
+                    clock(),
+                    coordinator);
+            VelocityBackendEndpoint endpoint = new VelocityBackendEndpoint(TARGET_INSTANCE, "10.96.10.25", 25565);
+
+            Optional<VelocityRouteTransfer> transfer = executor.execute(
+                    VelocityProxyRouteCommand.parse(proxyCommandWireValue()),
+                    endpoint).toCompletableFuture().join();
+
+            assertTrue(transfer.isPresent());
+            assertEquals(ROUTE_ID, transfer.orElseThrow().routeId());
+            assertEquals(SUBJECT_ID, transfer.orElseThrow().subjectId());
+            assertEquals(List.of(new RegisteredBackend("fulcrum-instance-paper-target-1", endpoint.socketAddress())), gateway.registrations);
+            assertEquals(List.of(new TransferRequest(SUBJECT_ID, "fulcrum-instance-paper-target-1")), gateway.transfers);
+        }
     }
 
     @Test
@@ -174,6 +308,19 @@ final class VelocityRouteExecutorTest {
         public CompletionStage<Boolean> transfer(SubjectId subjectId, String backendName) {
             transfers.add(new TransferRequest(subjectId, backendName));
             return CompletableFuture.completedFuture(transferResult);
+        }
+    }
+
+    private static final class DeferredGateway implements VelocityProxyGateway {
+        private final CompletableFuture<Boolean> directTransfer = new CompletableFuture<>();
+
+        @Override
+        public void registerBackend(String backendName, InetSocketAddress address) {
+        }
+
+        @Override
+        public CompletionStage<Boolean> transfer(SubjectId subjectId, String backendName) {
+            return directTransfer;
         }
     }
 }

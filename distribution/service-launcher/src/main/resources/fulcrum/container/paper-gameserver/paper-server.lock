@@ -1,5 +1,6 @@
 project=paper
 minecraftVersion=26.1.2
+protocolVersion=775
 build=70
 channel=STABLE
 downloadName=paper-26.1.2-70.jar

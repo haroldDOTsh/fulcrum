@@ -61,6 +61,8 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(entrypoint.contains("online-mode=${PAPER_ONLINE_MODE}"));
         assertTrue(entrypoint.contains("enforce-secure-profile=${PAPER_ENFORCE_SECURE_PROFILE}"));
         assertTrue(entrypoint.contains("prevent-proxy-connections=false"));
+        assertTrue(entrypoint.contains("cat > bukkit.yml"));
+        assertTrue(entrypoint.contains("connection-throttle: -1"));
 
         assertTrue(readme.contains("paperGameserverImageContext"));
         assertTrue(readme.contains("paperGameserverImage"));
@@ -72,9 +74,11 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(readme.contains("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL"));
         assertTrue(readme.contains("FULCRUM_PAPER_REWARD_BRIDGE_URL"));
         assertTrue(readme.contains("online-mode=false"));
+        assertTrue(readme.contains("connection-throttle=-1"));
 
         assertEquals("paper-26.1.2-70.jar", paperServer.getProperty("downloadName"));
         assertEquals("STABLE", paperServer.getProperty("channel"));
+        assertEquals("775", paperServer.getProperty("protocolVersion"));
         assertTrue(paperServer.getProperty("sha256").matches("[a-f0-9]{64}"));
     }
 
@@ -124,9 +128,9 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(readme.contains("fulcrum.velocityProxyImage"));
         assertTrue(readme.contains("velocity-server.lock"));
 
-        assertEquals("velocity-3.4.0-SNAPSHOT-559.jar", velocityServer.getProperty("downloadName"));
+        assertEquals("velocity-3.5.0-SNAPSHOT-605.jar", velocityServer.getProperty("downloadName"));
         assertEquals("STABLE", velocityServer.getProperty("channel"));
-        assertEquals("3.4.0", velocityServer.getProperty("apiVersion"));
+        assertEquals("3.5.0-SNAPSHOT", velocityServer.getProperty("apiVersion"));
         assertTrue(velocityServer.getProperty("sha256").matches("[a-f0-9]{64}"));
     }
 

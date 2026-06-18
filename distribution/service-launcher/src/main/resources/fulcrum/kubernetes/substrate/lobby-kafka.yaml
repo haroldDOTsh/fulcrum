@@ -493,6 +493,21 @@ spec:
     spec:
       serviceAccountName: fulcrum-authority-service
       restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-postgres 5432; do echo waiting for postgres; sleep 2; done"
+        - name: wait-for-cassandra
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-cassandra 9042; do echo waiting for cassandra; sleep 2; done"
       containers:
         - name: authority-schema-provisioner
           image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
@@ -539,6 +554,35 @@ spec:
         sh.harold.fulcrum/role: "authority-service"
     spec:
       serviceAccountName: fulcrum-authority-service
+      initContainers:
+        - name: wait-for-kafka
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-kafka 9092; do echo waiting for kafka; sleep 2; done"
+        - name: wait-for-postgres
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-postgres 5432; do echo waiting for postgres; sleep 2; done"
+        - name: wait-for-cassandra
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-cassandra 9042; do echo waiting for cassandra; sleep 2; done"
+        - name: wait-for-valkey
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-valkey 6379; do echo waiting for valkey; sleep 2; done"
       containers:
         - name: authority-service
           image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
@@ -623,6 +667,21 @@ spec:
         sh.harold.fulcrum/role: "controller-service"
     spec:
       serviceAccountName: fulcrum-controller-service
+      initContainers:
+        - name: wait-for-kafka
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-kafka 9092; do echo waiting for kafka; sleep 2; done"
+        - name: wait-for-agones-allocator
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z agones-allocator.agones-system.svc.cluster.local 443; do echo waiting for agones allocator; sleep 2; done"
       containers:
         - name: controller-service
           image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
@@ -641,13 +700,9 @@ spec:
             - name: FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS
               value: "fulcrum-kafka:9092"
             - name: FULCRUM_AGONES_ALLOCATOR_URL
-              value: "https://agones-allocator.agones-system.svc.cluster.local"
+              value: "http://agones-allocator.agones-system.svc.cluster.local:443"
             - name: FULCRUM_AGONES_NAMESPACE
               value: "fulcrum-lobby"
-            - name: FULCRUM_AGONES_ALLOCATOR_CA_CERT_PATH
-              value: "/var/run/secrets/fulcrum/agones-allocator/ca/tls-ca.crt"
-            - name: FULCRUM_AGONES_ALLOCATOR_DISABLE_HOSTNAME_VERIFICATION
-              value: "true"
             - name: FULCRUM_CONTROL_STATE_TOPIC
               value: "ctrl.state"
             - name: FULCRUM_HOST_COMMAND_TOPIC
@@ -688,17 +743,6 @@ spec:
               memory: "512Mi"
             limits:
               memory: "1024Mi"
-          volumeMounts:
-            - name: agones-allocator-ca
-              mountPath: /var/run/secrets/fulcrum/agones-allocator/ca
-              readOnly: true
-      volumes:
-        - name: agones-allocator-ca
-          secret:
-            secretName: fulcrum-agones-allocator-tls-ca
-            items:
-              - key: tls-ca.crt
-                path: tls-ca.crt
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -718,6 +762,21 @@ spec:
         sh.harold.fulcrum/role: "worker-agent"
     spec:
       serviceAccountName: fulcrum-worker-agent
+      initContainers:
+        - name: wait-for-kafka
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-kafka 9092; do echo waiting for kafka; sleep 2; done"
+        - name: wait-for-object-store
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-object-store 9000; do echo waiting for object store; sleep 2; done"
       containers:
         - name: worker-agent
           image: ghcr.io/sh-harold/fulcrum-service-launcher:dev

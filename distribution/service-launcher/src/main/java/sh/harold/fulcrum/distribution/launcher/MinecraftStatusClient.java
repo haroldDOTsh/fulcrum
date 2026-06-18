@@ -12,6 +12,8 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,13 +36,36 @@ final class MinecraftStatusClient {
     private static final int LOGIN_SET_COMPRESSION_PACKET_ID = 3;
     private static final int LOGIN_PLUGIN_REQUEST_PACKET_ID = 4;
     private static final int LOGIN_PLUGIN_RESPONSE_PACKET_ID = 2;
+    private static final int LOGIN_ACKNOWLEDGED_PACKET_ID = 3;
+    private static final int CONFIGURATION_SETTINGS_SERVERBOUND_PACKET_ID = 0;
+    private static final int CONFIGURATION_CUSTOM_PAYLOAD_CLIENTBOUND_PACKET_ID = 1;
+    private static final int CONFIGURATION_DISCONNECT_CLIENTBOUND_PACKET_ID = 2;
     private static final int CONFIGURATION_FINISH_CLIENTBOUND_PACKET_ID = 3;
     private static final int CONFIGURATION_FINISH_SERVERBOUND_PACKET_ID = 3;
     private static final int CONFIGURATION_KEEP_ALIVE_CLIENTBOUND_PACKET_ID = 4;
     private static final int CONFIGURATION_KEEP_ALIVE_SERVERBOUND_PACKET_ID = 4;
-    private static final int PLAY_CUSTOM_PAYLOAD_PACKET_ID = 24;
+    private static final int CONFIGURATION_PING_CLIENTBOUND_PACKET_ID = 5;
+    private static final int CONFIGURATION_PONG_SERVERBOUND_PACKET_ID = 5;
+    private static final int CONFIGURATION_REGISTRY_SYNC_CLIENTBOUND_PACKET_ID = 7;
+    private static final int CONFIGURATION_SELECT_KNOWN_PACKS_CLIENTBOUND_PACKET_ID = 14;
+    private static final int CONFIGURATION_SELECT_KNOWN_PACKS_SERVERBOUND_PACKET_ID = 7;
+    private static final int PLAY_CHUNK_BATCH_FINISHED_CLIENTBOUND_PACKET_ID = 11;
+    private static final int PLAY_CHUNK_BATCH_RECEIVED_SERVERBOUND_PACKET_ID = 11;
+    private static final int PLAY_CUSTOM_PAYLOAD_SERVERBOUND_PACKET_ID = 22;
+    private static final int PLAY_KEEP_ALIVE_CLIENTBOUND_PACKET_ID = 44;
+    private static final int PLAY_PLAYER_POSITION_CLIENTBOUND_PACKET_ID = 72;
+    private static final int PLAY_PING_CLIENTBOUND_PACKET_ID = 61;
+    private static final int PLAY_ACCEPT_TELEPORTATION_SERVERBOUND_PACKET_ID = 0;
+    private static final int PLAY_KEEP_ALIVE_SERVERBOUND_PACKET_ID = 28;
+    private static final int PLAY_PLAYER_LOADED_SERVERBOUND_PACKET_ID = 43;
+    private static final int PLAY_PONG_SERVERBOUND_PACKET_ID = 44;
+    private static final int PLAY_REGISTER_CHANNEL_RETRY_MILLIS = 500;
+    private static final int PLAY_REGISTER_CHANNEL_RETRY_PACKET_INTERVAL = 8;
+    private static final int PLAY_REGISTER_CHANNEL_RETRY_LIMIT = 16;
     private static final int LOGIN_PACKET_LIMIT = 16;
+    private static final int OBSERVED_PACKET_LIMIT = 128;
     private static final int MAX_STATUS_PACKET_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_KNOWN_PACKS = 1024;
     private static final Pattern VERSION_NAME =
             Pattern.compile("\"version\"\\s*:\\s*\\{[^}]*\"name\"\\s*:\\s*\"([^\"]+)\"");
     private static final Pattern VERSION_PROTOCOL =
@@ -117,6 +142,7 @@ final class MinecraftStatusClient {
         Objects.requireNonNull(timeout, "timeout");
         String normalizedUsername = requireNonBlank(username, "username");
         long deadline = System.nanoTime() + timeout.toNanos();
+        Deque<String> observedPackets = new ArrayDeque<>();
         try (Socket socket = new Socket()) {
             socket.connect(endpoint, remainingTimeoutMillis(deadline));
             socket.setSoTimeout(remainingTimeoutMillis(deadline));
@@ -125,9 +151,34 @@ final class MinecraftStatusClient {
 
             boolean compressed = false;
             ProtocolState state = ProtocolState.LOGIN;
+            boolean playerLoaded = false;
+            int proofChannelRegistrationAttempts = 0;
+            int playPacketsSinceChannelRegistration = 0;
             while (true) {
-                socket.setSoTimeout(remainingTimeoutMillis(deadline));
-                byte[] payload = readPacket(socket.getInputStream());
+                try {
+                    socket.setSoTimeout(readTimeoutMillis(deadline, state, proofChannelRegistrationAttempts));
+                } catch (SocketTimeoutException exception) {
+                    throw exception;
+                }
+                byte[] payload;
+                try {
+                    payload = readPacket(socket.getInputStream());
+                } catch (SocketTimeoutException exception) {
+                    if (state == ProtocolState.PLAY
+                            && proofChannelRegistrationAttempts < PLAY_REGISTER_CHANNEL_RETRY_LIMIT
+                            && System.nanoTime() < deadline) {
+                        proofChannelRegistrationAttempts = writePlayRegisterLobbyProofChannelPacket(
+                                socket,
+                                compressed,
+                                proofChannelRegistrationAttempts);
+                        if (!playerLoaded) {
+                            writePacket(socket, playPlayerLoadedPacket(), compressed);
+                            playerLoaded = true;
+                        }
+                        continue;
+                    }
+                    throw exception;
+                }
                 if (compressed) {
                     payload = decompress(payload);
                 }
@@ -143,8 +194,11 @@ final class MinecraftStatusClient {
 
                 ByteArrayInputStream input = new ByteArrayInputStream(payload);
                 int packetId = readVarInt(input);
+                recordObservedPacket(observedPackets, state, packetId, payload);
                 if (state == ProtocolState.LOGIN) {
                     if (packetId == LOGIN_SUCCESS_PACKET_ID) {
+                        writePacket(socket, loginAcknowledgedPacket(), compressed);
+                        writePacket(socket, configurationSettingsPacket(), compressed);
                         state = ProtocolState.CONFIGURATION;
                     } else if (packetId == LOGIN_DISCONNECT_PACKET_ID) {
                         throw new IOException("Expected accepted login for " + normalizedUsername
@@ -160,16 +214,63 @@ final class MinecraftStatusClient {
                         writePacket(socket, loginPluginResponsePacket(messageId), compressed);
                     }
                 } else if (state == ProtocolState.CONFIGURATION) {
-                    if (packetId == CONFIGURATION_FINISH_CLIENTBOUND_PACKET_ID) {
+                    if (packetId == CONFIGURATION_CUSTOM_PAYLOAD_CLIENTBOUND_PACKET_ID) {
+                        // Normal backend configuration payloads are not relevant to the lobby proof probe.
+                    } else if (packetId == CONFIGURATION_DISCONNECT_CLIENTBOUND_PACKET_ID) {
+                        throw new IOException("Expected accepted configuration for " + normalizedUsername
+                                + ", got disconnect " + payloadPreview(input.readAllBytes()));
+                    } else if (packetId == CONFIGURATION_FINISH_CLIENTBOUND_PACKET_ID) {
                         writePacket(socket, configurationFinishPacket(), compressed);
                         state = ProtocolState.PLAY;
+                        proofChannelRegistrationAttempts = writePlayRegisterLobbyProofChannelPacket(
+                                socket,
+                                compressed,
+                                proofChannelRegistrationAttempts);
+                        playPacketsSinceChannelRegistration = 0;
+                        if (!playerLoaded) {
+                            writePacket(socket, playPlayerLoadedPacket(), compressed);
+                            playerLoaded = true;
+                        }
                     } else if (packetId == CONFIGURATION_KEEP_ALIVE_CLIENTBOUND_PACKET_ID) {
                         writePacket(socket, configurationKeepAliveResponsePacket(input), compressed);
+                    } else if (packetId == CONFIGURATION_PING_CLIENTBOUND_PACKET_ID) {
+                        writePacket(socket, configurationPongPacket(input), compressed);
+                    } else if (packetId == CONFIGURATION_REGISTRY_SYNC_CLIENTBOUND_PACKET_ID) {
+                        // Registry data is only needed by a graphical client; the verifier waits for finish.
+                    } else if (packetId == CONFIGURATION_SELECT_KNOWN_PACKS_CLIENTBOUND_PACKET_ID) {
+                        writePacket(socket, configurationSelectKnownPacksResponsePacket(input), compressed);
+                    }
+                } else if (state == ProtocolState.PLAY) {
+                    if (packetId == PLAY_PLAYER_POSITION_CLIENTBOUND_PACKET_ID) {
+                        writePacket(socket, playAcceptTeleportationPacket(input), compressed);
+                        if (!playerLoaded) {
+                            writePacket(socket, playPlayerLoadedPacket(), compressed);
+                            playerLoaded = true;
+                        }
+                    } else if (packetId == PLAY_KEEP_ALIVE_CLIENTBOUND_PACKET_ID) {
+                        writePacket(socket, playKeepAliveResponsePacket(input), compressed);
+                    } else if (packetId == PLAY_PING_CLIENTBOUND_PACKET_ID) {
+                        writePacket(socket, playPongPacket(input), compressed);
+                    } else if (packetId == PLAY_CHUNK_BATCH_FINISHED_CLIENTBOUND_PACKET_ID) {
+                        writePacket(socket, playChunkBatchReceivedPacket(input), compressed);
+                    }
+                    playPacketsSinceChannelRegistration++;
+                    if (proofChannelRegistrationAttempts < PLAY_REGISTER_CHANNEL_RETRY_LIMIT
+                            && playPacketsSinceChannelRegistration >= PLAY_REGISTER_CHANNEL_RETRY_PACKET_INTERVAL) {
+                        proofChannelRegistrationAttempts = writePlayRegisterLobbyProofChannelPacket(
+                                socket,
+                                compressed,
+                                proofChannelRegistrationAttempts);
+                        playPacketsSinceChannelRegistration = 0;
                     }
                 }
             }
         } catch (SocketTimeoutException exception) {
-            throw new IOException("Timed out waiting for lobby proof from " + endpoint, exception);
+            throw new IOException("Timed out waiting for lobby proof from " + endpoint
+                    + "; observed packets: " + observedPackets, exception);
+        } catch (EOFException exception) {
+            throw new IOException("Connection closed while waiting for lobby proof from " + endpoint
+                    + "; observed packets: " + observedPackets, exception);
         }
     }
 
@@ -209,6 +310,27 @@ final class MinecraftStatusClient {
         return packet.toByteArray();
     }
 
+    private static byte[] loginAcknowledgedPacket() {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, LOGIN_ACKNOWLEDGED_PACKET_ID);
+        return packet.toByteArray();
+    }
+
+    private static byte[] configurationSettingsPacket() {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, CONFIGURATION_SETTINGS_SERVERBOUND_PACKET_ID);
+        writeString(packet, "en_us");
+        packet.write(10);
+        writeVarInt(packet::write, 0);
+        packet.write(1);
+        packet.write(0x7f);
+        writeVarInt(packet::write, 1);
+        packet.write(0);
+        packet.write(1);
+        writeVarInt(packet::write, 0);
+        return packet.toByteArray();
+    }
+
     private static byte[] configurationFinishPacket() {
         ByteArrayOutputStream packet = new ByteArrayOutputStream();
         writeVarInt(packet::write, CONFIGURATION_FINISH_SERVERBOUND_PACKET_ID);
@@ -223,6 +345,84 @@ final class MinecraftStatusClient {
             throw new EOFException("Expected configuration keep-alive id");
         }
         packet.writeBytes(keepAliveId);
+        return packet.toByteArray();
+    }
+
+    private static byte[] configurationPongPacket(InputStream input) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, CONFIGURATION_PONG_SERVERBOUND_PACKET_ID);
+        writeInt(packet, readInt(input, "configuration ping id"));
+        return packet.toByteArray();
+    }
+
+    private static byte[] configurationSelectKnownPacksResponsePacket(InputStream input) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, CONFIGURATION_SELECT_KNOWN_PACKS_SERVERBOUND_PACKET_ID);
+        int count = readVarInt(input);
+        if (count < 0 || count > MAX_KNOWN_PACKS) {
+            throw new IOException("Minecraft known-pack count is out of range: " + count);
+        }
+        writeVarInt(packet::write, count);
+        for (int index = 0; index < count; index++) {
+            writeString(packet, readString(input));
+            writeString(packet, readString(input));
+            writeString(packet, readString(input));
+        }
+        return packet.toByteArray();
+    }
+
+    private static byte[] playAcceptTeleportationPacket(InputStream input) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, PLAY_ACCEPT_TELEPORTATION_SERVERBOUND_PACKET_ID);
+        writeVarInt(packet::write, readVarInt(input));
+        return packet.toByteArray();
+    }
+
+    private static byte[] playKeepAliveResponsePacket(InputStream input) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, PLAY_KEEP_ALIVE_SERVERBOUND_PACKET_ID);
+        byte[] keepAliveId = input.readNBytes(Long.BYTES);
+        if (keepAliveId.length != Long.BYTES) {
+            throw new EOFException("Expected play keep-alive id");
+        }
+        packet.writeBytes(keepAliveId);
+        return packet.toByteArray();
+    }
+
+    private static byte[] playPlayerLoadedPacket() {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, PLAY_PLAYER_LOADED_SERVERBOUND_PACKET_ID);
+        return packet.toByteArray();
+    }
+
+    private static byte[] playRegisterLobbyProofChannelPacket() {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, PLAY_CUSTOM_PAYLOAD_SERVERBOUND_PACKET_ID);
+        writeString(packet, "minecraft:register");
+        packet.writeBytes(PaperLobbyProofMessage.CHANNEL.getBytes(StandardCharsets.UTF_8));
+        return packet.toByteArray();
+    }
+
+    private static int writePlayRegisterLobbyProofChannelPacket(
+            Socket socket,
+            boolean compressed,
+            int attempts) throws IOException {
+        writePacket(socket, playRegisterLobbyProofChannelPacket(), compressed);
+        return attempts + 1;
+    }
+
+    private static byte[] playPongPacket(InputStream input) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, PLAY_PONG_SERVERBOUND_PACKET_ID);
+        writeInt(packet, readInt(input, "play ping id"));
+        return packet.toByteArray();
+    }
+
+    private static byte[] playChunkBatchReceivedPacket(InputStream input) throws IOException {
+        readVarInt(input);
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        writeVarInt(packet::write, PLAY_CHUNK_BATCH_RECEIVED_SERVERBOUND_PACKET_ID);
+        writeFloat(packet, 10.0F);
         return packet.toByteArray();
     }
 
@@ -273,11 +473,13 @@ final class MinecraftStatusClient {
 
     private static Optional<PaperLobbyProofMessage> lobbyProof(byte[] packet) throws IOException {
         ByteArrayInputStream input = new ByteArrayInputStream(packet);
-        int packetId = readVarInt(input);
-        if (packetId != PLAY_CUSTOM_PAYLOAD_PACKET_ID) {
+        readVarInt(input);
+        String channel;
+        try {
+            channel = readString(input);
+        } catch (IOException | IllegalArgumentException exception) {
             return Optional.empty();
         }
-        String channel = readString(input);
         if (!PaperLobbyProofMessage.CHANNEL.equals(channel)) {
             return Optional.empty();
         }
@@ -287,6 +489,97 @@ final class MinecraftStatusClient {
                     + PaperLobbyProofMessage.MARKER);
         }
         return Optional.of(PaperLobbyProofMessage.parse(payload));
+    }
+
+    private static void recordObservedPacket(
+            Deque<String> observedPackets,
+            ProtocolState state,
+            int packetId,
+            byte[] packet) {
+        if (observedPackets.size() >= OBSERVED_PACKET_LIMIT) {
+            observedPackets.removeFirst();
+        }
+        StringBuilder entry = new StringBuilder()
+                .append(state)
+                .append(":id=")
+                .append(packetId)
+                .append(":bytes=")
+                .append(packet.length);
+        packetFirstString(packet).ifPresent(value -> entry.append(":firstString=").append(value));
+        if (containsBytes(packet, PaperLobbyProofMessage.MARKER.getBytes(StandardCharsets.UTF_8))) {
+            entry.append(":containsLobbyProofMarker");
+        }
+        observedPackets.addLast(entry.toString());
+    }
+
+    private static Optional<String> packetFirstString(byte[] packet) {
+        try {
+            ByteArrayInputStream input = new ByteArrayInputStream(packet);
+            readVarInt(input);
+            String value = readString(input);
+            if (value.length() > 80) {
+                value = value.substring(0, 80) + "...";
+            }
+            return Optional.of(value);
+        } catch (IOException | IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private static String payloadPreview(byte[] payload) {
+        Optional<String> firstString = packetFirstString(payloadWithSyntheticPacketId(payload));
+        String printable = printableAscii(payload);
+        if (firstString.isPresent() && !printable.isBlank()) {
+            return "firstString=" + firstString.orElseThrow() + ", printable=" + printable;
+        }
+        if (firstString.isPresent()) {
+            return "firstString=" + firstString.orElseThrow();
+        }
+        if (!printable.isBlank()) {
+            return "printable=" + printable;
+        }
+        return "bytes=" + payload.length;
+    }
+
+    private static byte[] payloadWithSyntheticPacketId(byte[] payload) {
+        byte[] packet = new byte[payload.length + 1];
+        System.arraycopy(payload, 0, packet, 1, payload.length);
+        return packet;
+    }
+
+    private static String printableAscii(byte[] payload) {
+        StringBuilder preview = new StringBuilder();
+        for (byte value : payload) {
+            int unsigned = value & 0xff;
+            if (unsigned >= 0x20 && unsigned <= 0x7e) {
+                preview.append((char) unsigned);
+            } else if (!preview.isEmpty() && preview.charAt(preview.length() - 1) != ' ') {
+                preview.append(' ');
+            }
+            if (preview.length() >= 160) {
+                return preview.substring(0, 160);
+            }
+        }
+        return preview.toString().trim();
+    }
+
+    private static boolean containsBytes(byte[] source, byte[] target) {
+        if (target.length == 0 || target.length > source.length) {
+            return false;
+        }
+        for (int offset = 0; offset <= source.length - target.length; offset++) {
+            boolean matched = true;
+            for (int index = 0; index < target.length; index++) {
+                if (source[offset + index] != target[index]) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static MinecraftStatusSnapshot decodeStatusResponse(byte[] packet) throws IOException {
@@ -336,6 +629,28 @@ final class MinecraftStatusClient {
         }
     }
 
+    private static void writeInt(ByteArrayOutputStream output, int value) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            output.write((value >>> shift) & 0xff);
+        }
+    }
+
+    private static void writeFloat(ByteArrayOutputStream output, float value) {
+        writeInt(output, Float.floatToIntBits(value));
+    }
+
+    private static int readInt(InputStream input, String label) throws IOException {
+        byte[] bytes = input.readNBytes(Integer.BYTES);
+        if (bytes.length != Integer.BYTES) {
+            throw new EOFException("Expected " + label);
+        }
+        int value = 0;
+        for (byte current : bytes) {
+            value = (value << 8) | (current & 0xff);
+        }
+        return value;
+    }
+
     private static UUID offlineUuid(String username) {
         return UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(StandardCharsets.UTF_8));
     }
@@ -375,6 +690,17 @@ final class MinecraftStatusClient {
             throw new SocketTimeoutException("Minecraft verifier deadline expired");
         }
         return Math.toIntExact(Math.min(Integer.MAX_VALUE, Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remaining))));
+    }
+
+    private static int readTimeoutMillis(
+            long deadlineNanos,
+            ProtocolState state,
+            int proofChannelRegistrationAttempts) throws SocketTimeoutException {
+        int remaining = remainingTimeoutMillis(deadlineNanos);
+        if (state == ProtocolState.PLAY && proofChannelRegistrationAttempts < PLAY_REGISTER_CHANNEL_RETRY_LIMIT) {
+            return Math.min(remaining, PLAY_REGISTER_CHANNEL_RETRY_MILLIS);
+        }
+        return remaining;
     }
 
     private enum ProtocolState {

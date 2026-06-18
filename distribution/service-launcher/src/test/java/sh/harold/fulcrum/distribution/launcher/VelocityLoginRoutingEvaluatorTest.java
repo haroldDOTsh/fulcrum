@@ -180,7 +180,7 @@ final class VelocityLoginRoutingEvaluatorTest {
         LifecycleTraceControlCommand<RecordLifecycleObservation> routeTrace =
                 ControlCommandWireCodec.decodeLifecycleTraceRecord(record(records.get(11)));
         assertEquals(LifecyclePhase.ROUTE_ATTEMPT_CREATED, routeTrace.envelope().payload().phase());
-        assertEquals("route-attempt-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        assertEquals("route-attempt-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1781654400n0",
                 routeTrace.envelope().payload().aggregateId());
     }
 

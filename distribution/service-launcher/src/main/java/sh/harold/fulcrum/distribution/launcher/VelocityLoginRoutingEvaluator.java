@@ -129,7 +129,7 @@ final class VelocityLoginRoutingEvaluator implements VelocityLoginGateEvaluator 
         SharedShardPlacementRequest placementRequest = placementRequest(request, suffix, trace);
         SharedShardPlacementDecision placementDecision =
                 placementController.place(placementRequest, candidates);
-        Optional<RoutePlan> routePlan = routePlan(suffix, placementDecision, attemptedAt);
+        Optional<RoutePlan> routePlan = routePlan(suffix, routeAttemptSuffix(suffix, attemptedAt), placementDecision, attemptedAt);
         if (routePlan.isEmpty()) {
             publishPlacementRequest(placementRequest, candidates);
             producer.flush();
@@ -177,15 +177,16 @@ final class VelocityLoginRoutingEvaluator implements VelocityLoginGateEvaluator 
     }
 
     private Optional<RoutePlan> routePlan(
-            String suffix,
+            String routeSuffix,
+            String routeAttemptSuffix,
             SharedShardPlacementDecision placementDecision,
             Instant requestedAt) {
         if (placementDecision.status() != SharedShardPlacementDecisionStatus.SELECTED_EXISTING_SESSION) {
             return Optional.empty();
         }
         return Optional.of(new RoutePlan(
-                new RouteId("route-velocity-login-" + suffix),
-                new RouteAttemptId("route-attempt-velocity-login-" + suffix),
+                new RouteId("route-velocity-login-" + routeSuffix),
+                new RouteAttemptId("route-attempt-velocity-login-" + routeAttemptSuffix),
                 placementDecision.sessionId().orElseThrow(),
                 placementDecision.slotId().orElseThrow(),
                 placementDecision.instanceId().orElseThrow(),
@@ -548,6 +549,10 @@ final class VelocityLoginRoutingEvaluator implements VelocityLoginGateEvaluator 
 
     private static String compact(SubjectId subjectId) {
         return subjectId.value().toString().replace("-", "");
+    }
+
+    private static String routeAttemptSuffix(String subjectSuffix, Instant attemptedAt) {
+        return subjectSuffix + "-" + attemptedAt.getEpochSecond() + "n" + attemptedAt.getNano();
     }
 
     private static String compact(RouteAttemptId routeAttemptId) {

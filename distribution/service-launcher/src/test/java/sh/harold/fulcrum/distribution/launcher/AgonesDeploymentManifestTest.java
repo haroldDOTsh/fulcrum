@@ -192,6 +192,10 @@ final class AgonesDeploymentManifestTest {
     void agonesHelmValuesScopesGameServerNamespace() throws IOException {
         String values = resource("fulcrum/kubernetes/agones/agones-helm-values.yaml");
 
+        assertTrue(values.contains("agones:"));
+        assertTrue(values.contains("allocator:"));
+        assertTrue(values.contains("disableMTLS: true"));
+        assertTrue(values.contains("disableTLS: true"));
         assertTrue(values.contains("gameservers:"));
         assertTrue(values.contains("namespaces:"));
         assertTrue(values.contains("- fulcrum-lobby"));
@@ -236,15 +240,23 @@ final class AgonesDeploymentManifestTest {
         assertTrue(kafka.contains("containerPort: 9042"));
         assertTrue(kafka.contains("name: fulcrum-authority-schema"));
         assertTrue(kafka.contains("sh.harold.fulcrum.distribution.launcher.LobbyAuthoritySchemaProvisioner"));
+        assertTrue(kafka.contains("initContainers:"));
+        assertTrue(kafka.contains("image: busybox:1.37.0"));
+        assertTrue(kafka.contains("name: wait-for-postgres"));
+        assertTrue(kafka.contains("name: wait-for-cassandra"));
         assertTrue(kafka.contains("name: fulcrum-authority-service"));
         assertTrue(kafka.contains("serviceAccountName: fulcrum-authority-service"));
         assertTrue(kafka.contains("--role=authority-service"));
+        assertTrue(kafka.contains("name: wait-for-kafka"));
+        assertTrue(kafka.contains("name: wait-for-valkey"));
         assertTrue(kafka.contains("name: fulcrum-controller-service"));
         assertTrue(kafka.contains("serviceAccountName: fulcrum-controller-service"));
         assertTrue(kafka.contains("--role=controller-service"));
+        assertTrue(kafka.contains("name: wait-for-agones-allocator"));
         assertTrue(kafka.contains("name: fulcrum-worker-agent"));
         assertTrue(kafka.contains("serviceAccountName: fulcrum-worker-agent"));
         assertTrue(kafka.contains("--role=worker-agent"));
+        assertTrue(kafka.contains("name: wait-for-object-store"));
         assertTrue(kafka.contains("name: FULCRUM_WORKER_KAFKA_BOOTSTRAP_SERVERS"));
         assertTrue(kafka.contains("name: FULCRUM_WORKER_JOB_TOPIC"));
         assertTrue(kafka.contains("value: \"worker.jobs\""));
@@ -262,18 +274,16 @@ final class AgonesDeploymentManifestTest {
         assertTrue(kafka.contains("name: FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS"));
         assertTrue(kafka.contains("value: \"fulcrum-kafka:9092\""));
         assertTrue(kafka.contains("name: FULCRUM_AGONES_ALLOCATOR_URL"));
-        assertTrue(kafka.contains("value: \"https://agones-allocator.agones-system.svc.cluster.local\""));
+        assertTrue(kafka.contains("value: \"http://agones-allocator.agones-system.svc.cluster.local:443\""));
         assertTrue(kafka.contains("name: FULCRUM_AGONES_NAMESPACE"));
         assertTrue(kafka.contains("value: \"fulcrum-lobby\""));
         assertFalse(kafka.contains("name: FULCRUM_AGONES_ALLOCATOR_CLIENT_CERT_PATH"));
         assertFalse(kafka.contains("name: FULCRUM_AGONES_ALLOCATOR_CLIENT_KEY_PATH"));
         assertFalse(kafka.contains("secretName: allocator-client.default"));
         assertFalse(kafka.contains("agones-allocator-client"));
-        assertTrue(kafka.contains("name: FULCRUM_AGONES_ALLOCATOR_CA_CERT_PATH"));
-        assertTrue(kafka.contains("value: \"/var/run/secrets/fulcrum/agones-allocator/ca/tls-ca.crt\""));
-        assertTrue(kafka.contains("name: FULCRUM_AGONES_ALLOCATOR_DISABLE_HOSTNAME_VERIFICATION"));
-        assertTrue(kafka.contains("value: \"true\""));
-        assertTrue(kafka.contains("secretName: fulcrum-agones-allocator-tls-ca"));
+        assertFalse(kafka.contains("name: FULCRUM_AGONES_ALLOCATOR_CA_CERT_PATH"));
+        assertFalse(kafka.contains("name: FULCRUM_AGONES_ALLOCATOR_DISABLE_HOSTNAME_VERIFICATION"));
+        assertFalse(kafka.contains("secretName: fulcrum-agones-allocator-tls-ca"));
         assertTrue(kafka.contains("name: FULCRUM_CONTROL_STATE_TOPIC"));
         assertTrue(kafka.contains("value: \"ctrl.state\""));
         assertTrue(kafka.contains("name: FULCRUM_HOST_COMMAND_TOPIC"));
@@ -296,11 +306,13 @@ final class AgonesDeploymentManifestTest {
         assertTrue(readme.contains(".\\gradlew.bat clusterE2e"));
         assertTrue(readme.contains(".\\gradlew.bat clusterK3sE2e"));
         assertTrue(readme.contains(".\\gradlew.bat clusterExistingE2e"));
-        assertTrue(readme.contains("Gradle-owned K3s"));
-        assertTrue(readme.contains("locally built service-launcher, Paper GameServer, and Velocity proxy images"));
+        assertTrue(readme.contains("creates a generated k3d cluster"));
+        assertTrue(readme.contains("default or a kind cluster"));
+        assertTrue(readme.contains("service-launcher, Paper GameServer, and Velocity proxy images"));
         assertTrue(readme.contains("into that cluster"));
         assertTrue(readme.contains("existing-cluster path is exposed separately"));
-        assertTrue(readme.contains("lobby cluster verifier"));
+        assertTrue(readme.contains("runs the lobby"));
+        assertTrue(readme.contains("cluster verifier against the public Minecraft endpoint"));
         assertTrue(readme.contains("public Minecraft endpoint"));
         assertTrue(readme.contains(":distribution:service-launcher:paperAgonesPhase2Deploy"));
         assertTrue(readme.contains("-Pfulcrum.kubeContext=<context>"));
@@ -308,37 +320,41 @@ final class AgonesDeploymentManifestTest {
         assertTrue(readme.contains("this takes precedence over `-Pfulcrum.kubeContext`"));
         assertTrue(readme.contains("ghcr.io/sh-harold/fulcrum-service-launcher:dev"));
         assertTrue(readme.contains("ghcr.io/sh-harold/fulcrum-paper-gameserver:dev"));
+        assertTrue(readme.contains("ghcr.io/sh-harold/fulcrum-velocity-proxy:dev"));
         assertTrue(readme.contains("-Pfulcrum.serviceLauncherImage=<image-ref>"));
         assertTrue(readme.contains("-Pfulcrum.paperGameserverImage=<image-ref>"));
+        assertTrue(readme.contains("-Pfulcrum.velocityProxyImage=<image-ref>"));
         assertTrue(readme.contains("-Pfulcrum.kafkaImage=<image-ref>"));
         assertTrue(readme.contains("-Pfulcrum.postgresImage=<image-ref>"));
         assertTrue(readme.contains("-Pfulcrum.cassandraImage=<image-ref>"));
         assertTrue(readme.contains("-Pfulcrum.valkeyImage=<image-ref>"));
         assertTrue(readme.contains("-Pfulcrum.objectStoreImage=<image-ref>"));
-        assertTrue(readme.contains("-Pfulcrum.k3sImage=rancher/k3s:v1.34.7-k3s1"));
-        assertTrue(readme.contains("-Pfulcrum.k3sContainerName=fulcrum-cluster-e2e"));
-        assertTrue(readme.contains("-Pfulcrum.k3sApiPort=16443"));
-        assertTrue(readme.contains("-Pfulcrum.k3sMinecraftPort=25565"));
-        assertTrue(readme.contains("-Pfulcrum.k3sCgroupNamespace=host"));
-        assertTrue(readme.contains("-Pfulcrum.keepK3s=true"));
+        assertTrue(readme.contains("-Pfulcrum.clusterProvider=k3d"));
+        assertTrue(readme.contains("-Pfulcrum.k3dImage=rancher/k3s:v1.34.7-k3s1"));
+        assertTrue(readme.contains("-Pfulcrum.clusterName=fulcrum-cluster-e2e"));
+        assertTrue(readme.contains("-Pfulcrum.clusterApiPort=16443"));
+        assertTrue(readme.contains("-Pfulcrum.clusterMinecraftPort=25565"));
+        assertTrue(readme.contains("-Pfulcrum.keepCluster=true"));
+        assertTrue(readme.contains("cgroup v1"));
+        assertTrue(readme.contains("-Pfulcrum.k3dImage="));
         assertTrue(readme.contains("clusterK3sStart"));
         assertTrue(readme.contains("clusterK3sImportImages"));
         assertTrue(readme.contains("clusterK3sStop"));
         assertTrue(readme.contains("build/cluster-e2e/kubeconfig.yaml"));
-        assertTrue(readme.contains("--cgroupns=host"));
-        assertTrue(readme.contains("cgroup v1 Docker profile"));
-        assertTrue(readme.contains("newer K3s/Kubernetes images can be tried"));
-        assertTrue(readme.contains("real host cgroup hierarchy inside Docker"));
-        assertTrue(readme.contains("A stopped container with the configured name is recreated"));
+        assertTrue(readme.contains("k3d image import"));
+        assertTrue(readme.contains("kind load docker-image"));
+        assertTrue(readme.contains("generated cluster"));
+        assertTrue(readme.contains("already exists with the configured name"));
+        assertTrue(readme.contains("deletes and recreates"));
         assertTrue(readme.contains("paperAgonesRenderManifests"));
-        assertTrue(readme.contains("with the effective image tags before `kubectl apply`"));
+        assertTrue(readme.contains("effective image tags"));
         assertTrue(readme.contains("kubectl apply"));
         assertTrue(readme.contains("fulcrum-lobby"));
         assertTrue(readme.contains("lobby-paper-allocation.yaml"));
         assertTrue(readme.contains("lobby-namespace.yaml"));
         assertTrue(readme.contains("agones-helm-values.yaml"));
-        assertTrue(readme.contains("K3s's in-cluster HelmChart controller"));
-        assertTrue(readme.contains("clusterExistingE2e` uses host Helm"));
+        assertTrue(readme.contains("generated and"));
+        assertTrue(readme.contains("existing-cluster gates use host Helm"));
         assertTrue(readme.contains("../substrate/lobby-kafka.yaml"));
         assertTrue(readme.contains("fulcrum-kafka:9092"));
         assertTrue(readme.contains("fulcrum-valkey:6379"));
@@ -348,11 +364,11 @@ final class AgonesDeploymentManifestTest {
         assertTrue(readme.contains("fulcrum-authority-service"));
         assertTrue(readme.contains("fulcrum-controller-service"));
         assertTrue(readme.contains("fulcrum-worker-agent"));
-        assertTrue(readme.contains("CA-verified HTTPS for allocator calls"));
+        assertTrue(readme.contains("local generated cluster gate"));
         assertTrue(readme.contains("DISABLE_MTLS=true"));
-        assertTrue(readme.contains("not a client private key Secret"));
-        assertTrue(readme.contains("FULCRUM_AGONES_ALLOCATOR_DISABLE_HOSTNAME_VERIFICATION=true"));
-        assertTrue(readme.contains("no DNS subject/SAN"));
+        assertTrue(readme.contains("DISABLE_TLS=true"));
+        assertTrue(readme.contains("in-cluster Service over HTTP"));
+        assertTrue(readme.contains("Java 26"));
         assertTrue(readme.contains("worker.jobs"));
         assertTrue(readme.contains("worker.results"));
         assertTrue(readme.contains("paperAgonesConfigureAllocatorTls"));
@@ -365,13 +381,14 @@ final class AgonesDeploymentManifestTest {
         assertTrue(readme.contains("paperAgonesWaitForAuthoritySchema"));
         assertTrue(readme.contains("paperAgonesWaitForAuthorityService"));
         assertTrue(readme.contains("paperAgonesSyncAllocatorCa"));
+        assertTrue(readme.contains("strict-TLS parity checks"));
         assertTrue(readme.contains("paperAgonesWaitForControllerService"));
         assertTrue(readme.contains("paperAgonesWaitForWorkerAgent"));
         assertTrue(readme.contains("paperAgonesInstallAgones"));
-        assertTrue(readme.contains("Docker Desktop daemon access"));
+        assertTrue(readme.contains("Docker daemon access"));
         assertTrue(readme.contains("paperAgonesClusterPreflight"));
-        assertTrue(readme.contains("Docker Desktop Linux engine"));
-        assertTrue(readme.contains("host Helm is not on `PATH` for an existing-cluster run"));
+        assertTrue(readme.contains("Docker engine"));
+        assertTrue(readme.contains("host Helm is not on `PATH`"));
         assertTrue(readme.contains("Kubernetes context or generated kubeconfig is missing"));
         assertTrue(readme.contains("lobby-shared-shard-allocation.yaml"));
         assertTrue(readme.contains("ctrl.cmd.shared-shard-allocation"));
@@ -387,17 +404,18 @@ final class AgonesDeploymentManifestTest {
         assertTrue(readme.contains("runtime probe on port `18081`"));
         assertTrue(readme.contains("sidecar health server on port"));
         assertTrue(readme.contains("Paper Fleet manifest must not expose PostgreSQL or Cassandra canonical store"));
-        assertTrue(readme.contains("agones/agones"));
+        assertTrue(readme.contains("with the `agones`"));
         assertTrue(readme.contains("https://agones.dev/chart/stable"));
-        assertTrue(readme.contains("helm.cattle.io/v1"));
-        assertTrue(readme.contains("build/kubernetes/paper-agones/"));
-        assertTrue(readme.contains("helm upgrade --install --wait"));
+        assertTrue(readme.contains("helm upgrade --install"));
+        assertTrue(readme.contains("explicit Agones readiness gates"));
         assertTrue(readme.contains("-Pfulcrum.agonesChartVersion=1.58.0"));
         assertTrue(readme.contains("-Pfulcrum.agonesReleaseName=agones"));
         assertTrue(readme.contains("-Pfulcrum.agonesSystemNamespace=agones-system"));
         assertTrue(readme.contains("paperAgonesAllocateLobby"));
         assertTrue(readme.contains("Allocated"));
         assertTrue(readme.contains("status.gameServerName"));
+        assertFalse(readme.contains("helm.cattle.io/v1"));
+        assertFalse(readme.contains("--cgroupns"));
     }
 
     @Test
@@ -410,50 +428,84 @@ final class AgonesDeploymentManifestTest {
         assertTrue(build.contains("fun effectiveKubeconfigPath(): String?"));
         assertTrue(build.contains("fun verifierKubeArgs(runArgs: MutableList<String>)"));
         assertTrue(build.contains("add(\"--kubeconfig\")"));
+        assertTrue(build.contains("rootProject.file(it).absolutePath"));
         assertTrue(build.contains("runArgs.add(\"--kubeconfig=$explicitKubeconfig\")"));
         assertTrue(build.contains("?: if (generatedClusterRequested.get()) generatedClusterKubeconfig.get().asFile.absolutePath else null"));
         assertTrue(build.contains("} else {\n        kubeContext.orNull?.takeIf { it.isNotBlank() }?.let {"));
+        assertTrue(build.contains("val resolvedEndpointHost = lobbyEndpointHost.orNull?.takeIf { it.isNotBlank() }"));
+        assertTrue(build.contains("?: if (generatedClusterRequested.get()) lobbyNodeHost.get() else null"));
+        assertTrue(build.contains("runArgs.add(\"--endpoint-host=$it\")"));
     }
 
     @Test
-    void gradleRegistersK3sClusterLifecycle() throws IOException {
+    void gradleRegistersGeneratedClusterLifecycle() throws IOException {
         String build = Files.readString(Path.of("build.gradle.kts"));
 
-        assertTrue(build.contains("val clusterK3sImage = providers.gradleProperty(\"fulcrum.k3sImage\")"));
-        assertTrue(build.contains(".orElse(\"rancher/k3s:${libs.versions.k3s.get()}\")"));
-        assertTrue(build.contains("val clusterK3sContainerName = providers.gradleProperty(\"fulcrum.k3sContainerName\")"));
-        assertTrue(build.contains("val clusterK3sApiPort = providers.gradleProperty(\"fulcrum.k3sApiPort\")"));
-        assertTrue(build.contains("val clusterK3sMinecraftPort = providers.gradleProperty(\"fulcrum.k3sMinecraftPort\")"));
-        assertTrue(build.contains("val clusterK3sCgroupNamespace = providers.gradleProperty(\"fulcrum.k3sCgroupNamespace\")"));
-        assertTrue(build.contains("val keepK3s = providers.gradleProperty(\"fulcrum.keepK3s\")"));
+        assertTrue(build.contains("val clusterProvider = providers.gradleProperty(\"fulcrum.clusterProvider\")"));
+        assertTrue(build.contains(".orElse(\"k3d\")"));
+        assertTrue(build.contains("val clusterK3dImage = providers.gradleProperty(\"fulcrum.k3dImage\")"));
+        assertTrue(build.contains(".orElse(\"rancher/k3s:${libs.versions.k3dK3s.get()}\")"));
+        assertTrue(build.contains("val clusterName = providers.gradleProperty(\"fulcrum.clusterName\")"));
+        assertTrue(build.contains("val clusterApiPort = providers.gradleProperty(\"fulcrum.clusterApiPort\")"));
+        assertTrue(build.contains("val clusterMinecraftPort = providers.gradleProperty(\"fulcrum.clusterMinecraftPort\")"));
+        assertTrue(build.contains("val clusterCreateTimeout = providers.gradleProperty(\"fulcrum.clusterCreateTimeout\")"));
+        assertTrue(build.contains("val keepGeneratedCluster = providers.gradleProperty(\"fulcrum.keepCluster\")"));
+        assertTrue(build.contains("fun k3dCommand(vararg args: String)"));
+        assertTrue(build.contains("fun kindCommand(vararg args: String)"));
+        assertTrue(build.contains("fun generatedClusterCli(vararg args: String)"));
+        assertTrue(build.contains("\"k3d\" -> k3dCommand(*args)"));
+        assertTrue(build.contains("\"kind\" -> kindCommand(*args)"));
+        assertTrue(build.contains("fun generatedClusterExists(): Boolean"));
+        assertTrue(build.contains("fun deleteGeneratedClusterIfExists(reason: String)"));
+        assertTrue(build.contains("fun reserveFreeHostPort(): Int"));
+        assertTrue(build.contains("Using generated $provider Kubernetes API port 127.0.0.1:$selectedApiPort"));
         assertTrue(build.contains("tasks.register(\"clusterK3sPreflight\")"));
+        assertTrue(build.contains("tasks.register(\"clusterK3sDeleteExisting\")"));
         assertTrue(build.contains("tasks.register(\"clusterK3sStart\")"));
         assertTrue(build.contains("tasks.register(\"clusterK3sImportImages\")"));
         assertTrue(build.contains("tasks.register(\"clusterK3sStop\")"));
         assertTrue(build.contains("tasks.register(\"clusterK3sE2e\")"));
-        assertTrue(build.contains("runArgs.add(\"--cgroupns\")"));
-        assertTrue(build.contains("Removing stopped K3s container $containerName before recreating it"));
-        assertTrue(build.contains("K3s container $containerName exited before node readiness."));
-        assertTrue(build.contains("val renderedAgonesHelmChart = layout.buildDirectory.file(\"kubernetes/paper-agones/agones-helm-chart.yaml\")"));
+        assertTrue(build.contains("deleteGeneratedClusterIfExists(\"Deleting existing\")"));
+        assertTrue(build.contains("createArgs.add(\"--image\")"));
+        assertTrue(build.contains("\"--kubeconfig-update-default=false\""));
+        assertTrue(build.contains("k3dCommand(\"kubeconfig\", \"get\", name)"));
+        assertTrue(build.contains(".replace(\"https://host.docker.internal:\", \"https://127.0.0.1:\")"));
+        assertTrue(build.contains("kindCommand("));
+        assertTrue(build.contains("\"create\","));
+        assertTrue(build.contains("val agonesImages = agonesRuntimeImages()"));
+        assertTrue(build.contains("dockerCommand(\"image\", \"inspect\", image)"));
+        assertTrue(build.contains("dockerCommand(\"pull\", image)"));
+        assertTrue(build.contains("k3dCommand(\"image\", \"import\", *fulcrumImages.toTypedArray(), \"--cluster\", clusterName.get())"));
+        assertTrue(build.contains("k3dCommand(\"image\", \"import\", *agonesImages.toTypedArray(), \"--cluster\", clusterName.get())"));
+        assertTrue(build.contains("kindCommand(\"load\", \"docker-image\", \"--name\", clusterName.get(), *images.toTypedArray())"));
         assertTrue(build.contains("fun waitForAgonesCrds(label: String)"));
         assertTrue(build.contains("\"gameserversets.agones.dev\""));
         assertTrue(build.contains("val requiredAgonesApiResources = mapOf("));
         assertTrue(build.contains("\"allocation.agones.dev\" to \"gameserverallocations.allocation.agones.dev\""));
         assertTrue(build.contains("\"api-resources\", \"--api-group=$group\", \"-o\", \"name\""));
         assertFalse(build.contains("\"fleetautoscalers.autoscaling.agones.dev\",\n    \"gameserverallocations.allocation.agones.dev\""));
-        assertTrue(build.contains("Skipping host Helm availability check; K3s clusterE2e uses the in-cluster HelmChart controller for Agones."));
-        assertTrue(build.contains("apiVersion: helm.cattle.io/v1"));
-        assertTrue(build.contains("kind: HelmChart"));
-        assertTrue(build.contains("waitForAgonesCrds(\"K3s HelmChart Agones install\")"));
+        assertTrue(build.contains("helmCommand("));
+        assertTrue(build.contains("\"repo\", \"add\", \"agones\", \"https://agones.dev/chart/stable\", \"--force-update\""));
+        assertTrue(build.contains("\"repo\", \"update\", \"agones\""));
+        assertTrue(build.contains("\"upgrade\","));
+        assertTrue(build.contains("\"--force-conflicts\""));
+        assertTrue(build.contains("waitForAgonesCrds(\"host Helm Agones install\")"));
+        assertFalse(build.contains("apiVersion: helm.cattle.io/v1"));
+        assertFalse(build.contains("kind: HelmChart"));
+        assertFalse(build.contains("renderedAgonesHelmChart"));
+        assertFalse(build.contains("\"ctr\""));
         assertTrue(build.contains("tasks.register(\"paperAgonesConfigureAllocatorTls\")"));
         assertTrue(build.contains("\"deployment/agones-allocator\""));
-        assertTrue(build.contains("\"DISABLE_MTLS=true\""));
+        assertFalse(build.contains("\"DISABLE_MTLS=true\""));
+        assertTrue(build.contains("\"deployment/agones-controller\""));
         assertTrue(build.contains("\"rollout\",\n                \"status\",\n                \"deployment/agones-allocator\""));
+        assertTrue(build.contains("\"fleets.agones.dev,\""));
+        assertTrue(build.contains("\"fleetautoscalers.autoscaling.agones.dev,\""));
+        assertTrue(build.contains("\"gameservers.agones.dev\""));
         assertTrue(build.contains("tasks.register(\"paperAgonesDeleteSharedShardAllocationJobs\")"));
         assertTrue(build.contains("\"fulcrum-lobby-shared-shard-allocation-materialization\""));
         assertTrue(build.contains("\"--ignore-not-found=true\""));
         assertTrue(build.contains("tasks.named(\"paperAgonesDeleteSharedShardAllocationJobs\")"));
-        assertTrue(build.contains("\"exec\",\n                containerName,\n                \"ctr\",\n                \"-n\",\n                \"k8s.io\",\n                \"images\",\n                \"import\""));
         assertTrue(build.contains("inputs.property(\"serviceLauncherImageTag\", serviceLauncherImageTag)"));
         assertTrue(build.contains("inputs.property(\"paperGameserverImageTag\", paperGameserverImageTag)"));
         assertTrue(build.contains("inputs.property(\"velocityProxyImageTag\", velocityProxyImageTag)"));
@@ -464,13 +516,13 @@ final class AgonesDeploymentManifestTest {
     }
 
     @Test
-    void rootClusterE2eUsesCanonicalK3sProfile() throws IOException {
+    void rootClusterE2eUsesCanonicalGeneratedProfile() throws IOException {
         String rootBuild = Files.readString(Path.of("..", "..", "build.gradle.kts"));
 
         assertTrue(rootBuild.contains("tasks.register(\"clusterExistingE2e\")"));
         assertTrue(rootBuild.contains("tasks.register(\"clusterK3sE2e\")"));
         assertTrue(rootBuild.contains("dependsOn(\":distribution:service-launcher:clusterK3sE2e\")"));
-        assertTrue(rootBuild.contains("description = \"Runs the canonical K3s-backed cluster E2E gate"));
+        assertTrue(rootBuild.contains("description = \"Runs the canonical k3d-backed cluster E2E gate"));
         assertTrue(rootBuild.contains("tasks.register(\"clusterE2e\")"));
         assertTrue(rootBuild.contains("dependsOn(\"clusterK3sE2e\")"));
     }
@@ -488,16 +540,20 @@ final class AgonesDeploymentManifestTest {
         assertTrue(build.contains("val defaultValkeyImage = \"valkey/valkey:${libs.versions.valkeyImage.get()}\""));
         assertTrue(build.contains("val valkeyImageTag = providers.gradleProperty(\"fulcrum.valkeyImage\")"));
         assertTrue(build.contains("val objectStoreImageTag = providers.gradleProperty(\"fulcrum.objectStoreImage\")"));
+        assertTrue(build.contains("val defaultDependencyWaitImage = \"busybox:${libs.versions.busybox.get()}\""));
+        assertTrue(build.contains("val dependencyWaitImageTag = providers.gradleProperty(\"fulcrum.dependencyWaitImage\")"));
         assertTrue(build.contains("inputs.property(\"kafkaImageTag\", kafkaImageTag)"));
         assertTrue(build.contains("inputs.property(\"postgresImageTag\", postgresImageTag)"));
         assertTrue(build.contains("inputs.property(\"cassandraImageTag\", cassandraImageTag)"));
         assertTrue(build.contains("inputs.property(\"valkeyImageTag\", valkeyImageTag)"));
         assertTrue(build.contains("inputs.property(\"objectStoreImageTag\", objectStoreImageTag)"));
+        assertTrue(build.contains("inputs.property(\"dependencyWaitImageTag\", dependencyWaitImageTag)"));
         assertTrue(build.contains(".replace(defaultKafkaImage, kafkaImageTag.get())"));
         assertTrue(build.contains(".replace(defaultPostgresImage, postgresImageTag.get())"));
         assertTrue(build.contains(".replace(defaultCassandraImage, cassandraImageTag.get())"));
         assertTrue(build.contains(".replace(defaultValkeyImage, valkeyImageTag.get())"));
         assertTrue(build.contains(".replace(defaultObjectStoreImage, objectStoreImageTag.get())"));
+        assertTrue(build.contains(".replace(defaultDependencyWaitImage, dependencyWaitImageTag.get())"));
     }
 
     private static String resource(String name) throws IOException {

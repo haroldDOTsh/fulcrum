@@ -26,6 +26,11 @@ enable-status=false
 prevent-proxy-connections=false
 EOF
 
+cat > bukkit.yml <<EOF
+settings:
+  connection-throttle: -1
+EOF
+
 if [ "$#" -eq 0 ]; then
   set -- \
     --profile="${FULCRUM_PROFILE}" \

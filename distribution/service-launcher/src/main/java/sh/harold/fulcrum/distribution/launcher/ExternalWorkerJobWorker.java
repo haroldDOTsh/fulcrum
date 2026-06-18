@@ -10,6 +10,7 @@ import sh.harold.fulcrum.host.worker.WorkerAgentRuntime;
 import sh.harold.fulcrum.host.worker.WorkerJobHandler;
 import sh.harold.fulcrum.host.worker.WorkerJobReceipt;
 import sh.harold.fulcrum.host.worker.WorkerJobRequest;
+import sh.harold.fulcrum.host.worker.WorkerJobRejectionReason;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -32,6 +33,7 @@ final class ExternalWorkerJobWorker implements WorkerJobPoller {
     private final WorkerAgentRuntime runtime;
     private final WorkerJobHandler handler;
     private final Clock clock;
+    private final DurableIdempotencyLedger idempotencyLedger;
     private final Queue<ConsumerRecord<String, String>> pendingRecords = new ArrayDeque<>();
     private boolean subscribed;
 
@@ -45,6 +47,11 @@ final class ExternalWorkerJobWorker implements WorkerJobPoller {
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.handler = Objects.requireNonNull(handler, "handler");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.idempotencyLedger = DurableIdempotencyLedger.replay(
+                kafka,
+                clients.settings().resultTopic(),
+                POLL_TIMEOUT,
+                DurableIdempotencyLedger.WORKER_RECORD_TYPE);
     }
 
     @Override
@@ -61,10 +68,35 @@ final class ExternalWorkerJobWorker implements WorkerJobPoller {
             return Optional.empty();
         }
         WorkerJobRequest request = WorkerJobWireCodec.decodeRequest(record);
+        Optional<WorkerJobReceipt> durableReplay = durableReplay(request);
+        if (durableReplay.isPresent()) {
+            WorkerJobReceipt receipt = durableReplay.orElseThrow();
+            publishReceipt(receipt);
+            commit(record);
+            return Optional.of(receipt);
+        }
         WorkerJobReceipt receipt = runtime.handle(request, handler, clock.instant());
-        publish(receipt);
+        publish(receipt, request.payloadFingerprint());
         commit(record);
         return Optional.of(receipt);
+    }
+
+    private Optional<WorkerJobReceipt> durableReplay(WorkerJobRequest request) {
+        Optional<DurableIdempotencyLedger.StoredDecision> stored =
+                idempotencyLedger.lookup(request.idempotencyKey().value());
+        if (stored.isEmpty()) {
+            return Optional.empty();
+        }
+        DurableIdempotencyLedger.StoredDecision decision = stored.orElseThrow();
+        if (decision.payloadFingerprint().equals(request.payloadFingerprint())) {
+            return Optional.of(WorkerJobWireCodec.decodeReceipt(decision.responseValue()).asReplay());
+        }
+        WorkerJobReceipt storedReceipt = WorkerJobWireCodec.decodeReceipt(decision.responseValue());
+        return Optional.of(WorkerJobReceipt.rejected(
+                request,
+                storedReceipt.workerInstanceId(),
+                observedLag(request),
+                WorkerJobRejectionReason.IDEMPOTENCY_CONFLICT));
     }
 
     private void subscribeOnce() {
@@ -74,7 +106,22 @@ final class ExternalWorkerJobWorker implements WorkerJobPoller {
         }
     }
 
-    private void publish(WorkerJobReceipt receipt) {
+    private void publish(WorkerJobReceipt receipt, String payloadFingerprint) {
+        publishReceipt(receipt);
+        DurableIdempotencyLedger.StoredDecision decision = new DurableIdempotencyLedger.StoredDecision(
+                receipt.idempotencyKey().value(),
+                payloadFingerprint,
+                receipt.jobId().value(),
+                WorkerJobWireCodec.encodeReceipt(receipt));
+        idempotencyLedger.put(decision);
+        kafka.producer().send(new ProducerRecord<>(
+                clients.settings().resultTopic(),
+                "worker.idempotency:" + receipt.idempotencyKey().value(),
+                idempotencyLedger.encode(decision)));
+        kafka.producer().flush();
+    }
+
+    private void publishReceipt(WorkerJobReceipt receipt) {
         kafka.producer().send(new ProducerRecord<>(
                 clients.settings().resultTopic(),
                 receipt.jobId().value(),
@@ -86,5 +133,10 @@ final class ExternalWorkerJobWorker implements WorkerJobPoller {
         kafka.consumer().commitSync(Map.of(
                 new TopicPartition(record.topic(), record.partition()),
                 new OffsetAndMetadata(record.offset() + 1)));
+    }
+
+    private Duration observedLag(WorkerJobRequest request) {
+        Duration lag = Duration.between(request.enqueuedAt(), clock.instant());
+        return lag.isNegative() ? Duration.ZERO : lag;
     }
 }

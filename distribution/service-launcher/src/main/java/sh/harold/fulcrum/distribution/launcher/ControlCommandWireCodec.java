@@ -78,6 +78,21 @@ final class ControlCommandWireCodec {
     private ControlCommandWireCodec() {
     }
 
+    static Optional<ControlCommandLedgerKey> commandLedgerKey(ConsumerRecord<String, String> record) {
+        Map<String, String> fields = fields(record.value());
+        Optional<String> commandId = optional(fields, "commandId");
+        Optional<String> idempotencyKey = optional(fields, "idempotencyKey");
+        Optional<String> payloadFingerprint = optional(fields, "payloadFingerprint");
+        if (commandId.isEmpty() || idempotencyKey.isEmpty() || payloadFingerprint.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new ControlCommandLedgerKey(
+                commandId.orElseThrow(),
+                idempotencyKey.orElseThrow(),
+                payloadFingerprint.orElseThrow(),
+                optional(fields, "traceId").orElse("unknown")));
+    }
+
     static RouteAttemptControlCommand<RequestRouteAttempt> decodeRouteAttemptRequest(
             ConsumerRecord<String, String> record) {
         RouteAttemptControlCommand<? extends RouteAttemptCommand> command = decodeRouteAttemptCommand(record);
@@ -761,5 +776,26 @@ record SharedShardPlacementWireRequest(
     SharedShardPlacementWireRequest {
         request = Objects.requireNonNull(request, "request");
         candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
+    }
+}
+
+record ControlCommandLedgerKey(
+        String commandId,
+        String idempotencyKey,
+        String payloadFingerprint,
+        String traceId) {
+    ControlCommandLedgerKey {
+        commandId = requireNonBlank(commandId, "commandId");
+        idempotencyKey = requireNonBlank(idempotencyKey, "idempotencyKey");
+        payloadFingerprint = requireNonBlank(payloadFingerprint, "payloadFingerprint");
+        traceId = requireNonBlank(traceId, "traceId");
+    }
+
+    private static String requireNonBlank(String value, String label) {
+        String checked = Objects.requireNonNull(value, label).trim();
+        if (checked.isEmpty()) {
+            throw new IllegalArgumentException(label + " must not be blank");
+        }
+        return checked;
     }
 }

@@ -183,21 +183,26 @@ tasks.register("step8Check") {
 
 tasks.register("clusterExistingE2e") {
     group = "verification"
-    description = "Runs the existing-cluster E2E gate: deploys Paper Agones plus Velocity L4, then verifies the public Minecraft endpoint."
+    description = "Runs the existing-cluster E2E gate against the current or supplied k3d/kind Kubernetes context."
     dependsOn("step8Check")
     dependsOn(":distribution:service-launcher:lobbyClusterE2eVerify")
 }
 
 tasks.register("clusterK3sE2e") {
     group = "verification"
-    description = "Runs the K3s-backed cluster E2E gate with Gradle-owned cluster lifecycle and teardown."
+    description = "Compatibility task for the generated-cluster E2E gate; k3d is the default provider and kind is the parity provider."
+    dependsOn(":distribution:service-launcher:clusterK3sDeleteExisting")
     dependsOn("step8Check")
     dependsOn(":distribution:service-launcher:clusterK3sE2e")
 }
 
+tasks.named("step8Check") {
+    mustRunAfter(":distribution:service-launcher:clusterK3sDeleteExisting")
+}
+
 tasks.register("clusterE2e") {
     group = "verification"
-    description = "Runs the canonical K3s-backed cluster E2E gate for the login-to-lobby production slice."
+    description = "Runs the canonical k3d-backed cluster E2E gate for the login-to-lobby production slice."
     dependsOn("clusterK3sE2e")
 }
 

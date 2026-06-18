@@ -946,6 +946,11 @@ final class FinalFleetE2eTest {
                 {
                   "gameServerName": "agones-gameserver-final",
                   "nodeName": "machine-game-final",
+                  "address": "10.244.0.42",
+                  "ports": [
+                    {"name": "metrics", "port": 9090},
+                    {"name": "minecraft", "port": 31565}
+                  ],
                   "metadata": {
                     "annotations": {
                       "sh.harold.fulcrum/instance-id": "instance-paper-final",

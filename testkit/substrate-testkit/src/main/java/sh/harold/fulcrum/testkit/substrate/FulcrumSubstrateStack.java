@@ -11,13 +11,20 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.stream.Stream;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class FulcrumSubstrateStack implements AutoCloseable {
     private static final DockerImageName KAFKA_IMAGE = DockerImageName.parse("apache/kafka-native:4.3.0");
     private static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:18.4");
     private static final DockerImageName CASSANDRA_IMAGE = DockerImageName.parse("cassandra:5.0.8");
     private static final DockerImageName VALKEY_IMAGE = DockerImageName.parse("valkey/valkey:9.1.0");
+    private static final Duration CONTAINER_STOP_TIMEOUT = Duration.ofSeconds(45);
+    private static final Duration CONTAINER_EXEC_TIMEOUT = Duration.ofSeconds(60);
 
     private final KafkaContainer kafka = new KafkaContainer(KAFKA_IMAGE);
     private final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(POSTGRES_IMAGE)
@@ -145,14 +152,24 @@ public final class FulcrumSubstrateStack implements AutoCloseable {
     }
 
     public void executeCassandra(String cql) {
-        Container.ExecResult result = exec(cassandra, "cqlsh", "-e", cql.strip());
+        Container.ExecResult result = exec(cassandra,
+                "cqlsh",
+                "--connect-timeout=10",
+                "--request-timeout=10",
+                "-e",
+                cql.strip());
         if (result.getExitCode() != 0) {
             throw new IllegalStateException("Cassandra command failed: " + result.getStderr());
         }
     }
 
     public String queryCassandra(String cql) {
-        Container.ExecResult result = exec(cassandra, "cqlsh", "-e", cql.strip());
+        Container.ExecResult result = exec(cassandra,
+                "cqlsh",
+                "--connect-timeout=10",
+                "--request-timeout=10",
+                "-e",
+                cql.strip());
         if (result.getExitCode() != 0) {
             throw new IllegalStateException("Cassandra query failed: " + result.getStderr());
         }
@@ -176,17 +193,85 @@ public final class FulcrumSubstrateStack implements AutoCloseable {
 
     @Override
     public void close() {
-        Stream.of(valkey, cassandra, postgres, kafka).parallel().forEach(GenericContainer::stop);
+        RuntimeException failure = null;
+        for (GenericContainer<?> container : List.of(valkey, cassandra, postgres, kafka)) {
+            try {
+                stopContainer(container);
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private static void stopContainer(GenericContainer<?> container) {
+        ExecutorService executor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "fulcrum-substrate-testkit-container-stop");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            executor.submit(container::stop).get(CONTAINER_STOP_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException exception) {
+            throw new IllegalStateException(
+                    "Timed out stopping substrate test container " + container.getDockerImageName(),
+                    exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while stopping substrate test container", exception);
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "Failed to stop substrate test container " + container.getDockerImageName(),
+                    exception);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private static Container.ExecResult exec(GenericContainer<?> container, String... command) {
+        ExecutorService executor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "fulcrum-substrate-testkit-container-exec");
+            thread.setDaemon(true);
+            return thread;
+        });
         try {
-            return container.execInContainer(command);
-        } catch (IOException exception) {
-            throw new IllegalStateException("Container command failed", exception);
+            return executor.submit(() -> {
+                try {
+                    return container.execInContainer(command);
+                } catch (IOException exception) {
+                    throw new IllegalStateException("Container command failed", exception);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Container command interrupted", exception);
+                }
+            }).get(CONTAINER_EXEC_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException exception) {
+            throw new IllegalStateException(
+                    "Timed out running command in substrate test container "
+                            + container.getDockerImageName()
+                            + ": "
+                            + String.join(" ", command),
+                    exception);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Container command interrupted", exception);
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("Container command failed", cause);
+        } finally {
+            executor.shutdownNow();
         }
     }
 }

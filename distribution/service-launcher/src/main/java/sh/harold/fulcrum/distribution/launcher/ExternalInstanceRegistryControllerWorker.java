@@ -38,6 +38,7 @@ final class ExternalInstanceRegistryControllerWorker implements ControllerWorker
     private final long fencingEpoch;
     private final InstanceRegistryController controller = new InstanceRegistryController();
     private final Map<InstanceId, InstanceRegistryRecord> records = new HashMap<>();
+    private final DurableIdempotencyLedger idempotencyLedger;
     private final Queue<ConsumerRecord<String, String>> pendingRecords = new ArrayDeque<>();
     private boolean subscribed;
 
@@ -50,6 +51,11 @@ final class ExternalInstanceRegistryControllerWorker implements ControllerWorker
         }
         this.fencingEpoch = fencingEpoch;
         KafkaStateTopicReplayer.replay(kafka, stateTopic, POLL_TIMEOUT, this::replayState);
+        this.idempotencyLedger = DurableIdempotencyLedger.replay(
+                kafka,
+                stateTopic,
+                POLL_TIMEOUT,
+                DurableIdempotencyLedger.CONTROL_RECORD_TYPE);
     }
 
     @Override
@@ -65,6 +71,12 @@ final class ExternalInstanceRegistryControllerWorker implements ControllerWorker
         if (record == null) {
             return Optional.empty();
         }
+        Optional<ControlCommandLedgerKey> ledgerKey = InstanceRegistryControlWireCodec.commandLedgerKey(record);
+        Optional<ControllerRuntimeReceipt> replay = ledgerKey.flatMap(this::publishDurableReplay);
+        if (replay.isPresent()) {
+            commit(record);
+            return replay;
+        }
         InstanceRegistryControlCommand<RegisterInstance> command =
                 InstanceRegistryControlWireCodec.decodeRegisterCommand(record);
         InstanceId instanceId = command.envelope().payload().instanceId();
@@ -74,8 +86,27 @@ final class ExternalInstanceRegistryControllerWorker implements ControllerWorker
         InstanceRegistryDecision decision = controller.handle(command, current);
         this.records.put(instanceId, decision.record());
         publish(decision);
+        ledgerKey.ifPresent(key -> publishLedger(key, decision.receipt().commandId(), decision.receipt().wireValue()));
         commit(record);
         return Optional.of(new ControllerRuntimeReceipt(DOMAIN, command.envelope().commandId().value()));
+    }
+
+    private Optional<ControllerRuntimeReceipt> publishDurableReplay(ControlCommandLedgerKey key) {
+        Optional<DurableIdempotencyLedger.StoredDecision> stored = idempotencyLedger.lookup(key.idempotencyKey());
+        if (stored.isEmpty()) {
+            return Optional.empty();
+        }
+        DurableIdempotencyLedger.StoredDecision decision = stored.orElseThrow();
+        if (decision.payloadFingerprint().equals(key.payloadFingerprint())) {
+            kafka.producer().send(new ProducerRecord<>(RESPONSE_TOPIC, decision.responseKey(), decision.responseValue()));
+        } else {
+            kafka.producer().send(new ProducerRecord<>(
+                    RESPONSE_TOPIC,
+                    key.commandId(),
+                    idempotencyConflictResponse(key, decision.responseValue())));
+        }
+        kafka.producer().flush();
+        return Optional.of(new ControllerRuntimeReceipt(DOMAIN, key.commandId()));
     }
 
     private void replayState(ConsumerRecord<String, String> record) {
@@ -111,6 +142,20 @@ final class ExternalInstanceRegistryControllerWorker implements ControllerWorker
         kafka.producer().flush();
     }
 
+    private void publishLedger(ControlCommandLedgerKey key, String responseKey, String responseValue) {
+        DurableIdempotencyLedger.StoredDecision decision = new DurableIdempotencyLedger.StoredDecision(
+                key.idempotencyKey(),
+                key.payloadFingerprint(),
+                responseKey,
+                responseValue);
+        idempotencyLedger.put(decision);
+        kafka.producer().send(new ProducerRecord<>(
+                stateTopic,
+                "ctrl.idempotency." + DOMAIN + ":" + key.idempotencyKey(),
+                idempotencyLedger.encode(decision)));
+        kafka.producer().flush();
+    }
+
     private void commit(ConsumerRecord<String, String> record) {
         kafka.consumer().commitSync(Map.of(
                 new TopicPartition(record.topic(), record.partition()),
@@ -123,6 +168,24 @@ final class ExternalInstanceRegistryControllerWorker implements ControllerWorker
             case STATE, READY_INSTANCE, DRAINING_INSTANCE, OFFLINE_INSTANCE -> stateTopic;
             case RESPONSE -> RESPONSE_TOPIC;
         };
+    }
+
+    private static String idempotencyConflictResponse(ControlCommandLedgerKey key, String storedResponse) {
+        return "accepted=false"
+                + "|revision=" + pipeField(storedResponse, "revision").orElse("0")
+                + "|commandId=" + key.commandId()
+                + "|reason=IDEMPOTENCY_CONFLICT"
+                + "|traceId=" + key.traceId();
+    }
+
+    private static Optional<String> pipeField(String payload, String key) {
+        for (String part : payload.split("\\|")) {
+            int separator = part.indexOf('=');
+            if (separator > 0 && part.substring(0, separator).equals(key)) {
+                return Optional.of(part.substring(separator + 1));
+            }
+        }
+        return Optional.empty();
     }
 
     private static String stateTopic(String configuredTopic) {

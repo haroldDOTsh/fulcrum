@@ -4,10 +4,18 @@ import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.CqlSessionBuilder;
 
 import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class CassandraClientHandle implements AutoCloseable {
+    private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration FORCE_CLOSE_TIMEOUT = Duration.ofSeconds(5);
+
     private final List<InetSocketAddress> contactPoints;
     private final String localDatacenter;
     private final CqlSessionBuilder builder;
@@ -45,10 +53,37 @@ public final class CassandraClientHandle implements AutoCloseable {
     }
 
     @Override
-    public synchronized void close() {
-        if (session != null) {
-            session.close();
+    public void close() {
+        CqlSession currentSession;
+        synchronized (this) {
+            currentSession = session;
             session = null;
+        }
+        if (currentSession == null) {
+            return;
+        }
+        try {
+            await(currentSession.closeAsync(), CLOSE_TIMEOUT, "Cassandra session close");
+        } catch (RuntimeException gracefulFailure) {
+            try {
+                await(currentSession.forceCloseAsync(), FORCE_CLOSE_TIMEOUT, "Cassandra session force close");
+            } catch (RuntimeException forceFailure) {
+                forceFailure.addSuppressed(gracefulFailure);
+                throw forceFailure;
+            }
+        }
+    }
+
+    private static void await(CompletionStage<Void> stage, Duration timeout, String action) {
+        try {
+            stage.toCompletableFuture().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(action + " was interrupted", exception);
+        } catch (ExecutionException exception) {
+            throw new IllegalStateException(action + " failed", exception.getCause());
+        } catch (TimeoutException exception) {
+            throw new IllegalStateException(action + " timed out after " + timeout, exception);
         }
     }
 

@@ -197,6 +197,111 @@ final class MinecraftStatusClientTest {
     }
 
     @Test
+    void lobbyProofProbeAcknowledgesLoginBeforeConfiguration() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.LOBBY_PROOF_REQUIRES_LOGIN_ACKNOWLEDGED)) {
+            PaperLobbyProofMessage proof = new MinecraftStatusClient().lobbyProof(
+                    new InetSocketAddress("127.0.0.1", server.port()),
+                    767,
+                    "FulcrumBotOne",
+                    Duration.ofSeconds(2));
+
+            assertEquals(new InstanceId("paper-instance-lobby-one"), proof.instanceId());
+            assertEquals(new SessionId("session-lobby-shared"), proof.sessionId());
+        }
+    }
+
+    @Test
+    void lobbyProofProbeAnswersKnownPacksBeforeConfigurationFinish() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.LOBBY_PROOF_SELECT_KNOWN_PACKS)) {
+            PaperLobbyProofMessage proof = new MinecraftStatusClient().lobbyProof(
+                    new InetSocketAddress("127.0.0.1", server.port()),
+                    767,
+                    "FulcrumBotOne",
+                    Duration.ofSeconds(2));
+
+            assertEquals(new InstanceId("paper-instance-lobby-one"), proof.instanceId());
+            assertEquals(new SessionId("session-lobby-shared"), proof.sessionId());
+        }
+    }
+
+    @Test
+    void lobbyProofProbeIgnoresConfigurationCustomPayloadBeforeFinish() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.LOBBY_PROOF_CONFIGURATION_CUSTOM_PAYLOAD)) {
+            PaperLobbyProofMessage proof = new MinecraftStatusClient().lobbyProof(
+                    new InetSocketAddress("127.0.0.1", server.port()),
+                    767,
+                    "FulcrumBotOne",
+                    Duration.ofSeconds(2));
+
+            assertEquals(new InstanceId("paper-instance-lobby-one"), proof.instanceId());
+            assertEquals(new SessionId("session-lobby-shared"), proof.sessionId());
+        }
+    }
+
+    @Test
+    void lobbyProofProbeIgnoresConfigurationRegistrySyncBeforeFinish() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.LOBBY_PROOF_CONFIGURATION_REGISTRY_SYNC)) {
+            PaperLobbyProofMessage proof = new MinecraftStatusClient().lobbyProof(
+                    new InetSocketAddress("127.0.0.1", server.port()),
+                    767,
+                    "FulcrumBotOne",
+                    Duration.ofSeconds(2));
+
+            assertEquals(new InstanceId("paper-instance-lobby-one"), proof.instanceId());
+            assertEquals(new SessionId("session-lobby-shared"), proof.sessionId());
+        }
+    }
+
+    @Test
+    void lobbyProofProbeReportsConfigurationDisconnect() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.LOBBY_PROOF_CONFIGURATION_DISCONNECT)) {
+            IOException exception = assertThrows(IOException.class, () -> new MinecraftStatusClient().lobbyProof(
+                    new InetSocketAddress("127.0.0.1", server.port()),
+                    767,
+                    "FulcrumBotOne",
+                    Duration.ofSeconds(2)));
+
+            assertTrue(exception.getMessage().contains("got disconnect"));
+            assertTrue(exception.getMessage().contains("color"));
+        }
+    }
+
+    @Test
+    void lobbyProofProbeMarksPlayClientLoadedBeforePaperProof() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.LOBBY_PROOF_REQUIRES_PLAYER_LOADED)) {
+            PaperLobbyProofMessage proof = new MinecraftStatusClient().lobbyProof(
+                    new InetSocketAddress("127.0.0.1", server.port()),
+                    767,
+                    "FulcrumBotOne",
+                    Duration.ofSeconds(2));
+
+            assertEquals(new InstanceId("paper-instance-lobby-one"), proof.instanceId());
+            assertEquals(new SessionId("session-lobby-shared"), proof.sessionId());
+        }
+    }
+
+    @Test
+    void lobbyProofProbeRetriesChannelRegistrationAfterQuietPlayPeriod() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.LOBBY_PROOF_RETRIES_CHANNEL_REGISTRATION)) {
+            PaperLobbyProofMessage proof = new MinecraftStatusClient().lobbyProof(
+                    new InetSocketAddress("127.0.0.1", server.port()),
+                    767,
+                    "FulcrumBotOne",
+                    Duration.ofSeconds(2));
+
+            assertEquals(new InstanceId("paper-instance-lobby-one"), proof.instanceId());
+            assertEquals(new SessionId("session-lobby-shared"), proof.sessionId());
+        }
+    }
+
+    @Test
     void lobbyProofProbeIgnoresMarkerOnWrongPluginChannel() throws Exception {
         try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
                 ExchangeKind.LOBBY_PROOF_WRONG_CHANNEL_THEN_ACCEPTED)) {
@@ -212,17 +317,17 @@ final class MinecraftStatusClientTest {
     }
 
     @Test
-    void lobbyProofProbeIgnoresMarkerOutsideCustomPayloadPacket() throws Exception {
+    void lobbyProofProbeAcceptsShiftedCustomPayloadPacketId() throws Exception {
         try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
-                ExchangeKind.LOBBY_PROOF_WRONG_PACKET_THEN_ACCEPTED)) {
+                ExchangeKind.LOBBY_PROOF_SHIFTED_CUSTOM_PAYLOAD_PACKET_THEN_ACCEPTED)) {
             PaperLobbyProofMessage proof = new MinecraftStatusClient().lobbyProof(
                     new InetSocketAddress("127.0.0.1", server.port()),
                     767,
                     "FulcrumBotOne",
                     Duration.ofSeconds(2));
 
-            assertEquals(new InstanceId("paper-instance-lobby-one"), proof.instanceId());
-            assertEquals(new SessionId("session-lobby-shared"), proof.sessionId());
+            assertEquals(new InstanceId("paper-instance-lobby-two"), proof.instanceId());
+            assertEquals(new SessionId("session-lobby-other"), proof.sessionId());
         }
     }
 
@@ -4983,8 +5088,111 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
+                                writeLobbyProof(
+                                        socket,
+                                        LobbyCapabilitySeedProvisioner.offlineModeSubjectId("FulcrumBotOne").value(),
+                                        "Fulcrum Bot One",
+                                        "[Admin] Fulcrum Bot One: fulcrum-proof-chat");
+                            }
+                            case LOBBY_PROOF_REQUIRES_LOGIN_ACKNOWLEDGED -> {
+                                verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
+                                assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
+                                writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
+                                writeConfigurationFinish(socket);
+                                verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
+                                writeLobbyProof(
+                                        socket,
+                                        LobbyCapabilitySeedProvisioner.offlineModeSubjectId("FulcrumBotOne").value(),
+                                        "Fulcrum Bot One",
+                                        "[Admin] Fulcrum Bot One: fulcrum-proof-chat");
+                            }
+                            case LOBBY_PROOF_SELECT_KNOWN_PACKS -> {
+                                verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
+                                assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
+                                writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
+                                writeSelectKnownPacks(socket);
+                                verifySelectKnownPacksResponse(readCompressedPacket(socket.getInputStream()));
+                                writeConfigurationFinish(socket);
+                                verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
+                                writeLobbyProof(
+                                        socket,
+                                        LobbyCapabilitySeedProvisioner.offlineModeSubjectId("FulcrumBotOne").value(),
+                                        "Fulcrum Bot One",
+                                        "[Admin] Fulcrum Bot One: fulcrum-proof-chat");
+                            }
+                            case LOBBY_PROOF_CONFIGURATION_CUSTOM_PAYLOAD -> {
+                                verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
+                                assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
+                                writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
+                                writeConfigurationCustomPayload(socket, "color", "fulcrum-green");
+                                writeConfigurationFinish(socket);
+                                verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
+                                writeLobbyProof(
+                                        socket,
+                                        LobbyCapabilitySeedProvisioner.offlineModeSubjectId("FulcrumBotOne").value(),
+                                        "Fulcrum Bot One",
+                                        "[Admin] Fulcrum Bot One: fulcrum-proof-chat");
+                            }
+                            case LOBBY_PROOF_CONFIGURATION_REGISTRY_SYNC -> {
+                                verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
+                                assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
+                                writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
+                                writeConfigurationRegistrySync(socket);
+                                writeConfigurationFinish(socket);
+                                verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
+                                writeLobbyProof(
+                                        socket,
+                                        LobbyCapabilitySeedProvisioner.offlineModeSubjectId("FulcrumBotOne").value(),
+                                        "Fulcrum Bot One",
+                                        "[Admin] Fulcrum Bot One: fulcrum-proof-chat");
+                            }
+                            case LOBBY_PROOF_CONFIGURATION_DISCONNECT -> {
+                                verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
+                                assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
+                                writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
+                                writeConfigurationDisconnect(socket);
+                            }
+                            case LOBBY_PROOF_REQUIRES_PLAYER_LOADED -> {
+                                verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
+                                assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
+                                writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
+                                writeConfigurationFinish(socket);
+                                verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
+                                verifyPlayRegisterLobbyProofChannel(readCompressedPacket(socket.getInputStream()));
+                                verifyPlayPlayerLoaded(readCompressedPacket(socket.getInputStream()));
+                                writePlayKeepAlive(socket, 0x1122_3344_5566_7788L);
+                                verifyPlayKeepAlive(readCompressedPacket(socket.getInputStream()), 0x1122_3344_5566_7788L);
+                                writePlayPing(socket, 0x1234_abcd);
+                                verifyPlayPong(readCompressedPacket(socket.getInputStream()), 0x1234_abcd);
+                                writePlayPosition(socket, 321);
+                                verifyPlayTeleportAccepted(readCompressedPacket(socket.getInputStream()), 321);
+                                writePlayChunkBatchFinished(socket, 9);
+                                verifyPlayChunkBatchReceived(readCompressedPacket(socket.getInputStream()));
+                                writeLobbyProof(
+                                        socket,
+                                        LobbyCapabilitySeedProvisioner.offlineModeSubjectId("FulcrumBotOne").value(),
+                                        "Fulcrum Bot One",
+                                        "[Admin] Fulcrum Bot One: fulcrum-proof-chat");
+                            }
+                            case LOBBY_PROOF_RETRIES_CHANNEL_REGISTRATION -> {
+                                verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
+                                assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
+                                writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
+                                writeConfigurationFinish(socket);
+                                verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
+                                verifyPlayRegisterLobbyProofChannel(readCompressedPacket(socket.getInputStream()));
+                                verifyPlayPlayerLoaded(readCompressedPacket(socket.getInputStream()));
+                                verifyPlayRegisterLobbyProofChannel(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
                                         socket,
                                         LobbyCapabilitySeedProvisioner.offlineModeSubjectId("FulcrumBotOne").value(),
@@ -4995,6 +5203,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
                                 writeLobbyProof(
                                         socket,
                                         LobbyCapabilitySeedProvisioner.offlineModeSubjectId("FulcrumBotOne").value(),
@@ -5005,6 +5214,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5022,10 +5232,11 @@ final class MinecraftStatusClientTest {
                                         "Fulcrum Bot One",
                                         "[Admin] Fulcrum Bot One: fulcrum-proof-chat");
                             }
-                            case LOBBY_PROOF_WRONG_PACKET_THEN_ACCEPTED -> {
+                            case LOBBY_PROOF_SHIFTED_CUSTOM_PAYLOAD_PACKET_THEN_ACCEPTED -> {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5047,6 +5258,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotTwo", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotTwo");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5059,6 +5271,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotTwo", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotTwo");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5073,6 +5286,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotTwo", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotTwo");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5088,6 +5302,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5110,6 +5325,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5125,6 +5341,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5141,6 +5358,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotOne");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5161,6 +5379,7 @@ final class MinecraftStatusClientTest {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotFour", readLoginStart(readPacket(socket.getInputStream())));
                                 writeCompressionThenLoginSuccess(socket, "FulcrumBotFour");
+                                verifyConfigurationEntered(socket);
                                 writeConfigurationFinish(socket);
                                 verifyConfigurationFinish(readCompressedPacket(socket.getInputStream()));
                                 writeLobbyProof(
@@ -5201,9 +5420,16 @@ final class MinecraftStatusClientTest {
         STATUS,
         LOGIN_ACCEPTED,
         LOBBY_PROOF_ACCEPTED,
+        LOBBY_PROOF_REQUIRES_LOGIN_ACKNOWLEDGED,
+        LOBBY_PROOF_SELECT_KNOWN_PACKS,
+        LOBBY_PROOF_CONFIGURATION_CUSTOM_PAYLOAD,
+        LOBBY_PROOF_CONFIGURATION_REGISTRY_SYNC,
+        LOBBY_PROOF_CONFIGURATION_DISCONNECT,
+        LOBBY_PROOF_REQUIRES_PLAYER_LOADED,
+        LOBBY_PROOF_RETRIES_CHANNEL_REGISTRATION,
         LOBBY_PROOF_BEFORE_PLAY,
         LOBBY_PROOF_WRONG_CHANNEL_THEN_ACCEPTED,
-        LOBBY_PROOF_WRONG_PACKET_THEN_ACCEPTED,
+        LOBBY_PROOF_SHIFTED_CUSTOM_PAYLOAD_PACKET_THEN_ACCEPTED,
         LOBBY_PROOF_SECOND_ACCEPTED,
         LOBBY_PROOF_SECOND_DIFFERENT_SESSION,
         LOBBY_PROOF_SECOND_DIFFERENT_SLOT,
@@ -5293,6 +5519,148 @@ final class MinecraftStatusClientTest {
     private static void verifyConfigurationFinish(byte[] packet) throws IOException {
         ByteArrayInputStream input = new ByteArrayInputStream(packet);
         assertEquals(3, MinecraftStatusClient.readVarInt(input));
+    }
+
+    private static void verifyLoginAcknowledged(byte[] packet) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(3, MinecraftStatusClient.readVarInt(input));
+    }
+
+    private static void verifyConfigurationEntered(Socket socket) throws IOException {
+        verifyLoginAcknowledged(readCompressedPacket(socket.getInputStream()));
+        verifyConfigurationSettings(readCompressedPacket(socket.getInputStream()));
+    }
+
+    private static void verifyConfigurationSettings(byte[] packet) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(0, MinecraftStatusClient.readVarInt(input));
+        assertEquals("en_us", readString(input));
+        assertEquals(10, input.read());
+        assertEquals(0, MinecraftStatusClient.readVarInt(input));
+        assertEquals(1, input.read());
+        assertEquals(0x7f, input.read());
+        assertEquals(1, MinecraftStatusClient.readVarInt(input));
+        assertEquals(0, input.read());
+        assertEquals(1, input.read());
+        assertEquals(0, MinecraftStatusClient.readVarInt(input));
+        assertEquals(0, input.available());
+    }
+
+    private static void writeSelectKnownPacks(Socket socket) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        MinecraftStatusClient.writeVarInt(packet::write, 14);
+        MinecraftStatusClient.writeVarInt(packet::write, 2);
+        writeString(packet, "minecraft");
+        writeString(packet, "core");
+        writeString(packet, "1.21.6");
+        writeString(packet, "minecraft");
+        writeString(packet, "vanilla");
+        writeString(packet, "1.21.6");
+        writeCompressedPacket(socket, packet.toByteArray());
+    }
+
+    private static void verifySelectKnownPacksResponse(byte[] packet) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(7, MinecraftStatusClient.readVarInt(input));
+        assertEquals(2, MinecraftStatusClient.readVarInt(input));
+        assertEquals("minecraft", readString(input));
+        assertEquals("core", readString(input));
+        assertEquals("1.21.6", readString(input));
+        assertEquals("minecraft", readString(input));
+        assertEquals("vanilla", readString(input));
+        assertEquals("1.21.6", readString(input));
+    }
+
+    private static void writeConfigurationCustomPayload(Socket socket, String key, String value) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        MinecraftStatusClient.writeVarInt(packet::write, 1);
+        writeString(packet, key);
+        writeString(packet, value);
+        writeCompressedPacket(socket, packet.toByteArray());
+    }
+
+    private static void writeConfigurationRegistrySync(Socket socket) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        MinecraftStatusClient.writeVarInt(packet::write, 7);
+        writeString(packet, "minecraft:dimension_type");
+        MinecraftStatusClient.writeVarInt(packet::write, 0);
+        writeCompressedPacket(socket, packet.toByteArray());
+    }
+
+    private static void writeConfigurationDisconnect(Socket socket) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        MinecraftStatusClient.writeVarInt(packet::write, 2);
+        writeString(packet, "{\"color\":\"red\",\"text\":\"Configuration rejected\"}");
+        writeCompressedPacket(socket, packet.toByteArray());
+    }
+
+    private static void writePlayKeepAlive(Socket socket, long keepAliveId) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        MinecraftStatusClient.writeVarInt(packet::write, 44);
+        writeLong(packet, keepAliveId);
+        writeCompressedPacket(socket, packet.toByteArray());
+    }
+
+    private static void verifyPlayKeepAlive(byte[] packet, long keepAliveId) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(28, MinecraftStatusClient.readVarInt(input));
+        assertEquals(keepAliveId, readLong(input));
+        assertEquals(0, input.available());
+    }
+
+    private static void writePlayPing(Socket socket, int pingId) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        MinecraftStatusClient.writeVarInt(packet::write, 61);
+        writeInt(packet, pingId);
+        writeCompressedPacket(socket, packet.toByteArray());
+    }
+
+    private static void verifyPlayPong(byte[] packet, int pingId) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(44, MinecraftStatusClient.readVarInt(input));
+        assertEquals(pingId, readInt(input));
+        assertEquals(0, input.available());
+    }
+
+    private static void writePlayPosition(Socket socket, int teleportId) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        MinecraftStatusClient.writeVarInt(packet::write, 72);
+        MinecraftStatusClient.writeVarInt(packet::write, teleportId);
+        writeCompressedPacket(socket, packet.toByteArray());
+    }
+
+    private static void verifyPlayTeleportAccepted(byte[] packet, int teleportId) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(0, MinecraftStatusClient.readVarInt(input));
+        assertEquals(teleportId, MinecraftStatusClient.readVarInt(input));
+        assertEquals(0, input.available());
+    }
+
+    private static void verifyPlayPlayerLoaded(byte[] packet) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(43, MinecraftStatusClient.readVarInt(input));
+        assertEquals(0, input.available());
+    }
+
+    private static void writePlayChunkBatchFinished(Socket socket, int batchSize) throws IOException {
+        ByteArrayOutputStream packet = new ByteArrayOutputStream();
+        MinecraftStatusClient.writeVarInt(packet::write, 11);
+        MinecraftStatusClient.writeVarInt(packet::write, batchSize);
+        writeCompressedPacket(socket, packet.toByteArray());
+    }
+
+    private static void verifyPlayChunkBatchReceived(byte[] packet) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(11, MinecraftStatusClient.readVarInt(input));
+        assertEquals(10.0F, readFloat(input));
+        assertEquals(0, input.available());
+    }
+
+    private static void verifyPlayRegisterLobbyProofChannel(byte[] packet) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        assertEquals(22, MinecraftStatusClient.readVarInt(input));
+        assertEquals("minecraft:register", readString(input));
+        assertEquals(PaperLobbyProofMessage.CHANNEL, new String(input.readAllBytes(), StandardCharsets.UTF_8));
     }
 
     private static void writeLobbyProof(
@@ -5779,6 +6147,46 @@ final class MinecraftStatusClientTest {
     private static String readString(InputStream input) throws IOException {
         int length = MinecraftStatusClient.readVarInt(input);
         return new String(input.readNBytes(length), StandardCharsets.UTF_8);
+    }
+
+    private static void writeLong(ByteArrayOutputStream output, long value) {
+        for (int shift = 56; shift >= 0; shift -= 8) {
+            output.write((int) ((value >>> shift) & 0xff));
+        }
+    }
+
+    private static long readLong(InputStream input) throws IOException {
+        byte[] bytes = input.readNBytes(Long.BYTES);
+        if (bytes.length != Long.BYTES) {
+            throw new EOFException("Expected long");
+        }
+        long value = 0L;
+        for (byte current : bytes) {
+            value = (value << 8) | (current & 0xffL);
+        }
+        return value;
+    }
+
+    private static void writeInt(ByteArrayOutputStream output, int value) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            output.write((value >>> shift) & 0xff);
+        }
+    }
+
+    private static int readInt(InputStream input) throws IOException {
+        byte[] bytes = input.readNBytes(Integer.BYTES);
+        if (bytes.length != Integer.BYTES) {
+            throw new EOFException("Expected int");
+        }
+        int value = 0;
+        for (byte current : bytes) {
+            value = (value << 8) | (current & 0xff);
+        }
+        return value;
+    }
+
+    private static float readFloat(InputStream input) throws IOException {
+        return Float.intBitsToFloat(readInt(input));
     }
 
     private static int readUnsignedShort(InputStream input) throws IOException {

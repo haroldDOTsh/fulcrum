@@ -141,7 +141,7 @@ final class RuntimeExternalClients implements AutoCloseable {
                     KafkaClientBundle.create(
                             bootstrapServers(settings.controlKafkaBootstrapServers()),
                             "fulcrum-controller-service-" + controllerDomain,
-                            "fulcrum-controller-service"));
+                            "fulcrum-controller-service-" + controllerDomain));
         }
         return new ControllerClients(
                 kafkaByControllerDomain,

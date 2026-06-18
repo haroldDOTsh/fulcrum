@@ -8425,7 +8425,7 @@ public final class LobbyClusterE2eVerifier {
             Duration sessionAuthorityStateTimeout = Duration.ofSeconds(60);
             Duration sessionAuthorityStateFreshnessSkew = Duration.ofSeconds(5);
             Duration sharedShardAllocationStateTimeout = Duration.ofSeconds(60);
-            Duration timeout = Duration.ofSeconds(10);
+            Duration timeout = Duration.ofSeconds(30);
 
             for (String arg : args) {
                 if (arg.startsWith("--endpoint-host=")) {

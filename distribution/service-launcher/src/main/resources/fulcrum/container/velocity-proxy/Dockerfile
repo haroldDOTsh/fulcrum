@@ -1,7 +1,7 @@
 FROM eclipse-temurin:26-jre
 
-ARG VELOCITY_SERVER_URL="https://api.papermc.io/v2/projects/velocity/versions/3.4.0-SNAPSHOT/builds/559/downloads/velocity-3.4.0-SNAPSHOT-559.jar"
-ARG VELOCITY_SERVER_SHA256="ccc49f71751ece26568d3476392d6130c8b43f2e5f3a88313325b9278a52babd"
+ARG VELOCITY_SERVER_URL="https://fill-data.papermc.io/v1/objects/0ec616020166465dacca3b790d3db2b246f8f7c13b3aaacaae60c825744a66e0/velocity-3.5.0-SNAPSHOT-605.jar"
+ARG VELOCITY_SERVER_SHA256="0ec616020166465dacca3b790d3db2b246f8f7c13b3aaacaae60c825744a66e0"
 ARG VELOCITY_DOWNLOAD_USER_AGENT="fulcrum-velocity-proxy/1.0 (https://github.com/sh-harold/fulcrum)"
 
 WORKDIR /opt/fulcrum/velocity

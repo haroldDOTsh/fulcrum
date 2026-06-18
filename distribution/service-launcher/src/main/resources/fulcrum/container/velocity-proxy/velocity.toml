@@ -1,4 +1,4 @@
-config-version = "2.7"
+config-version = "2.8"
 bind = "0.0.0.0:25565"
 motd = "Fulcrum Lobby"
 show-max-players = 100
@@ -8,6 +8,11 @@ prevent-client-proxy-connections = false
 player-info-forwarding-mode = "none"
 enable-player-address-logging = true
 
+[advanced]
+login-ratelimit = 0
+
 [servers]
+lobby = "127.0.0.1:25566"
+try = []
 
 [forced-hosts]
