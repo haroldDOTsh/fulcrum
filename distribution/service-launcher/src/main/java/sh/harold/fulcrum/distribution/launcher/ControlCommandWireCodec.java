@@ -40,8 +40,12 @@ import sh.harold.fulcrum.control.lifecycle.LifecycleTraceId;
 import sh.harold.fulcrum.control.lifecycle.RecordLifecycleObservation;
 import sh.harold.fulcrum.control.lifecycle.RequestExperienceSession;
 import sh.harold.fulcrum.control.queue.ControlQueueNames;
+import sh.harold.fulcrum.control.queue.FormRosterIntent;
 import sh.harold.fulcrum.control.queue.QueueIntentId;
+import sh.harold.fulcrum.control.queue.QueuePartitionKey;
+import sh.harold.fulcrum.control.queue.QueueRosterCommand;
 import sh.harold.fulcrum.control.queue.QueueRosterControlCommand;
+import sh.harold.fulcrum.control.queue.RosterIntentId;
 import sh.harold.fulcrum.control.queue.SubmitQueueIntent;
 import sh.harold.fulcrum.control.instance.ExperienceShape;
 import sh.harold.fulcrum.control.instance.InstanceRegistryStatus;
@@ -310,9 +314,45 @@ final class ControlCommandWireCodec {
 
     static QueueRosterControlCommand<SubmitQueueIntent> decodeQueueRosterSubmit(
             ConsumerRecord<String, String> record) {
+        QueueRosterControlCommand<? extends QueueRosterCommand> command = decodeQueueRosterCommand(record);
+        if (command.envelope().payload() instanceof SubmitQueueIntent submit) {
+            return typedQueueCommand(command, submit);
+        }
+        throw new IllegalArgumentException("Expected queue-roster submit command");
+    }
+
+    static QueueRosterControlCommand<? extends QueueRosterCommand> decodeQueueRosterCommand(
+            ConsumerRecord<String, String> record) {
         Map<String, String> fields = fields(record.value());
-        requireCommand(fields, ControlQueueNames.SUBMIT_QUEUE_INTENT);
         TraceEnvelope trace = decodeTrace(fields);
+        QueueRosterCommand payload = queueRosterPayload(fields, trace);
+        return new QueueRosterControlCommand<>(
+                envelope(fields, record, ControlQueueNames.CONTRACT, new CommandName(required(fields, "commandName")), trace, payload),
+                authenticatedPrincipal(fields),
+                longValue(fields, "fencingEpoch"),
+                optionalRevision(fields, "expectedRevision"),
+                required(fields, "payloadFingerprint"),
+                instant(fields, "receivedAt"));
+    }
+
+    private static QueueRosterCommand queueRosterPayload(Map<String, String> fields, TraceEnvelope trace) {
+        String commandName = required(fields, "commandName");
+        if (ControlQueueNames.SUBMIT_QUEUE_INTENT.value().equals(commandName)) {
+            return queueRosterSubmitPayload(fields, trace);
+        }
+        if (ControlQueueNames.FORM_ROSTER_INTENT.value().equals(commandName)) {
+            return new FormRosterIntent(
+                    new RosterIntentId(required(fields, "rosterIntentId")),
+                    queuePartitionKey(fields),
+                    queueIntentIds(fields, "queueIntentIds"),
+                    intValue(fields, "maxSubjects"),
+                    instant(fields, "formedAt"),
+                    trace);
+        }
+        throw new IllegalArgumentException("Unsupported control command " + commandName);
+    }
+
+    private static SubmitQueueIntent queueRosterSubmitPayload(Map<String, String> fields, TraceEnvelope trace) {
         SubmitQueueIntent payload = new SubmitQueueIntent(
                 new QueueIntentId(required(fields, "queueIntentId")),
                 subjectIds(fields, "subjectIds"),
@@ -323,27 +363,60 @@ final class ControlCommandWireCodec {
                 instant(fields, "createdAt"),
                 instant(fields, "queueDeadlineAt"),
                 trace);
+        return payload;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static QueueRosterControlCommand<SubmitQueueIntent> typedQueueCommand(
+            QueueRosterControlCommand<? extends QueueRosterCommand> command,
+            SubmitQueueIntent payload) {
         return new QueueRosterControlCommand<>(
-                envelope(fields, record, ControlQueueNames.CONTRACT, ControlQueueNames.SUBMIT_QUEUE_INTENT, trace, payload),
-                authenticatedPrincipal(fields),
-                longValue(fields, "fencingEpoch"),
-                optionalRevision(fields, "expectedRevision"),
-                required(fields, "payloadFingerprint"),
-                instant(fields, "receivedAt"));
+                new CommandEnvelope<>(
+                        command.envelope().commandId(),
+                        command.envelope().idempotencyKey(),
+                        command.envelope().principalId(),
+                        command.envelope().aggregateId(),
+                        command.envelope().contractName(),
+                        command.envelope().commandName(),
+                        command.envelope().traceEnvelope(),
+                        command.envelope().deadlineAt(),
+                        payload),
+                command.authenticatedPrincipal(),
+                command.fencingEpoch(),
+                command.expectedRevision(),
+                command.payloadFingerprint(),
+                command.receivedAt());
     }
 
     static String encodeQueueRosterSubmit(QueueRosterControlCommand<SubmitQueueIntent> command) {
+        return encodeQueueRosterCommand(command);
+    }
+
+    static String encodeQueueRosterCommand(QueueRosterControlCommand<? extends QueueRosterCommand> command) {
         Map<String, String> fields = commandFields(command.envelope(), command.authenticatedPrincipal(),
                 command.fencingEpoch(), command.expectedRevision(), command.payloadFingerprint(), command.receivedAt());
-        SubmitQueueIntent payload = command.envelope().payload();
-        fields.put("queueIntentId", payload.queueIntentId().value());
-        fields.put("subjectIds", joinSubjectIds(payload.subjectIds()));
-        fields.put("experienceId", payload.experienceId().value());
-        fields.put("modeId", payload.modeId().orElse(""));
-        fields.put("poolId", payload.poolId().value());
-        fields.put("priority", Integer.toString(payload.priority()));
-        fields.put("createdAt", payload.createdAt().toString());
-        fields.put("queueDeadlineAt", payload.deadlineAt().toString());
+        QueueRosterCommand payload = command.envelope().payload();
+        if (payload instanceof SubmitQueueIntent submit) {
+            fields.put("queueIntentId", submit.queueIntentId().value());
+            fields.put("subjectIds", joinSubjectIds(submit.subjectIds()));
+            fields.put("experienceId", submit.experienceId().value());
+            fields.put("modeId", submit.modeId().orElse(""));
+            fields.put("poolId", submit.poolId().value());
+            fields.put("priority", Integer.toString(submit.priority()));
+            fields.put("createdAt", submit.createdAt().toString());
+            fields.put("queueDeadlineAt", submit.deadlineAt().toString());
+        } else if (payload instanceof FormRosterIntent form) {
+            fields.put("rosterIntentId", form.rosterIntentId().value());
+            fields.put("experienceId", form.partitionKey().experienceId().value());
+            fields.put("modeId", form.partitionKey().modeId().orElse(""));
+            fields.put("poolId", form.partitionKey().poolId().value());
+            fields.put("queueIntentIds", joinQueueIntentIds(form.queueIntentIds()));
+            fields.put("maxSubjects", Integer.toString(form.maxSubjects()));
+            fields.put("formedAt", form.formedAt().toString());
+        } else {
+            throw new IllegalArgumentException(
+                    "Unsupported queue-roster payload " + payload.getClass().getSimpleName());
+        }
         return lines(fields);
     }
 
@@ -578,6 +651,21 @@ final class ControlCommandWireCodec {
                 .toList();
     }
 
+    private static QueuePartitionKey queuePartitionKey(Map<String, String> fields) {
+        return new QueuePartitionKey(
+                new ExperienceId(required(fields, "experienceId")),
+                optional(fields, "modeId"),
+                new PoolId(required(fields, "poolId")));
+    }
+
+    private static List<QueueIntentId> queueIntentIds(Map<String, String> fields, String key) {
+        return Arrays.stream(required(fields, key).split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .map(QueueIntentId::new)
+                .toList();
+    }
+
     private static List<InstanceId> instanceIds(Map<String, String> fields, String key) {
         return Arrays.stream(required(fields, key).split(","))
                 .map(String::trim)
@@ -589,6 +677,12 @@ final class ControlCommandWireCodec {
     private static String joinSubjectIds(List<SubjectId> values) {
         return values.stream()
                 .map(value -> value.value().toString())
+                .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    private static String joinQueueIntentIds(List<QueueIntentId> values) {
+        return values.stream()
+                .map(QueueIntentId::value)
                 .collect(java.util.stream.Collectors.joining(","));
     }
 

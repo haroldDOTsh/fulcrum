@@ -22,4 +22,4 @@ spec:
       sh.harold.fulcrum/resolved-manifest-id: "manifest-lobby-bedrock-v1"
     annotations:
       sh.harold.fulcrum/trace-id: "trace-paper-agones-phase2-allocation"
-      sh.harold.fulcrum/route-id-prefix: "route-paper-"
+      sh.harold.fulcrum/route-id-prefix: "route-velocity-login-"

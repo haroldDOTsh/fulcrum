@@ -437,9 +437,11 @@ final class RuntimeExternalClients implements AutoCloseable {
                     role().id() + ": loginGateBridgeUrl=" + settings.loginGateBridgeUrl(),
                     role().id() + ": proxyRouteCommandTopic=" + settings.proxyRouteCommandTopic(),
                     role().id() + ": routeCommandTopic=" + settings.routeCommandTopic(),
+                    role().id() + ": queueRosterCommandTopic=" + settings.queueRosterCommandTopic(),
                     role().id() + ": presenceCommandTopic=" + settings.presenceCommandTopic(),
                     role().id() + ": sharedShardPlacementCommandTopic=" + settings.sharedShardPlacementCommandTopic(),
                     role().id() + ": routeAttemptCommandTopic=" + settings.routeAttemptCommandTopic(),
+                    role().id() + ": lifecycleTraceCommandTopic=" + settings.lifecycleTraceCommandTopic(),
                     role().id() + ": sharedShardAllocationStateTopic=" + settings.sharedShardAllocationStateTopic(),
                     role().id() + ": lobbyRouting=experienceId=" + settings.lobbyExperienceId().value()
                             + "|poolId=" + settings.lobbyPoolId().value()

@@ -15,6 +15,11 @@ import sh.harold.fulcrum.api.contract.TraceEnvelope;
 import sh.harold.fulcrum.api.kernel.RouteId;
 import sh.harold.fulcrum.api.kernel.SessionId;
 import sh.harold.fulcrum.api.kernel.SubjectId;
+import sh.harold.fulcrum.control.lifecycle.ControlLifecycleNames;
+import sh.harold.fulcrum.control.lifecycle.LifecyclePhase;
+import sh.harold.fulcrum.control.lifecycle.LifecycleTraceControlCommand;
+import sh.harold.fulcrum.control.lifecycle.LifecycleTraceId;
+import sh.harold.fulcrum.control.lifecycle.RecordLifecycleObservation;
 import sh.harold.fulcrum.control.route.AcknowledgeRouteAttempt;
 import sh.harold.fulcrum.control.route.ControlRouteNames;
 import sh.harold.fulcrum.control.route.ObserveHostAttach;
@@ -50,6 +55,7 @@ final class ExternalHostObservationRouteWorker implements ControllerWorkerPoller
     private final String hostObservationTopic;
     private final String routeCommandTopic;
     private final String routeStateTopic;
+    private final String lifecycleTraceCommandTopic;
     private final Map<RouteObservationKey, RouteAttemptControlRecord> routeAttempts = new HashMap<>();
     private final Queue<ConsumerRecord<String, String>> pendingRecords = new ArrayDeque<>();
     private boolean subscribed;
@@ -63,6 +69,7 @@ final class ExternalHostObservationRouteWorker implements ControllerWorkerPoller
         this.hostObservationTopic = clients.settings().hostObservationTopic();
         this.routeCommandTopic = "ctrl.cmd." + ControllerWorkerCatalog.ROUTE_ATTEMPT;
         this.routeStateTopic = stateTopic(clients.settings().controlStateTopic(), ControllerWorkerCatalog.ROUTE_ATTEMPT);
+        this.lifecycleTraceCommandTopic = "ctrl.cmd." + ControllerWorkerCatalog.LIFECYCLE_TRACE;
         KafkaStateTopicReplayer.replay(
                 kafka,
                 routeStateTopic,
@@ -150,7 +157,82 @@ final class ExternalHostObservationRouteWorker implements ControllerWorkerPoller
                 routeCommandTopic,
                 key,
                 ControlCommandWireCodec.encodeRouteAttemptCommand(acknowledged)));
+        publishLifecycleProgress(current, snapshot, observation);
         kafka.producer().flush();
+    }
+
+    private void publishLifecycleProgress(
+            RouteAttemptControlRecord current,
+            RouteAttemptSnapshot snapshot,
+            HostObservation observation) {
+        sendLifecycleTrace(lifecycleTraceCommand(
+                snapshot,
+                LifecyclePhase.HOST_ATTACH_OBSERVED,
+                "instance",
+                observation.instanceId().value(),
+                "host-attach",
+                current.fencingEpoch(),
+                observation.observedAt()));
+        sendLifecycleTrace(lifecycleTraceCommand(
+                snapshot,
+                LifecyclePhase.SESSION_ACTIVE,
+                "session",
+                snapshot.sessionId().value(),
+                "session-active",
+                current.fencingEpoch(),
+                observation.observedAt()));
+    }
+
+    private LifecycleTraceControlCommand<RecordLifecycleObservation> lifecycleTraceCommand(
+            RouteAttemptSnapshot snapshot,
+            LifecyclePhase phase,
+            String aggregateType,
+            String aggregateId,
+            String commandSuffix,
+            long fencingEpoch,
+            Instant observedAt) {
+        TraceEnvelope routeTrace = snapshot.traceEnvelope();
+        LifecycleTraceId traceId = new LifecycleTraceId(routeTrace.traceId());
+        TraceEnvelope commandTrace = routeTrace.child(
+                "span-lifecycle-" + commandSuffix + "-" + compact(snapshot.routeAttemptId()),
+                observedAt);
+        RecordLifecycleObservation payload = new RecordLifecycleObservation(
+                traceId,
+                phase,
+                aggregateType,
+                aggregateId,
+                Optional.of(snapshot.sessionId()),
+                Optional.of(snapshot.targetResolvedManifestId()),
+                observedAt,
+                commandTrace);
+        PrincipalId principal = securityContext.identity().principalId();
+        return new LifecycleTraceControlCommand<>(
+                new CommandEnvelope<>(
+                        new CommandId("command-lifecycle-" + commandSuffix + "-" + snapshot.routeAttemptId().value()),
+                        new IdempotencyKey("idem-lifecycle-" + commandSuffix + "-" + snapshot.routeAttemptId().value()),
+                        principal,
+                        ControlLifecycleNames.traceAggregateId(traceId),
+                        ControlLifecycleNames.TRACE_CONTRACT,
+                        ControlLifecycleNames.RECORD_LIFECYCLE_OBSERVATION,
+                        commandTrace,
+                        Optional.empty(),
+                        payload),
+                principal,
+                fencingEpoch,
+                Optional.empty(),
+                "lifecycle-trace|phase=" + phase.name()
+                        + "|traceId=" + traceId.value()
+                        + "|routeAttemptId=" + snapshot.routeAttemptId().value()
+                        + "|aggregateType=" + aggregateType
+                        + "|aggregateId=" + aggregateId,
+                observedAt);
+    }
+
+    private void sendLifecycleTrace(LifecycleTraceControlCommand<RecordLifecycleObservation> command) {
+        kafka.producer().send(new ProducerRecord<>(
+                lifecycleTraceCommandTopic,
+                ControlLifecycleNames.traceAggregateId(command.envelope().payload().traceId()).value(),
+                ControlCommandWireCodec.encodeLifecycleTraceRecord(command)));
     }
 
     private <T extends RouteAttemptCommand> RouteAttemptControlCommand<T> routeCommand(
@@ -230,6 +312,10 @@ final class ExternalHostObservationRouteWorker implements ControllerWorkerPoller
             throw new IllegalArgumentException(label + " must not be blank");
         }
         return checked;
+    }
+
+    private static String compact(RouteAttemptId routeAttemptId) {
+        return routeAttemptId.value().replace("-", "");
     }
 }
 

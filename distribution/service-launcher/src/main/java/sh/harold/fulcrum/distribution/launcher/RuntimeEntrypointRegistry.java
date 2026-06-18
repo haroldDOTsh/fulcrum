@@ -116,6 +116,11 @@ final class RuntimeEntrypointRegistry {
                             requirement("FULCRUM_VELOCITY_LOGIN_GATE_BRIDGE_URL", "local Velocity login gate decision bridge"),
                             requirement("FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC", "Velocity addressed proxy route command channel"),
                             requirement("FULCRUM_ROUTE_COMMAND_TOPIC", "route command and observation channel"),
+                            requirement("FULCRUM_QUEUE_ROSTER_COMMAND_TOPIC", "queue-roster command channel"),
+                            requirement("FULCRUM_PRESENCE_COMMAND_TOPIC", "Presence authority command channel"),
+                            requirement("FULCRUM_SHARED_SHARD_PLACEMENT_COMMAND_TOPIC", "shared-shard placement command channel"),
+                            requirement("FULCRUM_ROUTE_ATTEMPT_COMMAND_TOPIC", "route-attempt control command channel"),
+                            requirement("FULCRUM_LIFECYCLE_TRACE_COMMAND_TOPIC", "lifecycle trace control command channel"),
                             requirement("FULCRUM_SHARED_SHARD_ALLOCATION_STATE_TOPIC", "shared-shard allocation endpoint state topic"),
                             requirement("FULCRUM_LOGIN_GATE_SCOPE", "login gate contribution binding"),
                             VALKEY

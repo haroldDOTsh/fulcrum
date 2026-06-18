@@ -16,6 +16,13 @@ import sh.harold.fulcrum.api.kernel.SessionId;
 import sh.harold.fulcrum.api.kernel.SlotId;
 import sh.harold.fulcrum.api.kernel.SubjectId;
 import sh.harold.fulcrum.control.allocation.SharedShardAllocationRequest;
+import sh.harold.fulcrum.control.lifecycle.LifecyclePhase;
+import sh.harold.fulcrum.control.lifecycle.LifecycleTraceControlCommand;
+import sh.harold.fulcrum.control.lifecycle.RecordLifecycleObservation;
+import sh.harold.fulcrum.control.queue.FormRosterIntent;
+import sh.harold.fulcrum.control.queue.QueueRosterCommand;
+import sh.harold.fulcrum.control.queue.QueueRosterControlCommand;
+import sh.harold.fulcrum.control.queue.SubmitQueueIntent;
 import sh.harold.fulcrum.control.route.IssueProxyRoute;
 import sh.harold.fulcrum.control.route.PrepareHostRoute;
 import sh.harold.fulcrum.control.route.RequestRouteAttempt;
@@ -80,15 +87,38 @@ final class VelocityLoginRoutingEvaluatorTest {
 
         assertTrue(decision.allowed());
         List<ProducerRecord<String, String>> records = producer.history();
-        assertEquals(6, records.size());
-        assertEquals("cmd.presence", records.get(0).topic());
-        assertEquals("ctrl.cmd.shared-shard-placement", records.get(1).topic());
-        assertEquals("cmd.route", records.get(2).topic());
-        assertEquals("ctrl.cmd.route-attempt", records.get(3).topic());
-        assertEquals("ctrl.cmd.route-attempt", records.get(4).topic());
+        assertEquals(12, records.size());
+        assertEquals("ctrl.cmd.queue-roster", records.get(0).topic());
+        assertEquals("ctrl.cmd.queue-roster", records.get(1).topic());
+        assertEquals("cmd.presence", records.get(2).topic());
+        assertEquals("ctrl.cmd.shared-shard-placement", records.get(3).topic());
+        assertEquals("cmd.route", records.get(4).topic());
         assertEquals("ctrl.cmd.route-attempt", records.get(5).topic());
+        assertEquals("ctrl.cmd.route-attempt", records.get(6).topic());
+        assertEquals("ctrl.cmd.route-attempt", records.get(7).topic());
+        assertEquals("ctrl.cmd.lifecycle-trace", records.get(8).topic());
+        assertEquals("ctrl.cmd.lifecycle-trace", records.get(9).topic());
+        assertEquals("ctrl.cmd.lifecycle-trace", records.get(10).topic());
+        assertEquals("ctrl.cmd.lifecycle-trace", records.get(11).topic());
 
-        AuthorityCommand<PresenceCommand> presenceCommand = PresenceAuthorityWireCodec.decodeCommand(record(records.get(0)));
+        QueueRosterControlCommand<? extends QueueRosterCommand> submitCommand =
+                ControlCommandWireCodec.decodeQueueRosterCommand(record(records.get(0)));
+        SubmitQueueIntent submit = assertInstanceOf(SubmitQueueIntent.class, submitCommand.envelope().payload());
+        assertEquals("queue-intent-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                submit.queueIntentId().value());
+        assertEquals(List.of(SUBJECT), submit.subjectIds());
+        assertEquals(new ExperienceId("experience-lobby"), submit.experienceId());
+        assertEquals(new PoolId("pool-lobby"), submit.poolId());
+
+        QueueRosterControlCommand<? extends QueueRosterCommand> formCommand =
+                ControlCommandWireCodec.decodeQueueRosterCommand(record(records.get(1)));
+        FormRosterIntent form = assertInstanceOf(FormRosterIntent.class, formCommand.envelope().payload());
+        assertEquals("roster-intent-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                form.rosterIntentId().value());
+        assertEquals(List.of(submit.queueIntentId()), form.queueIntentIds());
+        assertEquals(1, form.maxSubjects());
+
+        AuthorityCommand<PresenceCommand> presenceCommand = PresenceAuthorityWireCodec.decodeCommand(record(records.get(2)));
         ClaimPresence claim = assertInstanceOf(ClaimPresence.class, presenceCommand.envelope().payload());
         assertEquals(SUBJECT, claim.subjectId());
         assertEquals(Optional.of(new SessionId("session-lobby-shared")), claim.sessionId());
@@ -97,7 +127,7 @@ final class VelocityLoginRoutingEvaluatorTest {
         assertEquals(new InstanceId("instance-velocity-login"), claim.ownerInstanceId());
 
         SharedShardPlacementWireRequest placement =
-                ControlCommandWireCodec.decodeSharedShardPlacementRequest(record(records.get(1)));
+                ControlCommandWireCodec.decodeSharedShardPlacementRequest(record(records.get(3)));
         assertEquals(SUBJECT, placement.request().subjectId());
         assertEquals("placement-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 placement.request().placementAttemptId());
@@ -105,14 +135,14 @@ final class VelocityLoginRoutingEvaluatorTest {
         assertEquals(new SessionId("session-lobby-shared"), placement.candidates().getFirst().occupancySnapshot().sessionId());
         assertEquals(new SlotId("slot-lobby-shared"), placement.candidates().getFirst().occupancySnapshot().slotId());
 
-        AuthorityCommand<RouteCommand> routeCommand = RouteAuthorityWireCodec.decodeCommand(record(records.get(2)));
+        AuthorityCommand<RouteCommand> routeCommand = RouteAuthorityWireCodec.decodeCommand(record(records.get(4)));
         OpenRoute openRoute = assertInstanceOf(OpenRoute.class, routeCommand.envelope().payload());
         assertEquals(SUBJECT, openRoute.subjectId());
         assertEquals(new SessionId("session-lobby-shared"), openRoute.targetSessionId());
         assertEquals(new InstanceId("instance-paper-lobby"), openRoute.targetInstanceId());
 
         RouteAttemptControlCommand<? extends RouteAttemptCommand> request =
-                ControlCommandWireCodec.decodeRouteAttemptCommand(record(records.get(3)));
+                ControlCommandWireCodec.decodeRouteAttemptCommand(record(records.get(5)));
         RequestRouteAttempt requestPayload = assertInstanceOf(RequestRouteAttempt.class, request.envelope().payload());
         assertEquals(new SessionId("session-lobby-shared"), requestPayload.sessionId());
         assertEquals(new SlotId("slot-lobby-shared"), requestPayload.allocationSlotId());
@@ -121,9 +151,37 @@ final class VelocityLoginRoutingEvaluatorTest {
         assertEquals(new InstanceId("instance-paper-lobby"), requestPayload.targetInstanceId());
 
         assertInstanceOf(IssueProxyRoute.class,
-                ControlCommandWireCodec.decodeRouteAttemptCommand(record(records.get(4))).envelope().payload());
+                ControlCommandWireCodec.decodeRouteAttemptCommand(record(records.get(6))).envelope().payload());
         assertInstanceOf(PrepareHostRoute.class,
-                ControlCommandWireCodec.decodeRouteAttemptCommand(record(records.get(5))).envelope().payload());
+                ControlCommandWireCodec.decodeRouteAttemptCommand(record(records.get(7))).envelope().payload());
+
+        LifecycleTraceControlCommand<RecordLifecycleObservation> queueTrace =
+                ControlCommandWireCodec.decodeLifecycleTraceRecord(record(records.get(8)));
+        assertEquals(LifecyclePhase.QUEUE_INTENT_SUBMITTED, queueTrace.envelope().payload().phase());
+        assertEquals("queue-intent-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                queueTrace.envelope().payload().aggregateId());
+        assertEquals("trace-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                queueTrace.envelope().payload().traceId().value());
+
+        LifecycleTraceControlCommand<RecordLifecycleObservation> rosterTrace =
+                ControlCommandWireCodec.decodeLifecycleTraceRecord(record(records.get(9)));
+        assertEquals(LifecyclePhase.ROSTER_INTENT_FORMED, rosterTrace.envelope().payload().phase());
+        assertEquals("roster-intent-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                rosterTrace.envelope().payload().aggregateId());
+
+        LifecycleTraceControlCommand<RecordLifecycleObservation> allocationTrace =
+                ControlCommandWireCodec.decodeLifecycleTraceRecord(record(records.get(10)));
+        assertEquals(LifecyclePhase.ALLOCATION_CLAIMED, allocationTrace.envelope().payload().phase());
+        assertEquals(Optional.of(new SessionId("session-lobby-shared")),
+                allocationTrace.envelope().payload().sessionId());
+        assertEquals(Optional.of(new ResolvedManifestId("manifest-lobby-bedrock-v1")),
+                allocationTrace.envelope().payload().resolvedManifestId());
+
+        LifecycleTraceControlCommand<RecordLifecycleObservation> routeTrace =
+                ControlCommandWireCodec.decodeLifecycleTraceRecord(record(records.get(11)));
+        assertEquals(LifecyclePhase.ROUTE_ATTEMPT_CREATED, routeTrace.envelope().payload().phase());
+        assertEquals("route-attempt-velocity-login-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                routeTrace.envelope().payload().aggregateId());
     }
 
     @Test
@@ -202,7 +260,7 @@ final class VelocityLoginRoutingEvaluatorTest {
         assertEquals(VelocityLoginRoutingEvaluator.NO_LOBBY_ROUTE_REASON,
                 secondDecision.denialReason().orElseThrow());
         List<ProducerRecord<String, String>> records = producer.history();
-        assertEquals(7, records.size());
+        assertEquals(13, records.size());
         assertEquals("ctrl.cmd.shared-shard-placement", records.getLast().topic());
         SharedShardPlacementWireRequest placement =
                 ControlCommandWireCodec.decodeSharedShardPlacementRequest(record(records.getLast()));
@@ -252,9 +310,11 @@ final class VelocityLoginRoutingEvaluatorTest {
                 "service-account:velocity-agent",
                 new HostCredentialScope(Set.of(
                         grant(HostAccessMode.PRODUCE, "cmd.presence"),
+                        grant(HostAccessMode.PRODUCE, "ctrl.cmd.queue-roster"),
                         grant(HostAccessMode.PRODUCE, "ctrl.cmd.shared-shard-placement"),
                         grant(HostAccessMode.PRODUCE, "cmd.route"),
-                        grant(HostAccessMode.PRODUCE, "ctrl.cmd.route-attempt"))));
+                        grant(HostAccessMode.PRODUCE, "ctrl.cmd.route-attempt"),
+                        grant(HostAccessMode.PRODUCE, "ctrl.cmd.lifecycle-trace"))));
     }
 
     private static HostResourceGrant grant(HostAccessMode mode, String name) {
@@ -273,9 +333,11 @@ final class VelocityLoginRoutingEvaluatorTest {
                 URI.create("http://127.0.0.1:18082/login-gate"),
                 "host.velocity.routes",
                 "cmd.route",
+                "ctrl.cmd.queue-roster",
                 "cmd.presence",
                 "ctrl.cmd.shared-shard-placement",
                 "ctrl.cmd.route-attempt",
+                "ctrl.cmd.lifecycle-trace",
                 "ctrl.state.shared-shard-allocation",
                 new ExperienceId("experience-lobby"),
                 new PoolId("pool-lobby"),

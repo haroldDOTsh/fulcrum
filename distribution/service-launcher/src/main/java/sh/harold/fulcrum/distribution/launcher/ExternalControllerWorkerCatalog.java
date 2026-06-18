@@ -156,7 +156,7 @@ final class ExternalControllerWorkerCatalog {
 
     private ExternalControllerDomainWorker.ControllerDomainResult handleQueueRoster(ConsumerRecord<String, String> record) {
         QueueRosterControlCommand<? extends QueueRosterCommand> command =
-                ControlCommandWireCodec.decodeQueueRosterSubmit(record);
+                ControlCommandWireCodec.decodeQueueRosterCommand(record);
         QueuePartitionKey partitionKey = command.envelope().payload().partitionKey();
         QueueRosterControlRecord current =
                 queueRosterRecords.computeIfAbsent(partitionKey, ignored -> QueueRosterControlRecord.empty(fencingEpoch));

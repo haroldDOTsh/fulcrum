@@ -173,9 +173,11 @@ final class RuntimeConnectionSettings {
                     required(environment, "FULCRUM_VELOCITY_LOGIN_GATE_BRIDGE_URL")),
                     required(environment, "FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC"),
                     required(environment, "FULCRUM_ROUTE_COMMAND_TOPIC"),
+                    required(environment, "FULCRUM_QUEUE_ROSTER_COMMAND_TOPIC"),
                     required(environment, "FULCRUM_PRESENCE_COMMAND_TOPIC"),
                     required(environment, "FULCRUM_SHARED_SHARD_PLACEMENT_COMMAND_TOPIC"),
                     required(environment, "FULCRUM_ROUTE_ATTEMPT_COMMAND_TOPIC"),
+                    required(environment, "FULCRUM_LIFECYCLE_TRACE_COMMAND_TOPIC"),
                     required(environment, "FULCRUM_SHARED_SHARD_ALLOCATION_STATE_TOPIC"),
                     new ExperienceId(required(environment, "FULCRUM_LOBBY_EXPERIENCE_ID")),
                     new PoolId(required(environment, "FULCRUM_LOBBY_POOL_ID")),
@@ -653,9 +655,11 @@ final class RuntimeConnectionSettings {
             URI loginGateBridgeUrl,
             String proxyRouteCommandTopic,
             String routeCommandTopic,
+            String queueRosterCommandTopic,
             String presenceCommandTopic,
             String sharedShardPlacementCommandTopic,
             String routeAttemptCommandTopic,
+            String lifecycleTraceCommandTopic,
             String sharedShardAllocationStateTopic,
             ExperienceId lobbyExperienceId,
             PoolId lobbyPoolId,
@@ -674,9 +678,11 @@ final class RuntimeConnectionSettings {
             loginGateBridgeUrl = Objects.requireNonNull(loginGateBridgeUrl, "loginGateBridgeUrl");
             proxyRouteCommandTopic = requireNonBlank(proxyRouteCommandTopic, "proxyRouteCommandTopic");
             routeCommandTopic = requireNonBlank(routeCommandTopic, "routeCommandTopic");
+            queueRosterCommandTopic = requireNonBlank(queueRosterCommandTopic, "queueRosterCommandTopic");
             presenceCommandTopic = requireNonBlank(presenceCommandTopic, "presenceCommandTopic");
             sharedShardPlacementCommandTopic = requireNonBlank(sharedShardPlacementCommandTopic, "sharedShardPlacementCommandTopic");
             routeAttemptCommandTopic = requireNonBlank(routeAttemptCommandTopic, "routeAttemptCommandTopic");
+            lifecycleTraceCommandTopic = requireNonBlank(lifecycleTraceCommandTopic, "lifecycleTraceCommandTopic");
             sharedShardAllocationStateTopic = requireNonBlank(sharedShardAllocationStateTopic, "sharedShardAllocationStateTopic");
             lobbyExperienceId = Objects.requireNonNull(lobbyExperienceId, "lobbyExperienceId");
             lobbyPoolId = Objects.requireNonNull(lobbyPoolId, "lobbyPoolId");
@@ -711,9 +717,11 @@ final class RuntimeConnectionSettings {
                     role().id() + ": loginGateBridgeUrl=" + loginGateBridgeUrl,
                     role().id() + ": proxyRouteCommandTopic=" + proxyRouteCommandTopic,
                     role().id() + ": routeCommandTopic=" + routeCommandTopic,
+                    role().id() + ": queueRosterCommandTopic=" + queueRosterCommandTopic,
                     role().id() + ": presenceCommandTopic=" + presenceCommandTopic,
                     role().id() + ": sharedShardPlacementCommandTopic=" + sharedShardPlacementCommandTopic,
                     role().id() + ": routeAttemptCommandTopic=" + routeAttemptCommandTopic,
+                    role().id() + ": lifecycleTraceCommandTopic=" + lifecycleTraceCommandTopic,
                     role().id() + ": sharedShardAllocationStateTopic=" + sharedShardAllocationStateTopic,
                     role().id() + ": lobbyRouting=experienceId=" + lobbyExperienceId.value()
                             + "|poolId=" + lobbyPoolId.value()

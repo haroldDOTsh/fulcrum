@@ -12,6 +12,7 @@ import sh.harold.fulcrum.api.contract.Revision;
 import sh.harold.fulcrum.api.contract.TraceEnvelope;
 import sh.harold.fulcrum.api.kernel.InstanceId;
 import sh.harold.fulcrum.api.kernel.PresenceId;
+import sh.harold.fulcrum.api.kernel.ResolvedManifestId;
 import sh.harold.fulcrum.api.kernel.RouteId;
 import sh.harold.fulcrum.api.kernel.SessionId;
 import sh.harold.fulcrum.api.kernel.SlotId;
@@ -24,6 +25,19 @@ import sh.harold.fulcrum.control.instance.SharedShardPlacementDecision;
 import sh.harold.fulcrum.control.instance.SharedShardPlacementDecisionStatus;
 import sh.harold.fulcrum.control.instance.SharedShardPlacementRequest;
 import sh.harold.fulcrum.control.instance.SharedShardPoolDescriptor;
+import sh.harold.fulcrum.control.lifecycle.ControlLifecycleNames;
+import sh.harold.fulcrum.control.lifecycle.LifecyclePhase;
+import sh.harold.fulcrum.control.lifecycle.LifecycleTraceControlCommand;
+import sh.harold.fulcrum.control.lifecycle.LifecycleTraceId;
+import sh.harold.fulcrum.control.lifecycle.RecordLifecycleObservation;
+import sh.harold.fulcrum.control.queue.ControlQueueNames;
+import sh.harold.fulcrum.control.queue.FormRosterIntent;
+import sh.harold.fulcrum.control.queue.QueueIntentId;
+import sh.harold.fulcrum.control.queue.QueuePartitionKey;
+import sh.harold.fulcrum.control.queue.QueueRosterCommand;
+import sh.harold.fulcrum.control.queue.QueueRosterControlCommand;
+import sh.harold.fulcrum.control.queue.RosterIntentId;
+import sh.harold.fulcrum.control.queue.SubmitQueueIntent;
 import sh.harold.fulcrum.control.route.ControlRouteNames;
 import sh.harold.fulcrum.control.route.IssueProxyRoute;
 import sh.harold.fulcrum.control.route.PrepareHostRoute;
@@ -83,9 +97,11 @@ final class VelocityLoginRoutingEvaluator implements VelocityLoginGateEvaluator 
             throw new IllegalArgumentException("Velocity login routing requires a Velocity Instance identity");
         }
         requireTopicProduce(settings.presenceCommandTopic());
+        requireTopicProduce(settings.queueRosterCommandTopic());
         requireTopicProduce(settings.sharedShardPlacementCommandTopic());
         requireTopicProduce(settings.routeCommandTopic());
         requireTopicProduce(settings.routeAttemptCommandTopic());
+        requireTopicProduce(settings.lifecycleTraceCommandTopic());
     }
 
     @Override
@@ -124,10 +140,12 @@ final class VelocityLoginRoutingEvaluator implements VelocityLoginGateEvaluator 
         PresenceId routedPresenceId = presenceId(suffix);
         allocations.recordRoutedPresence(selectedRoute.sessionId(), routedPresenceId);
         try {
+            publishQueueRosterSequence(request, suffix, trace);
             publishPresenceClaim(request, suffix, trace, selectedRoute);
             publishPlacementRequest(placementRequest, candidates);
             publishRouteOpen(request, trace, selectedRoute);
             publishRouteAttemptSequence(request, trace, selectedRoute);
+            publishLifecycleTraceSequence(request, suffix, trace, selectedRoute);
             producer.flush();
         } catch (RuntimeException exception) {
             allocations.removeRoutedPresence(selectedRoute.sessionId(), routedPresenceId);
@@ -333,6 +351,99 @@ final class VelocityLoginRoutingEvaluator implements VelocityLoginGateEvaluator 
                 ControlCommandWireCodec.encodeRouteAttemptCommand(command));
     }
 
+    private void publishLifecycleTraceSequence(
+            VelocityLoginGateRequest request,
+            String subjectSuffix,
+            TraceEnvelope trace,
+            RoutePlan routePlan) {
+        Instant submittedAt = request.attemptedAt();
+        sendLifecycleTrace(lifecycleTraceCommand(
+                trace,
+                LifecyclePhase.QUEUE_INTENT_SUBMITTED,
+                "queue-intent",
+                "queue-intent-velocity-login-" + subjectSuffix,
+                Optional.empty(),
+                Optional.empty(),
+                "queue",
+                submittedAt));
+        sendLifecycleTrace(lifecycleTraceCommand(
+                trace,
+                LifecyclePhase.ROSTER_INTENT_FORMED,
+                "roster-intent",
+                "roster-intent-velocity-login-" + subjectSuffix,
+                Optional.empty(),
+                Optional.empty(),
+                "roster",
+                submittedAt.plusMillis(1)));
+        sendLifecycleTrace(lifecycleTraceCommand(
+                trace,
+                LifecyclePhase.ALLOCATION_CLAIMED,
+                "slot",
+                routePlan.slotId().value(),
+                Optional.of(routePlan.sessionId()),
+                Optional.of(settings.lobbyResolvedManifestId()),
+                "allocation",
+                routePlan.requestedAt()));
+        sendLifecycleTrace(lifecycleTraceCommand(
+                trace,
+                LifecyclePhase.ROUTE_ATTEMPT_CREATED,
+                "route-attempt",
+                routePlan.routeAttemptId().value(),
+                Optional.of(routePlan.sessionId()),
+                Optional.of(settings.lobbyResolvedManifestId()),
+                "route-attempt",
+                routePlan.requestedAt()));
+    }
+
+    private LifecycleTraceControlCommand<RecordLifecycleObservation> lifecycleTraceCommand(
+            TraceEnvelope trace,
+            LifecyclePhase phase,
+            String aggregateType,
+            String aggregateId,
+            Optional<SessionId> sessionId,
+            Optional<ResolvedManifestId> resolvedManifestId,
+            String commandSuffix,
+            Instant observedAt) {
+        LifecycleTraceId traceId = new LifecycleTraceId(trace.traceId());
+        TraceEnvelope commandTrace = trace.child("span-lifecycle-" + commandSuffix + "-" + compact(traceId), observedAt);
+        RecordLifecycleObservation payload = new RecordLifecycleObservation(
+                traceId,
+                phase,
+                aggregateType,
+                aggregateId,
+                sessionId,
+                resolvedManifestId,
+                observedAt,
+                commandTrace);
+        PrincipalId principal = securityContext.identity().principalId();
+        return new LifecycleTraceControlCommand<>(
+                new CommandEnvelope<>(
+                        new CommandId("command-lifecycle-velocity-login-" + commandSuffix + "-" + compact(traceId)),
+                        new IdempotencyKey("idem-lifecycle-velocity-login-" + commandSuffix + "-" + compact(traceId)),
+                        principal,
+                        ControlLifecycleNames.traceAggregateId(traceId),
+                        ControlLifecycleNames.TRACE_CONTRACT,
+                        ControlLifecycleNames.RECORD_LIFECYCLE_OBSERVATION,
+                        commandTrace,
+                        Optional.of(observedAt.plus(ROUTE_DEADLINE)),
+                        payload),
+                principal,
+                1,
+                Optional.empty(),
+                "lifecycle-trace|phase=" + phase.name()
+                        + "|traceId=" + traceId.value()
+                        + "|aggregateType=" + aggregateType
+                        + "|aggregateId=" + aggregateId,
+                observedAt);
+    }
+
+    private void sendLifecycleTrace(LifecycleTraceControlCommand<RecordLifecycleObservation> command) {
+        send(
+                settings.lifecycleTraceCommandTopic(),
+                ControlLifecycleNames.traceAggregateId(command.envelope().payload().traceId()).value(),
+                ControlCommandWireCodec.encodeLifecycleTraceRecord(command));
+    }
+
     private void send(String topic, String key, String value) {
         try {
             producer.send(new ProducerRecord<>(topic, key, value))
@@ -355,12 +466,106 @@ final class VelocityLoginRoutingEvaluator implements VelocityLoginGateEvaluator 
         return new PresenceId("presence-velocity-login-" + suffix);
     }
 
+    private void publishQueueRosterSequence(
+            VelocityLoginGateRequest request,
+            String suffix,
+            TraceEnvelope trace) {
+        QueueIntentId queueIntentId = new QueueIntentId("queue-intent-velocity-login-" + suffix);
+        RosterIntentId rosterIntentId = new RosterIntentId("roster-intent-velocity-login-" + suffix);
+        QueuePartitionKey partitionKey =
+                new QueuePartitionKey(settings.lobbyExperienceId(), Optional.empty(), settings.lobbyPoolId());
+        Instant submittedAt = request.attemptedAt();
+        Instant formedAt = submittedAt.plusMillis(1);
+        sendQueueRoster(queueRosterCommand(
+                new SubmitQueueIntent(
+                        queueIntentId,
+                        List.of(request.subjectId()),
+                        settings.lobbyExperienceId(),
+                        Optional.empty(),
+                        settings.lobbyPoolId(),
+                        0,
+                        submittedAt,
+                        submittedAt.plus(ROUTE_DEADLINE),
+                        trace.child("span-queue-submit-velocity-login-" + suffix, submittedAt)),
+                ControlQueueNames.SUBMIT_QUEUE_INTENT,
+                "submit",
+                0,
+                submittedAt));
+        sendQueueRoster(queueRosterCommand(
+                new FormRosterIntent(
+                        rosterIntentId,
+                        partitionKey,
+                        List.of(queueIntentId),
+                        1,
+                        formedAt,
+                        trace.child("span-roster-form-velocity-login-" + suffix, formedAt)),
+                ControlQueueNames.FORM_ROSTER_INTENT,
+                "form",
+                1,
+                formedAt));
+    }
+
+    private <T extends QueueRosterCommand> QueueRosterControlCommand<T> queueRosterCommand(
+            T payload,
+            CommandName commandName,
+            String commandSuffix,
+            long expectedRevision,
+            Instant receivedAt) {
+        String suffix = compact(payload);
+        PrincipalId principal = securityContext.identity().principalId();
+        return new QueueRosterControlCommand<>(
+                new CommandEnvelope<>(
+                        new CommandId("command-queue-velocity-login-" + commandSuffix + "-" + suffix),
+                        new IdempotencyKey("idem-queue-velocity-login-" + commandSuffix + "-" + suffix),
+                        principal,
+                        ControlQueueNames.aggregateId(payload.partitionKey()),
+                        ControlQueueNames.CONTRACT,
+                        commandName,
+                        new TraceEnvelope(
+                                "trace-queue-velocity-login-" + suffix,
+                                "span-queue-velocity-login-" + commandSuffix + "-" + suffix,
+                                Optional.empty(),
+                                receivedAt,
+                                "velocity-login-routing",
+                                securityContext.identity().instanceId()),
+                        Optional.of(receivedAt.plus(ROUTE_DEADLINE)),
+                        payload),
+                principal,
+                1,
+                Optional.of(new Revision(expectedRevision)),
+                "queue-roster|command=" + commandName.value()
+                        + "|id=" + suffix
+                        + "|revision=" + expectedRevision,
+                receivedAt);
+    }
+
+    private void sendQueueRoster(QueueRosterControlCommand<? extends QueueRosterCommand> command) {
+        send(
+                settings.queueRosterCommandTopic(),
+                ControlQueueNames.aggregateId(command.envelope().payload().partitionKey()).value(),
+                ControlCommandWireCodec.encodeQueueRosterCommand(command));
+    }
+
     private static String compact(SubjectId subjectId) {
         return subjectId.value().toString().replace("-", "");
     }
 
     private static String compact(RouteAttemptId routeAttemptId) {
         return routeAttemptId.value().replace("-", "");
+    }
+
+    private static String compact(LifecycleTraceId traceId) {
+        return traceId.value().replace("-", "");
+    }
+
+    private static String compact(QueueRosterCommand payload) {
+        if (payload instanceof SubmitQueueIntent submit) {
+            return submit.queueIntentId().value().replace("-", "");
+        }
+        if (payload instanceof FormRosterIntent form) {
+            return form.rosterIntentId().value().replace("-", "");
+        }
+        throw new IllegalArgumentException("Unsupported queue-roster payload " + payload.getClass().getSimpleName());
     }
 
     private record RoutePlan(
