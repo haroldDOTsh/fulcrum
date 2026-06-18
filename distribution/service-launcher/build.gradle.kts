@@ -2,6 +2,7 @@ import org.gradle.api.GradleException
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.Sync
 import org.gradle.jvm.tasks.Jar
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -86,13 +87,43 @@ val serviceLauncherImageTag = providers.gradleProperty("fulcrum.serviceLauncherI
 val kubeContext = providers.gradleProperty("fulcrum.kubeContext")
 val agonesChartVersion = providers.gradleProperty("fulcrum.agonesChartVersion")
     .orElse(libs.versions.agones)
+val defaultObjectStoreImage = "quay.io/minio/minio:${libs.versions.minio.get()}"
+val objectStoreImageTag = providers.gradleProperty("fulcrum.objectStoreImage")
+    .orElse(defaultObjectStoreImage)
+val defaultKafkaImage = "apache/kafka-native:${libs.versions.kafka.get()}"
+val kafkaImageTag = providers.gradleProperty("fulcrum.kafkaImage")
+    .orElse(defaultKafkaImage)
+val defaultPostgresImage = "postgres:${libs.versions.postgresImage.get()}"
+val postgresImageTag = providers.gradleProperty("fulcrum.postgresImage")
+    .orElse(defaultPostgresImage)
+val defaultCassandraImage = "cassandra:${libs.versions.cassandraImage.get()}"
+val cassandraImageTag = providers.gradleProperty("fulcrum.cassandraImage")
+    .orElse(defaultCassandraImage)
+val defaultValkeyImage = "valkey/valkey:${libs.versions.valkeyImage.get()}"
+val valkeyImageTag = providers.gradleProperty("fulcrum.valkeyImage")
+    .orElse(defaultValkeyImage)
 val agonesReleaseName = providers.gradleProperty("fulcrum.agonesReleaseName")
     .orElse("agones")
 val agonesSystemNamespace = providers.gradleProperty("fulcrum.agonesSystemNamespace")
     .orElse("agones-system")
+val kubeconfig = providers.gradleProperty("fulcrum.kubeconfig")
+val generatedClusterKubeconfig = layout.buildDirectory.file("cluster-e2e/kubeconfig.yaml")
+val clusterK3sImage = providers.gradleProperty("fulcrum.k3sImage")
+    .orElse("rancher/k3s:${libs.versions.k3s.get()}")
+val clusterK3sContainerName = providers.gradleProperty("fulcrum.k3sContainerName")
+    .orElse("fulcrum-cluster-e2e")
+val clusterK3sApiPort = providers.gradleProperty("fulcrum.k3sApiPort")
+    .orElse("16443")
+val clusterK3sMinecraftPort = providers.gradleProperty("fulcrum.k3sMinecraftPort")
+    .orElse("25565")
+val clusterK3sCgroupNamespace = providers.gradleProperty("fulcrum.k3sCgroupNamespace")
+    .orElse("host")
+val keepK3s = providers.gradleProperty("fulcrum.keepK3s")
+    .orElse("false")
+val clusterK3sImageArchive = layout.buildDirectory.file("cluster-e2e/fulcrum-images.tar")
 val lobbyEndpointHost = providers.gradleProperty("fulcrum.lobbyEndpointHost")
 val lobbyEndpointPort = providers.gradleProperty("fulcrum.lobbyEndpointPort")
-    .orElse("25565")
+    .orElse(clusterK3sMinecraftPort)
 val lobbyNamespace = providers.gradleProperty("fulcrum.lobbyNamespace")
     .orElse("fulcrum-lobby")
 val lobbyVelocityService = providers.gradleProperty("fulcrum.lobbyVelocityService")
@@ -108,6 +139,146 @@ val expectedLobbyAgonesAllocatedReplicas = providers.gradleProperty("fulcrum.exp
     .orElse(verifyLobbyScaleOut.map { value ->
         if (value.equals("true", ignoreCase = true)) "2" else "1"
     })
+val verifyLobbyRouteAttemptState = providers.gradleProperty("fulcrum.verifyLobbyRouteAttemptState")
+val lobbyRouteAttemptStateTopic = providers.gradleProperty("fulcrum.lobbyRouteAttemptStateTopic")
+    .orElse("ctrl.state.route-attempt")
+val verifyLobbyLoginRoutingCommandLog = providers.gradleProperty("fulcrum.verifyLobbyLoginRoutingCommandLog")
+val lobbyQueueRosterCommandTopic = providers.gradleProperty("fulcrum.lobbyQueueRosterCommandTopic")
+    .orElse("ctrl.cmd.queue-roster")
+val verifyLobbyQueueRosterState = providers.gradleProperty("fulcrum.verifyLobbyQueueRosterState")
+val lobbyQueueRosterStateTopic = providers.gradleProperty("fulcrum.lobbyQueueRosterStateTopic")
+    .orElse("ctrl.state.queue-roster")
+val lobbyPresenceAuthorityCommandTopic = providers.gradleProperty("fulcrum.lobbyPresenceAuthorityCommandTopic")
+    .orElse("cmd.presence")
+val lobbySharedShardPlacementCommandTopic = providers.gradleProperty("fulcrum.lobbySharedShardPlacementCommandTopic")
+    .orElse("ctrl.cmd.shared-shard-placement")
+val lobbyRouteAttemptCommandTopic = providers.gradleProperty("fulcrum.lobbyRouteAttemptCommandTopic")
+    .orElse("ctrl.cmd.route-attempt")
+val lobbyLifecycleTraceCommandTopic = providers.gradleProperty("fulcrum.lobbyLifecycleTraceCommandTopic")
+    .orElse("ctrl.cmd.lifecycle-trace")
+val verifyLobbyLifecycleTraceState = providers.gradleProperty("fulcrum.verifyLobbyLifecycleTraceState")
+val lobbyLifecycleTraceStateTopic = providers.gradleProperty("fulcrum.lobbyLifecycleTraceStateTopic")
+    .orElse("ctrl.state.lifecycle-trace")
+val verifyLobbyRouteAuthorityCommandLog = providers.gradleProperty("fulcrum.verifyLobbyRouteAuthorityCommandLog")
+val lobbyRouteAuthorityCommandTopic = providers.gradleProperty("fulcrum.lobbyRouteAuthorityCommandTopic")
+    .orElse("cmd.route")
+val verifyLobbyRouteAuthorityState = providers.gradleProperty("fulcrum.verifyLobbyRouteAuthorityState")
+val lobbyRouteAuthorityStateTopic = providers.gradleProperty("fulcrum.lobbyRouteAuthorityStateTopic")
+    .orElse("state.route")
+val verifyLobbyHostRouteCommandLogs = providers.gradleProperty("fulcrum.verifyLobbyHostRouteCommandLogs")
+val lobbyProxyRouteCommandTopic = providers.gradleProperty("fulcrum.lobbyProxyRouteCommandTopic")
+    .orElse("host.velocity.routes")
+val lobbyPaperHostCommandTopic = providers.gradleProperty("fulcrum.lobbyPaperHostCommandTopic")
+    .orElse("host.paper.commands")
+val verifyLobbyHostObservationLog = providers.gradleProperty("fulcrum.verifyLobbyHostObservationLog")
+val lobbyHostObservationTopic = providers.gradleProperty("fulcrum.lobbyHostObservationTopic")
+    .orElse("host.observation")
+val verifyLobbyPresenceAuthorityState = providers.gradleProperty("fulcrum.verifyLobbyPresenceAuthorityState")
+val lobbyPresenceAuthorityStateTopic = providers.gradleProperty("fulcrum.lobbyPresenceAuthorityStateTopic")
+    .orElse("state.presence")
+val verifyLobbyStandardCapabilityState = providers.gradleProperty("fulcrum.verifyLobbyStandardCapabilityState")
+val lobbyPlayerProfileStateTopic = providers.gradleProperty("fulcrum.lobbyPlayerProfileStateTopic")
+    .orElse("state.standard.player-profile")
+val lobbyRankStateTopic = providers.gradleProperty("fulcrum.lobbyRankStateTopic")
+    .orElse("state.standard.rank")
+val lobbyPunishmentStateTopic = providers.gradleProperty("fulcrum.lobbyPunishmentStateTopic")
+    .orElse("state.standard.punishment")
+val verifyLobbyStandardCapabilityCommandLog =
+    providers.gradleProperty("fulcrum.verifyLobbyStandardCapabilityCommandLog")
+val lobbyPlayerProfileCommandTopic = providers.gradleProperty("fulcrum.lobbyPlayerProfileCommandTopic")
+    .orElse("cmd.standard.player-profile")
+val lobbyRankCommandTopic = providers.gradleProperty("fulcrum.lobbyRankCommandTopic")
+    .orElse("cmd.standard.rank")
+val lobbyPunishmentCommandTopic = providers.gradleProperty("fulcrum.lobbyPunishmentCommandTopic")
+    .orElse("cmd.standard.punishment")
+val verifyLobbyRewardState = providers.gradleProperty("fulcrum.verifyLobbyRewardState")
+val lobbyEconomyStateTopic = providers.gradleProperty("fulcrum.lobbyEconomyStateTopic")
+    .orElse("state.standard.economy")
+val lobbyStatsStateTopic = providers.gradleProperty("fulcrum.lobbyStatsStateTopic")
+    .orElse("state.standard.stats")
+val verifyLobbyRewardCommandLog = providers.gradleProperty("fulcrum.verifyLobbyRewardCommandLog")
+val lobbyEconomyCommandTopic = providers.gradleProperty("fulcrum.lobbyEconomyCommandTopic")
+    .orElse("cmd.standard.economy")
+val lobbyStatsCommandTopic = providers.gradleProperty("fulcrum.lobbyStatsCommandTopic")
+    .orElse("cmd.standard.stats")
+val expectedLobbyRewardCurrencyKey = providers.gradleProperty("fulcrum.expectedLobbyRewardCurrencyKey")
+    .orElse("coins")
+val expectedLobbyRewardAmountMinorUnits = providers.gradleProperty("fulcrum.expectedLobbyRewardAmountMinorUnits")
+    .orElse("250")
+val expectedLobbyRewardStatKey = providers.gradleProperty("fulcrum.expectedLobbyRewardStatKey")
+    .orElse("session-completions")
+val expectedLobbyRewardCommandDeliveryCopies =
+    providers.gradleProperty("fulcrum.expectedLobbyRewardCommandDeliveryCopies")
+        .orElse("2")
+val verifyLobbyCassandraHotProjections = providers.gradleProperty("fulcrum.verifyLobbyCassandraHotProjections")
+val lobbyCassandraPodName = providers.gradleProperty("fulcrum.lobbyCassandraPodName")
+    .orElse("fulcrum-cassandra-0")
+val lobbyCassandraContainerName = providers.gradleProperty("fulcrum.lobbyCassandraContainerName")
+    .orElse("cassandra")
+val lobbyCassandraCqlshPath = providers.gradleProperty("fulcrum.lobbyCassandraCqlshPath")
+    .orElse("cqlsh")
+val verifyLobbyPostgresAuthorityRecords = providers.gradleProperty("fulcrum.verifyLobbyPostgresAuthorityRecords")
+val lobbyPostgresPodName = providers.gradleProperty("fulcrum.lobbyPostgresPodName")
+    .orElse("fulcrum-postgres-0")
+val lobbyPostgresContainerName = providers.gradleProperty("fulcrum.lobbyPostgresContainerName")
+    .orElse("postgres")
+val lobbyPostgresPsqlPath = providers.gradleProperty("fulcrum.lobbyPostgresPsqlPath")
+    .orElse("psql")
+val lobbyPostgresDatabase = providers.gradleProperty("fulcrum.lobbyPostgresDatabase")
+    .orElse("fulcrum")
+val lobbyPostgresUsername = providers.gradleProperty("fulcrum.lobbyPostgresUsername")
+    .orElse("fulcrum")
+val verifyLobbyValkeyCache = providers.gradleProperty("fulcrum.verifyLobbyValkeyCache")
+val lobbyValkeyResourceName = providers.gradleProperty("fulcrum.lobbyValkeyResourceName")
+    .orElse("deployment/fulcrum-valkey")
+val lobbyValkeyContainerName = providers.gradleProperty("fulcrum.lobbyValkeyContainerName")
+    .orElse("valkey")
+val lobbyValkeyCliPath = providers.gradleProperty("fulcrum.lobbyValkeyCliPath")
+    .orElse("valkey-cli")
+val verifyLobbyProjectionConsistency = providers.gradleProperty("fulcrum.verifyLobbyProjectionConsistency")
+val verifyLobbyTraceCorrelation = providers.gradleProperty("fulcrum.verifyLobbyTraceCorrelation")
+val verifyLobbyObjectStoreArtifact = providers.gradleProperty("fulcrum.verifyLobbyObjectStoreArtifact")
+val lobbyObjectStoreResourceName = providers.gradleProperty("fulcrum.lobbyObjectStoreResourceName")
+    .orElse("service/fulcrum-object-store")
+val lobbyObjectStorePort = providers.gradleProperty("fulcrum.lobbyObjectStorePort")
+    .orElse("9000")
+val lobbyObjectStoreRegion = providers.gradleProperty("fulcrum.lobbyObjectStoreRegion")
+    .orElse("us-east-1")
+val lobbyObjectStoreBucket = providers.gradleProperty("fulcrum.lobbyObjectStoreBucket")
+    .orElse("artifact-store")
+val lobbyObjectStoreSecretName = providers.gradleProperty("fulcrum.lobbyObjectStoreSecretName")
+    .orElse("fulcrum-object-store-credentials")
+val lobbyObjectStoreAccessKeySecretKey = providers.gradleProperty("fulcrum.lobbyObjectStoreAccessKeySecretKey")
+    .orElse("FULCRUM_OBJECT_STORE_ACCESS_KEY")
+val lobbyObjectStoreSecretKeySecretKey = providers.gradleProperty("fulcrum.lobbyObjectStoreSecretKeySecretKey")
+    .orElse("FULCRUM_OBJECT_STORE_SECRET_KEY")
+val expectedLobbyWorldArtifactId = providers.gradleProperty("fulcrum.expectedLobbyWorldArtifactId")
+val expectedLobbyWorldArtifactDigest = providers.gradleProperty("fulcrum.expectedLobbyWorldArtifactDigest")
+val expectedLobbyWorldArtifactCompatibility =
+    providers.gradleProperty("fulcrum.expectedLobbyWorldArtifactCompatibility")
+val verifyLobbySessionAuthorityState = providers.gradleProperty("fulcrum.verifyLobbySessionAuthorityState")
+val lobbySessionAuthorityStateTopic = providers.gradleProperty("fulcrum.lobbySessionAuthorityStateTopic")
+    .orElse("state.session")
+val verifyLobbySessionAuthorityCommandLog = providers.gradleProperty("fulcrum.verifyLobbySessionAuthorityCommandLog")
+val lobbySessionAuthorityCommandTopic = providers.gradleProperty("fulcrum.lobbySessionAuthorityCommandTopic")
+    .orElse("cmd.session")
+val verifyLobbySharedShardAllocationCommandLog =
+    providers.gradleProperty("fulcrum.verifyLobbySharedShardAllocationCommandLog")
+val lobbySharedShardAllocationCommandTopic =
+    providers.gradleProperty("fulcrum.lobbySharedShardAllocationCommandTopic")
+        .orElse("ctrl.cmd.shared-shard-allocation")
+val verifyLobbySharedShardAllocationState =
+    providers.gradleProperty("fulcrum.verifyLobbySharedShardAllocationState")
+val lobbySharedShardAllocationStateTopic = providers.gradleProperty("fulcrum.lobbySharedShardAllocationStateTopic")
+    .orElse("ctrl.state.shared-shard-allocation")
+val lobbyKafkaPodName = providers.gradleProperty("fulcrum.lobbyKafkaPodName")
+    .orElse("fulcrum-kafka-0")
+val lobbyKafkaContainerName = providers.gradleProperty("fulcrum.lobbyKafkaContainerName")
+    .orElse("kafka")
+val lobbyKafkaBootstrapServer = providers.gradleProperty("fulcrum.lobbyKafkaBootstrapServer")
+    .orElse("localhost:9092")
+val lobbyKafkaConsoleConsumerPath = providers.gradleProperty("fulcrum.lobbyKafkaConsoleConsumerPath")
+    .orElse("/opt/kafka/bin/kafka-console-consumer.sh")
 val lobbyMinecraftProtocolVersion = providers.gradleProperty("fulcrum.minecraftProtocolVersion")
     .orElse("0")
 val lobbyLoginUsername = providers.gradleProperty("fulcrum.lobbyLoginUsername")
@@ -118,6 +289,14 @@ val expectedLobbySpawnBlock = providers.gradleProperty("fulcrum.expectedLobbySpa
     .orElse("bedrock")
 val expectedLobbySpawnWorld = providers.gradleProperty("fulcrum.expectedLobbySpawnWorld")
     .orElse("world")
+val expectedLobbyExperienceId = providers.gradleProperty("fulcrum.expectedLobbyExperienceId")
+    .orElse("experience-lobby")
+val expectedLobbyPoolId = providers.gradleProperty("fulcrum.expectedLobbyPoolId")
+    .orElse("pool-lobby")
+val expectedLobbyResolvedManifestId = providers.gradleProperty("fulcrum.expectedLobbyResolvedManifestId")
+    .orElse("manifest-lobby-bedrock-v1")
+val expectedLobbyTraceId = providers.gradleProperty("fulcrum.expectedLobbyTraceId")
+    .orElse("trace-paper-session-lobby-shared")
 val expectedLobbyBedrockBlockX = providers.gradleProperty("fulcrum.expectedLobbyBedrockBlockX")
     .orElse("0")
 val expectedLobbyBedrockBlockY = providers.gradleProperty("fulcrum.expectedLobbyBedrockBlockY")
@@ -174,29 +353,162 @@ val deniedLobbyLoginReason = providers.gradleProperty("fulcrum.deniedLobbyLoginR
     .orElse("Banned from the lobby")
 val lobbyVerifierTimeout = providers.gradleProperty("fulcrum.lobbyVerifierTimeout")
     .orElse("PT10S")
+val lobbyEndpointReadyTimeout = providers.gradleProperty("fulcrum.lobbyEndpointReadyTimeout")
+    .orElse("PT120S")
+val lobbyRouteAttemptStateTimeout = providers.gradleProperty("fulcrum.lobbyRouteAttemptStateTimeout")
+    .orElse("PT60S")
+val lobbyRouteAttemptStateFreshnessSkew = providers.gradleProperty("fulcrum.lobbyRouteAttemptStateFreshnessSkew")
+    .orElse("PT5S")
+val lobbyPresenceAuthorityStateTimeout = providers.gradleProperty("fulcrum.lobbyPresenceAuthorityStateTimeout")
+    .orElse("PT60S")
+val lobbyPresenceAuthorityStateFreshnessSkew =
+    providers.gradleProperty("fulcrum.lobbyPresenceAuthorityStateFreshnessSkew")
+        .orElse("PT5S")
+val lobbyStandardCapabilityStateTimeout = providers.gradleProperty("fulcrum.lobbyStandardCapabilityStateTimeout")
+    .orElse("PT60S")
+val lobbyCassandraHotProjectionTimeout = providers.gradleProperty("fulcrum.lobbyCassandraHotProjectionTimeout")
+    .orElse("PT60S")
+val lobbyPostgresAuthorityRecordTimeout = providers.gradleProperty("fulcrum.lobbyPostgresAuthorityRecordTimeout")
+    .orElse("PT60S")
+val lobbyValkeyCacheTimeout = providers.gradleProperty("fulcrum.lobbyValkeyCacheTimeout")
+    .orElse("PT60S")
+val lobbyObjectStoreArtifactTimeout = providers.gradleProperty("fulcrum.lobbyObjectStoreArtifactTimeout")
+    .orElse("PT60S")
+val lobbySessionAuthorityStateTimeout = providers.gradleProperty("fulcrum.lobbySessionAuthorityStateTimeout")
+    .orElse("PT60S")
+val lobbySessionAuthorityStateFreshnessSkew =
+    providers.gradleProperty("fulcrum.lobbySessionAuthorityStateFreshnessSkew")
+        .orElse("PT5S")
+val lobbySharedShardAllocationStateTimeout =
+    providers.gradleProperty("fulcrum.lobbySharedShardAllocationStateTimeout")
+        .orElse("PT60S")
+
+fun taskNameTargets(taskName: String, target: String): Boolean =
+    taskName == target || taskName.endsWith(":$target")
+
+val generatedClusterRequested = providers.provider {
+    val taskNames = gradle.startParameter.taskNames
+    val requestedGeneratedCluster = taskNames.any {
+        taskNameTargets(it, "clusterE2e") || taskNameTargets(it, "clusterK3sE2e")
+    }
+    val requestedExistingCluster = taskNames.any { taskNameTargets(it, "clusterExistingE2e") }
+    requestedGeneratedCluster && !requestedExistingCluster
+}
+
+fun effectiveKubeconfigPath(): String? {
+    val explicitKubeconfig = kubeconfig.orNull?.takeIf { it.isNotBlank() }
+    return explicitKubeconfig
+        ?: if (generatedClusterRequested.get()) generatedClusterKubeconfig.get().asFile.absolutePath else null
+}
 
 fun kubectlCommand(vararg args: String): List<String> = buildList {
     add("kubectl")
-    kubeContext.orNull?.takeIf { it.isNotBlank() }?.let {
-        add("--context")
-        add(it)
+    val explicitKubeconfig = effectiveKubeconfigPath()
+    if (explicitKubeconfig != null) {
+        add("--kubeconfig")
+        add(explicitKubeconfig)
+    } else {
+        kubeContext.orNull?.takeIf { it.isNotBlank() }?.let {
+            add("--context")
+            add(it)
+        }
     }
     addAll(args)
 }
 
 fun helmCommand(vararg args: String): List<String> = buildList {
     add("helm")
-    kubeContext.orNull?.takeIf { it.isNotBlank() }?.let {
-        add("--kube-context")
-        add(it)
+    val explicitKubeconfig = effectiveKubeconfigPath()
+    if (explicitKubeconfig != null) {
+        add("--kubeconfig")
+        add(explicitKubeconfig)
+    } else {
+        kubeContext.orNull?.takeIf { it.isNotBlank() }?.let {
+            add("--kube-context")
+            add(it)
+        }
     }
     addAll(args)
 }
+
+fun verifierKubeArgs(runArgs: MutableList<String>) {
+    val explicitKubeconfig = effectiveKubeconfigPath()
+    if (explicitKubeconfig != null) {
+        runArgs.add("--kubeconfig=$explicitKubeconfig")
+    } else {
+        kubeContext.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--kube-context=$it")
+        }
+    }
+}
+
+fun dockerCommand(vararg args: String): List<String> = buildList {
+    add("docker")
+    addAll(args)
+}
+
+data class ClusterProcessResult(
+    val command: List<String>,
+    val exitCode: Int,
+    val output: String)
 
 data class ClusterPreflightCheck(
     val label: String,
     val command: List<String>,
     val recoveryHint: String)
+
+fun runClusterProcess(
+    command: List<String>,
+    timeoutSeconds: Long,
+    workingDir: File = project.projectDir): ClusterProcessResult {
+    val process = ProcessBuilder(command)
+        .directory(workingDir)
+        .redirectErrorStream(true)
+        .start()
+    val finished = try {
+        process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+    } catch (exception: InterruptedException) {
+        Thread.currentThread().interrupt()
+        process.destroyForcibly()
+        throw GradleException("Interrupted while running `${command.joinToString(" ")}`.", exception)
+    }
+    val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+    if (!finished) {
+        process.destroyForcibly()
+        return ClusterProcessResult(command, -1, output)
+    }
+    return ClusterProcessResult(command, process.exitValue(), output)
+}
+
+fun requireClusterProcess(
+    command: List<String>,
+    timeoutSeconds: Long,
+    workingDir: File = project.projectDir): String {
+    val result = runClusterProcess(command, timeoutSeconds, workingDir)
+    if (result.exitCode != 0) {
+        val formattedOutput = result.output.ifBlank { "<no output>" }.prependIndent("  ")
+        throw GradleException(
+            "Command `${result.command.joinToString(" ")}` failed with exit code ${result.exitCode}."
+                + System.lineSeparator()
+                + "Output:"
+                + System.lineSeparator()
+                + formattedOutput)
+    }
+    return result.output
+}
+
+fun dockerContainerExists(containerName: String): Boolean =
+    runClusterProcess(
+        dockerCommand("ps", "-aq", "--filter", "name=^/${containerName}$"),
+        30)
+        .output
+        .isNotBlank()
+
+fun dockerContainerRunning(containerName: String): Boolean =
+    runClusterProcess(
+        dockerCommand("inspect", "-f", "{{.State.Running}}", containerName),
+        30)
+        .let { result -> result.exitCode == 0 && result.output.equals("true", ignoreCase = true) }
 
 fun runClusterPreflightCheck(check: ClusterPreflightCheck): String? {
     val displayCommand = check.command.joinToString(" ")
@@ -213,11 +525,12 @@ fun runClusterPreflightCheck(check: ClusterPreflightCheck): String? {
             |${check.recoveryHint}
             """.trimMargin()
         } else if (process.exitValue() != 0) {
+            val formattedOutput = output.ifBlank { "<no output>" }.prependIndent("  ")
             """
             |${check.label} failed while running `$displayCommand` with exit code ${process.exitValue()}.
             |${check.recoveryHint}
             |Output:
-            |${output.ifBlank { "<no output>" }.prependIndent("  ")}
+            |$formattedOutput
             """.trimMargin()
         } else {
             null
@@ -233,8 +546,46 @@ fun runClusterPreflightCheck(check: ClusterPreflightCheck): String? {
 fun runClusterPreflightChecks(checks: List<ClusterPreflightCheck>) {
     val failures = checks.mapNotNull(::runClusterPreflightCheck)
     if (failures.isNotEmpty()) {
-        throw GradleException("Cluster preflight failed:\n\n${failures.joinToString("\n\n")}")
+        val message = failures.joinToString(System.lineSeparator() + System.lineSeparator())
+        throw GradleException(
+            "Cluster preflight failed:${System.lineSeparator()}${System.lineSeparator()}$message")
     }
+}
+
+val requiredAgonesCrds = listOf(
+    "gameservers.agones.dev",
+    "fleets.agones.dev",
+    "fleetautoscalers.autoscaling.agones.dev",
+    "gameserversets.agones.dev")
+
+val requiredAgonesApiResources = mapOf(
+    "allocation.agones.dev" to "gameserverallocations.allocation.agones.dev")
+
+fun waitForAgonesCrds(label: String) {
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(300)
+    val failures = mutableListOf<String>()
+    while (System.nanoTime() < deadline) {
+        val crdResult = runClusterProcess(kubectlCommand("get", "crd", *requiredAgonesCrds.toTypedArray()), 30)
+        val apiFailures = requiredAgonesApiResources.mapNotNull { (group, resourceName) ->
+            val apiResult = runClusterProcess(kubectlCommand("api-resources", "--api-group=$group", "-o", "name"), 30)
+            if (apiResult.exitCode == 0 && apiResult.output.lineSequence().any { it.trim() == resourceName }) {
+                null
+            } else {
+                apiResult.output.ifBlank { "kubectl api-resources did not list $resourceName" }
+            }
+        }
+        if (crdResult.exitCode == 0 && apiFailures.isEmpty()) {
+            return
+        }
+        failures.add(
+            (listOf(crdResult.output.ifBlank { "kubectl get crd returned exit code ${crdResult.exitCode}" })
+                + apiFailures)
+                .joinToString(" ; "))
+        Thread.sleep(5_000)
+    }
+    throw GradleException(
+        "Timed out waiting for Agones APIs after $label. Last failures: "
+            + failures.takeLast(5).joinToString(" | "))
 }
 
 tasks.register<Exec>("serviceLauncherImage") {
@@ -337,25 +688,198 @@ val lobbyKafkaManifest = layout.projectDirectory.file(
     "src/main/resources/fulcrum/kubernetes/substrate/lobby-kafka.yaml")
 val renderedLobbyKafkaManifest = layout.buildDirectory.file("kubernetes/substrate/lobby-kafka.yaml")
 val renderedAgonesAllocatorCaSecret = layout.buildDirectory.file("kubernetes/substrate/agones-allocator-ca-secret.yaml")
+val renderedAgonesHelmChart = layout.buildDirectory.file("kubernetes/paper-agones/agones-helm-chart.yaml")
+
+tasks.register("clusterK3sPreflight") {
+    group = "verification"
+    description = "Verifies Docker can run the Gradle-owned K3s cluster used by clusterE2e."
+    doLast {
+        if (clusterK3sImage.get().isBlank()) {
+            throw GradleException("K3s image reference is empty; set -Pfulcrum.k3sImage=<image-ref>.")
+        }
+        runClusterPreflightChecks(listOf(
+            ClusterPreflightCheck(
+                "Docker daemon check",
+                dockerCommand("version", "--format", "{{.Client.Version}} {{.Server.Version}}"),
+                "Start Docker Desktop and ensure this user can access the Linux engine before running clusterE2e.")))
+    }
+}
+
+tasks.register("clusterK3sStart") {
+    group = "deployment"
+    description = "Starts the Gradle-owned K3s container and writes its generated kubeconfig under build/cluster-e2e."
+    dependsOn(tasks.named("clusterK3sPreflight"))
+    doLast {
+        val containerName = clusterK3sContainerName.get()
+        fun runK3sContainer() {
+            val runArgs = mutableListOf(
+                "run",
+                "-d",
+                "--name",
+                containerName,
+                "--privileged")
+            clusterK3sCgroupNamespace.get()
+                .takeIf { it.isNotBlank() }
+                ?.let { namespace ->
+                    runArgs.add("--cgroupns")
+                    runArgs.add(namespace)
+                }
+            runArgs.addAll(listOf(
+                "-p",
+                "127.0.0.1:${clusterK3sApiPort.get()}:6443",
+                "-p",
+                "127.0.0.1:${clusterK3sMinecraftPort.get()}:25565",
+                clusterK3sImage.get(),
+                "server",
+                "--disable=traefik",
+                "--tls-san=127.0.0.1",
+                "--write-kubeconfig-mode=644"))
+            requireClusterProcess(dockerCommand(*runArgs.toTypedArray()), 180)
+        }
+
+        if (!dockerContainerExists(containerName)) {
+            runK3sContainer()
+        } else if (!dockerContainerRunning(containerName)) {
+            logger.lifecycle("Removing stopped K3s container $containerName before recreating it")
+            requireClusterProcess(dockerCommand("rm", "-f", containerName), 60)
+            runK3sContainer()
+        } else {
+            logger.lifecycle("Reusing running K3s container $containerName")
+        }
+
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(240)
+        val failures = mutableListOf<String>()
+        while (System.nanoTime() < deadline) {
+            if (!dockerContainerRunning(containerName)) {
+                val logs = runClusterProcess(
+                    dockerCommand("logs", "--tail", "120", containerName),
+                    30)
+                    .output
+                    .ifBlank { "<no K3s logs>" }
+                    .prependIndent("  ")
+                throw GradleException(
+                    "K3s container $containerName exited before node readiness."
+                        + System.lineSeparator()
+                        + "Logs:"
+                        + System.lineSeparator()
+                        + logs)
+            }
+            val result = runClusterProcess(
+                dockerCommand(
+                    "exec",
+                    containerName,
+                    "kubectl",
+                    "wait",
+                    "--for=condition=Ready",
+                    "node",
+                    "--all",
+                    "--timeout=10s"),
+                20)
+            if (result.exitCode == 0) {
+                val rawKubeconfig = requireClusterProcess(
+                    dockerCommand("exec", containerName, "cat", "/etc/rancher/k3s/k3s.yaml"),
+                    30)
+                val hostApi = "https://127.0.0.1:${clusterK3sApiPort.get()}"
+                val renderedKubeconfig = rawKubeconfig
+                    .replace("https://127.0.0.1:6443", hostApi)
+                    .replace("https://localhost:6443", hostApi)
+                val kubeconfigFile = generatedClusterKubeconfig.get().asFile
+                kubeconfigFile.parentFile.mkdirs()
+                kubeconfigFile.writeText(renderedKubeconfig)
+                logger.lifecycle("Wrote generated K3s kubeconfig to ${kubeconfigFile.absolutePath}")
+                return@doLast
+            }
+            failures.add(result.output.ifBlank { "K3s node readiness returned exit code ${result.exitCode}" })
+            Thread.sleep(3_000)
+        }
+        throw GradleException(
+            "Timed out waiting for K3s node readiness in container $containerName. Last failures: "
+                + failures.takeLast(5).joinToString(" | "))
+    }
+}
+
+tasks.register("clusterK3sImportImages") {
+    group = "deployment"
+    description = "Imports the locally built Fulcrum service, Paper, and Velocity images into the K3s container runtime."
+    dependsOn(
+        tasks.named("clusterK3sStart"),
+        tasks.named("serviceLauncherImage"),
+        tasks.named("paperGameserverImage"),
+        tasks.named("velocityProxyImage"))
+    doLast {
+        val archive = clusterK3sImageArchive.get().asFile
+        archive.parentFile.mkdirs()
+        requireClusterProcess(
+            dockerCommand(
+                "save",
+                "-o",
+                archive.absolutePath,
+                serviceLauncherImageTag.get(),
+                paperGameserverImageTag.get(),
+                velocityProxyImageTag.get()),
+            300)
+        val archivePath = project.relativePath(archive).replace(File.separatorChar, '/')
+        val containerName = clusterK3sContainerName.get()
+        requireClusterProcess(
+            dockerCommand("cp", archivePath, "$containerName:/tmp/fulcrum-cluster-e2e-images.tar"),
+            120)
+        requireClusterProcess(
+            dockerCommand(
+                "exec",
+                containerName,
+                "ctr",
+                "-n",
+                "k8s.io",
+                "images",
+                "import",
+                "/tmp/fulcrum-cluster-e2e-images.tar"),
+            300)
+        logger.lifecycle("Imported Fulcrum images into K3s container $containerName")
+    }
+}
+
+tasks.register("clusterK3sStop") {
+    group = "deployment"
+    description = "Removes the Gradle-owned K3s container unless -Pfulcrum.keepK3s=true is set."
+    doLast {
+        val containerName = clusterK3sContainerName.get()
+        if (keepK3s.get().equals("true", ignoreCase = true)) {
+            logger.lifecycle("Keeping K3s container $containerName because -Pfulcrum.keepK3s=true")
+        } else if (dockerContainerExists(containerName)) {
+            requireClusterProcess(dockerCommand("rm", "-f", containerName), 60)
+        } else {
+            logger.lifecycle("No K3s container named $containerName exists")
+        }
+    }
+}
 
 tasks.register("paperAgonesClusterPreflight") {
     group = "verification"
-    description = "Verifies kubectl and Helm can reach the configured Kubernetes cluster before deploying Paper Agones resources."
+    description = "Verifies kubectl, Docker, and Helm when needed before deploying Paper Agones resources."
     doLast {
-        runClusterPreflightChecks(listOf(
+        val checks = mutableListOf(
             ClusterPreflightCheck(
                 "Kubernetes context check",
                 kubectlCommand("config", "current-context"),
-                "Enable Docker Desktop Kubernetes or pass -Pfulcrum.kubeContext=<context> for the target cluster."),
+                "Enable Docker Desktop Kubernetes, pass -Pfulcrum.kubeContext=<context>, or pass -Pfulcrum.kubeconfig=<path> for a generated cluster."),
             ClusterPreflightCheck(
                 "Kubernetes API reachability check",
                 kubectlCommand("version", "--output=yaml"),
-                "Verify kubectl can reach the target cluster before running clusterE2e."),
-            ClusterPreflightCheck(
+                "Verify kubectl can reach the target cluster before running clusterE2e."))
+        if (generatedClusterRequested.get()) {
+            logger.lifecycle("Skipping host Helm availability check; K3s clusterE2e uses the in-cluster HelmChart controller for Agones.")
+        } else {
+            checks.add(ClusterPreflightCheck(
                 "Helm availability check",
                 helmCommand("version", "--short"),
                 "Install Helm and ensure `helm` is on PATH before Agones installation."))
-        )
+        }
+        checks.add(
+            ClusterPreflightCheck(
+                "Docker Desktop daemon check",
+                dockerCommand("version", "--format", "{{.Client.Version}} {{.Server.Version}}"),
+                "Start Docker Desktop and ensure this user can access the Linux engine before building clusterE2e images."))
+        runClusterPreflightChecks(checks)
     }
 }
 
@@ -367,34 +891,89 @@ tasks.register<Exec>("paperAgonesApplyNamespace") {
     }
 }
 
-tasks.register<Exec>("paperAgonesInstallAgones") {
+tasks.register("paperAgonesInstallAgones") {
     group = "deployment"
-    description = "Installs or upgrades Agones with Helm for the Fulcrum lobby GameServer namespace."
+    description = "Installs or upgrades Agones for the Fulcrum lobby GameServer namespace."
     dependsOn(tasks.named("paperAgonesApplyNamespace"))
-    doFirst {
-        commandLine(helmCommand(
-            "upgrade",
-            "--install",
-            agonesReleaseName.get(),
-            "agones/agones",
-            "--repo",
-            "https://agones.dev/chart/stable",
-            "--version",
-            agonesChartVersion.get(),
-            "--namespace",
-            agonesSystemNamespace.get(),
-            "--create-namespace",
-            "--values",
-            agonesHelmValues.asFile.absolutePath,
-            "--wait",
-            "--timeout",
-            "300s"))
+    doLast {
+        if (generatedClusterRequested.get()) {
+            val valuesContent = agonesHelmValues.asFile.readText().prependIndent("    ")
+            val helmChart = renderedAgonesHelmChart.get().asFile
+            helmChart.parentFile.mkdirs()
+            helmChart.writeText("""
+                |apiVersion: helm.cattle.io/v1
+                |kind: HelmChart
+                |metadata:
+                |  name: ${agonesReleaseName.get()}
+                |  namespace: kube-system
+                |spec:
+                |  repo: https://agones.dev/chart/stable
+                |  chart: agones
+                |  version: ${agonesChartVersion.get()}
+                |  targetNamespace: ${agonesSystemNamespace.get()}
+                |  createNamespace: true
+                |  valuesContent: |-
+                |$valuesContent
+                |""".trimMargin())
+            providers.exec {
+                commandLine(kubectlCommand("apply", "-f", helmChart.absolutePath))
+            }.result.get().assertNormalExitValue()
+            waitForAgonesCrds("K3s HelmChart Agones install")
+        } else {
+            providers.exec {
+                commandLine(helmCommand(
+                    "upgrade",
+                    "--install",
+                    agonesReleaseName.get(),
+                    "agones/agones",
+                    "--repo",
+                    "https://agones.dev/chart/stable",
+                    "--version",
+                    agonesChartVersion.get(),
+                    "--namespace",
+                    agonesSystemNamespace.get(),
+                    "--create-namespace",
+                    "--values",
+                    agonesHelmValues.asFile.absolutePath,
+                    "--wait",
+                    "--timeout",
+                    "300s"))
+            }.result.get().assertNormalExitValue()
+        }
+    }
+}
+
+tasks.register("paperAgonesConfigureAllocatorTls") {
+    group = "deployment"
+    description = "Configures the Agones allocator for CA-verified HTTPS used by controller-service."
+    dependsOn(tasks.named("paperAgonesInstallAgones"))
+    doLast {
+        providers.exec {
+            commandLine(kubectlCommand(
+                "-n",
+                agonesSystemNamespace.get(),
+                "set",
+                "env",
+                "deployment/agones-allocator",
+                "DISABLE_MTLS=true"))
+        }.result.get().assertNormalExitValue()
+        providers.exec {
+            commandLine(kubectlCommand(
+                "-n",
+                agonesSystemNamespace.get(),
+                "rollout",
+                "status",
+                "deployment/agones-allocator",
+                "--timeout=180s"))
+        }.result.get().assertNormalExitValue()
     }
 }
 
 tasks.register<Sync>("paperAgonesRenderManifests") {
     group = "distribution"
     description = "Renders Paper Agones Kubernetes manifests with the effective container image tags."
+    inputs.property("serviceLauncherImageTag", serviceLauncherImageTag)
+    inputs.property("paperGameserverImageTag", paperGameserverImageTag)
     into(layout.buildDirectory.dir("kubernetes/paper-agones"))
     from(lobbyPaperFleetManifest) {
         filter { line: String ->
@@ -415,20 +994,32 @@ tasks.register<Sync>("paperAgonesRenderManifests") {
 tasks.register<Sync>("paperAgonesRenderSubstrateManifests") {
     group = "distribution"
     description = "Renders lobby substrate Kubernetes manifests with the effective service launcher image tag."
+    inputs.property("serviceLauncherImageTag", serviceLauncherImageTag)
+    inputs.property("kafkaImageTag", kafkaImageTag)
+    inputs.property("postgresImageTag", postgresImageTag)
+    inputs.property("cassandraImageTag", cassandraImageTag)
+    inputs.property("valkeyImageTag", valkeyImageTag)
+    inputs.property("objectStoreImageTag", objectStoreImageTag)
     into(layout.buildDirectory.dir("kubernetes/substrate"))
     from(lobbyKafkaManifest) {
         filter { line: String ->
-            line.replace(defaultServiceLauncherImage, serviceLauncherImageTag.get())
+            line
+                .replace(defaultServiceLauncherImage, serviceLauncherImageTag.get())
+                .replace(defaultKafkaImage, kafkaImageTag.get())
+                .replace(defaultPostgresImage, postgresImageTag.get())
+                .replace(defaultCassandraImage, cassandraImageTag.get())
+                .replace(defaultValkeyImage, valkeyImageTag.get())
+                .replace(defaultObjectStoreImage, objectStoreImageTag.get())
         }
     }
 }
 
 tasks.register("paperAgonesSyncAllocatorCa") {
     group = "deployment"
-    description = "Copies the Agones allocator TLS CA into the Fulcrum lobby namespace for controller-service mTLS."
+    description = "Copies the Agones allocator TLS CA into the Fulcrum lobby namespace for controller-service HTTPS."
     dependsOn(
         tasks.named("paperAgonesApplyNamespace"),
-        tasks.named("paperAgonesInstallAgones"))
+        tasks.named("paperAgonesConfigureAllocatorTls"))
     outputs.file(renderedAgonesAllocatorCaSecret)
     doLast {
         val ca = providers.exec {
@@ -465,6 +1056,9 @@ tasks.register("paperAgonesSyncAllocatorCa") {
 tasks.register<Sync>("velocityL4RenderManifests") {
     group = "distribution"
     description = "Renders Velocity L4 Kubernetes manifests with the effective container image tag."
+    inputs.property("velocityProxyImageTag", velocityProxyImageTag)
+    inputs.property("lobbyTargetCapacity", lobbyTargetCapacity)
+    inputs.property("lobbyHardCapacity", lobbyHardCapacity)
     into(layout.buildDirectory.dir("kubernetes/velocity"))
     from(lobbyVelocityManifest) {
         filter { line: String ->
@@ -518,6 +1112,20 @@ tasks.register<Exec>("paperAgonesWaitForValkey") {
     }
 }
 
+tasks.register<Exec>("paperAgonesWaitForObjectStorage") {
+    group = "verification"
+    description = "Waits for the in-cluster S3-compatible object storage dependency used by artifact provisioning and Paper."
+    doFirst {
+        commandLine(kubectlCommand(
+            "-n",
+            "fulcrum-lobby",
+            "rollout",
+            "status",
+            "statefulset/fulcrum-object-store",
+            "--timeout=240s"))
+    }
+}
+
 tasks.register<Exec>("paperAgonesWaitForPostgres") {
     group = "verification"
     description = "Waits for the in-cluster PostgreSQL record-store dependency used by authority workers."
@@ -548,7 +1156,7 @@ tasks.register<Exec>("paperAgonesWaitForCassandra") {
 
 tasks.register<Exec>("paperAgonesWaitForAuthoritySchema") {
     group = "verification"
-    description = "Waits for the authority schema provisioner Job to create record-store and hot-projection tables."
+    description = "Waits for the authority schema provisioner Job to apply record-store and hot-projection migration resources."
     doFirst {
         commandLine(kubectlCommand(
             "-n",
@@ -588,19 +1196,25 @@ tasks.register<Exec>("paperAgonesWaitForControllerService") {
     }
 }
 
+tasks.register<Exec>("paperAgonesWaitForWorkerAgent") {
+    group = "verification"
+    description = "Waits for the background worker-agent Deployment to become available."
+    doFirst {
+        commandLine(kubectlCommand(
+            "-n",
+            "fulcrum-lobby",
+            "rollout",
+            "status",
+            "deployment/fulcrum-worker-agent",
+            "--timeout=240s"))
+    }
+}
+
 tasks.register("paperAgonesVerifyAgonesInstall") {
     group = "verification"
     description = "Verifies the Agones CRDs required by the lobby Paper deployment exist."
     doLast {
-        providers.exec {
-            commandLine(kubectlCommand(
-                "get",
-                "crd",
-                "gameservers.agones.dev",
-                "fleets.agones.dev",
-                "fleetautoscalers.autoscaling.agones.dev",
-                "gameserverallocations.allocation.agones.dev"))
-        }.result.get().assertNormalExitValue()
+        waitForAgonesCrds("Agones install verification")
     }
 }
 
@@ -616,11 +1230,29 @@ tasks.register<Exec>("paperAgonesApply") {
     }
 }
 
+tasks.register("paperAgonesDeleteSharedShardAllocationJobs") {
+    group = "deployment"
+    description = "Deletes rerunnable shared-shard allocation Jobs before reapplying them."
+    doLast {
+        providers.exec {
+            commandLine(kubectlCommand(
+                "-n",
+                "fulcrum-lobby",
+                "delete",
+                "job",
+                "fulcrum-lobby-shared-shard-allocation",
+                "fulcrum-lobby-shared-shard-allocation-materialization",
+                "--ignore-not-found=true"))
+        }.result.get().assertNormalExitValue()
+    }
+}
+
 tasks.register<Exec>("paperAgonesApplySharedShardAllocation") {
     group = "deployment"
     description = "Applies the typed lobby shared-shard allocation provisioning Jobs after a Paper Fleet replica is Ready."
     dependsOn(
         tasks.named("serviceLauncherImage"),
+        tasks.named("paperAgonesDeleteSharedShardAllocationJobs"),
         tasks.named("paperAgonesRenderManifests"))
     doFirst {
         commandLine(kubectlCommand("apply", "-f", renderedLobbySharedShardAllocationManifest.get().asFile.absolutePath))
@@ -725,6 +1357,30 @@ tasks.register<Exec>("paperAgonesWaitForSharedShardAllocationState") {
     }
 }
 
+tasks.register("paperAgonesRestartControllerServiceForReplay") {
+    group = "verification"
+    description = "Restarts controller-service after shared-shard allocation state materializes so the cluster gate verifies replay before login routing."
+    doLast {
+        providers.exec {
+            commandLine(kubectlCommand(
+                "-n",
+                "fulcrum-lobby",
+                "rollout",
+                "restart",
+                "deployment/fulcrum-controller-service"))
+        }.result.get().assertNormalExitValue()
+        providers.exec {
+            commandLine(kubectlCommand(
+                "-n",
+                "fulcrum-lobby",
+                "rollout",
+                "status",
+                "deployment/fulcrum-controller-service",
+                "--timeout=240s"))
+        }.result.get().assertNormalExitValue()
+    }
+}
+
 tasks.register("paperAgonesAllocateLobby") {
     group = "verification"
     description = "Creates a GameServerAllocation for the lobby Paper Fleet and verifies Agones allocated a GameServer."
@@ -781,6 +1437,20 @@ tasks.register<Exec>("velocityL4Apply") {
     }
 }
 
+tasks.register<Exec>("velocityL4WaitForReady") {
+    group = "verification"
+    description = "Waits for the Fulcrum Velocity proxy Deployment to become available behind the L4 Service."
+    doFirst {
+        commandLine(kubectlCommand(
+            "-n",
+            "fulcrum-lobby",
+            "rollout",
+            "status",
+            "deployment/fulcrum-velocity",
+            "--timeout=240s"))
+    }
+}
+
 tasks.register<Exec>("velocityL4Status") {
     group = "verification"
     description = "Prints the current Fulcrum Velocity proxy and L4 Service status from the configured Kubernetes cluster."
@@ -804,15 +1474,18 @@ tasks.register("paperAgonesPhase2Deploy") {
         tasks.named("paperAgonesClusterPreflight"),
         tasks.named("paperAgonesApplyNamespace"),
         tasks.named("paperAgonesInstallAgones"),
+        tasks.named("paperAgonesConfigureAllocatorTls"),
         tasks.named("paperAgonesSyncAllocatorCa"),
         tasks.named("paperAgonesApplySubstrate"),
         tasks.named("paperAgonesWaitForKafka"),
         tasks.named("paperAgonesWaitForValkey"),
+        tasks.named("paperAgonesWaitForObjectStorage"),
         tasks.named("paperAgonesWaitForPostgres"),
         tasks.named("paperAgonesWaitForCassandra"),
         tasks.named("paperAgonesWaitForAuthoritySchema"),
         tasks.named("paperAgonesWaitForAuthorityService"),
         tasks.named("paperAgonesWaitForControllerService"),
+        tasks.named("paperAgonesWaitForWorkerAgent"),
         tasks.named("paperAgonesVerifyAgonesInstall"),
         tasks.named("paperAgonesApply"),
         tasks.named("paperAgonesWaitForWorldArtifact"),
@@ -822,6 +1495,7 @@ tasks.register("paperAgonesPhase2Deploy") {
         tasks.named("paperAgonesApplySharedShardAllocation"),
         tasks.named("paperAgonesWaitForSharedShardAllocation"),
         tasks.named("paperAgonesWaitForSharedShardAllocationState"),
+        tasks.named("paperAgonesRestartControllerServiceForReplay"),
         tasks.named("paperAgonesStatus"))
 }
 
@@ -831,6 +1505,7 @@ tasks.register("paperAgonesPhase3Deploy") {
     dependsOn(
         tasks.named("paperAgonesPhase2Deploy"),
         tasks.named("velocityL4Apply"),
+        tasks.named("velocityL4WaitForReady"),
         tasks.named("velocityL4Status"))
 }
 
@@ -848,11 +1523,69 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
             "--node-host=${lobbyNodeHost.get()}",
             "--agones-fleet-name=${lobbyAgonesFleetName.get()}",
             "--expected-agones-allocated-replicas=${expectedLobbyAgonesAllocatedReplicas.get()}",
+            "--route-attempt-state-topic=${lobbyRouteAttemptStateTopic.get()}",
+            "--queue-roster-command-topic=${lobbyQueueRosterCommandTopic.get()}",
+            "--queue-roster-state-topic=${lobbyQueueRosterStateTopic.get()}",
+            "--presence-authority-command-topic=${lobbyPresenceAuthorityCommandTopic.get()}",
+            "--shared-shard-placement-command-topic=${lobbySharedShardPlacementCommandTopic.get()}",
+            "--route-attempt-command-topic=${lobbyRouteAttemptCommandTopic.get()}",
+            "--lifecycle-trace-command-topic=${lobbyLifecycleTraceCommandTopic.get()}",
+            "--lifecycle-trace-state-topic=${lobbyLifecycleTraceStateTopic.get()}",
+            "--route-authority-command-topic=${lobbyRouteAuthorityCommandTopic.get()}",
+            "--route-authority-state-topic=${lobbyRouteAuthorityStateTopic.get()}",
+            "--proxy-route-command-topic=${lobbyProxyRouteCommandTopic.get()}",
+            "--paper-host-command-topic=${lobbyPaperHostCommandTopic.get()}",
+            "--host-observation-topic=${lobbyHostObservationTopic.get()}",
+            "--presence-authority-state-topic=${lobbyPresenceAuthorityStateTopic.get()}",
+            "--player-profile-state-topic=${lobbyPlayerProfileStateTopic.get()}",
+            "--rank-state-topic=${lobbyRankStateTopic.get()}",
+            "--punishment-state-topic=${lobbyPunishmentStateTopic.get()}",
+            "--player-profile-command-topic=${lobbyPlayerProfileCommandTopic.get()}",
+            "--rank-command-topic=${lobbyRankCommandTopic.get()}",
+            "--punishment-command-topic=${lobbyPunishmentCommandTopic.get()}",
+            "--economy-state-topic=${lobbyEconomyStateTopic.get()}",
+            "--stats-state-topic=${lobbyStatsStateTopic.get()}",
+            "--economy-command-topic=${lobbyEconomyCommandTopic.get()}",
+            "--stats-command-topic=${lobbyStatsCommandTopic.get()}",
+            "--expected-reward-currency-key=${expectedLobbyRewardCurrencyKey.get()}",
+            "--expected-reward-amount-minor-units=${expectedLobbyRewardAmountMinorUnits.get()}",
+            "--expected-reward-stat-key=${expectedLobbyRewardStatKey.get()}",
+            "--expected-reward-command-delivery-copies=${expectedLobbyRewardCommandDeliveryCopies.get()}",
+            "--cassandra-pod-name=${lobbyCassandraPodName.get()}",
+            "--cassandra-container-name=${lobbyCassandraContainerName.get()}",
+            "--cassandra-cqlsh-path=${lobbyCassandraCqlshPath.get()}",
+            "--postgres-pod-name=${lobbyPostgresPodName.get()}",
+            "--postgres-container-name=${lobbyPostgresContainerName.get()}",
+            "--postgres-psql-path=${lobbyPostgresPsqlPath.get()}",
+            "--postgres-database=${lobbyPostgresDatabase.get()}",
+            "--postgres-username=${lobbyPostgresUsername.get()}",
+            "--valkey-resource-name=${lobbyValkeyResourceName.get()}",
+            "--valkey-container-name=${lobbyValkeyContainerName.get()}",
+            "--valkey-cli-path=${lobbyValkeyCliPath.get()}",
+            "--object-store-resource-name=${lobbyObjectStoreResourceName.get()}",
+            "--object-store-port=${lobbyObjectStorePort.get()}",
+            "--object-store-region=${lobbyObjectStoreRegion.get()}",
+            "--object-store-bucket=${lobbyObjectStoreBucket.get()}",
+            "--object-store-secret-name=${lobbyObjectStoreSecretName.get()}",
+            "--object-store-access-key-secret-key=${lobbyObjectStoreAccessKeySecretKey.get()}",
+            "--object-store-secret-key-secret-key=${lobbyObjectStoreSecretKeySecretKey.get()}",
+            "--session-authority-state-topic=${lobbySessionAuthorityStateTopic.get()}",
+            "--session-authority-command-topic=${lobbySessionAuthorityCommandTopic.get()}",
+            "--shared-shard-allocation-command-topic=${lobbySharedShardAllocationCommandTopic.get()}",
+            "--shared-shard-allocation-state-topic=${lobbySharedShardAllocationStateTopic.get()}",
+            "--kafka-pod-name=${lobbyKafkaPodName.get()}",
+            "--kafka-container-name=${lobbyKafkaContainerName.get()}",
+            "--kafka-bootstrap-server=${lobbyKafkaBootstrapServer.get()}",
+            "--kafka-console-consumer-path=${lobbyKafkaConsoleConsumerPath.get()}",
             "--protocol-version=${lobbyMinecraftProtocolVersion.get()}",
             "--login-username=${lobbyLoginUsername.get()}",
             "--second-login-username=${secondLobbyLoginUsername.get()}",
             "--expected-lobby-spawn-block=${expectedLobbySpawnBlock.get()}",
             "--expected-lobby-spawn-world=${expectedLobbySpawnWorld.get()}",
+            "--expected-lobby-experience-id=${expectedLobbyExperienceId.get()}",
+            "--expected-lobby-pool-id=${expectedLobbyPoolId.get()}",
+            "--expected-lobby-resolved-manifest-id=${expectedLobbyResolvedManifestId.get()}",
+            "--expected-lobby-trace-id=${expectedLobbyTraceId.get()}",
             "--expected-lobby-bedrock-block-x=${expectedLobbyBedrockBlockX.get()}",
             "--expected-lobby-bedrock-block-y=${expectedLobbyBedrockBlockY.get()}",
             "--expected-lobby-bedrock-block-z=${expectedLobbyBedrockBlockZ.get()}",
@@ -875,15 +1608,104 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
             "--expected-scale-out-lobby-rank-label=${expectedScaleOutLobbyRankLabel.get()}",
             "--expected-scale-out-lobby-decorated-chat-contains=${expectedScaleOutLobbyDecoratedChatContains.get()}",
             "--scale-out-timeout=${lobbyScaleOutTimeout.get()}",
+            "--endpoint-ready-timeout=${lobbyEndpointReadyTimeout.get()}",
+            "--route-attempt-state-timeout=${lobbyRouteAttemptStateTimeout.get()}",
+            "--route-attempt-state-freshness-skew=${lobbyRouteAttemptStateFreshnessSkew.get()}",
+            "--presence-authority-state-timeout=${lobbyPresenceAuthorityStateTimeout.get()}",
+            "--presence-authority-state-freshness-skew=${lobbyPresenceAuthorityStateFreshnessSkew.get()}",
+            "--standard-capability-state-timeout=${lobbyStandardCapabilityStateTimeout.get()}",
+            "--cassandra-hot-projection-timeout=${lobbyCassandraHotProjectionTimeout.get()}",
+            "--postgres-authority-record-timeout=${lobbyPostgresAuthorityRecordTimeout.get()}",
+            "--valkey-cache-timeout=${lobbyValkeyCacheTimeout.get()}",
+            "--object-store-artifact-timeout=${lobbyObjectStoreArtifactTimeout.get()}",
+            "--session-authority-state-timeout=${lobbySessionAuthorityStateTimeout.get()}",
+            "--session-authority-state-freshness-skew=${lobbySessionAuthorityStateFreshnessSkew.get()}",
+            "--shared-shard-allocation-state-timeout=${lobbySharedShardAllocationStateTimeout.get()}",
             "--timeout=${lobbyVerifierTimeout.get()}")
         lobbyEndpointHost.orNull?.takeIf { it.isNotBlank() }?.let {
             runArgs.add("--endpoint-host=$it")
         }
-        kubeContext.orNull?.takeIf { it.isNotBlank() }?.let {
-            runArgs.add("--kube-context=$it")
-        }
+        verifierKubeArgs(runArgs)
         verifyLobbyAgonesFleetState.orNull?.takeIf { it.isNotBlank() }?.let {
             runArgs.add("--verify-agones-fleet-state=$it")
+        }
+        verifyLobbyRouteAttemptState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-route-attempt-state=$it")
+        }
+        verifyLobbyLoginRoutingCommandLog.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-login-routing-command-log=$it")
+        }
+        verifyLobbyQueueRosterState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-queue-roster-state=$it")
+        }
+        verifyLobbyLifecycleTraceState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-lifecycle-trace-state=$it")
+        }
+        verifyLobbyRouteAuthorityCommandLog.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-route-authority-command-log=$it")
+        }
+        verifyLobbyRouteAuthorityState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-route-authority-state=$it")
+        }
+        verifyLobbyHostRouteCommandLogs.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-host-route-command-logs=$it")
+        }
+        verifyLobbyHostObservationLog.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-host-observation-log=$it")
+        }
+        verifyLobbyPresenceAuthorityState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-presence-authority-state=$it")
+        }
+        verifyLobbyStandardCapabilityState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-standard-capability-state=$it")
+        }
+        verifyLobbyStandardCapabilityCommandLog.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-standard-capability-command-log=$it")
+        }
+        verifyLobbyRewardState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-reward-state=$it")
+        }
+        verifyLobbyRewardCommandLog.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-reward-command-log=$it")
+        }
+        verifyLobbyCassandraHotProjections.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-cassandra-hot-projections=$it")
+        }
+        verifyLobbyPostgresAuthorityRecords.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-postgres-authority-records=$it")
+        }
+        verifyLobbyValkeyCache.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-valkey-cache=$it")
+        }
+        verifyLobbyProjectionConsistency.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-projection-consistency=$it")
+        }
+        verifyLobbyTraceCorrelation.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-trace-correlation=$it")
+        }
+        verifyLobbyObjectStoreArtifact.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-object-store-artifact=$it")
+        }
+        expectedLobbyWorldArtifactId.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--expected-lobby-world-artifact-id=$it")
+        }
+        expectedLobbyWorldArtifactDigest.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--expected-lobby-world-artifact-digest=$it")
+        }
+        expectedLobbyWorldArtifactCompatibility.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--expected-lobby-world-artifact-compatibility=$it")
+        }
+        verifyLobbySessionAuthorityState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-session-authority-state=$it")
+        }
+        verifyLobbySessionAuthorityCommandLog.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-session-authority-command-log=$it")
+        }
+        verifyLobbySharedShardAllocationCommandLog.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-shared-shard-allocation-command-log=$it")
+        }
+        verifyLobbySharedShardAllocationState.orNull?.takeIf { it.isNotBlank() }?.let {
+            runArgs.add("--verify-shared-shard-allocation-state=$it")
         }
         deniedLobbyLoginUsername.orNull?.takeIf { it.isNotBlank() }?.let {
             runArgs.add("--denied-login-username=$it")
@@ -895,16 +1717,28 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
     }
 }
 
+tasks.register("clusterK3sE2e") {
+    group = "verification"
+    description = "Runs the K3s-backed cluster E2E gate and tears down the Gradle-owned cluster by default."
+    dependsOn(
+        tasks.named("clusterK3sImportImages"),
+        tasks.named("lobbyClusterE2eVerify"))
+    finalizedBy(tasks.named("clusterK3sStop"))
+}
+
 tasks.named("paperAgonesApply") {
+    mustRunAfter(tasks.named("clusterK3sImportImages"))
     mustRunAfter(tasks.named("paperAgonesVerifyAgonesInstall"))
     mustRunAfter(tasks.named("paperAgonesWaitForKafka"))
     mustRunAfter(tasks.named("paperAgonesWaitForValkey"))
+    mustRunAfter(tasks.named("paperAgonesWaitForObjectStorage"))
     mustRunAfter(tasks.named("paperAgonesWaitForAuthorityService"))
     mustRunAfter(tasks.named("paperAgonesWaitForControllerService"))
+    mustRunAfter(tasks.named("paperAgonesWaitForWorkerAgent"))
 }
 
 tasks.named("paperAgonesStatus") {
-    mustRunAfter(tasks.named("paperAgonesWaitForSharedShardAllocationState"))
+    mustRunAfter(tasks.named("paperAgonesRestartControllerServiceForReplay"))
 }
 
 tasks.named("paperAgonesWaitForWorldArtifact") {
@@ -921,6 +1755,7 @@ tasks.named("paperAgonesWaitForFleetReady") {
 }
 
 tasks.named("paperAgonesApplySharedShardAllocation") {
+    mustRunAfter(tasks.named("clusterK3sImportImages"))
     mustRunAfter(tasks.named("paperAgonesWaitForFleetReady"))
 }
 
@@ -932,6 +1767,10 @@ tasks.named("paperAgonesWaitForSharedShardAllocationState") {
     mustRunAfter(tasks.named("paperAgonesWaitForSharedShardAllocation"))
 }
 
+tasks.named("paperAgonesRestartControllerServiceForReplay") {
+    mustRunAfter(tasks.named("paperAgonesWaitForSharedShardAllocationState"))
+}
+
 tasks.named("paperAgonesAllocateLobby") {
     mustRunAfter(tasks.named("paperAgonesWaitForFleetReady"))
 }
@@ -940,15 +1779,24 @@ tasks.named("paperAgonesApplyNamespace") {
     mustRunAfter(tasks.named("paperAgonesClusterPreflight"))
 }
 
+tasks.named("paperAgonesClusterPreflight") {
+    mustRunAfter(tasks.named("clusterK3sStart"))
+}
+
 tasks.named("paperAgonesInstallAgones") {
     mustRunAfter(tasks.named("paperAgonesApplyNamespace"))
 }
 
-tasks.named("paperAgonesVerifyAgonesInstall") {
+tasks.named("paperAgonesConfigureAllocatorTls") {
     mustRunAfter(tasks.named("paperAgonesInstallAgones"))
 }
 
+tasks.named("paperAgonesVerifyAgonesInstall") {
+    mustRunAfter(tasks.named("paperAgonesConfigureAllocatorTls"))
+}
+
 tasks.named("paperAgonesApplySubstrate") {
+    mustRunAfter(tasks.named("clusterK3sImportImages"))
     mustRunAfter(tasks.named("paperAgonesApplyNamespace"))
     mustRunAfter(tasks.named("paperAgonesSyncAllocatorCa"))
 }
@@ -958,6 +1806,10 @@ tasks.named("paperAgonesWaitForKafka") {
 }
 
 tasks.named("paperAgonesWaitForValkey") {
+    mustRunAfter(tasks.named("paperAgonesApplySubstrate"))
+}
+
+tasks.named("paperAgonesWaitForObjectStorage") {
     mustRunAfter(tasks.named("paperAgonesApplySubstrate"))
 }
 
@@ -986,20 +1838,35 @@ tasks.named("paperAgonesWaitForControllerService") {
     mustRunAfter(tasks.named("paperAgonesWaitForAuthorityService"))
 }
 
+tasks.named("paperAgonesWaitForWorkerAgent") {
+    mustRunAfter(tasks.named("paperAgonesWaitForKafka"))
+    mustRunAfter(tasks.named("paperAgonesWaitForObjectStorage"))
+}
+
 tasks.named("paperAgonesWaitForCapabilityMaterialization") {
     mustRunAfter(tasks.named("paperAgonesWaitForCapabilitySeed"))
 }
 
 tasks.named("velocityL4Apply") {
+    mustRunAfter(tasks.named("clusterK3sImportImages"))
     mustRunAfter(tasks.named("paperAgonesPhase2Deploy"))
 }
 
 tasks.named("velocityL4Status") {
+    mustRunAfter(tasks.named("velocityL4WaitForReady"))
+}
+
+tasks.named("velocityL4WaitForReady") {
     mustRunAfter(tasks.named("velocityL4Apply"))
 }
 
 tasks.named("lobbyClusterE2eVerify") {
+    mustRunAfter(rootProject.tasks.named("step8Check"))
     mustRunAfter(tasks.named("paperAgonesPhase3Deploy"))
+}
+
+tasks.named("clusterK3sStart") {
+    mustRunAfter(rootProject.tasks.named("step8Check"))
 }
 
 tasks.named("check") {

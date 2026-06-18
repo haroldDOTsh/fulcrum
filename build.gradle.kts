@@ -181,10 +181,24 @@ tasks.register("step8Check") {
     dependsOn(step8CheckedProjects.map { "$it:check" })
 }
 
+tasks.register("clusterExistingE2e") {
+    group = "verification"
+    description = "Runs the existing-cluster E2E gate: deploys Paper Agones plus Velocity L4, then verifies the public Minecraft endpoint."
+    dependsOn("step8Check")
+    dependsOn(":distribution:service-launcher:lobbyClusterE2eVerify")
+}
+
+tasks.register("clusterK3sE2e") {
+    group = "verification"
+    description = "Runs the K3s-backed cluster E2E gate with Gradle-owned cluster lifecycle and teardown."
+    dependsOn("step8Check")
+    dependsOn(":distribution:service-launcher:clusterK3sE2e")
+}
+
 tasks.register("clusterE2e") {
     group = "verification"
-    description = "Runs the current production-shaped cluster E2E gate: deploys Paper Agones plus Velocity L4, then verifies the public Minecraft endpoint."
-    dependsOn(":distribution:service-launcher:lobbyClusterE2eVerify")
+    description = "Runs the canonical K3s-backed cluster E2E gate for the login-to-lobby production slice."
+    dependsOn("clusterK3sE2e")
 }
 
 tasks.named("check") {
