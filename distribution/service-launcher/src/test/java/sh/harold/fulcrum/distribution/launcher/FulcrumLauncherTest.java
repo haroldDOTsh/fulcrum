@@ -148,9 +148,14 @@ import sh.harold.fulcrum.host.worker.WorkerJobReceipt;
 import sh.harold.fulcrum.host.worker.WorkerJobRequest;
 import sh.harold.fulcrum.host.worker.WorkerJobResult;
 import sh.harold.fulcrum.host.worker.WorkerLagBudget;
+import sh.harold.fulcrum.standard.contracts.EconomyContracts;
 import sh.harold.fulcrum.standard.contracts.PlayerProfileContracts;
 import sh.harold.fulcrum.standard.contracts.PunishmentContracts;
 import sh.harold.fulcrum.standard.contracts.RankContracts;
+import sh.harold.fulcrum.standard.contracts.StatsContracts;
+import sh.harold.fulcrum.standard.economy.EconomyAuthority;
+import sh.harold.fulcrum.standard.economy.EconomyState;
+import sh.harold.fulcrum.standard.economy.PostLedgerEntry;
 import sh.harold.fulcrum.standard.profile.PlayerProfileAuthority;
 import sh.harold.fulcrum.standard.profile.PlayerProfileSnapshot;
 import sh.harold.fulcrum.standard.profile.PlayerProfileState;
@@ -163,6 +168,9 @@ import sh.harold.fulcrum.standard.rank.EffectiveRankSnapshot;
 import sh.harold.fulcrum.standard.rank.GrantRank;
 import sh.harold.fulcrum.standard.rank.RankAuthority;
 import sh.harold.fulcrum.standard.rank.RankState;
+import sh.harold.fulcrum.standard.stats.RecordStatDelta;
+import sh.harold.fulcrum.standard.stats.StatsAuthority;
+import sh.harold.fulcrum.standard.stats.StatsState;
 import sh.harold.fulcrum.testkit.substrate.FulcrumSubstrateStack;
 
 import java.io.ByteArrayOutputStream;
@@ -258,6 +266,7 @@ final class FulcrumLauncherTest {
                 settings.controller().orElseThrow().agonesAllocatorUrl());
         assertEquals("fulcrum-lobby", settings.controller().orElseThrow().agonesNamespace());
         assertTrue(settings.controller().orElseThrow().agonesAllocatorClientCertificatePath().isEmpty());
+        assertFalse(settings.controller().orElseThrow().agonesAllocatorDisableHostnameVerification());
         assertEquals("host.paper.commands", settings.controller().orElseThrow().hostCommandTopic());
         assertEquals("host.observation", settings.controller().orElseThrow().hostObservationTopic());
         assertEquals("host.velocity.routes", settings.controller().orElseThrow().proxyRouteCommandTopic());
@@ -283,8 +292,17 @@ final class FulcrumLauncherTest {
                 java.net.URI.create("http://127.0.0.1:18083/capabilities"),
                 settings.paper().orElseThrow().capabilityBridgeUrl());
         assertEquals(
+                java.net.URI.create("http://127.0.0.1:18084/rewards"),
+                settings.paper().orElseThrow().rewardBridgeUrl());
+        assertEquals(
                 new RuntimeConnectionSettings.HostPort("localhost", 6379),
                 settings.paper().orElseThrow().valkeyEndpoint());
+        assertEquals("cmd.standard.economy", settings.paper().orElseThrow().rewardEconomyCommandTopic());
+        assertEquals("cmd.standard.stats", settings.paper().orElseThrow().rewardStatsCommandTopic());
+        assertEquals("coins", settings.paper().orElseThrow().rewardCurrencyKey());
+        assertEquals(250L, settings.paper().orElseThrow().rewardAmountMinorUnits());
+        assertEquals("session-completions", settings.paper().orElseThrow().rewardStatKey());
+        assertEquals(1, settings.paper().orElseThrow().rewardDeliveryCopies());
         assertEquals(new SessionId("session-lobby-runtime"), settings.paper().orElseThrow().sessionId());
         assertEquals(new SlotId("slot-lobby-runtime"), settings.paper().orElseThrow().slotId());
         assertEquals(
@@ -306,10 +324,12 @@ final class FulcrumLauncherTest {
                 "ctrl.state.shared-shard-allocation",
                 settings.velocity().orElseThrow().sharedShardAllocationStateTopic());
         assertEquals("cmd.presence", settings.velocity().orElseThrow().presenceCommandTopic());
+        assertEquals("ctrl.cmd.queue-roster", settings.velocity().orElseThrow().queueRosterCommandTopic());
         assertEquals(
                 "ctrl.cmd.shared-shard-placement",
                 settings.velocity().orElseThrow().sharedShardPlacementCommandTopic());
         assertEquals("ctrl.cmd.route-attempt", settings.velocity().orElseThrow().routeAttemptCommandTopic());
+        assertEquals("ctrl.cmd.lifecycle-trace", settings.velocity().orElseThrow().lifecycleTraceCommandTopic());
         assertEquals(
                 new sh.harold.fulcrum.api.kernel.ExperienceId("experience-lobby"),
                 settings.velocity().orElseThrow().lobbyExperienceId());
@@ -331,6 +351,7 @@ final class FulcrumLauncherTest {
         assertTrue(summary.contains("sessionOwnerToken=<redacted>"));
         assertTrue(summary.contains("worker-agent: objectStoreMode=local"));
         assertTrue(summary.contains("paper-agent: objectStoreMode=local"));
+        assertTrue(summary.contains("deliveryCopies:1"));
         assertFalse(summary.contains("postgres-secret"));
         assertFalse(summary.contains("owner-token-lobby-runtime"));
         assertFalse(summary.contains("FULCRUM_POSTGRES_PASSWORD"));
@@ -392,6 +413,24 @@ final class FulcrumLauncherTest {
     }
 
     @Test
+    void runtimeConnectionSettingsResolvePaperRewardDuplicateDeliveryOverride() {
+        Map<String, String> values = allBindingsMap();
+        values.put("FULCRUM_PAPER_REWARD_DELIVERY_COPIES", "2");
+        LaunchPlan plan = RuntimeEntrypointRegistry.plan(
+                LaunchCommand.parse(new String[]{
+                        "--profile=single-machine",
+                        "--role=paper-agent",
+                        "--mode=run"
+                }),
+                Thread.currentThread().getContextClassLoader());
+
+        RuntimeConnectionSettings settings = RuntimeConnectionSettings.resolve(plan, RuntimeEnvironment.of(values));
+
+        assertEquals(2, settings.paper().orElseThrow().rewardDeliveryCopies());
+        assertTrue(String.join("\n", settings.redactedSummary()).contains("deliveryCopies:2"));
+    }
+
+    @Test
     void runtimeConnectionSettingsResolveAgonesAllocatorMtlsBindings() {
         Map<String, String> values = allBindingsMap();
         values.put("FULCRUM_AGONES_ALLOCATOR_CLIENT_CERT_PATH", tempDir.resolve("tls.crt").toString());
@@ -417,6 +456,30 @@ final class FulcrumLauncherTest {
     }
 
     @Test
+    void runtimeConnectionSettingsResolveAgonesAllocatorCaOnlyBinding() {
+        Map<String, String> values = allBindingsMap();
+        values.put("FULCRUM_AGONES_ALLOCATOR_CA_CERT_PATH", tempDir.resolve("tls-ca.crt").toString());
+        values.put("FULCRUM_AGONES_ALLOCATOR_DISABLE_HOSTNAME_VERIFICATION", "true");
+        LaunchPlan plan = RuntimeEntrypointRegistry.plan(
+                LaunchCommand.parse(new String[]{
+                        "--profile=single-machine",
+                        "--role=controller-service",
+                        "--mode=run"
+                }),
+                Thread.currentThread().getContextClassLoader());
+
+        RuntimeConnectionSettings settings = RuntimeConnectionSettings.resolve(plan, RuntimeEnvironment.of(values));
+
+        RuntimeConnectionSettings.ControllerConnections controller = settings.controller().orElseThrow();
+        assertEquals(Optional.empty(), controller.agonesAllocatorClientCertificatePath());
+        assertEquals(Optional.empty(), controller.agonesAllocatorClientKeyPath());
+        assertEquals(Optional.of(tempDir.resolve("tls-ca.crt")), controller.agonesAllocatorCaCertificatePath());
+        assertTrue(controller.agonesAllocatorDisableHostnameVerification());
+        assertTrue(String.join("\n", settings.redactedSummary()).contains("controller-service: agonesAllocatorMtls=false"));
+        assertTrue(String.join("\n", settings.redactedSummary()).contains("controller-service: agonesAllocatorHostnameVerification=false"));
+    }
+
+    @Test
     void runtimeConnectionSettingsRejectPartialAgonesAllocatorMtlsBindings() {
         Map<String, String> values = allBindingsMap();
         values.put("FULCRUM_AGONES_ALLOCATOR_CLIENT_CERT_PATH", tempDir.resolve("tls.crt").toString());
@@ -432,7 +495,7 @@ final class FulcrumLauncherTest {
                 RuntimeConfigurationException.class,
                 () -> RuntimeConnectionSettings.resolve(plan, RuntimeEnvironment.of(values)));
 
-        assertTrue(exception.getMessage().contains("client certificate, client key, and CA certificate"));
+        assertTrue(exception.getMessage().contains("client certificate and client key"));
     }
 
     @Test
@@ -468,6 +531,7 @@ final class FulcrumLauncherTest {
             assertTrue(summary.contains("controller-service: controlKafkaClient=bootstrapServers=localhost:9092"));
             assertTrue(summary.contains("controller-service: agonesNamespace=fulcrum-lobby"));
             assertTrue(summary.contains("controller-service: agonesAllocatorMtls=false"));
+            assertTrue(summary.contains("controller-service: agonesAllocatorHostnameVerification=true"));
             assertTrue(summary.contains("controller-service: hostCommandTopic=host.paper.commands"));
             assertTrue(summary.contains("controller-service: hostObservationTopic=host.observation"));
             assertTrue(summary.contains("controller-service: proxyRouteCommandTopic=host.velocity.routes"));
@@ -478,12 +542,16 @@ final class FulcrumLauncherTest {
             assertTrue(summary.contains("paper-agent: objectStoreMode=local"));
             assertTrue(summary.contains("paper-agent: observationBridgeUrl=http://127.0.0.1:18080/observations"));
             assertTrue(summary.contains("paper-agent: capabilityBridgeUrl=http://127.0.0.1:18083/capabilities"));
+            assertTrue(summary.contains("paper-agent: rewardBridgeUrl=http://127.0.0.1:18084/rewards"));
             assertTrue(summary.contains("paper-agent: valkeyClient=localhost:6379"));
+            assertTrue(summary.contains("paper-agent: rewardCommands=cmd.standard.economy,cmd.standard.stats"));
             assertTrue(summary.contains("velocity-agent: velocityKafkaClient=bootstrapServers=localhost:9092"));
             assertTrue(summary.contains("velocity-agent: loginGateBridgeUrl=http://127.0.0.1:18082/login-gate"));
             assertTrue(summary.contains("velocity-agent: presenceCommandTopic=cmd.presence"));
+            assertTrue(summary.contains("velocity-agent: queueRosterCommandTopic=ctrl.cmd.queue-roster"));
             assertTrue(summary.contains("velocity-agent: sharedShardPlacementCommandTopic=ctrl.cmd.shared-shard-placement"));
             assertTrue(summary.contains("velocity-agent: routeAttemptCommandTopic=ctrl.cmd.route-attempt"));
+            assertTrue(summary.contains("velocity-agent: lifecycleTraceCommandTopic=ctrl.cmd.lifecycle-trace"));
             assertTrue(summary.contains("velocity-agent: sharedShardAllocationStateTopic=ctrl.state.shared-shard-allocation"));
             assertTrue(summary.contains("velocity-agent: lobbyRouting=experienceId=experience-lobby|poolId=pool-lobby|fleet=fulcrum-lobby-paper|resolvedManifestId=manifest-lobby-bedrock-v1"));
             assertTrue(summary.contains("velocity-agent: valkeyClient=localhost:6379"));
@@ -1073,6 +1141,16 @@ final class FulcrumLauncherTest {
                 new AuthorityCommandDelivery<>(
                         issuePunishmentCommand(subject),
                         new AuthorityOffset("cmd.standard.punishment", 0, 10)));
+        bindings.enqueue(
+                StandardCapabilityAuthorityWireCodec.ECONOMY_DOMAIN,
+                new AuthorityCommandDelivery<>(
+                        postEconomyRewardCommand(subject),
+                        new AuthorityOffset("cmd.standard.economy", 0, 11)));
+        bindings.enqueue(
+                StandardCapabilityAuthorityWireCodec.STATS_DOMAIN,
+                new AuthorityCommandDelivery<>(
+                        recordStatsRewardCommand(subject),
+                        new AuthorityOffset("cmd.standard.stats", 0, 12)));
         AuthorityRuntimeServiceEngine engine = new AuthorityRuntimeServiceEngine(
                 catalog.workerBindings(),
                 Duration.ofMillis(10));
@@ -1082,7 +1160,9 @@ final class FulcrumLauncherTest {
             awaitTrue(
                     () -> !bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.PLAYER_PROFILE_DOMAIN).isEmpty()
                             && !bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.RANK_DOMAIN).isEmpty()
-                            && !bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.PUNISHMENT_DOMAIN).isEmpty(),
+                            && !bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.PUNISHMENT_DOMAIN).isEmpty()
+                            && !bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.ECONOMY_DOMAIN).isEmpty()
+                            && !bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.STATS_DOMAIN).isEmpty(),
                     Duration.ofSeconds(2),
                     "catalog-built standard capability workers did not commit their offsets");
         } finally {
@@ -1104,6 +1184,16 @@ final class FulcrumLauncherTest {
                         StandardCapabilityAuthorityWireCodec.PUNISHMENT_DOMAIN,
                         PunishmentAuthority.aggregateId(subject))
                 .orElseThrow();
+        AuthorityRecord<EconomyState> economy = bindings
+                .<EconomyState>storedRecord(
+                        StandardCapabilityAuthorityWireCodec.ECONOMY_DOMAIN,
+                        EconomyAuthority.aggregateId(EconomyAuthority.accountId(subject, "coins")))
+                .orElseThrow();
+        AuthorityRecord<StatsState> stats = bindings
+                .<StatsState>storedRecord(
+                        StandardCapabilityAuthorityWireCodec.STATS_DOMAIN,
+                        StatsAuthority.aggregateId(StatsAuthority.counterId(subject, "session-completions")))
+                .orElseThrow();
 
         assertEquals(new Revision(1), profile.revision());
         assertEquals(19, profile.fencingEpoch());
@@ -1112,12 +1202,20 @@ final class FulcrumLauncherTest {
         assertEquals("Admin", rank.state().current().orElseThrow().primaryRankKey());
         assertEquals(new Revision(1), punishment.revision());
         assertEquals("integration-test-ban", punishment.state().active().orElseThrow().punishmentId());
+        assertEquals(new Revision(1), economy.revision());
+        assertEquals(250L, economy.state().current().orElseThrow().balanceMinorUnits());
+        assertEquals(new Revision(1), stats.revision());
+        assertEquals(1L, stats.state().current().orElseThrow().total());
         assertEquals(List.of(new AuthorityOffset("cmd.standard.player-profile", 0, 8)),
                 bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.PLAYER_PROFILE_DOMAIN));
         assertEquals(List.of(new AuthorityOffset("cmd.standard.rank", 0, 9)),
                 bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.RANK_DOMAIN));
         assertEquals(List.of(new AuthorityOffset("cmd.standard.punishment", 0, 10)),
                 bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.PUNISHMENT_DOMAIN));
+        assertEquals(List.of(new AuthorityOffset("cmd.standard.economy", 0, 11)),
+                bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.ECONOMY_DOMAIN));
+        assertEquals(List.of(new AuthorityOffset("cmd.standard.stats", 0, 12)),
+                bindings.committedOffsets(StandardCapabilityAuthorityWireCodec.STATS_DOMAIN));
     }
 
     @Test
@@ -1481,6 +1579,8 @@ final class FulcrumLauncherTest {
                 AuthorityCommand<UpsertPlayerProfile> profileCommand = upsertPlayerProfileCommand(subject, 1);
                 AuthorityCommand<GrantRank> rankCommand = grantRankCommand(subject, 1);
                 AuthorityCommand<IssuePunishment> punishmentCommand = issuePunishmentCommand(subject, 1);
+                AuthorityCommand<PostLedgerEntry> economyCommand = postEconomyRewardCommand(subject, 1);
+                AuthorityCommand<RecordStatDelta> statsCommand = recordStatsRewardCommand(subject, 1);
 
                 sendAuthorityCommand(
                         stack.kafkaBootstrapServers(),
@@ -1497,31 +1597,87 @@ final class FulcrumLauncherTest {
                         PunishmentContracts.COMMAND_TOPIC,
                         punishmentCommand.envelope().aggregateId().value(),
                         StandardCapabilityAuthorityWireCodec.encodePunishmentCommand(punishmentCommand));
+                sendAuthorityCommand(
+                        stack.kafkaBootstrapServers(),
+                        EconomyContracts.COMMAND_TOPIC,
+                        economyCommand.envelope().aggregateId().value(),
+                        StandardCapabilityAuthorityWireCodec.encodeEconomyCommand(economyCommand));
+                sendAuthorityCommand(
+                        stack.kafkaBootstrapServers(),
+                        StatsContracts.COMMAND_TOPIC,
+                        statsCommand.envelope().aggregateId().value(),
+                        StandardCapabilityAuthorityWireCodec.encodeStatsCommand(statsCommand));
 
                 awaitTrue(
-                        () -> "3".equals(stack.queryPostgresScalar("""
+                        () -> "5".equals(stack.queryPostgresScalar("""
                                 SELECT count(*)
                                 FROM authority_records
-                                WHERE aggregate_id IN ('%s', '%s', '%s');
+                                WHERE aggregate_id IN ('%s', '%s', '%s', '%s', '%s');
                                 """.formatted(
                                 sql(profileCommand.envelope().aggregateId().value()),
                                 sql(rankCommand.envelope().aggregateId().value()),
-                                sql(punishmentCommand.envelope().aggregateId().value())))),
+                                sql(punishmentCommand.envelope().aggregateId().value()),
+                                sql(economyCommand.envelope().aggregateId().value()),
+                                sql(statsCommand.envelope().aggregateId().value())))),
                         Duration.ofSeconds(30),
                         "standard capability authority records were not stored");
                 awaitTrue(
-                        () -> "3".equals(stack.queryPostgresScalar("""
+                        () -> "5".equals(stack.queryPostgresScalar("""
                                 SELECT count(*)
                                 FROM authority_decisions
-                                WHERE source_topic IN ('%s', '%s', '%s')
+                                WHERE source_topic IN ('%s', '%s', '%s', '%s', '%s')
                                   AND status = 'ACCEPTED'
                                   AND revision = 1;
                                 """.formatted(
                                 sql(PlayerProfileContracts.COMMAND_TOPIC),
                                 sql(RankContracts.COMMAND_TOPIC),
-                                sql(PunishmentContracts.COMMAND_TOPIC)))),
+                                sql(PunishmentContracts.COMMAND_TOPIC),
+                                sql(EconomyContracts.COMMAND_TOPIC),
+                                sql(StatsContracts.COMMAND_TOPIC)))),
                         Duration.ofSeconds(30),
                         "standard capability authority decisions were not recorded");
+                awaitTrue(
+                        () -> stack.queryCassandra("""
+                                SELECT display_name, revision
+                                FROM fulcrum.standard_player_profile_effective_hot
+                                WHERE subject_id = '%s';
+                                """.formatted(cql(subject.value().toString()))).contains("Catalog Builder"),
+                        Duration.ofSeconds(30),
+                        "player-profile hot projection was not written through authority-service");
+                awaitTrue(
+                        () -> stack.queryCassandra("""
+                                SELECT primary_rank_key, permissions, revision
+                                FROM fulcrum.standard_rank_effective_hot
+                                WHERE subject_id = '%s';
+                                """.formatted(cql(subject.value().toString()))).contains("rank:Admin"),
+                        Duration.ofSeconds(30),
+                        "rank hot projection was not written through authority-service");
+                awaitTrue(
+                        () -> stack.queryCassandra("""
+                                SELECT punishment_id, reason, revision
+                                FROM fulcrum.standard_punishment_active_hot
+                                WHERE subject_id = '%s';
+                                """.formatted(cql(subject.value().toString()))).contains("integration-test-ban"),
+                        Duration.ofSeconds(30),
+                        "punishment hot projection was not written through authority-service");
+                awaitTrue(
+                        () -> stack.queryCassandra("""
+                                SELECT balance_minor_units, last_entry_id, revision
+                                FROM fulcrum.standard_economy_balance_hot
+                                WHERE subject_id = '%s'
+                                  AND currency_key = 'coins';
+                                """.formatted(cql(subject.value().toString()))).contains("250"),
+                        Duration.ofSeconds(30),
+                        "economy balance hot projection was not written through authority-service");
+                awaitTrue(
+                        () -> stack.queryCassandra("""
+                                SELECT total, last_entry_id, revision
+                                FROM fulcrum.standard_stats_counter_hot
+                                WHERE subject_id = '%s'
+                                  AND stat_key = 'session-completions';
+                                """.formatted(cql(subject.value().toString()))).contains("1"),
+                        Duration.ofSeconds(30),
+                        "stats counter hot projection was not written through authority-service");
                 awaitTrue(
                         () -> stack.getValkey(PlayerProfileAuthority.cacheKey(subject)).contains("displayName=Catalog Builder"),
                         Duration.ofSeconds(30),
@@ -1534,6 +1690,16 @@ final class FulcrumLauncherTest {
                         () -> stack.getValkey(PunishmentAuthority.cacheKey(subject)).contains("punishmentId=integration-test-ban"),
                         Duration.ofSeconds(30),
                         "punishment cache entry was not written through authority-service");
+                awaitTrue(
+                        () -> stack.getValkey(EconomyAuthority.cacheKey(EconomyAuthority.accountId(subject, "coins")))
+                                .contains("balanceMinorUnits=250"),
+                        Duration.ofSeconds(30),
+                        "economy cache entry was not written through authority-service");
+                awaitTrue(
+                        () -> stack.getValkey(StatsAuthority.cacheKey(StatsAuthority.counterId(subject, "session-completions")))
+                                .contains("total=1"),
+                        Duration.ofSeconds(30),
+                        "stats cache entry was not written through authority-service");
                 awaitTrue(
                         () -> committedOffset(
                                 stack.kafkaBootstrapServers(),
@@ -1549,6 +1715,16 @@ final class FulcrumLauncherTest {
                                 stack.kafkaBootstrapServers(),
                                 "fulcrum-authority-service-standard.punishment",
                                 PunishmentContracts.COMMAND_TOPIC,
+                                0).orElse(-1L) == 1L
+                                && committedOffset(
+                                stack.kafkaBootstrapServers(),
+                                "fulcrum-authority-service-standard.economy",
+                                EconomyContracts.COMMAND_TOPIC,
+                                0).orElse(-1L) == 1L
+                                && committedOffset(
+                                stack.kafkaBootstrapServers(),
+                                "fulcrum-authority-service-standard.stats",
+                                StatsContracts.COMMAND_TOPIC,
                                 0).orElse(-1L) == 1L,
                         Duration.ofSeconds(30),
                         "standard capability command offsets were not committed");
@@ -1560,6 +1736,12 @@ final class FulcrumLauncherTest {
                         .getFirst()
                         .contains("accepted|"));
                 assertTrue(drainTopic(stack.kafkaBootstrapServers(), PunishmentContracts.RESPONSE_TOPIC, 1)
+                        .getFirst()
+                        .contains("accepted|"));
+                assertTrue(drainTopic(stack.kafkaBootstrapServers(), EconomyContracts.RESPONSE_TOPIC, 1)
+                        .getFirst()
+                        .contains("accepted|"));
+                assertTrue(drainTopic(stack.kafkaBootstrapServers(), StatsContracts.RESPONSE_TOPIC, 1)
                         .getFirst()
                         .contains("accepted|"));
             }
@@ -2021,8 +2203,8 @@ final class FulcrumLauncherTest {
 
             try (FulcrumRuntimeSupervisor controller = startControllerSupervisor(controllerBindingsMap(stack))) {
                 RouteAttemptId routeAttempt = new RouteAttemptId("route-attempt-paper-attach-observation");
-                RouteId route = new RouteId("route-paper-attach-observation");
                 SubjectId subject = new SubjectId(UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"));
+                RouteId route = new RouteId("route-velocity-login-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
                 PresenceId presence = new PresenceId("presence-paper-attach-observation");
                 SessionId session = new SessionId("session-paper-attach-observation");
                 SlotId slot = new SlotId("slot-paper-attach-observation");
@@ -2108,6 +2290,35 @@ final class FulcrumLauncherTest {
                                         && value.contains("routeAttemptId=" + routeAttempt.value())
                                         && value.contains("expectedRevision=4")),
                         "AcknowledgeRouteAttempt command was not generated from Paper attach observation");
+                awaitCommittedOffset(
+                        stack.kafkaBootstrapServers(),
+                        "ctrl.cmd.lifecycle-trace",
+                        2L,
+                        "generated lifecycle trace commands were not processed");
+                List<String> lifecycleCommands = drainTopic(stack.kafkaBootstrapServers(), "ctrl.cmd.lifecycle-trace", 2);
+                List<RecordLifecycleObservation> lifecycleObservations = lifecycleCommands.stream()
+                        .map(value -> ControlCommandWireCodec.decodeLifecycleTraceRecord(
+                                new ConsumerRecord<>("ctrl.cmd.lifecycle-trace", 0, 0L, null, value)))
+                        .map(command -> command.envelope().payload())
+                        .toList();
+                assertTrue(lifecycleObservations.stream().anyMatch(observation ->
+                                observation.phase() == LifecyclePhase.HOST_ATTACH_OBSERVED
+                                        && observation.traceId().value().equals(trace().traceId())
+                                        && observation.aggregateId().equals(targetInstance.value())),
+                        "HOST_ATTACH_OBSERVED lifecycle trace was not generated from Paper attach observation");
+                assertTrue(lifecycleObservations.stream().anyMatch(observation ->
+                                observation.phase() == LifecyclePhase.SESSION_ACTIVE
+                                        && observation.traceId().value().equals(trace().traceId())
+                                        && observation.aggregateId().equals(session.value())),
+                        "SESSION_ACTIVE lifecycle trace was not generated from Paper attach observation");
+                assertTrue(drainTopic(stack.kafkaBootstrapServers(), "ctrl.state.lifecycle-trace", 2)
+                                .stream()
+                                .anyMatch(value -> value.contains("traceId=" + trace().traceId())
+                                        && value.contains("phase=HOST_ATTACH_OBSERVED")
+                                        && value.contains("phase=SESSION_ACTIVE")
+                                        && value.contains("sessionId=" + session.value())
+                                        && value.contains("resolvedManifestId=" + manifest.value())),
+                        "lifecycle trace state did not include host attach and Session active milestones");
                 assertTrue(drainTopic(stack.kafkaBootstrapServers(), "ctrl.state.route-attempt", 5)
                                 .stream()
                                 .anyMatch(value -> value.contains("routeAttemptId=" + routeAttempt.value())
@@ -2645,6 +2856,7 @@ final class FulcrumLauncherTest {
         values.put("FULCRUM_PAPER_AGONES_SDK_URL", "http://localhost:9358/");
         values.put("FULCRUM_PAPER_OBSERVATION_BRIDGE_URL", "http://127.0.0.1:18080/observations");
         values.put("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL", "http://127.0.0.1:18083/capabilities");
+        values.put("FULCRUM_PAPER_REWARD_BRIDGE_URL", "http://127.0.0.1:18084/rewards");
         values.put("FULCRUM_PAPER_EXPERIENCE_ID", "experience-lobby-runtime");
         values.put("FULCRUM_PAPER_SESSION_ID", "session-lobby-runtime");
         values.put("FULCRUM_PAPER_SLOT_ID", "slot-lobby-runtime");
@@ -2658,15 +2870,22 @@ final class FulcrumLauncherTest {
         values.put("FULCRUM_PAPER_HOST_RUNTIME_ABI", "paper-host-runtime-v1");
         values.put("FULCRUM_HOST_COMMAND_TOPIC", "host.paper.commands");
         values.put("FULCRUM_HOST_OBSERVATION_TOPIC", "host.observation");
+        values.put("FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC", "cmd.standard.economy");
+        values.put("FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC", "cmd.standard.stats");
+        values.put("FULCRUM_PAPER_REWARD_CURRENCY_KEY", "coins");
+        values.put("FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS", "250");
+        values.put("FULCRUM_PAPER_REWARD_STAT_KEY", "session-completions");
         values.put("FULCRUM_VELOCITY_SERVER_ROOT", tempDir.resolve("velocity").toString());
         values.put("FULCRUM_VELOCITY_KAFKA_BOOTSTRAP_SERVERS", "localhost:9092");
         values.put("FULCRUM_VELOCITY_ROUTE_BRIDGE_URL", "http://127.0.0.1:18081/routes");
         values.put("FULCRUM_VELOCITY_LOGIN_GATE_BRIDGE_URL", "http://127.0.0.1:18082/login-gate");
         values.put("FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC", "host.velocity.routes");
         values.put("FULCRUM_ROUTE_COMMAND_TOPIC", "cmd.route");
+        values.put("FULCRUM_QUEUE_ROSTER_COMMAND_TOPIC", "ctrl.cmd.queue-roster");
         values.put("FULCRUM_PRESENCE_COMMAND_TOPIC", "cmd.presence");
         values.put("FULCRUM_SHARED_SHARD_PLACEMENT_COMMAND_TOPIC", "ctrl.cmd.shared-shard-placement");
         values.put("FULCRUM_ROUTE_ATTEMPT_COMMAND_TOPIC", "ctrl.cmd.route-attempt");
+        values.put("FULCRUM_LIFECYCLE_TRACE_COMMAND_TOPIC", "ctrl.cmd.lifecycle-trace");
         values.put("FULCRUM_SHARED_SHARD_ALLOCATION_STATE_TOPIC", "ctrl.state.shared-shard-allocation");
         values.put("FULCRUM_LOBBY_EXPERIENCE_ID", "experience-lobby");
         values.put("FULCRUM_LOBBY_POOL_ID", "pool-lobby");
@@ -2710,6 +2929,7 @@ final class FulcrumLauncherTest {
         Map<String, String> values = new HashMap<>(allBindingsMap());
         values.put("FULCRUM_PAPER_KAFKA_BOOTSTRAP_SERVERS", plainBootstrapServers(stack.kafkaBootstrapServers()));
         values.put("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL", "http://127.0.0.1:" + freePort() + "/capabilities");
+        values.put("FULCRUM_PAPER_REWARD_BRIDGE_URL", "http://127.0.0.1:" + freePort() + "/rewards");
         values.put("FULCRUM_VALKEY_ENDPOINT", stack.valkeyEndpoint());
         return values;
     }
@@ -2776,6 +2996,11 @@ final class FulcrumLauncherTest {
             admin.createTopics(List.of(
                     new NewTopic("host.velocity.routes", 1, (short) 1),
                     new NewTopic("cmd.route", 1, (short) 1),
+                    new NewTopic("cmd.presence", 1, (short) 1),
+                    new NewTopic("ctrl.cmd.queue-roster", 1, (short) 1),
+                    new NewTopic("ctrl.cmd.shared-shard-placement", 1, (short) 1),
+                    new NewTopic("ctrl.cmd.route-attempt", 1, (short) 1),
+                    new NewTopic("ctrl.cmd.lifecycle-trace", 1, (short) 1),
                     new NewTopic("ctrl.state.shared-shard-allocation", 1, (short) 1)
             )).all().get(30, TimeUnit.SECONDS);
         }
@@ -2875,6 +3100,55 @@ final class FulcrumLauncherTest {
                     published_at text,
                     revision bigint,
                     PRIMARY KEY ((digest_algorithm), digest_value)
+                );
+
+                CREATE TABLE IF NOT EXISTS fulcrum.standard_player_profile_effective_hot (
+                    subject_id text PRIMARY KEY,
+                    display_name text,
+                    updated_by text,
+                    observed_at text,
+                    revision bigint
+                );
+
+                CREATE TABLE IF NOT EXISTS fulcrum.standard_rank_effective_hot (
+                    subject_id text PRIMARY KEY,
+                    primary_rank_key text,
+                    permissions text,
+                    updated_by text,
+                    updated_at text,
+                    revision bigint
+                );
+
+                CREATE TABLE IF NOT EXISTS fulcrum.standard_punishment_active_hot (
+                    subject_id text PRIMARY KEY,
+                    punishment_id text,
+                    reason text,
+                    issued_by text,
+                    issued_at text,
+                    expires_at text,
+                    revision bigint
+                );
+
+                CREATE TABLE IF NOT EXISTS fulcrum.standard_economy_balance_hot (
+                    subject_id text,
+                    currency_key text,
+                    balance_minor_units bigint,
+                    last_entry_id text,
+                    updated_by text,
+                    updated_at text,
+                    revision bigint,
+                    PRIMARY KEY ((subject_id), currency_key)
+                );
+
+                CREATE TABLE IF NOT EXISTS fulcrum.standard_stats_counter_hot (
+                    subject_id text,
+                    stat_key text,
+                    total bigint,
+                    last_entry_id text,
+                    updated_by text,
+                    updated_at text,
+                    revision bigint,
+                    PRIMARY KEY ((subject_id), stat_key)
                 );
                 """);
     }
@@ -3504,6 +3778,68 @@ final class FulcrumLauncherTest {
                 fencingEpoch,
                 Optional.of(new Revision(0)),
                 "payload-punishment-" + subject.value(),
+                now);
+    }
+
+    private static AuthorityCommand<PostLedgerEntry> postEconomyRewardCommand(SubjectId subject) {
+        return postEconomyRewardCommand(subject, 19);
+    }
+
+    private static AuthorityCommand<PostLedgerEntry> postEconomyRewardCommand(SubjectId subject, long fencingEpoch) {
+        Instant now = Instant.parse("2026-06-17T00:00:00Z");
+        PostLedgerEntry payload = new PostLedgerEntry(
+                subject,
+                "coins",
+                250,
+                "lobby-session-complete",
+                now,
+                0);
+        return new AuthorityCommand<>(
+                new CommandEnvelope<>(
+                        new CommandId("command-economy-" + subject.value()),
+                        new IdempotencyKey("idem-economy-" + subject.value()),
+                        new PrincipalId("principal-standard-capability-runtime"),
+                        EconomyAuthority.aggregateId(payload.accountId()),
+                        new ContractName("standard.economy.v1"),
+                        new CommandName(StandardCapabilityAuthorityWireCodec.POST_LEDGER_ENTRY_COMMAND),
+                        trace(),
+                        Optional.empty(),
+                        payload),
+                new PrincipalId("principal-standard-capability-runtime"),
+                fencingEpoch,
+                Optional.of(new Revision(0)),
+                "payload-economy-" + subject.value(),
+                now);
+    }
+
+    private static AuthorityCommand<RecordStatDelta> recordStatsRewardCommand(SubjectId subject) {
+        return recordStatsRewardCommand(subject, 19);
+    }
+
+    private static AuthorityCommand<RecordStatDelta> recordStatsRewardCommand(SubjectId subject, long fencingEpoch) {
+        Instant now = Instant.parse("2026-06-17T00:00:00Z");
+        RecordStatDelta payload = new RecordStatDelta(
+                subject,
+                new ExperienceId("experience-lobby"),
+                "session-completions",
+                1,
+                now,
+                0);
+        return new AuthorityCommand<>(
+                new CommandEnvelope<>(
+                        new CommandId("command-stats-" + subject.value()),
+                        new IdempotencyKey("idem-stats-" + subject.value()),
+                        new PrincipalId("principal-standard-capability-runtime"),
+                        StatsAuthority.aggregateId(payload.counterId()),
+                        new ContractName("standard.stats.v1"),
+                        new CommandName(StandardCapabilityAuthorityWireCodec.RECORD_STAT_DELTA_COMMAND),
+                        trace(),
+                        Optional.empty(),
+                        payload),
+                new PrincipalId("principal-standard-capability-runtime"),
+                fencingEpoch,
+                Optional.of(new Revision(0)),
+                "payload-stats-" + subject.value(),
                 now);
     }
 

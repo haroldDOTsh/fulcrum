@@ -55,6 +55,17 @@ final class LobbyWorldArtifactProvisionerTest {
         assertEquals(result.artifactPin().digest(), result.artifactDigest().value());
         assertEquals(LobbyWorldArtifactProvisioner.defaultArchiveDigest(), result.artifactDigest().value());
         assertArchiveMetadata(archive, result.artifactPin().artifactId().value(), result.artifactPin().compatibility());
+        LobbyClusterE2eVerifier.ObjectStoreArtifactResult readback =
+                LobbyClusterE2eVerifier.verifyObjectStoreArtifactBytes(
+                        LobbyClusterE2eVerifier.VerificationConfig.parse(new String[]{
+                                "--endpoint-host=127.0.0.1",
+                                "--verify-object-store-artifact=true"
+                        }),
+                        result.contentAddress(),
+                        archive);
+        assertEquals(result.contentAddress(), readback.address());
+        assertEquals(result.byteLength(), readback.byteLength());
+        assertEquals(result.artifactDigest().value(), readback.digest());
 
         ProducerRecord<String, String> record = producer.history().getFirst();
         assertEquals("cmd.artifact-metadata", record.topic());

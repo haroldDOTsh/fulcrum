@@ -38,10 +38,9 @@ final class MinecraftStatusClient {
     private static final int CONFIGURATION_FINISH_SERVERBOUND_PACKET_ID = 3;
     private static final int CONFIGURATION_KEEP_ALIVE_CLIENTBOUND_PACKET_ID = 4;
     private static final int CONFIGURATION_KEEP_ALIVE_SERVERBOUND_PACKET_ID = 4;
+    private static final int PLAY_CUSTOM_PAYLOAD_PACKET_ID = 24;
     private static final int LOGIN_PACKET_LIMIT = 16;
     private static final int MAX_STATUS_PACKET_BYTES = 2 * 1024 * 1024;
-    private static final byte[] LOBBY_PROOF_MARKER =
-            PaperLobbyProofMessage.MARKER.getBytes(StandardCharsets.UTF_8);
     private static final Pattern VERSION_NAME =
             Pattern.compile("\"version\"\\s*:\\s*\\{[^}]*\"name\"\\s*:\\s*\"([^\"]+)\"");
     private static final Pattern VERSION_PROTOCOL =
@@ -272,29 +271,22 @@ final class MinecraftStatusClient {
         return decompressed;
     }
 
-    private static Optional<PaperLobbyProofMessage> lobbyProof(byte[] packet) {
-        int markerIndex = indexOf(packet, LOBBY_PROOF_MARKER);
-        if (markerIndex < 0) {
+    private static Optional<PaperLobbyProofMessage> lobbyProof(byte[] packet) throws IOException {
+        ByteArrayInputStream input = new ByteArrayInputStream(packet);
+        int packetId = readVarInt(input);
+        if (packetId != PLAY_CUSTOM_PAYLOAD_PACKET_ID) {
             return Optional.empty();
         }
-        String payload = new String(packet, markerIndex, packet.length - markerIndex, StandardCharsets.UTF_8);
-        return Optional.of(PaperLobbyProofMessage.parse(payload));
-    }
-
-    private static int indexOf(byte[] haystack, byte[] needle) {
-        for (int i = 0; i <= haystack.length - needle.length; i++) {
-            boolean matched = true;
-            for (int j = 0; j < needle.length; j++) {
-                if (haystack[i + j] != needle[j]) {
-                    matched = false;
-                    break;
-                }
-            }
-            if (matched) {
-                return i;
-            }
+        String channel = readString(input);
+        if (!PaperLobbyProofMessage.CHANNEL.equals(channel)) {
+            return Optional.empty();
         }
-        return -1;
+        String payload = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        if (!payload.startsWith(PaperLobbyProofMessage.MARKER)) {
+            throw new IOException("Fulcrum lobby proof custom payload is missing marker "
+                    + PaperLobbyProofMessage.MARKER);
+        }
+        return Optional.of(PaperLobbyProofMessage.parse(payload));
     }
 
     private static MinecraftStatusSnapshot decodeStatusResponse(byte[] packet) throws IOException {
