@@ -15,6 +15,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -41,6 +43,9 @@ import java.util.regex.Pattern;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
@@ -178,6 +183,9 @@ public final class AgonesAllocatorRestClient implements HostAllocationPort {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Agones allocation request was interrupted", exception);
         } catch (IOException exception) {
+            System.err.println("Agones allocator HTTP request failed: "
+                    + exception.getClass().getName() + ": " + exception.getMessage());
+            exception.printStackTrace(System.err);
             throw new IllegalStateException("Agones allocation request failed", exception);
         }
 
@@ -242,9 +250,12 @@ public final class AgonesAllocatorRestClient implements HostAllocationPort {
         public AllocatorHttpResponse send(URI uri, String requestBody) throws IOException {
             HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
             if (connection instanceof HttpsURLConnection httpsConnection) {
-                httpsConnection.setSSLSocketFactory(sslContext.getSocketFactory());
                 if (disableHostnameVerification) {
+                    httpsConnection.setSSLSocketFactory(new HostnameVerificationDisabledSocketFactory(
+                            sslContext.getSocketFactory()));
                     httpsConnection.setHostnameVerifier((hostname, session) -> true);
+                } else {
+                    httpsConnection.setSSLSocketFactory(sslContext.getSocketFactory());
                 }
             }
             connection.setRequestMethod("POST");
@@ -266,6 +277,62 @@ public final class AgonesAllocatorRestClient implements HostAllocationPort {
             }
             connection.disconnect();
             return new AllocatorHttpResponse(statusCode, responseBody);
+        }
+    }
+
+    private static final class HostnameVerificationDisabledSocketFactory extends SSLSocketFactory {
+        private final SSLSocketFactory delegate;
+
+        private HostnameVerificationDisabledSocketFactory(SSLSocketFactory delegate) {
+            this.delegate = Objects.requireNonNull(delegate, "delegate");
+        }
+
+        @Override
+        public String[] getDefaultCipherSuites() {
+            return delegate.getDefaultCipherSuites();
+        }
+
+        @Override
+        public String[] getSupportedCipherSuites() {
+            return delegate.getSupportedCipherSuites();
+        }
+
+        @Override
+        public Socket createSocket(Socket socket, String host, int port, boolean autoClose) throws IOException {
+            return withoutEndpointIdentification(delegate.createSocket(socket, host, port, autoClose));
+        }
+
+        @Override
+        public Socket createSocket(String host, int port) throws IOException {
+            return withoutEndpointIdentification(delegate.createSocket(host, port));
+        }
+
+        @Override
+        public Socket createSocket(String host, int port, InetAddress localAddress, int localPort) throws IOException {
+            return withoutEndpointIdentification(delegate.createSocket(host, port, localAddress, localPort));
+        }
+
+        @Override
+        public Socket createSocket(InetAddress host, int port) throws IOException {
+            return withoutEndpointIdentification(delegate.createSocket(host, port));
+        }
+
+        @Override
+        public Socket createSocket(
+                InetAddress address,
+                int port,
+                InetAddress localAddress,
+                int localPort) throws IOException {
+            return withoutEndpointIdentification(delegate.createSocket(address, port, localAddress, localPort));
+        }
+
+        private static Socket withoutEndpointIdentification(Socket socket) {
+            if (socket instanceof SSLSocket sslSocket) {
+                SSLParameters parameters = sslSocket.getSSLParameters();
+                parameters.setEndpointIdentificationAlgorithm(null);
+                sslSocket.setSSLParameters(parameters);
+            }
+            return socket;
         }
     }
 
