@@ -86,6 +86,29 @@ final class RouteAttemptControllerTest {
     }
 
     @Test
+    void proxyRouteEmissionsFanOutForSharedSessionRoster() {
+        RouteAttemptController controller = new RouteAttemptController();
+        RouteAttemptControlRecord record = RouteAttemptController.emptyRecord(3);
+        List<SubjectId> subjects = List.of(
+                new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000001")),
+                new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000002")));
+
+        record = acceptedRecord(controller, record, request(subjects), ControlRouteNames.REQUEST_ROUTE_ATTEMPT,
+                "cmd-request", BASE_TIME);
+        RouteAttemptDecision decision = accept(controller, record, new IssueProxyRoute(ROUTE_ATTEMPT_ID, BASE_TIME.plusSeconds(1)),
+                ControlRouteNames.ISSUE_PROXY_ROUTE, "cmd-proxy", BASE_TIME.plusSeconds(1), new ArrayList<>());
+
+        List<RouteAttemptControlEmission> proxyCommands = decision.emissions().stream()
+                .filter(emission -> emission.kind() == RouteAttemptControlEmissionKind.PROXY_COMMAND)
+                .toList();
+        assertEquals(2, proxyCommands.size());
+        assertTrue(proxyCommands.stream().anyMatch(emission -> emission.key().endsWith("/00000000-0000-0000-0000-000000000001")
+                && emission.value().contains("|subjectId=00000000-0000-0000-0000-000000000001|")));
+        assertTrue(proxyCommands.stream().anyMatch(emission -> emission.key().endsWith("/00000000-0000-0000-0000-000000000002")
+                && emission.value().contains("|subjectId=00000000-0000-0000-0000-000000000002|")));
+    }
+
+    @Test
     void timeoutAndRetryMoveAttemptBackToCreatedWithAdvancedDeadline() {
         RouteAttemptController controller = new RouteAttemptController();
         RouteAttemptControlRecord record = RouteAttemptController.emptyRecord(3);
@@ -210,12 +233,16 @@ final class RouteAttemptControllerTest {
     }
 
     private static RequestRouteAttempt request() {
+        return request(List.of(new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000001"))));
+    }
+
+    private static RequestRouteAttempt request(List<SubjectId> subjectIds) {
         return new RequestRouteAttempt(
                 ROUTE_ATTEMPT_ID,
                 new RouteId("route-1"),
                 new SessionId("session-route-1"),
                 new SlotId("slot-agones-1"),
-                List.of(new SubjectId(UUID.fromString("00000000-0000-0000-0000-000000000001"))),
+                subjectIds,
                 List.of(new InstanceId("instance-velocity-1")),
                 new PresenceId("presence-1"),
                 new InstanceId("instance-paper-1"),

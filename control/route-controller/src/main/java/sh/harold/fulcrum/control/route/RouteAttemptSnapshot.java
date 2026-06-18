@@ -116,21 +116,23 @@ public record RouteAttemptSnapshot(
                 + "|traceId=" + traceEnvelope.traceId();
     }
 
-    public String proxyCommandValue() {
+    public java.util.List<RouteAttemptControlEmission> proxyCommandEmissions() {
+        return subjectIds.stream()
+                .map(subjectId -> new RouteAttemptControlEmission(
+                        RouteAttemptControlEmissionKind.PROXY_COMMAND,
+                        routeAttemptId.value() + "/" + subjectId.value(),
+                        proxyCommandValue(subjectId)))
+                .toList();
+    }
+
+    private String proxyCommandValue(SubjectId subjectId) {
         return "proxy.route"
                 + "|routeAttemptId=" + routeAttemptId.value()
                 + "|routeId=" + routeId.value()
-                + "|subjectId=" + proxySubjectId().value()
+                + "|subjectId=" + subjectId.value()
                 + "|sessionId=" + sessionId.value()
                 + "|targetInstanceId=" + targetInstanceId.value()
                 + "|traceId=" + traceEnvelope.traceId();
-    }
-
-    private SubjectId proxySubjectId() {
-        if (subjectIds.size() != 1) {
-            throw new IllegalStateException("proxy route command emission requires exactly one Subject");
-        }
-        return subjectIds.getFirst();
     }
 
     public String hostCommandValue() {

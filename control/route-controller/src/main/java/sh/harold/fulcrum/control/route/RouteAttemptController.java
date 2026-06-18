@@ -232,7 +232,7 @@ public final class RouteAttemptController {
                 new RouteAttemptControlEmission(RouteAttemptControlEmissionKind.STATE, ControlRouteNames.stateKey(snapshot.routeAttemptId()), stateValue),
                 new RouteAttemptControlEmission(RouteAttemptControlEmissionKind.RESPONSE, command.envelope().commandId().value(), receipt.wireValue())));
         if (payload instanceof IssueProxyRoute) {
-            base.add(new RouteAttemptControlEmission(RouteAttemptControlEmissionKind.PROXY_COMMAND, snapshot.routeAttemptId().value(), snapshot.proxyCommandValue()));
+            base.addAll(snapshot.proxyCommandEmissions());
         }
         if (payload instanceof PrepareHostRoute) {
             base.add(new RouteAttemptControlEmission(RouteAttemptControlEmissionKind.HOST_COMMAND, snapshot.routeAttemptId().value(), snapshot.hostCommandValue()));
