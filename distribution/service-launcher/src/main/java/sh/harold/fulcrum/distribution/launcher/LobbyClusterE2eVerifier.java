@@ -131,6 +131,7 @@ public final class LobbyClusterE2eVerifier {
     private static final String PAPER_AGENT_PRINCIPAL_ID = "principal-fulcrum-paper-agent";
     private static final String PAPER_AGENT_ORIGIN_SERVICE = "paper-agent";
     private static final long PAPER_REWARD_STATS_DELTA = 1L;
+    private static final int KAFKA_TOPIC_READ_MAX_MESSAGES = 500;
     private static final Pattern PORT_FORWARD_READY =
             Pattern.compile("Forwarding from 127\\.0\\.0\\.1:(\\d+) -> \\d+");
     private static final List<String> CASSANDRA_PRESENCE_COLUMNS = List.of(
@@ -161,19 +162,23 @@ public final class LobbyClusterE2eVerifier {
         EndpointStatus endpointStatus = waitForEndpointStatus(config, client);
         ResolvedMinecraftEndpoint endpoint = endpointStatus.endpoint();
         MinecraftStatusSnapshot status = endpointStatus.status();
+        verifyConfiguredProtocolMatchesStatus(config, status);
         int loginProtocolVersion = config.protocolVersion() == 0
                 ? status.protocolVersion()
                 : config.protocolVersion();
+        InetSocketAddress socketAddress = new InetSocketAddress(endpoint.host(), endpoint.port());
         Instant routeAttemptStateFreshnessFloor = Instant.now().minus(config.routeAttemptStateFreshnessSkew());
         Instant sessionAuthorityStateFreshnessFloor =
                 Instant.now().minus(config.sessionAuthorityStateFreshnessSkew());
         Instant presenceAuthorityStateFreshnessFloor =
                 Instant.now().minus(config.presenceAuthorityStateFreshnessSkew());
-        PaperLobbyProofMessage lobbyProof = client.lobbyProof(
-                new InetSocketAddress(endpoint.host(), endpoint.port()),
+        PaperLobbyProofMessage lobbyProof = waitForAcceptedLobbyProof(
+                "primary accepted login",
+                config,
+                client,
+                socketAddress,
                 loginProtocolVersion,
-                config.loginUsername(),
-                config.timeout());
+                config.loginUsername());
         verifyLobbyProof(
                 "primary accepted login",
                 config,
@@ -182,11 +187,13 @@ public final class LobbyClusterE2eVerifier {
                 config.expectedDisplayName(),
                 config.expectedRankLabel(),
                 config.expectedDecoratedChatContains());
-        PaperLobbyProofMessage secondLobbyProof = client.lobbyProof(
-                new InetSocketAddress(endpoint.host(), endpoint.port()),
+        PaperLobbyProofMessage secondLobbyProof = waitForAcceptedLobbyProof(
+                "second accepted login",
+                config,
+                client,
+                socketAddress,
                 loginProtocolVersion,
-                config.secondLoginUsername(),
-                config.timeout());
+                config.secondLoginUsername());
         verifyLobbyProof(
                 "second accepted login",
                 config,
@@ -647,6 +654,44 @@ public final class LobbyClusterE2eVerifier {
                 + config.endpointReadyTimeout() + ". Last failures: " + String.join(" | ", failures));
     }
 
+    private static void verifyConfiguredProtocolMatchesStatus(
+            VerificationConfig config,
+            MinecraftStatusSnapshot status) throws IOException {
+        if (config.protocolVersion() == 0 || config.protocolVersion() == status.protocolVersion()) {
+            return;
+        }
+        throw new IOException("Configured Minecraft protocol version " + config.protocolVersion()
+                + " does not match Velocity status protocol " + status.protocolVersion()
+                + " (" + status.versionName() + "). Use --protocol-version=0 to auto-detect, "
+                + "or update the verifier packet ids for the configured runtime protocol.");
+    }
+
+    private static PaperLobbyProofMessage waitForAcceptedLobbyProof(
+            String label,
+            VerificationConfig config,
+            MinecraftStatusClient client,
+            InetSocketAddress socketAddress,
+            int protocolVersion,
+            String username) throws IOException {
+        long deadline = System.nanoTime() + config.endpointReadyTimeout().toNanos();
+        List<String> failures = new ArrayList<>();
+        while (System.nanoTime() < deadline) {
+            try {
+                return client.lobbyProof(
+                        socketAddress,
+                        protocolVersion,
+                        username,
+                        attemptTimeout(config));
+            } catch (MinecraftStatusClient.LobbyProofProbeException exception) {
+                failures.add(exception.failure() + ": " + exception.getMessage());
+                sleepBeforeRetry(deadline);
+            }
+        }
+        throw new IOException("Timed out waiting for " + label + " lobby proof for " + username
+                + " within " + config.endpointReadyTimeout()
+                + ". Last failures: " + String.join(" | ", failures));
+    }
+
     private static ScaleOutProof verifyScaleOut(
             VerificationConfig config,
             ResolvedMinecraftEndpoint endpoint,
@@ -713,7 +758,7 @@ public final class LobbyClusterE2eVerifier {
             Thread.sleep(Math.min(500L, remainingMillis));
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while waiting for scale-out lobby allocation", exception);
+            throw new IOException("Interrupted while waiting for lobby readiness", exception);
         }
     }
 
@@ -1094,12 +1139,15 @@ public final class LobbyClusterE2eVerifier {
             String topic,
             String requiredMarker) throws IOException {
         long consumerTimeoutMillis = Math.max(500L, Math.min(5_000L, config.timeout().toMillis() / 2L));
+        long startOffset = kafkaTopicTailStartOffset(config, label, topic);
         KubectlResult result = kubectlResult(config, label,
                 "exec", config.kafkaPodName(), "-c", config.kafkaContainerName(), "--",
                 config.kafkaConsoleConsumerPath(),
                 "--bootstrap-server", config.kafkaBootstrapServer(),
                 "--topic", topic,
-                "--from-beginning",
+                "--partition", "0",
+                "--offset", Long.toString(startOffset),
+                "--max-messages", Integer.toString(KAFKA_TOPIC_READ_MAX_MESSAGES),
                 "--timeout-ms", Long.toString(consumerTimeoutMillis));
         if (result.exitCode() != 0 && !result.output().contains(requiredMarker)) {
             throw new IOException("Failed to read " + label + " with `"
@@ -1109,6 +1157,46 @@ public final class LobbyClusterE2eVerifier {
             return Optional.empty();
         }
         return Optional.of(result.output());
+    }
+
+    private static long kafkaTopicTailStartOffset(VerificationConfig config, String label, String topic)
+            throws IOException {
+        KubectlResult result = kubectlResult(config, label + " end offset",
+                "exec", config.kafkaPodName(), "-c", config.kafkaContainerName(), "--",
+                kafkaGetOffsetsPath(config),
+                "--bootstrap-server", config.kafkaBootstrapServer(),
+                "--topic", topic,
+                "--time", "-1");
+        if (result.exitCode() != 0) {
+            throw new IOException("Failed to read " + label + " end offset with `"
+                    + String.join(" ", result.command()) + "`: " + result.output());
+        }
+        long endOffset = kafkaTopicPartitionEndOffset(topic, result.output());
+        return Math.max(0L, endOffset - KAFKA_TOPIC_READ_MAX_MESSAGES);
+    }
+
+    private static long kafkaTopicPartitionEndOffset(String topic, String output) throws IOException {
+        String prefix = topic + ":0:";
+        for (String line : output.split("\\R")) {
+            if (!line.startsWith(prefix)) {
+                continue;
+            }
+            try {
+                return Long.parseLong(line.substring(prefix.length()).trim());
+            } catch (NumberFormatException exception) {
+                throw new IOException("Malformed Kafka end offset for " + topic + ": " + line, exception);
+            }
+        }
+        throw new IOException("Kafka end offset output did not include partition 0 for " + topic + ": " + output);
+    }
+
+    private static String kafkaGetOffsetsPath(VerificationConfig config) {
+        String consumerPath = config.kafkaConsoleConsumerPath();
+        int slash = consumerPath.lastIndexOf('/');
+        if (slash < 0) {
+            return "kafka-get-offsets.sh";
+        }
+        return consumerPath.substring(0, slash + 1) + "kafka-get-offsets.sh";
     }
 
     private static Optional<RouteAuthorityCommandLogResult> verifyRouteAuthorityCommandLog(

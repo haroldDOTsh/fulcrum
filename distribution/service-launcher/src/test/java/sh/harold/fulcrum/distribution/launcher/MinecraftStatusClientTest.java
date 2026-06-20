@@ -260,12 +260,15 @@ final class MinecraftStatusClientTest {
     void lobbyProofProbeReportsConfigurationDisconnect() throws Exception {
         try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
                 ExchangeKind.LOBBY_PROOF_CONFIGURATION_DISCONNECT)) {
-            IOException exception = assertThrows(IOException.class, () -> new MinecraftStatusClient().lobbyProof(
+            MinecraftStatusClient.LobbyProofProbeException exception = assertThrows(
+                    MinecraftStatusClient.LobbyProofProbeException.class,
+                    () -> new MinecraftStatusClient().lobbyProof(
                     new InetSocketAddress("127.0.0.1", server.port()),
                     767,
                     "FulcrumBotOne",
                     Duration.ofSeconds(2)));
 
+            assertEquals(MinecraftStatusClient.LobbyProofFailure.CONFIGURATION_DISCONNECT, exception.failure());
             assertTrue(exception.getMessage().contains("got disconnect"));
             assertTrue(exception.getMessage().contains("color"));
         }
@@ -356,6 +359,57 @@ final class MinecraftStatusClientTest {
                     "--endpoint-port=" + server.port(),
                     "--timeout=PT2S"
             });
+        }
+    }
+
+    @Test
+    void verifierRetriesTransientAcceptedLobbyProofConfigurationDisconnect() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.STATUS,
+                ExchangeKind.LOBBY_PROOF_CONFIGURATION_DISCONNECT,
+                ExchangeKind.LOBBY_PROOF_ACCEPTED,
+                ExchangeKind.LOBBY_PROOF_SECOND_ACCEPTED)) {
+            LobbyClusterE2eVerifier.main(new String[]{
+                    "--endpoint-host=127.0.0.1",
+                    "--endpoint-port=" + server.port(),
+                    "--endpoint-ready-timeout=PT3S",
+                    "--timeout=PT1S"
+            });
+        }
+    }
+
+    @Test
+    void verifierFailsAfterRepeatedAcceptedLobbyProofConfigurationDisconnects() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.STATUS,
+                ExchangeKind.LOBBY_PROOF_CONFIGURATION_DISCONNECT,
+                ExchangeKind.LOBBY_PROOF_CONFIGURATION_DISCONNECT)) {
+            IOException exception = assertThrows(IOException.class, () -> LobbyClusterE2eVerifier.main(new String[]{
+                    "--endpoint-host=127.0.0.1",
+                    "--endpoint-port=" + server.port(),
+                    "--endpoint-ready-timeout=PT1S",
+                    "--timeout=PT0.1S"
+            }));
+
+            assertTrue(exception.getMessage().contains("Timed out waiting for primary accepted login lobby proof"));
+            assertTrue(exception.getMessage().contains("CONFIGURATION_DISCONNECT"));
+            assertTrue(exception.getMessage().contains("Configuration rejected"));
+        }
+    }
+
+    @Test
+    void verifierRejectsExplicitProtocolMismatchBeforeLobbyProof() throws Exception {
+        try (FakeMinecraftClusterServer server = FakeMinecraftClusterServer.start(
+                ExchangeKind.STATUS_PROTOCOL_775)) {
+            IOException exception = assertThrows(IOException.class, () -> LobbyClusterE2eVerifier.main(new String[]{
+                    "--endpoint-host=127.0.0.1",
+                    "--endpoint-port=" + server.port(),
+                    "--protocol-version=775",
+                    "--timeout=PT1S"
+            }));
+
+            assertTrue(exception.getMessage().contains("Configured Minecraft protocol version 775"));
+            assertTrue(exception.getMessage().contains("Velocity status protocol 767"));
         }
     }
 
@@ -5079,6 +5133,11 @@ final class MinecraftStatusClientTest {
                                 verifyStatusRequest(readPacket(socket.getInputStream()));
                                 writeStatusResponse(socket);
                             }
+                            case STATUS_PROTOCOL_775 -> {
+                                verifyHandshake(readPacket(socket.getInputStream()), 775, 1);
+                                verifyStatusRequest(readPacket(socket.getInputStream()));
+                                writeStatusResponse(socket);
+                            }
                             case LOGIN_ACCEPTED -> {
                                 verifyHandshake(readPacket(socket.getInputStream()), 767, 2);
                                 assertEquals("FulcrumBotOne", readLoginStart(readPacket(socket.getInputStream())));
@@ -5418,6 +5477,7 @@ final class MinecraftStatusClientTest {
 
     private enum ExchangeKind {
         STATUS,
+        STATUS_PROTOCOL_775,
         LOGIN_ACCEPTED,
         LOBBY_PROOF_ACCEPTED,
         LOBBY_PROOF_REQUIRES_LOGIN_ACKNOWLEDGED,

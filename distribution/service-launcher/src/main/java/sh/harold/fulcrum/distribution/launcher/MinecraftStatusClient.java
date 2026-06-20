@@ -217,8 +217,10 @@ final class MinecraftStatusClient {
                     if (packetId == CONFIGURATION_CUSTOM_PAYLOAD_CLIENTBOUND_PACKET_ID) {
                         // Normal backend configuration payloads are not relevant to the lobby proof probe.
                     } else if (packetId == CONFIGURATION_DISCONNECT_CLIENTBOUND_PACKET_ID) {
-                        throw new IOException("Expected accepted configuration for " + normalizedUsername
-                                + ", got disconnect " + payloadPreview(input.readAllBytes()));
+                        throw new LobbyProofProbeException(
+                                LobbyProofFailure.CONFIGURATION_DISCONNECT,
+                                "Expected accepted configuration for " + normalizedUsername
+                                        + ", got disconnect " + payloadPreview(input.readAllBytes()));
                     } else if (packetId == CONFIGURATION_FINISH_CLIENTBOUND_PACKET_ID) {
                         writePacket(socket, configurationFinishPacket(), compressed);
                         state = ProtocolState.PLAY;
@@ -266,11 +268,17 @@ final class MinecraftStatusClient {
                 }
             }
         } catch (SocketTimeoutException exception) {
-            throw new IOException("Timed out waiting for lobby proof from " + endpoint
-                    + "; observed packets: " + observedPackets, exception);
+            throw new LobbyProofProbeException(
+                    LobbyProofFailure.TIMEOUT,
+                    "Timed out waiting for lobby proof from " + endpoint
+                            + "; observed packets: " + observedPackets,
+                    exception);
         } catch (EOFException exception) {
-            throw new IOException("Connection closed while waiting for lobby proof from " + endpoint
-                    + "; observed packets: " + observedPackets, exception);
+            throw new LobbyProofProbeException(
+                    LobbyProofFailure.CONNECTION_CLOSED,
+                    "Connection closed while waiting for lobby proof from " + endpoint
+                            + "; observed packets: " + observedPackets,
+                    exception);
         }
     }
 
@@ -707,6 +715,30 @@ final class MinecraftStatusClient {
         LOGIN,
         CONFIGURATION,
         PLAY
+    }
+
+    enum LobbyProofFailure {
+        CONFIGURATION_DISCONNECT,
+        TIMEOUT,
+        CONNECTION_CLOSED
+    }
+
+    static final class LobbyProofProbeException extends IOException {
+        private final LobbyProofFailure failure;
+
+        private LobbyProofProbeException(LobbyProofFailure failure, String message) {
+            super(message);
+            this.failure = Objects.requireNonNull(failure, "failure");
+        }
+
+        private LobbyProofProbeException(LobbyProofFailure failure, String message, Throwable cause) {
+            super(message, cause);
+            this.failure = Objects.requireNonNull(failure, "failure");
+        }
+
+        LobbyProofFailure failure() {
+            return failure;
+        }
     }
 
     record MinecraftStatusSnapshot(
