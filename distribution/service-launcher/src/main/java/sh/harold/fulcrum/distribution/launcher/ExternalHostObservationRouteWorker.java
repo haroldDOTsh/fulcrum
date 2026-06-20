@@ -57,6 +57,7 @@ final class ExternalHostObservationRouteWorker implements ControllerWorkerPoller
     private final String routeStateTopic;
     private final String lifecycleTraceCommandTopic;
     private final Map<RouteObservationKey, RouteAttemptControlRecord> routeAttempts = new HashMap<>();
+    private final Map<RouteObservationKey, HostObservation> pendingAttachObservations = new HashMap<>();
     private final Queue<ConsumerRecord<String, String>> pendingRecords = new ArrayDeque<>();
     private boolean subscribed;
 
@@ -114,13 +115,20 @@ final class ExternalHostObservationRouteWorker implements ControllerWorkerPoller
         RouteObservationKey key = RouteObservationKey.from(observation);
         RouteAttemptControlRecord current = routeAttempts.get(key);
         if (current == null || current.snapshot().isEmpty()) {
+            pendingAttachObservations.put(key, observation);
             return Optional.empty();
         }
         RouteAttemptSnapshot snapshot = current.snapshot().orElseThrow();
         if (snapshot.status() != RouteAttemptLifecycleStatus.ISSUED_TO_HOST) {
+            if (isAwaitingHostAttach(snapshot.status())) {
+                pendingAttachObservations.put(key, observation);
+            } else {
+                pendingAttachObservations.remove(key);
+            }
             return Optional.empty();
         }
         publishRouteProgress(current, snapshot, observation);
+        pendingAttachObservations.remove(key);
         return Optional.of(snapshot.routeAttemptId().value());
     }
 
@@ -270,9 +278,23 @@ final class ExternalHostObservationRouteWorker implements ControllerWorkerPoller
         RouteAttemptControlRecord current = ControllerStateWireCodec.decodeRouteAttempt(record.value());
         current.snapshot().ifPresent(snapshot -> {
             for (SubjectId subjectId : snapshot.subjectIds()) {
-                routeAttempts.put(new RouteObservationKey(snapshot.routeId(), snapshot.sessionId(), subjectId), current);
+                RouteObservationKey key = new RouteObservationKey(snapshot.routeId(), snapshot.sessionId(), subjectId);
+                routeAttempts.put(key, current);
+                HostObservation pending = pendingAttachObservations.get(key);
+                if (pending != null && snapshot.status() == RouteAttemptLifecycleStatus.ISSUED_TO_HOST) {
+                    publishRouteProgress(current, snapshot, pending);
+                    pendingAttachObservations.remove(key);
+                } else if (pending != null && !isAwaitingHostAttach(snapshot.status())) {
+                    pendingAttachObservations.remove(key);
+                }
             }
         });
+    }
+
+    private static boolean isAwaitingHostAttach(RouteAttemptLifecycleStatus status) {
+        return status == RouteAttemptLifecycleStatus.CREATED
+                || status == RouteAttemptLifecycleStatus.ISSUED_TO_PROXY
+                || status == RouteAttemptLifecycleStatus.ISSUED_TO_HOST;
     }
 
     private void subscribeOnce() {

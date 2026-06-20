@@ -2198,7 +2198,7 @@ final class FulcrumLauncherTest {
     }
 
     @Test
-    void controllerServiceTurnsPaperAttachObservationIntoRouteAttemptAcknowledgement() throws Exception {
+    void controllerServiceBuffersPaperAttachObservationUntilRouteAttemptIsIssuedToHost() throws Exception {
         try (FulcrumSubstrateStack stack = FulcrumSubstrateStack.create().start()) {
             createControllerTopics(stack.kafkaBootstrapServers());
 
@@ -2227,28 +2227,6 @@ final class FulcrumLauncherTest {
                         "paper-attach-observation",
                         routeStart);
 
-                for (int index = 0; index < 3; index++) {
-                    RouteAttemptControlCommand<? extends RouteAttemptCommand> routeCommand = commands.get(index);
-                    sendControlCommand(
-                            stack.kafkaBootstrapServers(),
-                            "ctrl.cmd.route-attempt",
-                            ControlRouteNames.aggregateId(routeCommand.envelope().payload().routeAttemptId()).value(),
-                            ControlCommandWireCodec.encodeRouteAttemptCommand(routeCommand));
-                    awaitCommittedOffset(
-                            stack.kafkaBootstrapServers(),
-                            "ctrl.cmd.route-attempt",
-                            index + 1L,
-                            "route command was not committed before Paper attach observation");
-                }
-                awaitTrue(
-                        () -> committedOffset(
-                                stack.kafkaBootstrapServers(),
-                                "fulcrum-controller-service-host-observation-route",
-                                "ctrl.state.route-attempt",
-                                0).orElse(-1L) >= 3L,
-                        Duration.ofSeconds(30),
-                        "host observation route worker did not consume route-attempt state");
-
                 HostInstanceIdentity paperIdentity = new HostInstanceIdentity(
                         targetInstance,
                         HostInstanceKinds.PAPER,
@@ -2274,6 +2252,20 @@ final class FulcrumLauncherTest {
                                 0).orElse(-1L) >= 1L,
                         Duration.ofSeconds(30),
                         "Paper attach observation was not committed");
+
+                for (int index = 0; index < 3; index++) {
+                    RouteAttemptControlCommand<? extends RouteAttemptCommand> routeCommand = commands.get(index);
+                    sendControlCommand(
+                            stack.kafkaBootstrapServers(),
+                            "ctrl.cmd.route-attempt",
+                            ControlRouteNames.aggregateId(routeCommand.envelope().payload().routeAttemptId()).value(),
+                            ControlCommandWireCodec.encodeRouteAttemptCommand(routeCommand));
+                    awaitCommittedOffset(
+                            stack.kafkaBootstrapServers(),
+                            "ctrl.cmd.route-attempt",
+                            index + 1L,
+                            "route command was not committed before Paper attach observation replay");
+                }
                 awaitCommittedOffset(
                         stack.kafkaBootstrapServers(),
                         "ctrl.cmd.route-attempt",
