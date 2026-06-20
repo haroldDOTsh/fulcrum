@@ -137,20 +137,13 @@ final class VelocityLoginRoutingEvaluator implements VelocityLoginGateEvaluator 
         }
 
         RoutePlan selectedRoute = routePlan.orElseThrow();
-        PresenceId routedPresenceId = presenceId(suffix);
-        allocations.recordRoutedPresence(selectedRoute.sessionId(), routedPresenceId);
-        try {
-            publishQueueRosterSequence(request, suffix, trace);
-            publishPresenceClaim(request, suffix, trace, selectedRoute);
-            publishPlacementRequest(placementRequest, candidates);
-            publishRouteOpen(request, trace, selectedRoute);
-            publishRouteAttemptSequence(request, trace, selectedRoute);
-            publishLifecycleTraceSequence(request, suffix, trace, selectedRoute);
-            producer.flush();
-        } catch (RuntimeException exception) {
-            allocations.removeRoutedPresence(selectedRoute.sessionId(), routedPresenceId);
-            throw exception;
-        }
+        publishQueueRosterSequence(request, suffix, trace);
+        publishPresenceClaim(request, suffix, trace, selectedRoute);
+        publishPlacementRequest(placementRequest, candidates);
+        publishRouteOpen(request, trace, selectedRoute);
+        publishRouteAttemptSequence(request, trace, selectedRoute);
+        publishLifecycleTraceSequence(request, suffix, trace, selectedRoute);
+        producer.flush();
         return VelocityLoginGateDecision.allowed(request.subjectId());
     }
 

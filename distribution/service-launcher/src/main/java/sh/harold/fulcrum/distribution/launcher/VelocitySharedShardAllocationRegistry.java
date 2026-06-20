@@ -4,6 +4,7 @@ import sh.harold.fulcrum.api.contract.TraceEnvelope;
 import sh.harold.fulcrum.api.kernel.InstanceId;
 import sh.harold.fulcrum.api.kernel.PresenceId;
 import sh.harold.fulcrum.api.kernel.SessionId;
+import sh.harold.fulcrum.api.kernel.SubjectId;
 import sh.harold.fulcrum.control.instance.InstanceRegistryStatus;
 import sh.harold.fulcrum.control.instance.InstanceSnapshot;
 import sh.harold.fulcrum.control.instance.SharedShardOccupancySnapshot;
@@ -39,13 +40,8 @@ final class VelocitySharedShardAllocationRegistry {
                 .add(presenceId);
     }
 
-    void removeRoutedPresence(SessionId sessionId, PresenceId presenceId) {
-        Objects.requireNonNull(sessionId, "sessionId");
-        Objects.requireNonNull(presenceId, "presenceId");
-        Set<PresenceId> presences = routedPresences.get(sessionId);
-        if (presences != null) {
-            presences.remove(presenceId);
-        }
+    void recordRoutedSubject(SessionId sessionId, SubjectId subjectId) {
+        recordRoutedPresence(sessionId, presenceId(subjectId));
     }
 
     VelocityBackendEndpoint backend(InstanceId targetInstanceId) {
@@ -110,5 +106,10 @@ final class VelocitySharedShardAllocationRegistry {
             return 0;
         }
         return Math.min(presences.size(), settings.lobbyHardCapacity());
+    }
+
+    private static PresenceId presenceId(SubjectId subjectId) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        return new PresenceId("presence-velocity-login-" + subjectId.value().toString().replace("-", ""));
     }
 }

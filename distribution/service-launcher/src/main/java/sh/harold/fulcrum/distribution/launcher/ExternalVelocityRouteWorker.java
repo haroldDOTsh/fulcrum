@@ -88,7 +88,10 @@ final class ExternalVelocityRouteWorker {
         VelocityBackendEndpoint endpoint = backend(command.targetInstanceId());
         Optional<VelocityRouteTransfer> transfer = clients.routeBridgeClient().execute(
                 new VelocityRouteBridgeRequest(command, endpoint));
-        transfer.ifPresent(value -> publishRouteAcknowledgement(command, value));
+        transfer.ifPresent(value -> {
+            publishRouteAcknowledgement(command, value);
+            allocations.recordRoutedSubject(value.targetSessionId(), value.subjectId());
+        });
         commit(record);
         return Optional.of(new VelocityRouteWorkerReceipt(command.routeAttemptId(), transfer.isPresent()));
     }

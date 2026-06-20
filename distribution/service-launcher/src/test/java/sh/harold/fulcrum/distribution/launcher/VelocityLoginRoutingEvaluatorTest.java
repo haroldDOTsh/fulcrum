@@ -233,6 +233,34 @@ final class VelocityLoginRoutingEvaluatorTest {
     }
 
     @Test
+    void unconfirmedLoginIntentDoesNotConsumeSharedShardCapacity() {
+        MockProducer<String, String> producer = producer();
+        VelocitySharedShardAllocationRegistry allocations = new VelocitySharedShardAllocationRegistry();
+        allocations.record(allocation());
+        VelocityLoginRoutingEvaluator evaluator = new VelocityLoginRoutingEvaluator(
+                request -> VelocityLoginGateDecision.allowed(request.subjectId()),
+                producer,
+                securityContext(),
+                settings(1),
+                allocations);
+
+        VelocityLoginGateDecision firstDecision = evaluator.evaluate(new VelocityLoginGateRequest(
+                SUBJECT,
+                "FulcrumBotOne",
+                "standard.punishment",
+                NOW));
+        VelocityLoginGateDecision secondDecision = evaluator.evaluate(new VelocityLoginGateRequest(
+                SECOND_SUBJECT,
+                "FulcrumBotTwo",
+                "standard.punishment",
+                NOW.plusSeconds(1)));
+
+        assertTrue(firstDecision.allowed());
+        assertTrue(secondDecision.allowed());
+        assertEquals(24, producer.history().size());
+    }
+
+    @Test
     void secondLoginRequestsAllocationWhenExistingLobbyReachesHardCapacity() {
         MockProducer<String, String> producer = producer();
         VelocitySharedShardAllocationRegistry allocations = new VelocitySharedShardAllocationRegistry();
@@ -249,6 +277,7 @@ final class VelocityLoginRoutingEvaluatorTest {
                 "FulcrumBotOne",
                 "standard.punishment",
                 NOW));
+        allocations.recordRoutedSubject(new SessionId("session-lobby-shared"), SUBJECT);
         VelocityLoginGateDecision secondDecision = evaluator.evaluate(new VelocityLoginGateRequest(
                 SECOND_SUBJECT,
                 "FulcrumBotTwo",
