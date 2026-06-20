@@ -88,10 +88,18 @@ public final class RouteAuthority {
             AuthorityCommand<RouteCommand> command,
             AuthorityRecord<RouteState> currentRecord,
             AcknowledgeRoute payload) {
-        RouteSnapshot current = pendingCurrent(command, currentRecord);
+        RouteSnapshot current = currentRoute(command, currentRecord);
         requireSameTarget(current, payload);
+        if (current.status() != RouteLifecycleStatus.PENDING) {
+            return acceptedNoChange(command, currentRecord, current);
+        }
         if (!current.expiresAt().isAfter(command.receivedAt())) {
-            throw new IllegalStateException("expired Route cannot be acknowledged");
+            Revision nextRevision = new Revision(currentRecord.revision().value() + 1);
+            return accepted(
+                    command,
+                    nextRevision,
+                    RouteChangeKind.TIMED_OUT,
+                    current.timeout(new TimeoutRoute(payload.routeId(), command.receivedAt())));
         }
 
         Revision nextRevision = new Revision(currentRecord.revision().value() + 1);
@@ -102,7 +110,10 @@ public final class RouteAuthority {
             AuthorityCommand<RouteCommand> command,
             AuthorityRecord<RouteState> currentRecord,
             TimeoutRoute payload) {
-        RouteSnapshot current = pendingCurrent(command, currentRecord);
+        RouteSnapshot current = currentRoute(command, currentRecord);
+        if (current.status() != RouteLifecycleStatus.PENDING) {
+            return acceptedNoChange(command, currentRecord, current);
+        }
 
         Revision nextRevision = new Revision(currentRecord.revision().value() + 1);
         return accepted(command, nextRevision, RouteChangeKind.TIMED_OUT, current.timeout(payload));
@@ -132,16 +143,36 @@ public final class RouteAuthority {
                         new AuthorityEmission(AuthorityEmissionKind.CACHE_WRITE, cacheKey(snapshot.routeId()), state.wireValue(revision))));
     }
 
-    private static RouteSnapshot pendingCurrent(
+    private AuthorityMutationResult<RouteState, RouteReceipt> acceptedNoChange(
+            AuthorityCommand<RouteCommand> command,
+            AuthorityRecord<RouteState> currentRecord,
+            RouteSnapshot snapshot) {
+        Revision nextRevision = new Revision(currentRecord.revision().value() + 1);
+        RouteState state = new RouteState(snapshot);
+        RouteReceipt receipt = RouteReceipt.accepted(
+                snapshot,
+                nextRevision,
+                command.fencingEpoch(),
+                command.envelope().idempotencyKey().value(),
+                command.envelope().commandId().value());
+        String aggregateKey = aggregateId(snapshot.routeId()).value();
+        return new AuthorityMutationResult<>(
+                nextRevision,
+                state,
+                receipt,
+                List.of(
+                        new AuthorityEmission(AuthorityEmissionKind.STATE, aggregateKey, state.wireValue(nextRevision)),
+                        new AuthorityEmission(AuthorityEmissionKind.RESPONSE, command.envelope().commandId().value(), receipt.wireValue()),
+                        new AuthorityEmission(AuthorityEmissionKind.CACHE_WRITE, cacheKey(snapshot.routeId()), state.wireValue(nextRevision))));
+    }
+
+    private static RouteSnapshot currentRoute(
             AuthorityCommand<RouteCommand> command,
             AuthorityRecord<RouteState> currentRecord) {
         RouteSnapshot current = currentRecord.state().current()
                 .orElseThrow(() -> new IllegalStateException("Route must be opened before lifecycle commands"));
         if (!current.routeId().equals(command.envelope().payload().routeId())) {
             throw new IllegalArgumentException("route command id must match current aggregate");
-        }
-        if (current.status() != RouteLifecycleStatus.PENDING) {
-            throw new IllegalStateException("closed Route cannot be mutated");
         }
         return current;
     }

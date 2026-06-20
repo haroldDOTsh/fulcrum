@@ -260,31 +260,39 @@ final class RouteAuthorityTest {
     }
 
     @Test
-    void closedOrExpiredRouteCannotBeAcknowledgedWithNewIdempotencyKey() {
+    void expiredOrClosedLifecycleCommandsDoNotCrashAuthorityWorker() {
         RouteAuthority authority = authority();
         AuthorityDecision<RouteState, RouteReceipt> opened = authority.handle(
                 command("command-route-15", "idempotency-route-15", PRINCIPAL, PRINCIPAL, 11, Optional.of(new Revision(0)), open(), "payload-15"),
                 RouteAuthority.emptyRecord(11));
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> authority.handle(
-                        command(
-                                "command-route-16",
-                                "idempotency-route-16",
-                                PRINCIPAL,
-                                PRINCIPAL,
-                                11,
-                                Optional.of(new Revision(1)),
-                                new AcknowledgeRoute(
-                                        ROUTE,
-                                        SUBJECT,
-                                        TARGET_SESSION,
-                                        TARGET_INSTANCE,
-                                        Instant.parse("2026-06-16T14:00:40Z")),
-                                "payload-16",
+        AuthorityDecision<RouteState, RouteReceipt> expiredAcknowledgement = authority.handle(
+                command(
+                        "command-route-16",
+                        "idempotency-route-16",
+                        PRINCIPAL,
+                        PRINCIPAL,
+                        11,
+                        Optional.of(new Revision(1)),
+                        new AcknowledgeRoute(
+                                ROUTE,
+                                SUBJECT,
+                                TARGET_SESSION,
+                                TARGET_INSTANCE,
                                 Instant.parse("2026-06-16T14:00:40Z")),
-                        new AuthorityRecord<>(opened.revision(), 11, opened.state())));
+                        "payload-16",
+                        Instant.parse("2026-06-16T14:00:40Z")),
+                new AuthorityRecord<>(opened.revision(), 11, opened.state()));
+
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, expiredAcknowledgement.status());
+        assertEquals(RouteLifecycleStatus.TIMED_OUT, expiredAcknowledgement.state().current().orElseThrow().status());
+        assertEquals(Optional.of(RouteLifecycleStatus.TIMED_OUT), expiredAcknowledgement.response().lifecycleStatus());
+        assertTrue(expiredAcknowledgement.emissions().stream()
+                .filter(emission -> emission.kind() == AuthorityEmissionKind.EVENT)
+                .findFirst()
+                .orElseThrow()
+                .payload()
+                .contains("change=TIMED_OUT"));
 
         RouteAuthority timeoutAuthority = authority();
         AuthorityDecision<RouteState, RouteReceipt> pending = timeoutAuthority.handle(
@@ -303,25 +311,29 @@ final class RouteAuthorityTest {
                         Instant.parse("2026-06-16T14:00:35Z")),
                 new AuthorityRecord<>(pending.revision(), 11, pending.state()));
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> timeoutAuthority.handle(
-                        command(
-                                "command-route-19",
-                                "idempotency-route-19",
-                                PRINCIPAL,
-                                PRINCIPAL,
-                                11,
-                                Optional.of(new Revision(2)),
-                                new AcknowledgeRoute(
-                                        ROUTE,
-                                        SUBJECT,
-                                        TARGET_SESSION,
-                                        TARGET_INSTANCE,
-                                        Instant.parse("2026-06-16T14:00:36Z")),
-                                "payload-19",
+        AuthorityDecision<RouteState, RouteReceipt> closedAcknowledgement = timeoutAuthority.handle(
+                command(
+                        "command-route-19",
+                        "idempotency-route-19",
+                        PRINCIPAL,
+                        PRINCIPAL,
+                        11,
+                        Optional.of(new Revision(2)),
+                        new AcknowledgeRoute(
+                                ROUTE,
+                                SUBJECT,
+                                TARGET_SESSION,
+                                TARGET_INSTANCE,
                                 Instant.parse("2026-06-16T14:00:36Z")),
-                        new AuthorityRecord<>(timedOut.revision(), 11, timedOut.state())));
+                        "payload-19",
+                        Instant.parse("2026-06-16T14:00:36Z")),
+                new AuthorityRecord<>(timedOut.revision(), 11, timedOut.state()));
+
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, closedAcknowledgement.status());
+        assertEquals(new Revision(3), closedAcknowledgement.revision());
+        assertEquals(RouteLifecycleStatus.TIMED_OUT, closedAcknowledgement.state().current().orElseThrow().status());
+        assertTrue(closedAcknowledgement.emissions().stream()
+                .noneMatch(emission -> emission.kind() == AuthorityEmissionKind.EVENT));
     }
 
     @Test
