@@ -43,6 +43,10 @@ final class VelocityInitialRouteCoordinator implements AutoCloseable {
     }
 
     CompletionStage<Boolean> offer(SubjectId subjectId, String backendName) {
+        return offerWithContext(subjectId, backendName).accepted();
+    }
+
+    VelocityInitialRouteOffer offerWithContext(SubjectId subjectId, String backendName) {
         SubjectId checkedSubjectId = Objects.requireNonNull(subjectId, "subjectId");
         String checkedBackendName = requireNonBlank(backendName, "backendName");
         Optional<String> username = usernameLookup.apply(checkedSubjectId).map(VelocityInitialRouteCoordinator::usernameKey);
@@ -74,7 +78,7 @@ final class VelocityInitialRouteCoordinator implements AutoCloseable {
         }
         scheduler.schedule(() -> expireRoute(checkedSubjectId, selection), timeout.toMillis(), TimeUnit.MILLISECONDS);
         selection.accepted().whenComplete((accepted, failure) -> removeRoute(checkedSubjectId, selection));
-        return selection.accepted();
+        return new VelocityInitialRouteOffer(selection.accepted(), waiter != null, username.isPresent());
     }
 
     CompletionStage<Optional<VelocityInitialRouteSelection>> await(SubjectId subjectId) {
@@ -215,5 +219,15 @@ final class VelocityInitialRouteSelection {
 
     CompletionStage<Boolean> accepted() {
         return accepted;
+    }
+}
+
+record VelocityInitialRouteOffer(
+        CompletionStage<Boolean> accepted,
+        boolean matchedWaitingInitialServerEvent,
+        boolean loginSubjectKnown) {
+
+    boolean belongsToInitialLogin() {
+        return matchedWaitingInitialServerEvent;
     }
 }

@@ -56,9 +56,16 @@ public final class VelocityRouteExecutor {
         }
         String backendName = backendRegistry.ensureRegistered(endpoint);
         if (initialRouteCoordinator != null) {
-            CompletionStage<Boolean> initialRoute = initialRouteCoordinator.offer(command.subjectId(), backendName);
+            VelocityInitialRouteOffer initialRoute = initialRouteCoordinator.offerWithContext(
+                    command.subjectId(),
+                    backendName);
+            if (initialRoute.belongsToInitialLogin()) {
+                return initialRoute.accepted().thenApply(selected -> selected
+                        ? Optional.of(transfer(command))
+                        : Optional.empty());
+            }
             CompletionStage<Boolean> directTransfer = backendRegistry.transfer(command.subjectId(), backendName);
-            return firstSuccessfulTransfer(command, initialRoute, directTransfer);
+            return firstSuccessfulTransfer(command, initialRoute.accepted(), directTransfer);
         }
         return backendRegistry.transfer(command.subjectId(), backendName)
                 .thenApply(transferred -> transferred
