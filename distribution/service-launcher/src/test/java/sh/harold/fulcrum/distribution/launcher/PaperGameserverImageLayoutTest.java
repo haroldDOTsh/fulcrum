@@ -60,9 +60,14 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(entrypoint.contains("server-port=${PAPER_SERVER_PORT}"));
         assertTrue(entrypoint.contains("online-mode=${PAPER_ONLINE_MODE}"));
         assertTrue(entrypoint.contains("enforce-secure-profile=${PAPER_ENFORCE_SECURE_PROFILE}"));
+        assertTrue(entrypoint.contains("op-permission-level=${FULCRUM_TEST_OPERATOR_LEVEL}"));
         assertTrue(entrypoint.contains("prevent-proxy-connections=false"));
         assertTrue(entrypoint.contains("cat > bukkit.yml"));
         assertTrue(entrypoint.contains("connection-throttle: -1"));
+        assertTrue(entrypoint.contains("FULCRUM_TEST_OPERATOR_NAME"));
+        assertTrue(entrypoint.contains("FULCRUM_TEST_OPERATOR_UUID"));
+        assertTrue(entrypoint.contains("cat > ops.json"));
+        assertTrue(entrypoint.contains("\"bypassesPlayerLimit\": ${FULCRUM_TEST_OPERATOR_BYPASSES_PLAYER_LIMIT}"));
 
         assertTrue(readme.contains("paperGameserverImageContext"));
         assertTrue(readme.contains("paperGameserverImage"));

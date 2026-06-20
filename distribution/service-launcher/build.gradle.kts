@@ -4,7 +4,9 @@ import org.gradle.api.tasks.Sync
 import org.gradle.jvm.tasks.Jar
 import java.io.File
 import java.io.IOException
+import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.TimeUnit
 
 plugins {
@@ -91,7 +93,7 @@ val agonesChartVersion = providers.gradleProperty("fulcrum.agonesChartVersion")
 val defaultObjectStoreImage = "quay.io/minio/minio:${libs.versions.minio.get()}"
 val objectStoreImageTag = providers.gradleProperty("fulcrum.objectStoreImage")
     .orElse(defaultObjectStoreImage)
-val defaultKafkaImage = "apache/kafka-native:${libs.versions.kafka.get()}"
+val defaultKafkaImage = "apache/kafka:${libs.versions.kafka.get()}"
 val kafkaImageTag = providers.gradleProperty("fulcrum.kafkaImage")
     .orElse(defaultKafkaImage)
 val defaultPostgresImage = "postgres:${libs.versions.postgresImage.get()}"
@@ -521,6 +523,40 @@ fun reserveFreeHostPort(): Int = ServerSocket(0).use { socket ->
     socket.localPort
 }
 
+fun parseHostPort(propertyName: String, value: String): Int {
+    val port = value.toIntOrNull()
+    if (port == null || port !in 1..65_535) {
+        throw GradleException("$propertyName must be a TCP port from 1 to 65535, but was `$value`.")
+    }
+    return port
+}
+
+fun requireHostPortAvailable(label: String, port: Int) {
+    try {
+        ServerSocket().use { socket ->
+            socket.reuseAddress = false
+            socket.bind(InetSocketAddress("127.0.0.1", port))
+        }
+    } catch (exception: IOException) {
+        throw GradleException(
+            "$label host port 127.0.0.1:$port is already in use. "
+                + "The generated cluster cleanup only deletes generated ${generatedClusterProvider()} cluster "
+                + "${clusterName.get()}; it does not kill arbitrary host processes. "
+                + "Stop the process using that port, choose another fixed port, or omit the fixed port property "
+                + "so Gradle can reserve a free one.",
+            exception)
+    }
+}
+
+fun requireConfiguredClusterHostPortsAvailable() {
+    clusterApiPort.get().takeIf { it.isNotBlank() }?.let {
+        requireHostPortAvailable("Generated Kubernetes API", parseHostPort("fulcrum.clusterApiPort", it))
+    }
+    clusterMinecraftPort.get().takeIf { it.isNotBlank() }?.let {
+        requireHostPortAvailable("Generated Minecraft", parseHostPort("fulcrum.clusterMinecraftPort", it))
+    }
+}
+
 fun selectedLobbyEndpointPort(): String {
     lobbyEndpointPort.orNull?.takeIf { it.isNotBlank() }?.let {
         return it
@@ -533,6 +569,10 @@ fun selectedLobbyEndpointPort(): String {
     }
     return "25565"
 }
+
+fun selectedLobbyEndpointHost(): String? =
+    lobbyEndpointHost.orNull?.takeIf { it.isNotBlank() }
+        ?: if (generatedClusterRequested.get()) lobbyNodeHost.get() else null
 
 data class ClusterProcessResult(
     val command: List<String>,
@@ -625,6 +665,43 @@ fun waitForClusterProcess(
             + "Last output:"
             + System.lineSeparator()
             + formattedOutput)
+}
+
+fun waitForTcpEndpoint(
+    label: String,
+    host: String,
+    port: Int,
+    timeoutSeconds: Long,
+    pollSeconds: Long = 2) {
+    val startedAt = System.nanoTime()
+    val timeoutNanos = TimeUnit.SECONDS.toNanos(timeoutSeconds)
+    var attempt = 1
+    var lastFailure = ""
+    while (System.nanoTime() - startedAt < timeoutNanos) {
+        try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), 2_000)
+            }
+            logger.lifecycle("$label is reachable at $host:$port")
+            return
+        } catch (exception: IOException) {
+            lastFailure = exception.message ?: exception.javaClass.simpleName
+        }
+        val elapsedSeconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startedAt)
+        logger.lifecycle(
+            "$label not reachable yet after ${elapsedSeconds}s "
+                + "(attempt $attempt, timeout ${timeoutSeconds}s): $lastFailure")
+        attempt += 1
+        try {
+            Thread.sleep(TimeUnit.SECONDS.toMillis(pollSeconds))
+        } catch (exception: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw GradleException("Interrupted while waiting for $label.", exception)
+        }
+    }
+    throw GradleException(
+        "$label did not become reachable within ${timeoutSeconds}s. "
+            + "Last failure: ${lastFailure.ifBlank { "<no failure recorded>" }}")
 }
 
 fun dockerContainerExists(containerName: String): Boolean =
@@ -855,6 +932,7 @@ tasks.register("clusterK3sDeleteExisting") {
     dependsOn(tasks.named("clusterK3sPreflight"))
     doLast {
         deleteGeneratedClusterIfExists("Deleting existing")
+        requireConfiguredClusterHostPortsAvailable()
     }
 }
 
@@ -874,11 +952,15 @@ tasks.register("clusterK3sStart") {
             ?: reserveFreeHostPort().toString()
         val selectedMinecraftPort = clusterMinecraftPort.get().takeIf { it.isNotBlank() }
             ?: reserveFreeHostPort().toString()
+        val selectedApiHostPort = parseHostPort("fulcrum.clusterApiPort", selectedApiPort)
+        val selectedMinecraftHostPort = parseHostPort("fulcrum.clusterMinecraftPort", selectedMinecraftPort)
+        requireHostPortAvailable("Generated Kubernetes API", selectedApiHostPort)
+        requireHostPortAvailable("Generated Minecraft", selectedMinecraftHostPort)
         val minecraftPortFile = generatedClusterMinecraftPortFile.get().asFile
         minecraftPortFile.parentFile.mkdirs()
-        minecraftPortFile.writeText(selectedMinecraftPort)
-        logger.lifecycle("Using generated $provider Kubernetes API port 127.0.0.1:$selectedApiPort")
-        logger.lifecycle("Using generated $provider Minecraft port 127.0.0.1:$selectedMinecraftPort")
+        minecraftPortFile.writeText(selectedMinecraftHostPort.toString())
+        logger.lifecycle("Using generated $provider Kubernetes API port 127.0.0.1:$selectedApiHostPort")
+        logger.lifecycle("Using generated $provider Minecraft port 127.0.0.1:$selectedMinecraftHostPort")
         when (provider) {
             "k3d" -> {
                 val createArgs = mutableListOf(
@@ -890,10 +972,10 @@ tasks.register("clusterK3sStart") {
                     createArgs.add(it)
                 }
                 createArgs.add("--api-port")
-                createArgs.add("127.0.0.1:$selectedApiPort")
+                createArgs.add("127.0.0.1:$selectedApiHostPort")
                 createArgs.addAll(listOf(
                     "--port",
-                    "127.0.0.1:$selectedMinecraftPort:25565@loadbalancer",
+                    "127.0.0.1:$selectedMinecraftHostPort:25565@loadbalancer",
                     "--k3s-arg",
                     "--disable=traefik@server:0",
                     "--wait",
@@ -915,12 +997,12 @@ tasks.register("clusterK3sStart") {
                     |apiVersion: kind.x-k8s.io/v1alpha4
                     |networking:
                     |  apiServerAddress: "127.0.0.1"
-                    |  apiServerPort: $selectedApiPort
+                    |  apiServerPort: $selectedApiHostPort
                     |nodes:
                     |  - role: control-plane
                     |    extraPortMappings:
                     |      - listenAddress: "127.0.0.1"
-                    |        hostPort: ${selectedMinecraftPort.toInt()}
+                    |        hostPort: $selectedMinecraftHostPort
                     |        containerPort: 25565
                     |        protocol: TCP
                     |""".trimMargin())
@@ -1613,6 +1695,20 @@ tasks.register("velocityL4WaitForReady") {
     }
 }
 
+tasks.register("velocityL4WaitForHostPort") {
+    group = "verification"
+    description = "Waits for the generated or explicitly configured Velocity host endpoint to accept TCP."
+    dependsOn(tasks.named("velocityL4WaitForReady"))
+    doLast {
+        val endpointHost = selectedLobbyEndpointHost()
+        if (endpointHost == null) {
+            logger.lifecycle("Skipping Velocity host endpoint wait because no generated cluster or explicit endpoint host was requested")
+            return@doLast
+        }
+        waitForTcpEndpoint("Velocity host endpoint", endpointHost, selectedLobbyEndpointPort().toInt(), 240)
+    }
+}
+
 tasks.register<Exec>("velocityL4Status") {
     group = "verification"
     description = "Prints the current Fulcrum Velocity proxy and L4 Service status from the configured Kubernetes cluster."
@@ -1668,13 +1764,16 @@ tasks.register("paperAgonesPhase3Deploy") {
         tasks.named("paperAgonesPhase2Deploy"),
         tasks.named("velocityL4Apply"),
         tasks.named("velocityL4WaitForReady"),
+        tasks.named("velocityL4WaitForHostPort"),
         tasks.named("velocityL4Status"))
 }
 
 tasks.register<JavaExec>("lobbyClusterE2eVerify") {
     group = "verification"
     description = "Resolves the Velocity L4 endpoint and verifies Minecraft status, lobby proof, scale-out, and login denial."
-    dependsOn(tasks.named("paperAgonesPhase3Deploy"))
+    dependsOn(
+        tasks.named("paperAgonesPhase3Deploy"),
+        tasks.named("velocityL4WaitForHostPort"))
     classpath = sourceSets.named("main").get().runtimeClasspath
     mainClass.set("sh.harold.fulcrum.distribution.launcher.LobbyClusterE2eVerifier")
     doFirst {
@@ -1784,12 +1883,37 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
             "--session-authority-state-freshness-skew=${lobbySessionAuthorityStateFreshnessSkew.get()}",
             "--shared-shard-allocation-state-timeout=${lobbySharedShardAllocationStateTimeout.get()}",
             "--timeout=${lobbyVerifierTimeout.get()}")
-        val resolvedEndpointHost = lobbyEndpointHost.orNull?.takeIf { it.isNotBlank() }
-            ?: if (generatedClusterRequested.get()) lobbyNodeHost.get() else null
-        resolvedEndpointHost?.let {
+        selectedLobbyEndpointHost()?.let {
             runArgs.add("--endpoint-host=$it")
         }
         verifierKubeArgs(runArgs)
+        if (generatedClusterRequested.get()) {
+            runArgs.addAll(listOf(
+                "--verify-agones-fleet-state=true",
+                "--verify-route-attempt-state=true",
+                "--verify-login-routing-command-log=true",
+                "--verify-queue-roster-state=true",
+                "--verify-lifecycle-trace-state=true",
+                "--verify-route-authority-command-log=true",
+                "--verify-route-authority-state=true",
+                "--verify-host-route-command-logs=true",
+                "--verify-host-observation-log=true",
+                "--verify-presence-authority-state=true",
+                "--verify-standard-capability-state=true",
+                "--verify-standard-capability-command-log=true",
+                "--verify-reward-state=true",
+                "--verify-reward-command-log=true",
+                "--verify-cassandra-hot-projections=true",
+                "--verify-postgres-authority-records=true",
+                "--verify-valkey-cache=true",
+                "--verify-projection-consistency=true",
+                "--verify-trace-correlation=true",
+                "--verify-object-store-artifact=true",
+                "--verify-session-authority-state=true",
+                "--verify-session-authority-command-log=true",
+                "--verify-shared-shard-allocation-command-log=true",
+                "--verify-shared-shard-allocation-state=true"))
+        }
         verifyLobbyAgonesFleetState.orNull?.takeIf { it.isNotBlank() }?.let {
             runArgs.add("--verify-agones-fleet-state=$it")
         }

@@ -101,6 +101,13 @@ final class AgonesDeploymentManifestTest {
         assertTrue(manifest.contains("name: FULCRUM_PRINCIPAL_ID"));
         assertTrue(manifest.contains("name: MINECRAFT_EULA"));
         assertTrue(manifest.contains("value: \"true\""));
+        assertTrue(manifest.contains("name: FULCRUM_TEST_OPERATOR_NAME"));
+        assertTrue(manifest.contains("value: \"ZECHEESELORD\""));
+        assertTrue(manifest.contains("name: FULCRUM_TEST_OPERATOR_UUID"));
+        assertTrue(manifest.contains("value: \"fe85a251-2c9b-3c79-a2eb-2e725d7df55f\""));
+        assertTrue(manifest.contains("name: FULCRUM_TEST_OPERATOR_LEVEL"));
+        assertTrue(manifest.contains("value: \"4\""));
+        assertTrue(manifest.contains("name: FULCRUM_TEST_OPERATOR_BYPASSES_PLAYER_LIMIT"));
         assertTrue(manifest.contains("FULCRUM_PAPER_SESSION_OWNER_TOKEN"));
         assertTrue(manifest.contains("FULCRUM_HOST_OBSERVATION_TOPIC: \"host.observation\""));
         assertTrue(manifest.contains("FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC: \"cmd.standard.economy\""));
@@ -210,7 +217,7 @@ final class AgonesDeploymentManifestTest {
         assertTrue(kafka.contains("namespace: fulcrum-lobby"));
         assertTrue(kafka.contains("kind: StatefulSet"));
         assertTrue(kafka.contains("serviceName: fulcrum-kafka"));
-        assertTrue(kafka.contains("image: apache/kafka-native:4.3.0"));
+        assertTrue(kafka.contains("image: apache/kafka:4.3.0"));
         assertTrue(kafka.contains("name: KAFKA_PROCESS_ROLES"));
         assertTrue(kafka.contains("value: \"broker,controller\""));
         assertTrue(kafka.contains("name: KAFKA_ADVERTISED_LISTENERS"));
@@ -432,9 +439,12 @@ final class AgonesDeploymentManifestTest {
         assertTrue(build.contains("runArgs.add(\"--kubeconfig=$explicitKubeconfig\")"));
         assertTrue(build.contains("?: if (generatedClusterRequested.get()) generatedClusterKubeconfig.get().asFile.absolutePath else null"));
         assertTrue(build.contains("} else {\n        kubeContext.orNull?.takeIf { it.isNotBlank() }?.let {"));
-        assertTrue(build.contains("val resolvedEndpointHost = lobbyEndpointHost.orNull?.takeIf { it.isNotBlank() }"));
-        assertTrue(build.contains("?: if (generatedClusterRequested.get()) lobbyNodeHost.get() else null"));
+        assertTrue(build.contains("fun selectedLobbyEndpointHost(): String?"));
+        assertTrue(build.contains("selectedLobbyEndpointHost()?.let {"));
         assertTrue(build.contains("runArgs.add(\"--endpoint-host=$it\")"));
+        assertTrue(build.contains("if (generatedClusterRequested.get())"));
+        assertTrue(build.contains("\"--verify-agones-fleet-state=true\""));
+        assertTrue(build.contains("\"--verify-route-attempt-state=true\""));
     }
 
     @Test
@@ -458,7 +468,11 @@ final class AgonesDeploymentManifestTest {
         assertTrue(build.contains("fun generatedClusterExists(): Boolean"));
         assertTrue(build.contains("fun deleteGeneratedClusterIfExists(reason: String)"));
         assertTrue(build.contains("fun reserveFreeHostPort(): Int"));
-        assertTrue(build.contains("Using generated $provider Kubernetes API port 127.0.0.1:$selectedApiPort"));
+        assertTrue(build.contains("fun parseHostPort(propertyName: String, value: String): Int"));
+        assertTrue(build.contains("fun requireHostPortAvailable(label: String, port: Int)"));
+        assertTrue(build.contains("fun requireConfiguredClusterHostPortsAvailable()"));
+        assertTrue(build.contains("it does not kill arbitrary host processes"));
+        assertTrue(build.contains("Using generated $provider Kubernetes API port 127.0.0.1:$selectedApiHostPort"));
         assertTrue(build.contains("tasks.register(\"clusterK3sPreflight\")"));
         assertTrue(build.contains("tasks.register(\"clusterK3sDeleteExisting\")"));
         assertTrue(build.contains("tasks.register(\"clusterK3sStart\")"));
@@ -466,6 +480,8 @@ final class AgonesDeploymentManifestTest {
         assertTrue(build.contains("tasks.register(\"clusterK3sStop\")"));
         assertTrue(build.contains("tasks.register(\"clusterK3sE2e\")"));
         assertTrue(build.contains("deleteGeneratedClusterIfExists(\"Deleting existing\")"));
+        assertTrue(build.contains("requireConfiguredClusterHostPortsAvailable()"));
+        assertTrue(build.contains("requireHostPortAvailable(\"Generated Minecraft\", selectedMinecraftHostPort)"));
         assertTrue(build.contains("createArgs.add(\"--image\")"));
         assertTrue(build.contains("\"--kubeconfig-update-default=false\""));
         assertTrue(build.contains("k3dCommand(\"kubeconfig\", \"get\", name)"));
@@ -531,7 +547,7 @@ final class AgonesDeploymentManifestTest {
     void gradleSubstrateRenderingUsesCentralImagePinsAndOverrides() throws IOException {
         String build = Files.readString(Path.of("build.gradle.kts"));
 
-        assertTrue(build.contains("val defaultKafkaImage = \"apache/kafka-native:${libs.versions.kafka.get()}\""));
+        assertTrue(build.contains("val defaultKafkaImage = \"apache/kafka:${libs.versions.kafka.get()}\""));
         assertTrue(build.contains("val kafkaImageTag = providers.gradleProperty(\"fulcrum.kafkaImage\")"));
         assertTrue(build.contains("val defaultPostgresImage = \"postgres:${libs.versions.postgresImage.get()}\""));
         assertTrue(build.contains("val postgresImageTag = providers.gradleProperty(\"fulcrum.postgresImage\")"));

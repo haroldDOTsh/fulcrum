@@ -390,6 +390,14 @@ spec:
                   value: "service-account:fulcrum-paper-agent"
                 - name: MINECRAFT_EULA
                   value: "true"
+                - name: FULCRUM_TEST_OPERATOR_NAME
+                  value: "ZECHEESELORD"
+                - name: FULCRUM_TEST_OPERATOR_UUID
+                  value: "fe85a251-2c9b-3c79-a2eb-2e725d7df55f"
+                - name: FULCRUM_TEST_OPERATOR_LEVEL
+                  value: "4"
+                - name: FULCRUM_TEST_OPERATOR_BYPASSES_PLAYER_LIMIT
+                  value: "true"
               livenessProbe:
                 httpGet:
                   path: /live
