@@ -1,0 +1,11 @@
+package sh.harold.fulcrum.sdk.authority;
+
+public enum AuthorityBackendRegistrationRejectionReason {
+    MISSING_CREDENTIAL,
+    INVALID_DESCRIPTOR_DIGEST,
+    NO_AUTHORITY_DOMAIN,
+    MISSING_AUTHORITY_DOMAIN_GRANT,
+    MISSING_RESOURCE_CLASS_GRANT,
+    MATERIALIZATION_CONFLICT,
+    AUTHORITY_DOMAIN_CONFLICT
+}

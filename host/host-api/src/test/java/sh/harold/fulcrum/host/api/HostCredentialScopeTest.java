@@ -20,13 +20,17 @@ final class HostCredentialScopeTest {
                 new HostResourceGrant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME, "route.instance-1"),
                 new HostResourceGrant(HostResourceFamily.CACHE, HostAccessMode.READ, "session.session-1"),
                 new HostResourceGrant(HostResourceFamily.HOT_PROJECTION, HostAccessMode.READ, "presence.subject-1"),
-                new HostResourceGrant(HostResourceFamily.ARTIFACT, HostAccessMode.READ, "artifact.map-template-1"));
+                new HostResourceGrant(HostResourceFamily.ARTIFACT, HostAccessMode.READ, "artifact.map-template-1"),
+                new HostResourceGrant(HostResourceFamily.AUTHORITY_DOMAIN, HostAccessMode.PRODUCE, "noop.authority"),
+                new HostResourceGrant(HostResourceFamily.RESOURCE_CLASS, HostAccessMode.READ, "external-authority"));
 
         assertTrue(scope.permits(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "cmd.session"));
         assertTrue(scope.permits(HostResourceFamily.TOPIC, HostAccessMode.CONSUME, "route.instance-1"));
         assertTrue(scope.permits(HostResourceFamily.CACHE, HostAccessMode.READ, "session.session-1"));
         assertTrue(scope.permits(HostResourceFamily.HOT_PROJECTION, HostAccessMode.READ, "presence.subject-1"));
         assertTrue(scope.permits(HostResourceFamily.ARTIFACT, HostAccessMode.READ, "artifact.map-template-1"));
+        assertTrue(scope.permits(HostResourceFamily.AUTHORITY_DOMAIN, HostAccessMode.PRODUCE, "noop.authority"));
+        assertTrue(scope.permits(HostResourceFamily.RESOURCE_CLASS, HostAccessMode.READ, "external-authority"));
         assertFalse(scope.permits(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "cmd.rank"));
         assertFalse(scope.permits(HostResourceFamily.CACHE, HostAccessMode.READ, "session.other"));
     }

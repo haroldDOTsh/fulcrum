@@ -4,5 +4,7 @@ public enum HostResourceFamily {
     TOPIC,
     CACHE,
     HOT_PROJECTION,
-    ARTIFACT
+    ARTIFACT,
+    AUTHORITY_DOMAIN,
+    RESOURCE_CLASS
 }
