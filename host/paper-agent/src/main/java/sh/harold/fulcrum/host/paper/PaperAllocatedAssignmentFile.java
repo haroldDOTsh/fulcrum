@@ -72,25 +72,29 @@ public final class PaperAllocatedAssignmentFile {
     public static SessionId requireSessionId(Path file) {
         return read(file)
                 .map(AllocatedAssignment::sessionId)
-                .orElseThrow(() -> new IllegalStateException("Paper allocated assignment file is not available: " + file));
+                .orElseThrow(() -> assignmentUnavailable(file));
     }
 
     public static SlotId requireSlotId(Path file) {
         return read(file)
                 .map(AllocatedAssignment::slotId)
-                .orElseThrow(() -> new IllegalStateException("Paper allocated assignment file is not available: " + file));
+                .orElseThrow(() -> assignmentUnavailable(file));
     }
 
     public static ResolvedManifestId requireResolvedManifestId(Path file) {
         return read(file)
                 .map(AllocatedAssignment::resolvedManifestId)
-                .orElseThrow(() -> new IllegalStateException("Paper allocated assignment file is not available: " + file));
+                .orElseThrow(() -> assignmentUnavailable(file));
     }
 
     public static String requireTraceId(Path file) {
         return read(file)
                 .map(AllocatedAssignment::traceId)
-                .orElseThrow(() -> new IllegalStateException("Paper allocated assignment file is not available: " + file));
+                .orElseThrow(() -> assignmentUnavailable(file));
+    }
+
+    private static AssignmentUnavailableException assignmentUnavailable(Path file) {
+        return new AssignmentUnavailableException(file);
     }
 
     private static void moveIntoPlace(Path temp, Path file) throws IOException {
@@ -135,6 +139,19 @@ public final class PaperAllocatedAssignmentFile {
             slotId = Objects.requireNonNull(slotId, "slotId");
             resolvedManifestId = Objects.requireNonNull(resolvedManifestId, "resolvedManifestId");
             traceId = PaperArtifactNames.requireNonBlank(traceId, "traceId");
+        }
+    }
+
+    public static final class AssignmentUnavailableException extends IllegalStateException {
+        private final Path file;
+
+        private AssignmentUnavailableException(Path file) {
+            super("Paper allocated assignment file is not available: " + file);
+            this.file = Objects.requireNonNull(file, "file");
+        }
+
+        public Path file() {
+            return file;
         }
     }
 }

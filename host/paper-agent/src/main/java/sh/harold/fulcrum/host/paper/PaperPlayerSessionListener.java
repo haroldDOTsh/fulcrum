@@ -22,6 +22,9 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 public final class PaperPlayerSessionListener implements Listener {
+    private static final Component ROUTE_PREPARING_MESSAGE =
+            Component.text("Lobby route is still preparing. Please reconnect in a moment.");
+
     private final JavaPlugin plugin;
     private final PaperJoinAttachmentHandler attachmentHandler;
     private final Supplier<SlotId> slotIdSupplier;
@@ -55,6 +58,16 @@ public final class PaperPlayerSessionListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         var player = event.getPlayer();
+        try {
+            handlePlayerJoin(player);
+        } catch (PaperAllocatedAssignmentFile.AssignmentUnavailableException exception) {
+            plugin.getLogger().warning("Rejecting lobby join for " + player.getName()
+                    + " because the Paper allocation assignment is not ready: " + exception.getMessage());
+            player.kick(ROUTE_PREPARING_MESSAGE);
+        }
+    }
+
+    private void handlePlayerJoin(org.bukkit.entity.Player player) {
         World world = world();
         world.getBlockAt(
                 spawnPoint.bedrockBlockX(),
@@ -106,7 +119,12 @@ public final class PaperPlayerSessionListener implements Listener {
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         var player = event.getPlayer();
-        attachmentHandler.detach(new PaperJoiningSubject(player.getUniqueId(), player.getName()));
+        try {
+            attachmentHandler.detach(new PaperJoiningSubject(player.getUniqueId(), player.getName()));
+        } catch (PaperAllocatedAssignmentFile.AssignmentUnavailableException exception) {
+            plugin.getLogger().fine("Skipping lobby detach for " + player.getName()
+                    + " because the Paper allocation assignment was not ready");
+        }
     }
 
     @EventHandler
