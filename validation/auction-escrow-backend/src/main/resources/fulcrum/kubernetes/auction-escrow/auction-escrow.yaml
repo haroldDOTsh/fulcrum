@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-auction-escrow
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/role: "auction-escrow-backend"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fulcrum-auction-escrow-identity
+  namespace: fulcrum-lobby
+type: Opaque
+stringData:
+  FULCRUM_CREDENTIAL_REF: "secret://fulcrum-auction-escrow-identity/credential"
+  FULCRUM_ESCROW_BUNDLE_DIGEST: "sha256:auction-escrow-backend-dev"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fulcrum-auction-escrow-config
+  namespace: fulcrum-lobby
+data:
+  FULCRUM_INSTANCE_KIND: "authority-backend"
+  FULCRUM_POOL_ID: "pool-auction-escrow"
+  FULCRUM_PRINCIPAL_ID: "principal-auction-escrow-backend"
+  FULCRUM_AUTHORITY_DOMAIN: "auction-escrow"
+  FULCRUM_AUTHORITY_RESOURCE_CLASS: "external-authority"
+  FULCRUM_ESCROW_CONTRACT_NAME: "auction.escrow.v1"
+  FULCRUM_ESCROW_COMMAND_TOPIC: "cmd.auction.escrow"
+  FULCRUM_ESCROW_EVENT_TOPIC: "evt.auction.escrow"
+  FULCRUM_ESCROW_STATE_TOPIC: "state.auction.escrow"
+  FULCRUM_ESCROW_RESPONSE_TOPIC: "rsp.auction.escrow"
+  FULCRUM_ESCROW_CONSUMER_GROUP: "auction-escrow-backend"
+  FULCRUM_ESCROW_REPLAY_WATERMARK: "0"
+  FULCRUM_ESCROW_READY_FILE: "/var/run/fulcrum/auction-escrow.ready"
+  FULCRUM_ESCROW_STARTUP_MODE: "serve"
+  FULCRUM_REGISTRATION_ENDPOINT: "http://fulcrum-authority-registration:18085/authority-backends/register"
+  FULCRUM_KAFKA_BOOTSTRAP_SERVERS: "fulcrum-kafka:9092"
+  FULCRUM_POSTGRES_JDBC_URL: "jdbc:postgresql://fulcrum-postgres:5432/fulcrum"
+  FULCRUM_CASSANDRA_CONTACT_POINTS: "fulcrum-cassandra:9042"
+  FULCRUM_CASSANDRA_LOCAL_DATACENTER: "datacenter1"
+  FULCRUM_VALKEY_ENDPOINT: "fulcrum-valkey:6379"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fulcrum-auction-escrow
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/role: "auction-escrow-backend"
+    sh.harold.fulcrum/authority-domain: "auction-escrow"
+    sh.harold.fulcrum/writer-authority: "single"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: "auction-escrow-backend"
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "auction-escrow-backend"
+        sh.harold.fulcrum/authority-domain: "auction-escrow"
+        sh.harold.fulcrum/writer-authority: "single"
+    spec:
+      serviceAccountName: fulcrum-auction-escrow
+      initContainers:
+        - name: wait-for-kafka
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-kafka 9092; do echo waiting for kafka; sleep 2; done"
+        - name: wait-for-postgres
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-postgres 5432; do echo waiting for postgres; sleep 2; done"
+        - name: wait-for-cassandra
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-cassandra 9042; do echo waiting for cassandra; sleep 2; done"
+        - name: wait-for-valkey
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-valkey 6379; do echo waiting for valkey; sleep 2; done"
+        - name: wait-for-authority-registration
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-authority-registration 18085; do echo waiting for authority registration; sleep 2; done"
+      containers:
+        - name: auction-escrow
+          image: ghcr.io/sh-harold/fulcrum-auction-escrow:dev
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: fulcrum-auction-escrow-config
+            - secretRef:
+                name: fulcrum-auction-escrow-identity
+          env:
+            - name: FULCRUM_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: FULCRUM_MACHINE_REF
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: FULCRUM_POSTGRES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-postgres-credentials
+                  key: POSTGRES_USER
+            - name: FULCRUM_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-postgres-credentials
+                  key: POSTGRES_PASSWORD
+          livenessProbe:
+            exec:
+              command:
+                - "sh"
+                - "-c"
+                - "test -d /var/run/fulcrum"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - "sh"
+                - "-c"
+                - "test -f /var/run/fulcrum/auction-escrow.ready"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "768Mi"

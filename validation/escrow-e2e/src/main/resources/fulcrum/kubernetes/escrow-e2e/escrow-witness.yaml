@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fulcrum-escrow-e2e-witness
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/role: "escrow-e2e-witness"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fulcrum-escrow-e2e-witness
+  namespace: fulcrum-lobby
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fulcrum-escrow-e2e-witness
+  namespace: fulcrum-lobby
+subjects:
+  - kind: ServiceAccount
+    name: fulcrum-escrow-e2e-witness
+    namespace: fulcrum-lobby
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fulcrum-escrow-e2e-witness
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fulcrum-escrow-e2e-witness
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/role: "escrow-e2e-witness"
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: "escrow-e2e-witness"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: fulcrum-escrow-e2e-witness
+      initContainers:
+        - name: wait-for-kafka
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-kafka 9092; do echo waiting for kafka; sleep 2; done"
+        - name: wait-for-postgres
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-postgres 5432; do echo waiting for postgres; sleep 2; done"
+        - name: wait-for-cassandra
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-cassandra 9042; do echo waiting for cassandra; sleep 2; done"
+        - name: wait-for-valkey
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "until nc -z fulcrum-valkey 6379; do echo waiting for valkey; sleep 2; done"
+      containers:
+        - name: witness
+          image: ghcr.io/sh-harold/fulcrum-escrow-e2e-witness:dev
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: fulcrum-auction-escrow-config
+          env:
+            - name: FULCRUM_WITNESS_MODE
+              value: "live-store"
+            - name: FULCRUM_WITNESS_DELETE_ESCROW_POD
+              value: "true"
+            - name: FULCRUM_WITNESS_LIVE_TIMEOUT_SECONDS
+              value: "60"
+            - name: FULCRUM_WITNESS_KUBERNETES_TIMEOUT_SECONDS
+              value: "60"
+            - name: FULCRUM_WITNESS_PROOF_FILE
+              value: "/var/run/fulcrum/escrow-e2e/settlement-certificate.json"
+            - name: FULCRUM_ESCROW_POD_SELECTOR
+              value: "sh.harold.fulcrum/role=auction-escrow-backend"
+            - name: FULCRUM_POSTGRES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-postgres-credentials
+                  key: POSTGRES_USER
+            - name: FULCRUM_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fulcrum-postgres-credentials
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: proof
+              mountPath: /var/run/fulcrum/escrow-e2e
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              memory: "384Mi"
+      volumes:
+        - name: proof
+          emptyDir: {}
