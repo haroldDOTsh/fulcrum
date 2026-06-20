@@ -5,6 +5,16 @@ target/
 *.log
 .idea/
 .vscode/
+
+AGENTS.md
+.agents/
+.codex/
+GOAL.md
+IMPLEMENTATION_ORDER.md
+ARCHITECTURE_INDEX.md
+docs/
 planning/
-validation/
 adrs/
+validation/evidence/
+validation/step-gates.md
+validation/**/*.md
