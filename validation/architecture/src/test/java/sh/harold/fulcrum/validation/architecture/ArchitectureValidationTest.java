@@ -1201,41 +1201,6 @@ final class ArchitectureValidationTest {
     }
 
     @Test
-    void standardCapabilitiesStayOutsideKernelAndRuntimeClients() throws IOException {
-        Path standardCapabilities = ROOT.resolve("standard-capabilities");
-        if (!Files.exists(standardCapabilities)) {
-            return;
-        }
-
-        List<String> violations = new ArrayList<>();
-        List<String> forbidden = List.of(
-                "io.papermc",
-                "org.bukkit",
-                "com.velocitypowered",
-                "net.minecraft",
-                "io.kubernetes",
-                "KubernetesClient",
-                "Kafka",
-                "Cassandra",
-                "PostgreSQL",
-                "Valkey",
-                "java.sql",
-                "HttpClient",
-                "create table"
-        );
-        try (Stream<Path> files = Files.walk(standardCapabilities)) {
-            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
-                String text = Files.readString(source, StandardCharsets.UTF_8);
-                forbidden.stream()
-                        .filter(text::contains)
-                        .map(term -> ROOT.relativize(source) + " contains " + term)
-                        .forEach(violations::add);
-            }
-        }
-        assertTrue(violations.isEmpty(), () -> "Legacy standard migration material crossed substrate boundary: " + violations);
-    }
-
-    @Test
     void sessionRuntimeDoesNotImplementDeferredMinigameEngine() throws IOException {
         List<Path> runtimeRoots = List.of(
                 ROOT.resolve("core/session-runtime/src/main/java"),
@@ -1687,10 +1652,6 @@ final class ArchitectureValidationTest {
     private static boolean isImplementationPath(Path path) {
         String normalized = ROOT.relativize(path).toString().replace('\\', '/');
         return !normalized.startsWith("planning/")
-                && !normalized.startsWith("standard-capabilities/")
-                && !normalized.startsWith("validation/fleet-e2e/")
-                && !normalized.startsWith("validation/standard-capabilities/")
-                && !normalized.startsWith("validation/synthetic-load/")
                 && !normalized.startsWith(".git/")
                 && !normalized.startsWith(".gradle/")
                 && !normalized.contains("/src/test/")

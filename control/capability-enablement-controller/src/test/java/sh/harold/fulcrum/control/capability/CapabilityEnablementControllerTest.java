@@ -102,7 +102,7 @@ final class CapabilityEnablementControllerTest {
     }
 
     private static EnableCapability enable() {
-        return new EnableCapability(SCOPE, RANK, "standard-contracts-v1", "policy", NOW, trace());
+        return new EnableCapability(SCOPE, RANK, "duel-contracts-v1", "policy", NOW, trace());
     }
 
     private static DisableCapability disable() {
