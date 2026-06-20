@@ -8,6 +8,7 @@ WORKDIR /opt/fulcrum/paper
 
 COPY fulcrum /opt/fulcrum/fulcrum
 COPY plugins/FulcrumPaperAgent.jar /opt/fulcrum/paper/plugins/FulcrumPaperAgent.jar
+COPY contribution-bundles /opt/fulcrum/paper/contribution-bundles
 COPY entrypoint.sh /opt/fulcrum/bin/paper-gameserver
 
 RUN apt-get update \

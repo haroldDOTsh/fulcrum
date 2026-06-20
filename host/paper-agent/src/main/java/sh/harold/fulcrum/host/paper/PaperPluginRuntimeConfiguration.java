@@ -28,7 +28,8 @@ public record PaperPluginRuntimeConfiguration(
         PaperSpawnPoint spawnPoint,
         Optional<URI> observationBridgeUrl,
         Optional<URI> capabilityBridgeUrl,
-        Optional<URI> rewardBridgeUrl) {
+        Optional<URI> rewardBridgeUrl,
+        Optional<Path> contributionBundleDirectory) {
     public PaperPluginRuntimeConfiguration {
         securityContext = Objects.requireNonNull(securityContext, "securityContext");
         sessionId = Objects.requireNonNull(sessionId, "sessionId");
@@ -38,6 +39,10 @@ public record PaperPluginRuntimeConfiguration(
         observationBridgeUrl = Objects.requireNonNull(observationBridgeUrl, "observationBridgeUrl");
         capabilityBridgeUrl = Objects.requireNonNull(capabilityBridgeUrl, "capabilityBridgeUrl");
         rewardBridgeUrl = Objects.requireNonNull(rewardBridgeUrl, "rewardBridgeUrl");
+        contributionBundleDirectory = Objects.requireNonNull(
+                contributionBundleDirectory,
+                "contributionBundleDirectory")
+                .map(path -> path.toAbsolutePath().normalize());
     }
 
     public static PaperPluginRuntimeConfiguration fromEnvironment(Map<String, String> environment) {
@@ -70,7 +75,8 @@ public record PaperPluginRuntimeConfiguration(
                         floatValue(environment, "FULCRUM_PAPER_SPAWN_PITCH", 0.0F)),
                 optionalHttpUri(environment, "FULCRUM_PAPER_OBSERVATION_BRIDGE_URL"),
                 optionalHttpUriWithExplicitPort(environment, "FULCRUM_PAPER_CAPABILITY_BRIDGE_URL"),
-                optionalHttpUriWithExplicitPort(environment, "FULCRUM_PAPER_REWARD_BRIDGE_URL"));
+                optionalHttpUriWithExplicitPort(environment, "FULCRUM_PAPER_REWARD_BRIDGE_URL"),
+                optionalPath(environment, "FULCRUM_PAPER_CONTRIBUTION_BUNDLE_DIR"));
     }
 
     private static Path allocatedAssignmentFile(Map<String, String> environment) {
@@ -129,6 +135,14 @@ public record PaperPluginRuntimeConfiguration(
             }
         });
         return uri;
+    }
+
+    private static Optional<Path> optionalPath(Map<String, String> environment, String name) {
+        String value = environment.get(name);
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(Path.of(value.trim()));
     }
 
     private static double doubleValue(Map<String, String> environment, String name, double defaultValue) {

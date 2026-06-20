@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     api(project(":host:host-api"))
+    api(project(":capability:capability-bundle-runtime"))
     implementation(project(":data:route-contract"))
     compileOnly(libs.velocity.api)
     annotationProcessor(libs.velocity.api)

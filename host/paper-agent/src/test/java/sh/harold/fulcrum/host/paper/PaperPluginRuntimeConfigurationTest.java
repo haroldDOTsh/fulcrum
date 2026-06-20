@@ -26,6 +26,7 @@ final class PaperPluginRuntimeConfigurationTest {
         values.put("FULCRUM_PAPER_OBSERVATION_BRIDGE_URL", "http://127.0.0.1:18080/observations");
         values.put("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL", "http://127.0.0.1:18083/capabilities");
         values.put("FULCRUM_PAPER_REWARD_BRIDGE_URL", "http://127.0.0.1:18084/rewards");
+        values.put("FULCRUM_PAPER_CONTRIBUTION_BUNDLE_DIR", "C:/tmp/fulcrum/paper-contributions");
 
         PaperPluginRuntimeConfiguration configuration =
                 PaperPluginRuntimeConfiguration.fromEnvironment(values);
@@ -50,6 +51,9 @@ final class PaperPluginRuntimeConfigurationTest {
         assertEquals(
                 URI.create("http://127.0.0.1:18084/rewards"),
                 configuration.rewardBridgeUrl().orElseThrow());
+        assertEquals(
+                java.nio.file.Path.of("C:/tmp/fulcrum/paper-contributions").toAbsolutePath().normalize(),
+                configuration.contributionBundleDirectory().orElseThrow());
     }
 
     @Test

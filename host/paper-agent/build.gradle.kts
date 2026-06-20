@@ -3,6 +3,7 @@ plugins {
 }
 
 dependencies {
+    api(project(":capability:capability-bundle-runtime"))
     implementation(project(":core:artifact-layout"))
     implementation(project(":host:tick-runtime-api"))
     api(project(":host:host-api"))
