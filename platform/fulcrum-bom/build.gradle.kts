@@ -8,6 +8,8 @@ javaPlatform {
 
 dependencies {
     constraints {
+        api(project(":sdk:authoring-sdk"))
+        api(project(":sdk:authority-sdk"))
         api(libs.kafka.clients)
         api(libs.paper.api)
         api(libs.testcontainers)

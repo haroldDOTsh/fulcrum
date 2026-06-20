@@ -12,12 +12,6 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: fulcrum-capability-provisioner
-  namespace: fulcrum-lobby
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
   name: fulcrum-paper-agent
   namespace: fulcrum-lobby
 ---
@@ -84,11 +78,6 @@ data:
   FULCRUM_PAPER_SPAWN_PITCH: "0.0"
   FULCRUM_HOST_COMMAND_TOPIC: "host.paper.commands"
   FULCRUM_HOST_OBSERVATION_TOPIC: "host.observation"
-  FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC: "cmd.standard.economy"
-  FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC: "cmd.standard.stats"
-  FULCRUM_PAPER_REWARD_CURRENCY_KEY: "coins"
-  FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS: "250"
-  FULCRUM_PAPER_REWARD_STAT_KEY: "session-completions"
   FULCRUM_PAPER_REWARD_DELIVERY_COPIES: "2"
 ---
 apiVersion: v1
@@ -158,142 +147,6 @@ spec:
               value: "fulcrum:lobby-bedrock-world:v1"
             - name: FULCRUM_PRINCIPAL_ID
               value: "principal-lobby-world-provisioner"
-            - name: FULCRUM_INSTANCE_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: fulcrum-lobby-capability-seed
-  namespace: fulcrum-lobby
-  labels:
-    sh.harold.fulcrum/provisioner: "lobby-capability-seed"
-spec:
-  backoffLimit: 3
-  ttlSecondsAfterFinished: 3600
-  template:
-    metadata:
-      labels:
-        sh.harold.fulcrum/role: "capability-provisioner"
-    spec:
-      serviceAccountName: fulcrum-capability-provisioner
-      restartPolicy: OnFailure
-      containers:
-        - name: lobby-capability-seed-provisioner
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
-          imagePullPolicy: IfNotPresent
-          command:
-            - "java"
-          args:
-            - "-cp"
-            - "/opt/fulcrum/fulcrum/lib/*"
-            - "sh.harold.fulcrum.distribution.launcher.LobbyCapabilitySeedProvisioner"
-          env:
-            - name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS
-              value: "fulcrum-kafka:9092"
-            - name: FULCRUM_PLAYER_PROFILE_COMMAND_TOPIC
-              value: "cmd.standard.player-profile"
-            - name: FULCRUM_RANK_COMMAND_TOPIC
-              value: "cmd.standard.rank"
-            - name: FULCRUM_PUNISHMENT_COMMAND_TOPIC
-              value: "cmd.standard.punishment"
-            - name: FULCRUM_LOBBY_ACCEPTED_USERNAME
-              value: "FulcrumBotOne"
-            - name: FULCRUM_LOBBY_ACCEPTED_DISPLAY_NAME
-              value: "Fulcrum Bot One"
-            - name: FULCRUM_LOBBY_ACCEPTED_RANK_KEY
-              value: "Admin"
-            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_USERNAME
-              value: "FulcrumBotTwo"
-            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_DISPLAY_NAME
-              value: "Fulcrum Bot Two"
-            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_RANK_KEY
-              value: "Admin"
-            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_USERNAME
-              value: "FulcrumBotFour"
-            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_DISPLAY_NAME
-              value: "Fulcrum Bot Four"
-            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_RANK_KEY
-              value: "Admin"
-            - name: FULCRUM_LOBBY_DENIED_USERNAME
-              value: "FulcrumBannedOne"
-            - name: FULCRUM_LOBBY_DENIED_DISPLAY_NAME
-              value: "Fulcrum Banned One"
-            - name: FULCRUM_LOBBY_DENIED_RANK_KEY
-              value: "Member"
-            - name: FULCRUM_LOBBY_DENIED_PUNISHMENT_REASON
-              value: "Banned from the lobby"
-            - name: FULCRUM_LOBBY_DENIED_PUNISHMENT_EXPIRES_AT
-              value: "2099-01-01T00:00:00Z"
-            - name: FULCRUM_PRINCIPAL_ID
-              value: "principal-lobby-capability-seed"
-            - name: FULCRUM_INSTANCE_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: fulcrum-lobby-capability-materialization
-  namespace: fulcrum-lobby
-  labels:
-    sh.harold.fulcrum/provisioner: "lobby-capability-materialization"
-spec:
-  backoffLimit: 6
-  ttlSecondsAfterFinished: 3600
-  template:
-    metadata:
-      labels:
-        sh.harold.fulcrum/role: "capability-provisioner"
-    spec:
-      serviceAccountName: fulcrum-capability-provisioner
-      restartPolicy: OnFailure
-      containers:
-        - name: lobby-capability-materialization-verifier
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
-          imagePullPolicy: IfNotPresent
-          command:
-            - "java"
-          args:
-            - "-cp"
-            - "/opt/fulcrum/fulcrum/lib/*"
-            - "sh.harold.fulcrum.distribution.launcher.LobbyCapabilityMaterializationVerifier"
-          env:
-            - name: FULCRUM_VALKEY_ENDPOINT
-              value: "fulcrum-valkey:6379"
-            - name: FULCRUM_LOBBY_ACCEPTED_USERNAME
-              value: "FulcrumBotOne"
-            - name: FULCRUM_LOBBY_ACCEPTED_DISPLAY_NAME
-              value: "Fulcrum Bot One"
-            - name: FULCRUM_LOBBY_ACCEPTED_RANK_KEY
-              value: "Admin"
-            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_USERNAME
-              value: "FulcrumBotTwo"
-            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_DISPLAY_NAME
-              value: "Fulcrum Bot Two"
-            - name: FULCRUM_LOBBY_SECOND_ACCEPTED_RANK_KEY
-              value: "Admin"
-            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_USERNAME
-              value: "FulcrumBotFour"
-            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_DISPLAY_NAME
-              value: "Fulcrum Bot Four"
-            - name: FULCRUM_LOBBY_SCALE_OUT_ACCEPTED_RANK_KEY
-              value: "Admin"
-            - name: FULCRUM_LOBBY_DENIED_USERNAME
-              value: "FulcrumBannedOne"
-            - name: FULCRUM_LOBBY_DENIED_DISPLAY_NAME
-              value: "Fulcrum Banned One"
-            - name: FULCRUM_LOBBY_DENIED_RANK_KEY
-              value: "Member"
-            - name: FULCRUM_LOBBY_DENIED_PUNISHMENT_REASON
-              value: "Banned from the lobby"
-            - name: FULCRUM_LOBBY_CAPABILITY_MATERIALIZATION_TIMEOUT
-              value: "PT180S"
-            - name: FULCRUM_PRINCIPAL_ID
-              value: "principal-lobby-capability-materialization"
             - name: FULCRUM_INSTANCE_ID
               valueFrom:
                 fieldRef:

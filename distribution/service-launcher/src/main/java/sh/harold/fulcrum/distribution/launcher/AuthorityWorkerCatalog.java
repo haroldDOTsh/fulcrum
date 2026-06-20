@@ -25,26 +25,6 @@ import sh.harold.fulcrum.data.subject.SubjectAuthority;
 import sh.harold.fulcrum.data.subject.SubjectCommand;
 import sh.harold.fulcrum.data.subject.SubjectReceipt;
 import sh.harold.fulcrum.data.subject.SubjectState;
-import sh.harold.fulcrum.standard.economy.EconomyAuthority;
-import sh.harold.fulcrum.standard.economy.EconomyReceipt;
-import sh.harold.fulcrum.standard.economy.EconomyState;
-import sh.harold.fulcrum.standard.economy.PostLedgerEntry;
-import sh.harold.fulcrum.standard.profile.PlayerProfileAuthority;
-import sh.harold.fulcrum.standard.profile.PlayerProfileReceipt;
-import sh.harold.fulcrum.standard.profile.PlayerProfileState;
-import sh.harold.fulcrum.standard.profile.UpsertPlayerProfile;
-import sh.harold.fulcrum.standard.punishment.IssuePunishment;
-import sh.harold.fulcrum.standard.punishment.PunishmentAuthority;
-import sh.harold.fulcrum.standard.punishment.PunishmentReceipt;
-import sh.harold.fulcrum.standard.punishment.PunishmentState;
-import sh.harold.fulcrum.standard.rank.GrantRank;
-import sh.harold.fulcrum.standard.rank.RankAuthority;
-import sh.harold.fulcrum.standard.rank.RankReceipt;
-import sh.harold.fulcrum.standard.rank.RankState;
-import sh.harold.fulcrum.standard.stats.RecordStatDelta;
-import sh.harold.fulcrum.standard.stats.StatsAuthority;
-import sh.harold.fulcrum.standard.stats.StatsReceipt;
-import sh.harold.fulcrum.standard.stats.StatsState;
 
 import java.util.List;
 import java.util.Objects;
@@ -57,11 +37,6 @@ final class AuthorityWorkerCatalog {
     private static final String ROUTE = "route";
     private static final String SESSION = "session";
     private static final String ARTIFACT_METADATA = "artifact-metadata";
-    private static final String PLAYER_PROFILE = StandardCapabilityAuthorityWireCodec.PLAYER_PROFILE_DOMAIN;
-    private static final String RANK = StandardCapabilityAuthorityWireCodec.RANK_DOMAIN;
-    private static final String PUNISHMENT = StandardCapabilityAuthorityWireCodec.PUNISHMENT_DOMAIN;
-    private static final String ECONOMY = StandardCapabilityAuthorityWireCodec.ECONOMY_DOMAIN;
-    private static final String STATS = StandardCapabilityAuthorityWireCodec.STATS_DOMAIN;
 
     private final AuthorityRuntimeBindings bindings;
     private final long fencingEpoch;
@@ -80,12 +55,7 @@ final class AuthorityWorkerCatalog {
                 PRESENCE,
                 ROUTE,
                 SESSION,
-                ARTIFACT_METADATA,
-                PLAYER_PROFILE,
-                RANK,
-                PUNISHMENT,
-                ECONOMY,
-                STATS);
+                ARTIFACT_METADATA);
     }
 
     List<AuthorityWorkerBinding> workerBindings() {
@@ -99,17 +69,7 @@ final class AuthorityWorkerCatalog {
                 this.<SessionState, SessionCommand, SessionReceipt>worker(SESSION, () -> SessionAuthority.emptyRecord(fencingEpoch),
                         ledger -> new SessionAuthority(ledger)::handle),
                 this.<ArtifactMetadataState, PublishArtifactMetadata, ArtifactMetadataReceipt>worker(ARTIFACT_METADATA, () -> ArtifactMetadataAuthority.emptyRecord(fencingEpoch),
-                        ledger -> new ArtifactMetadataAuthority(ledger)::handle),
-                this.<PlayerProfileState, UpsertPlayerProfile, PlayerProfileReceipt>worker(PLAYER_PROFILE, () -> PlayerProfileAuthority.emptyRecord(fencingEpoch),
-                        ledger -> new PlayerProfileAuthority(ledger)::handle),
-                this.<RankState, GrantRank, RankReceipt>worker(RANK, () -> RankAuthority.emptyRecord(fencingEpoch),
-                        ledger -> new RankAuthority(ledger)::handle),
-                this.<PunishmentState, IssuePunishment, PunishmentReceipt>worker(PUNISHMENT, () -> PunishmentAuthority.emptyRecord(fencingEpoch),
-                        ledger -> new PunishmentAuthority(ledger)::handle),
-                this.<EconomyState, PostLedgerEntry, EconomyReceipt>worker(ECONOMY, () -> EconomyAuthority.emptyRecord(fencingEpoch),
-                        ledger -> new EconomyAuthority(ledger)::handle),
-                this.<StatsState, RecordStatDelta, StatsReceipt>worker(STATS, () -> StatsAuthority.emptyRecord(fencingEpoch),
-                        ledger -> new StatsAuthority(ledger)::handle));
+                        ledger -> new ArtifactMetadataAuthority(ledger)::handle));
     }
 
     private <S, C extends CommandPayload, R> AuthorityWorkerBinding worker(

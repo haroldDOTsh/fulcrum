@@ -39,6 +39,7 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(dockerfile.contains("FROM eclipse-temurin:26-jre"));
         assertTrue(dockerfile.contains("COPY fulcrum /opt/fulcrum/fulcrum"));
         assertTrue(dockerfile.contains("COPY plugins/FulcrumPaperAgent.jar /opt/fulcrum/paper/plugins/FulcrumPaperAgent.jar"));
+        assertTrue(dockerfile.contains("COPY contribution-bundles /opt/fulcrum/paper/contribution-bundles"));
         assertTrue(dockerfile.contains("ARG PAPER_SERVER_URL=\"" + paperServer.getProperty("downloadUrl") + "\""));
         assertTrue(dockerfile.contains("ARG PAPER_SERVER_SHA256=\"" + paperServer.getProperty("sha256") + "\""));
         assertTrue(dockerfile.contains("ARG PAPER_DOWNLOAD_USER_AGENT=\"fulcrum-paper-gameserver/1.0"));
@@ -50,6 +51,9 @@ final class PaperGameserverImageLayoutTest {
 
         assertTrue(entrypoint.contains("/opt/fulcrum/fulcrum/bin/fulcrum"));
         assertTrue(entrypoint.contains(": \"${FULCRUM_PROBE_PORT:=18081}\""));
+        assertTrue(entrypoint.contains(
+                ": \"${FULCRUM_PAPER_CONTRIBUTION_BUNDLE_DIR:=/opt/fulcrum/paper/contribution-bundles}\""));
+        assertTrue(entrypoint.contains("export FULCRUM_PAPER_CONTRIBUTION_BUNDLE_DIR"));
         assertTrue(entrypoint.contains("if [ \"$#\" -eq 0 ]; then"));
         assertTrue(entrypoint.contains("--role=paper-agent"));
         assertTrue(entrypoint.contains("--probe-port=\"${FULCRUM_PROBE_PORT}\""));
@@ -78,8 +82,14 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(readme.contains("FULCRUM_PAPER_OBSERVATION_BRIDGE_URL"));
         assertTrue(readme.contains("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL"));
         assertTrue(readme.contains("FULCRUM_PAPER_REWARD_BRIDGE_URL"));
+        assertTrue(readme.contains("FULCRUM_PAPER_CONTRIBUTION_BUNDLE_DIR"));
+        assertTrue(readme.contains("/opt/fulcrum/paper/contribution-bundles"));
         assertTrue(readme.contains("online-mode=false"));
+        assertTrue(readme.contains("op-permission-level=4"));
         assertTrue(readme.contains("connection-throttle=-1"));
+        assertTrue(readme.contains("FULCRUM_TEST_OPERATOR_NAME"));
+        assertTrue(readme.contains("ZECHEESELORD"));
+        assertTrue(readme.contains("fe85a251-2c9b-3c79-a2eb-2e725d7df55f"));
 
         assertEquals("paper-26.1.2-70.jar", paperServer.getProperty("downloadName"));
         assertEquals("STABLE", paperServer.getProperty("channel"));

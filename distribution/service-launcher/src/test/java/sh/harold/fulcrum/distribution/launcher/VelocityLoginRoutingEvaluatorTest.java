@@ -82,7 +82,7 @@ final class VelocityLoginRoutingEvaluatorTest {
         VelocityLoginGateDecision decision = evaluator.evaluate(new VelocityLoginGateRequest(
                 SUBJECT,
                 "FulcrumBotOne",
-                "standard.punishment",
+                "lobby-login",
                 NOW));
 
         assertTrue(decision.allowed());
@@ -197,7 +197,7 @@ final class VelocityLoginRoutingEvaluatorTest {
         VelocityLoginGateDecision decision = evaluator.evaluate(new VelocityLoginGateRequest(
                 SUBJECT,
                 "FulcrumBannedOne",
-                "standard.punishment",
+                "lobby-login",
                 NOW));
 
         assertTrue(decision.denialReason().orElseThrow().contains("Banned"));
@@ -217,7 +217,7 @@ final class VelocityLoginRoutingEvaluatorTest {
         VelocityLoginGateDecision decision = evaluator.evaluate(new VelocityLoginGateRequest(
                 SUBJECT,
                 "FulcrumBotOne",
-                "standard.punishment",
+                "lobby-login",
                 NOW));
 
         assertFalse(decision.allowed());
@@ -247,12 +247,12 @@ final class VelocityLoginRoutingEvaluatorTest {
         VelocityLoginGateDecision firstDecision = evaluator.evaluate(new VelocityLoginGateRequest(
                 SUBJECT,
                 "FulcrumBotOne",
-                "standard.punishment",
+                "lobby-login",
                 NOW));
         VelocityLoginGateDecision secondDecision = evaluator.evaluate(new VelocityLoginGateRequest(
                 SECOND_SUBJECT,
                 "FulcrumBotTwo",
-                "standard.punishment",
+                "lobby-login",
                 NOW.plusSeconds(1)));
 
         assertTrue(firstDecision.allowed());
@@ -275,13 +275,13 @@ final class VelocityLoginRoutingEvaluatorTest {
         VelocityLoginGateDecision firstDecision = evaluator.evaluate(new VelocityLoginGateRequest(
                 SUBJECT,
                 "FulcrumBotOne",
-                "standard.punishment",
+                "lobby-login",
                 NOW));
         allocations.recordRoutedSubject(new SessionId("session-lobby-shared"), SUBJECT);
         VelocityLoginGateDecision secondDecision = evaluator.evaluate(new VelocityLoginGateRequest(
                 SECOND_SUBJECT,
                 "FulcrumBotTwo",
-                "standard.punishment",
+                "lobby-login",
                 NOW.plusSeconds(1)));
 
         assertTrue(firstDecision.allowed());
@@ -375,7 +375,7 @@ final class VelocityLoginRoutingEvaluatorTest {
                 lobbyHardCapacity,
                 new ResolvedManifestId("manifest-lobby-bedrock-v1"),
                 "capability-scope-lobby",
-                "standard.punishment",
+                "lobby-login",
                 Duration.ofMinutes(5),
                 new RuntimeConnectionSettings.HostPort("localhost", 6379));
     }

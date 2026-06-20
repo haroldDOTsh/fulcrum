@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,22 +20,17 @@ final class LobbyAuthoritySchemaProvisionerTest {
         LobbyAuthoritySchemaProvisioner.Result result = LobbyAuthoritySchemaProvisioner.provision(config(), executor);
 
         assertEquals(2, result.postgresStatementCount());
-        assertEquals(11, result.cassandraStatementCount());
+        assertEquals(6, result.cassandraStatementCount());
         assertEquals(2, executor.postgresStatements.size());
-        assertEquals(11, executor.cassandraStatements.size());
+        assertEquals(6, executor.cassandraStatements.size());
         assertTrue(executor.postgresStatements.getFirst().contains("CREATE TABLE IF NOT EXISTS authority_records"));
         assertTrue(executor.postgresStatements.getLast().contains("CREATE TABLE IF NOT EXISTS authority_decisions"));
         assertTrue(executor.cassandraStatements.getFirst().contains("CREATE KEYSPACE IF NOT EXISTS fulcrum"));
         assertTrue(executor.cassandraStatements.stream()
-                .anyMatch(statement -> statement.contains("CREATE TABLE IF NOT EXISTS fulcrum.standard_player_profile_effective_hot")));
+                .anyMatch(statement -> statement.contains("CREATE TABLE IF NOT EXISTS fulcrum.session_hot")));
         assertTrue(executor.cassandraStatements.stream()
-                .anyMatch(statement -> statement.contains("CREATE TABLE IF NOT EXISTS fulcrum.standard_rank_effective_hot")));
-        assertTrue(executor.cassandraStatements.stream()
-                .anyMatch(statement -> statement.contains("CREATE TABLE IF NOT EXISTS fulcrum.standard_punishment_active_hot")));
-        assertTrue(executor.cassandraStatements.stream()
-                .anyMatch(statement -> statement.contains("CREATE TABLE IF NOT EXISTS fulcrum.standard_economy_balance_hot")));
-        assertTrue(executor.cassandraStatements.stream()
-                .anyMatch(statement -> statement.contains("CREATE TABLE IF NOT EXISTS fulcrum.standard_stats_counter_hot")));
+                .anyMatch(statement -> statement.contains("CREATE TABLE IF NOT EXISTS fulcrum.artifact_metadata_hot")));
+        assertFalse(String.join("\n", executor.cassandraStatements).contains("standard_"));
     }
 
     @Test
@@ -46,14 +42,12 @@ final class LobbyAuthoritySchemaProvisionerTest {
                     LobbyAuthoritySchemaProvisioner.provision(config(stack), executor);
 
             assertEquals(2, result.postgresStatementCount());
-            assertEquals(11, result.cassandraStatementCount());
+            assertEquals(6, result.cassandraStatementCount());
             assertEquals("0", stack.queryPostgresScalar("SELECT count(*) FROM authority_records;"));
-            assertTrue(stack.queryCassandra("SELECT * FROM fulcrum.standard_player_profile_effective_hot;")
-                    .contains("subject_id"));
-            assertTrue(stack.queryCassandra("SELECT * FROM fulcrum.standard_economy_balance_hot;")
-                    .contains("balance_minor_units"));
-            assertTrue(stack.queryCassandra("SELECT * FROM fulcrum.standard_stats_counter_hot;")
-                    .contains("stat_key"));
+            assertTrue(stack.queryCassandra("SELECT * FROM fulcrum.session_hot;")
+                    .contains("session_id"));
+            assertTrue(stack.queryCassandra("SELECT * FROM fulcrum.artifact_metadata_hot;")
+                    .contains("digest_algorithm"));
         }
     }
 

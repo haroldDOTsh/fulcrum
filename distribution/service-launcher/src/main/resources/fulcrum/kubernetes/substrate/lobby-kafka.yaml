@@ -302,6 +302,22 @@ metadata:
   namespace: fulcrum-lobby
 ---
 apiVersion: v1
+kind: Service
+metadata:
+  name: fulcrum-authority-registration
+  namespace: fulcrum-lobby
+  labels:
+    sh.harold.fulcrum/service: "authority-registration"
+spec:
+  selector:
+    sh.harold.fulcrum/role: "controller-service"
+  ports:
+    - name: registration
+      port: 18085
+      targetPort: registration
+      protocol: TCP
+---
+apiVersion: v1
 kind: Secret
 metadata:
   name: fulcrum-postgres-credentials
@@ -696,6 +712,9 @@ spec:
             - name: probe
               containerPort: 8080
               protocol: TCP
+            - name: registration
+              containerPort: 18085
+              protocol: TCP
           env:
             - name: FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS
               value: "fulcrum-kafka:9092"
@@ -711,6 +730,10 @@ spec:
               value: "host.observation"
             - name: FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC
               value: "host.velocity.routes"
+            - name: FULCRUM_AUTHORITY_REGISTRATION_BIND_HOST
+              value: "0.0.0.0"
+            - name: FULCRUM_AUTHORITY_REGISTRATION_PORT
+              value: "18085"
             - name: FULCRUM_INSTANCE_ID
               valueFrom:
                 fieldRef:

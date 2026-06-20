@@ -400,9 +400,7 @@ final class RuntimeExternalClients implements AutoCloseable {
                     role().id() + ": capabilityBridgeUrl=" + settings.capabilityBridgeUrl(),
                     role().id() + ": rewardBridgeUrl=" + settings.rewardBridgeUrl(),
                     role().id() + ": valkeyClient=" + valkey.description(),
-                    role().id() + ": hostTopics=" + settings.hostCommandTopic() + "," + settings.hostObservationTopic(),
-                    role().id() + ": rewardCommands=" + settings.rewardEconomyCommandTopic()
-                            + "," + settings.rewardStatsCommandTopic());
+                    role().id() + ": hostTopics=" + settings.hostCommandTopic() + "," + settings.hostObservationTopic());
         }
 
         @Override

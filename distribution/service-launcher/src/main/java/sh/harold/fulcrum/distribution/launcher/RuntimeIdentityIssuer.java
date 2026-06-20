@@ -75,15 +75,7 @@ final class RuntimeIdentityIssuer {
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "cmd.session"),
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
                             environment.value("FULCRUM_HOST_OBSERVATION_TOPIC").orElse("host.observation")),
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
-                            environment.value("FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC").orElse("cmd.standard.economy")),
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
-                            environment.value("FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC").orElse("cmd.standard.stats")),
                     grant(HostResourceFamily.CACHE, HostAccessMode.READ, "session.*"),
-                    grant(HostResourceFamily.CACHE, HostAccessMode.READ, ValkeyPaperCapabilityBridge.PLAYER_PROFILE_CACHE_RESOURCE),
-                    grant(HostResourceFamily.CACHE, HostAccessMode.READ, ValkeyPaperCapabilityBridge.RANK_CACHE_RESOURCE),
-                    grant(HostResourceFamily.HOT_PROJECTION, HostAccessMode.READ, "standard.rank.effective"),
-                    grant(HostResourceFamily.HOT_PROJECTION, HostAccessMode.READ, "standard.player-profile.summary"),
                     grant(HostResourceFamily.ARTIFACT, HostAccessMode.READ, "artifact.lobby-bedrock"));
             case VELOCITY_AGENT -> List.of(
                     grant(HostResourceFamily.TOPIC, HostAccessMode.CONSUME,
@@ -102,9 +94,7 @@ final class RuntimeIdentityIssuer {
                             environment.value("FULCRUM_LIFECYCLE_TRACE_COMMAND_TOPIC").orElse("ctrl.cmd.lifecycle-trace")),
                     grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE,
                             environment.value("FULCRUM_ROUTE_COMMAND_TOPIC").orElse("cmd.route")),
-                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "host.observation"),
-                    grant(HostResourceFamily.CACHE, HostAccessMode.READ, "standard.punishment.active"),
-                    grant(HostResourceFamily.HOT_PROJECTION, HostAccessMode.READ, "standard.punishment.active"));
+                    grant(HostResourceFamily.TOPIC, HostAccessMode.PRODUCE, "host.observation"));
             case ALL -> throw new IllegalArgumentException("ALL does not have one credential scope");
         });
     }

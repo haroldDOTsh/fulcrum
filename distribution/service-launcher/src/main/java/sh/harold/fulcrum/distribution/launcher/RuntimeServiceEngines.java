@@ -2,6 +2,7 @@ package sh.harold.fulcrum.distribution.launcher;
 
 import sh.harold.fulcrum.api.kernel.ResolvedManifestId;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
+import sh.harold.fulcrum.host.velocity.VelocityLoginGateDecision;
 import sh.harold.fulcrum.host.velocity.VelocityLoginGateBridgeServer;
 import sh.harold.fulcrum.host.worker.WorkerAgentRuntime;
 import sh.harold.fulcrum.host.worker.WorkerJobKind;
@@ -36,7 +37,8 @@ final class RuntimeServiceEngines {
                     Duration.ofMillis(50));
         }
         if (entry.role() == LaunchRole.CONTROLLER_SERVICE) {
-            connectionSettings.controller().orElseThrow();
+            RuntimeConnectionSettings.ControllerConnections controllerSettings =
+                    connectionSettings.controller().orElseThrow();
             RuntimeExternalClients.ControllerClients controllerClients =
                     externalClients.controller().orElseThrow();
             LocalControllerRuntimeBindings bindings = new LocalControllerRuntimeBindings();
@@ -54,7 +56,8 @@ final class RuntimeServiceEngines {
                     1).workerBindings());
             return new ControllerRuntimeServiceEngine(
                     workers,
-                    Duration.ofMillis(50));
+                    Duration.ofMillis(50),
+                    controllerSettings.authorityRegistrationBind());
         }
         if (entry.role() == LaunchRole.WORKER_AGENT) {
             connectionSettings.worker().orElseThrow();
@@ -90,16 +93,12 @@ final class RuntimeServiceEngines {
             connectionSettings.velocity().orElseThrow();
             RuntimeExternalClients.VelocityClients velocityClients = externalClients.velocity().orElseThrow();
             VelocitySharedShardAllocationRegistry allocations = new VelocitySharedShardAllocationRegistry();
-            ValkeyPunishmentLoginGateEvaluator punishmentGate = new ValkeyPunishmentLoginGateEvaluator(
-                    securityContext,
-                    velocityClients.valkey(),
-                    velocityClients.settings().loginGateScope());
             return new VelocityRuntimeServiceEngine(
                     new ExternalVelocityRouteWorker(velocityClients, securityContext, allocations),
                     new VelocityLoginGateBridgeServer(
                             velocityClients.settings().loginGateBridgeUrl(),
                             new VelocityLoginRoutingEvaluator(
-                                    punishmentGate,
+                                    request -> VelocityLoginGateDecision.allowed(request.subjectId()),
                                     velocityClients.velocityKafka().producer(),
                                     securityContext,
                                     velocityClients.settings(),

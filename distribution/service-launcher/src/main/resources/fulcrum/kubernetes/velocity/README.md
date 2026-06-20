@@ -37,12 +37,11 @@ Service, waits for the public TCP endpoint to answer a headless Minecraft status
 handshake, derives the protocol number from that status response, and then
 verifies the configured lobby bot reaches the Paper play state by waiting for
 the `fulcrum:lobby_probe` plugin-message proof. That proof is emitted by the
-Paper agent after it places the Subject on the bedrock lobby spawn and resolves
-profile, rank, and chat decoration through the Paper capability bridge. The
-proof also carries the Velocity route id, allocated Slot id, ResolvedManifest
-id, and Paper session trace id, and the verifier rejects proofs whose route id
-does not match the deterministic Velocity login route or whose manifest or trace
-do not match the configured expectations. On Kubernetes-resolved runs, the
+Paper agent after it places the Subject on the bedrock lobby spawn and carries
+the Velocity route id, allocated Slot id, ResolvedManifest id, and Paper session
+trace id. The verifier rejects proofs whose route id does not match the
+deterministic Velocity login route or whose manifest or trace do not match the
+configured expectations. On Kubernetes-resolved runs, the
 verifier also reads `ctrl.state.route-attempt` from the in-cluster Kafka Pod and
 requires each accepted login proof to match ACKED controller RouteAttempt state.
 It reads `cmd.route` and requires traced `open-route` and `acknowledge-route`
@@ -82,15 +81,6 @@ Experience, Pool, Slot, Paper Instance, and ResolvedManifest.
 It reads `state.presence` and requires every accepted login Subject to have
 LIVE Presence authority state with the deterministic Velocity login Presence
 id, matching Session and Route, and a fresh lease.
-It reads `state.standard.player-profile`, `state.standard.rank`, and
-`state.standard.punishment` and requires accepted proof Subjects to match
-materialized standard capability state for display name and rank, while the
-seeded denied Subject must have active punishment state matching the login-gate
-reason.
-It also reads `cmd.standard.player-profile`, `cmd.standard.rank`, and
-`cmd.standard.punishment` and requires the same Subjects to have typed
-capability seed commands with the expected principal, fencing, revision, trace,
-and payload values before accepting the materialized state proof.
 It also reads `state.session` from the same Kafka Pod and requires every unique
 Session observed in accepted lobby proofs to have ACTIVE Session authority state
 with a fresh lease and the matching Slot, Paper Instance, and ResolvedManifest.
@@ -99,7 +89,7 @@ It also reads `cmd.session` and requires traced `open-session` and
 fresh lease, Slot, Paper Instance, and ResolvedManifest correlation.
 The verifier then logs in a second accepted bot and asserts both proofs came
 from the same Paper Instance, Session, and Slot, proving the shared-shard lobby
-path before checking the Velocity login gate denies the seeded punished bot. The
+path before checking the Velocity login gate denies the seeded denied bot. The
 Gradle-rendered default keeps the lobby hard capacity low for this E2E path:
 the first two accepted bots fill one shared lobby, a third login is denied to
 trigger controller-owned allocation, and a fourth bot must then reach a
@@ -110,7 +100,7 @@ Paper Instance is an `Allocated` Agones GameServer in that Fleet with matching
 Pool, Session, Slot, ResolvedManifest, and trace metadata.
 When route-attempt state verification is enabled, the same state read also
 checks that the seeded denied Subject is absent from controller route-attempt
-state after the punishment login gate rejects it. Route authority command-log
+state after the login gate rejects it. Route authority command-log
 verification rejects any fresh `cmd.route` command for that denied Subject,
 Route authority state verification rejects any fresh Route state for that
 denied Subject, and Presence state verification also rejects any fresh LIVE Presence for that denied Subject. It also reads
@@ -135,7 +125,7 @@ changing the verifier identities and expected seeded capability values:
 -Pfulcrum.lobbyNodeHost=127.0.0.1
 -Pfulcrum.lobbyAgonesFleetName=fulcrum-lobby-paper
 -Pfulcrum.verifyLobbyAgonesFleetState=true
--Pfulcrum.expectedLobbyAgonesAllocatedReplicas=2
+-Pfulcrum.expectedLobbyAgonesAllocatedReplicas=1
 -Pfulcrum.verifyLobbyRouteAttemptState=true
 -Pfulcrum.lobbyRouteAttemptStateTopic=ctrl.state.route-attempt
 -Pfulcrum.verifyLobbyLoginRoutingCommandLog=true
@@ -159,14 +149,6 @@ changing the verifier identities and expected seeded capability values:
 -Pfulcrum.lobbyHostObservationTopic=host.observation
 -Pfulcrum.verifyLobbyPresenceAuthorityState=true
 -Pfulcrum.lobbyPresenceAuthorityStateTopic=state.presence
--Pfulcrum.verifyLobbyStandardCapabilityState=true
--Pfulcrum.lobbyPlayerProfileStateTopic=state.standard.player-profile
--Pfulcrum.lobbyRankStateTopic=state.standard.rank
--Pfulcrum.lobbyPunishmentStateTopic=state.standard.punishment
--Pfulcrum.verifyLobbyStandardCapabilityCommandLog=true
--Pfulcrum.lobbyPlayerProfileCommandTopic=cmd.standard.player-profile
--Pfulcrum.lobbyRankCommandTopic=cmd.standard.rank
--Pfulcrum.lobbyPunishmentCommandTopic=cmd.standard.punishment
 -Pfulcrum.verifyLobbySessionAuthorityState=true
 -Pfulcrum.lobbySessionAuthorityStateTopic=state.session
 -Pfulcrum.verifyLobbySessionAuthorityCommandLog=true
@@ -181,15 +163,12 @@ changing the verifier identities and expected seeded capability values:
 -Pfulcrum.lobbyKafkaContainerName=kafka
 -Pfulcrum.lobbyKafkaBootstrapServer=localhost:9092
 -Pfulcrum.lobbyKafkaConsoleConsumerPath=/opt/kafka/bin/kafka-console-consumer.sh
--Pfulcrum.verifyLobbyScaleOut=true
--Pfulcrum.lobbyTargetCapacity=1
--Pfulcrum.lobbyHardCapacity=2
+-Pfulcrum.verifyLobbyScaleOut=false
+-Pfulcrum.lobbyTargetCapacity=75
+-Pfulcrum.lobbyHardCapacity=150
 -Pfulcrum.minecraftProtocolVersion=775
 -Pfulcrum.lobbyLoginUsername=FulcrumBotOne
 -Pfulcrum.secondLobbyLoginUsername=FulcrumBotTwo
--Pfulcrum.scaleOutTriggerLobbyLoginUsername=FulcrumBotThree
--Pfulcrum.scaleOutTriggerDeniedLobbyLoginReasonContains=No lobby route is currently available
--Pfulcrum.scaleOutLobbyLoginUsername=FulcrumBotFour
 -Pfulcrum.expectedLobbyResolvedManifestId=manifest-lobby-bedrock-v1
 -Pfulcrum.expectedLobbyExperienceId=experience-lobby
 -Pfulcrum.expectedLobbyPoolId=pool-lobby
@@ -204,24 +183,15 @@ changing the verifier identities and expected seeded capability values:
 -Pfulcrum.expectedLobbyPlayerZ=0.5
 -Pfulcrum.expectedLobbyPlayerYaw=0.0
 -Pfulcrum.expectedLobbyPlayerPitch=0.0
--Pfulcrum.expectedLobbyDisplayName=Fulcrum Bot One
--Pfulcrum.expectedLobbyRankLabel=Admin
--Pfulcrum.expectedLobbyDecoratedChatContains=[Admin] Fulcrum Bot One: fulcrum-proof-chat
--Pfulcrum.expectedSecondLobbyDisplayName=Fulcrum Bot Two
--Pfulcrum.expectedSecondLobbyRankLabel=Admin
--Pfulcrum.expectedSecondLobbyDecoratedChatContains=[Admin] Fulcrum Bot Two: fulcrum-proof-chat
--Pfulcrum.expectedScaleOutLobbyDisplayName=Fulcrum Bot Four
--Pfulcrum.expectedScaleOutLobbyRankLabel=Admin
--Pfulcrum.expectedScaleOutLobbyDecoratedChatContains=[Admin] Fulcrum Bot Four: fulcrum-proof-chat
--Pfulcrum.lobbyScaleOutTimeout=PT60S
--Pfulcrum.deniedLobbyLoginUsername=FulcrumBannedOne
--Pfulcrum.deniedLobbyLoginReasonContains=Banned from the lobby
+-Pfulcrum.expectedLobbyDisplayName=FulcrumBotOne
+-Pfulcrum.expectedLobbyDecoratedChatContains=FulcrumBotOne: fulcrum-proof-chat
+-Pfulcrum.expectedSecondLobbyDisplayName=FulcrumBotTwo
+-Pfulcrum.expectedSecondLobbyDecoratedChatContains=FulcrumBotTwo: fulcrum-proof-chat
 -Pfulcrum.lobbyEndpointReadyTimeout=PT120S
 -Pfulcrum.lobbyRouteAttemptStateTimeout=PT60S
 -Pfulcrum.lobbyRouteAttemptStateFreshnessSkew=PT5S
 -Pfulcrum.lobbyPresenceAuthorityStateTimeout=PT60S
 -Pfulcrum.lobbyPresenceAuthorityStateFreshnessSkew=PT5S
--Pfulcrum.lobbyStandardCapabilityStateTimeout=PT60S
 -Pfulcrum.lobbySessionAuthorityStateTimeout=PT60S
 -Pfulcrum.lobbySessionAuthorityStateFreshnessSkew=PT5S
 -Pfulcrum.lobbySharedShardAllocationStateTimeout=PT60S
@@ -283,8 +253,8 @@ The login routing bridge pins the lobby placement descriptor with
 `FULCRUM_LOBBY_CAPABILITY_SCOPE_FINGERPRINT`. These values must match the Paper
 Fleet assignment in the Agones manifest. `velocityL4RenderManifests` rewrites
 the target and hard capacity from `-Pfulcrum.lobbyTargetCapacity` and
-`-Pfulcrum.lobbyHardCapacity`; the default cluster E2E values are `1` and `2`
-so the verifier can prove scale-out without hundreds of bot logins.
+`-Pfulcrum.lobbyHardCapacity`; the Phase 0 cluster E2E defaults are `75` and
+`150` because the stripped verifier proves only the bare shared-shard path.
 `FULCRUM_VELOCITY_PRESENCE_LEASE` controls the claimed Presence lease duration
 and defaults to `PT5M`.
 
@@ -296,8 +266,8 @@ proxy transfer. The packaged lobby manifest defaults it to
 `FULCRUM_VELOCITY_LOGIN_GATE_BRIDGE_URL` is the localhost HTTP bridge used by
 the Velocity plugin login hook to ask the launcher-side runtime for an
 admission decision. The packaged lobby manifest defaults it to
-`http://127.0.0.1:18082/login-gate`; the launcher reads the active punishment
-cache through `FULCRUM_VALKEY_ENDPOINT`, which defaults to `fulcrum-valkey:6379`.
+`http://127.0.0.1:18082/login-gate`; the default launcher-side gate is
+domain-neutral and allows the routed Subject.
 Velocity host pods must not receive PostgreSQL, Cassandra, or object-store
 credentials; the deployment manifest keeps canonical store access behind the
 authority/controller service family and gives Velocity only the command-log,

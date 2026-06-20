@@ -96,6 +96,11 @@ final class RuntimeConnectionSettings {
                     optionalPath(environment, "FULCRUM_AGONES_ALLOCATOR_CLIENT_KEY_PATH"),
                     optionalPath(environment, "FULCRUM_AGONES_ALLOCATOR_CA_CERT_PATH"),
                     optionalBoolean(environment, "FULCRUM_AGONES_ALLOCATOR_DISABLE_HOSTNAME_VERIFICATION", false),
+                    optionalBind(
+                            environment,
+                            "FULCRUM_AUTHORITY_REGISTRATION_BIND_HOST",
+                            "FULCRUM_AUTHORITY_REGISTRATION_PORT",
+                            18085),
                     required(environment, "FULCRUM_CONTROL_STATE_TOPIC"),
                     required(environment, "FULCRUM_HOST_COMMAND_TOPIC"),
                     required(environment, "FULCRUM_HOST_OBSERVATION_TOPIC"),
@@ -142,13 +147,6 @@ final class RuntimeConnectionSettings {
                         parseHostPort("FULCRUM_VALKEY_ENDPOINT", required(environment, "FULCRUM_VALKEY_ENDPOINT")),
                         required(environment, "FULCRUM_HOST_COMMAND_TOPIC"),
                         required(environment, "FULCRUM_HOST_OBSERVATION_TOPIC"),
-                        required(environment, "FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC"),
-                        required(environment, "FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC"),
-                        required(environment, "FULCRUM_PAPER_REWARD_CURRENCY_KEY"),
-                        requirePositiveLong(
-                                "FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS",
-                                required(environment, "FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS")),
-                        required(environment, "FULCRUM_PAPER_REWARD_STAT_KEY"),
                         requirePositiveInt(
                                 "FULCRUM_PAPER_REWARD_DELIVERY_COPIES",
                                 optional(environment, "FULCRUM_PAPER_REWARD_DELIVERY_COPIES", "1")),
@@ -211,6 +209,24 @@ final class RuntimeConnectionSettings {
         return environment.value(name)
                 .map(value -> requireBoolean(name, value))
                 .orElse(defaultValue);
+    }
+
+    private static Optional<HostPort> optionalBind(
+            RuntimeEnvironment environment,
+            String hostName,
+            String portName,
+            int defaultPort) {
+        Optional<String> maybeHost = environment.value(hostName)
+                .map(String::trim)
+                .filter(value -> !value.isEmpty());
+        if (maybeHost.isEmpty()) {
+            return Optional.empty();
+        }
+        String host = requireNonBlank(maybeHost.orElseThrow(), hostName);
+        int port = environment.value(portName)
+                .map(value -> parsePort(portName, value))
+                .orElse(defaultPort);
+        return Optional.of(new HostPort(host, port));
     }
 
     static ObjectStoreConnection objectStore(RuntimeEnvironment environment) {
@@ -337,6 +353,19 @@ final class RuntimeConnectionSettings {
         return new HostPort(host, port);
     }
 
+    private static int parsePort(String name, String value) {
+        int port;
+        try {
+            port = Integer.parseInt(requireNonBlank(value, name));
+        } catch (NumberFormatException exception) {
+            throw new RuntimeConfigurationException(name + " port must be a number", exception);
+        }
+        if (port < 1 || port > 65_535) {
+            throw new RuntimeConfigurationException(name + " port must be between 1 and 65535");
+        }
+        return port;
+    }
+
     private static String requireNonBlank(String value, String label) {
         String checked = Objects.requireNonNull(value, label).trim();
         if (checked.isEmpty()) {
@@ -396,6 +425,7 @@ final class RuntimeConnectionSettings {
             Optional<Path> agonesAllocatorClientKeyPath,
             Optional<Path> agonesAllocatorCaCertificatePath,
             boolean agonesAllocatorDisableHostnameVerification,
+            Optional<HostPort> authorityRegistrationBind,
             String controlStateTopic,
             String hostCommandTopic,
             String hostObservationTopic,
@@ -413,6 +443,7 @@ final class RuntimeConnectionSettings {
             agonesAllocatorCaCertificatePath = Objects.requireNonNull(
                     agonesAllocatorCaCertificatePath,
                     "agonesAllocatorCaCertificatePath");
+            authorityRegistrationBind = Objects.requireNonNull(authorityRegistrationBind, "authorityRegistrationBind");
             boolean clientCertificateConfigured = agonesAllocatorClientCertificatePath.isPresent();
             boolean clientKeyConfigured = agonesAllocatorClientKeyPath.isPresent();
             boolean caCertificateConfigured = agonesAllocatorCaCertificatePath.isPresent();
@@ -443,6 +474,7 @@ final class RuntimeConnectionSettings {
                     role().id() + ": agonesNamespace=" + agonesNamespace,
                     role().id() + ": agonesAllocatorMtls=" + agonesAllocatorClientCertificatePath.isPresent(),
                     role().id() + ": agonesAllocatorHostnameVerification=" + !agonesAllocatorDisableHostnameVerification,
+                    role().id() + ": authorityRegistrationBind=" + authorityRegistrationBind.map(HostPort::toString).orElse("disabled"),
                     role().id() + ": controlStateTopic=" + controlStateTopic,
                     role().id() + ": hostCommandTopic=" + hostCommandTopic,
                     role().id() + ": hostObservationTopic=" + hostObservationTopic,
@@ -497,11 +529,6 @@ final class RuntimeConnectionSettings {
             HostPort valkeyEndpoint,
             String hostCommandTopic,
             String hostObservationTopic,
-            String rewardEconomyCommandTopic,
-            String rewardStatsCommandTopic,
-            String rewardCurrencyKey,
-            long rewardAmountMinorUnits,
-            String rewardStatKey,
             int rewardDeliveryCopies,
             ExperienceId experienceId,
             SessionId sessionId,
@@ -522,13 +549,6 @@ final class RuntimeConnectionSettings {
             valkeyEndpoint = Objects.requireNonNull(valkeyEndpoint, "valkeyEndpoint");
             hostCommandTopic = requireNonBlank(hostCommandTopic, "hostCommandTopic");
             hostObservationTopic = requireNonBlank(hostObservationTopic, "hostObservationTopic");
-            rewardEconomyCommandTopic = requireNonBlank(rewardEconomyCommandTopic, "rewardEconomyCommandTopic");
-            rewardStatsCommandTopic = requireNonBlank(rewardStatsCommandTopic, "rewardStatsCommandTopic");
-            rewardCurrencyKey = requireNonBlank(rewardCurrencyKey, "rewardCurrencyKey");
-            rewardStatKey = requireNonBlank(rewardStatKey, "rewardStatKey");
-            if (rewardAmountMinorUnits <= 0) {
-                throw new IllegalArgumentException("rewardAmountMinorUnits must be positive");
-            }
             if (rewardDeliveryCopies <= 0) {
                 throw new IllegalArgumentException("rewardDeliveryCopies must be positive");
             }
@@ -561,11 +581,7 @@ final class RuntimeConnectionSettings {
                     role().id() + ": rewardBridgeUrl=" + rewardBridgeUrl,
                     role().id() + ": valkey=" + valkeyEndpoint,
                     role().id() + ": hostTopics=" + hostCommandTopic + "," + hostObservationTopic,
-                    role().id() + ": rewardCommands=" + rewardEconomyCommandTopic + "," + rewardStatsCommandTopic,
-                    role().id() + ": rewardPolicy=currency:" + rewardCurrencyKey
-                            + "|amountMinorUnits:" + rewardAmountMinorUnits
-                            + "|stat:" + rewardStatKey
-                            + "|deliveryCopies:" + rewardDeliveryCopies,
+                    role().id() + ": rewardDeliveryCopies=" + rewardDeliveryCopies,
                     role().id() + ": assignment=sessionId=" + sessionId.value()
                             + "|experienceId=" + experienceId.value()
                             + "|slotId=" + slotId.value()

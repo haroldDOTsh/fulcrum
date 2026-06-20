@@ -97,12 +97,7 @@ final class RuntimeEntrypointRegistry {
                             requirement("FULCRUM_PAPER_SESSION_LEASE", "Paper Session lease duration"),
                             requirement("FULCRUM_PAPER_HOST_RUNTIME_ABI", "Paper host runtime ABI"),
                             requirement("FULCRUM_HOST_COMMAND_TOPIC", "host command channel"),
-                            requirement("FULCRUM_HOST_OBSERVATION_TOPIC", "host observation channel"),
-                            requirement("FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC", "economy reward authority command channel"),
-                            requirement("FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC", "stats reward authority command channel"),
-                            requirement("FULCRUM_PAPER_REWARD_CURRENCY_KEY", "economy reward currency key"),
-                            requirement("FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS", "economy reward minor-unit amount"),
-                            requirement("FULCRUM_PAPER_REWARD_STAT_KEY", "stats reward key")
+                            requirement("FULCRUM_HOST_OBSERVATION_TOPIC", "host observation channel")
                     )
             ),
             new LaunchEntry(

@@ -64,37 +64,32 @@ val step4CheckedProjects = step3CheckedProjects + listOf(
 
 val step5CheckedProjects = step4CheckedProjects + listOf(
     ":capability:capability-api",
+    ":capability:capability-bundle-runtime",
     ":capability:capability-runtime",
 )
 
 val step6CheckedProjects = step5CheckedProjects + listOf(
-    ":standard-capabilities:standard-contracts",
-    ":standard-capabilities:player-profile",
-    ":standard-capabilities:rank",
-    ":standard-capabilities:chat-decoration",
-    ":standard-capabilities:party",
-    ":standard-capabilities:friends",
-    ":standard-capabilities:guild",
-    ":standard-capabilities:economy",
-    ":standard-capabilities:stats",
-    ":standard-capabilities:auction",
-    ":standard-capabilities:punishment",
-    ":validation:standard-capabilities",
 )
 
 val step7CheckedProjects = step6CheckedProjects + listOf(
     ":adapters:object-storage",
     ":core:artifact-layout",
     ":core:content-resolver",
-    ":standard-capabilities:realm",
 )
 
 val step8CheckedProjects = step7CheckedProjects + listOf(
+    ":control:capability-backend-registration",
     ":distribution:service-launcher",
     ":host:effect-admission",
-    ":validation:fleet-e2e",
+    ":sdk:authoring-sdk",
+    ":sdk:authority-sdk",
+    ":validation:auction-escrow-contract",
+    ":validation:auction-escrow-backend",
+    ":validation:auction-experience-bundle",
+    ":validation:authoring-sdk-conformance",
+    ":validation:authority-sdk-conformance",
+    ":validation:escrow-e2e",
     ":validation:store-adapter-certification",
-    ":validation:synthetic-load",
 )
 
 allprojects {
@@ -165,7 +160,7 @@ tasks.register("step5Check") {
 
 tasks.register("step6Check") {
     group = "verification"
-    description = "Runs the automated Step 6 standard capability checks that exist so far."
+    description = "Runs the automated Step 6 capability substrate checks that exist so far."
     dependsOn(step6CheckedProjects.map { "$it:check" })
 }
 
@@ -204,6 +199,146 @@ tasks.register("clusterE2e") {
     group = "verification"
     description = "Runs the canonical k3d-backed cluster E2E gate for the login-to-lobby production slice."
     dependsOn("clusterK3sE2e")
+}
+
+tasks.register("escrowE2e") {
+    group = "verification"
+    description = "Runs the auction escrow registration, experience, authority, and generated-cluster E2E gate."
+    dependsOn("escrowLocalE2e")
+    dependsOn("escrowClusterK3sE2e")
+}
+
+tasks.register("escrowLocalE2e") {
+    group = "verification"
+    description = "Runs the local auction escrow registration, experience, and authority E2E gate."
+    dependsOn("step8Check")
+    dependsOn(":validation:auction-escrow-backend:auctionEscrowImageContext")
+    dependsOn(":validation:auction-escrow-backend:auctionEscrowRenderManifests")
+    dependsOn(":validation:auction-experience-bundle:auctionExperiencePaperBundleContext")
+    dependsOn(":validation:auction-experience-bundle:auctionExperiencePaperGameserverImageContext")
+    dependsOn(":validation:escrow-e2e:escrowWitnessImageContext")
+    dependsOn(":validation:escrow-e2e:escrowWitnessRenderManifests")
+    dependsOn(":validation:architecture:test")
+    dependsOn(":validation:escrow-e2e:test")
+}
+
+tasks.register("escrowClusterK3sE2e") {
+    group = "verification"
+    description = "Runs the generated k3d/kind escrow cluster E2E gate with the validation Paper bundle overlay."
+    dependsOn("step8Check")
+    dependsOn(":distribution:service-launcher:clusterK3sImportImages")
+    dependsOn(":distribution:service-launcher:lobbyClusterE2eVerify")
+    dependsOn(":validation:auction-escrow-backend:auctionEscrowClusterRestartProof")
+    dependsOn(":validation:escrow-e2e:escrowWitnessClusterRun")
+    finalizedBy(":distribution:service-launcher:clusterK3sStop")
+}
+
+tasks.register("escrowClusterE2e") {
+    group = "verification"
+    description = "Runs the canonical generated-cluster escrow E2E gate."
+    dependsOn("escrowClusterK3sE2e")
+}
+
+tasks.register("escrowClusterExistingE2e") {
+    group = "verification"
+    description = "Runs the existing-cluster lobby gate, then restart-proves escrow and runs the validation witness Job."
+    dependsOn(":validation:auction-experience-bundle:auctionExperiencePaperGameserverImageReceipt")
+    dependsOn("clusterExistingE2e")
+    dependsOn(":validation:auction-escrow-backend:auctionEscrowClusterRestartProof")
+    dependsOn(":validation:escrow-e2e:escrowWitnessClusterRun")
+}
+
+gradle.projectsEvaluated {
+    val auctionExperiencePaperGameserverImage = project(":validation:auction-experience-bundle")
+        .tasks
+        .named("auctionExperiencePaperGameserverImage")
+    val auctionExperiencePaperGameserverImageReceipt = project(":validation:auction-experience-bundle")
+        .tasks
+        .named("auctionExperiencePaperGameserverImageReceipt")
+    val escrowClusterRequested = gradle.startParameter.taskNames.any {
+        it == "escrowE2e"
+                || it.endsWith(":escrowE2e")
+                || it == "escrowClusterE2e"
+                || it.endsWith(":escrowClusterE2e")
+                || it == "escrowClusterK3sE2e"
+                || it.endsWith(":escrowClusterK3sE2e")
+                || it == "escrowClusterExistingE2e"
+                || it.endsWith(":escrowClusterExistingE2e")
+    }
+    if (escrowClusterRequested) {
+        val serviceLauncherTasks = project(":distribution:service-launcher").tasks
+        val paperGameserverImage = serviceLauncherTasks.named("paperGameserverImage")
+        val serviceLauncherImage = serviceLauncherTasks.named("serviceLauncherImage")
+        val velocityProxyImage = serviceLauncherTasks.named("velocityProxyImage")
+        val clusterK3sImportImages = serviceLauncherTasks.named("clusterK3sImportImages")
+        val lobbyClusterE2eVerify = serviceLauncherTasks.named("lobbyClusterE2eVerify")
+        val auctionEscrowTasks = project(":validation:auction-escrow-backend").tasks
+        val auctionEscrowImage = auctionEscrowTasks.named("auctionEscrowImage")
+        val auctionEscrowClusterImportImage = auctionEscrowTasks.named("auctionEscrowClusterImportImage")
+        val auctionEscrowClusterApply = auctionEscrowTasks.named("auctionEscrowClusterApply")
+        val auctionEscrowClusterRestartProof = auctionEscrowTasks.named("auctionEscrowClusterRestartProof")
+        val escrowWitnessTasks = project(":validation:escrow-e2e").tasks
+        val escrowWitnessImage = escrowWitnessTasks.named("escrowWitnessImage")
+        val escrowWitnessClusterImportImage = escrowWitnessTasks.named("escrowWitnessClusterImportImage")
+        val escrowWitnessClusterApply = escrowWitnessTasks.named("escrowWitnessClusterApply")
+        auctionExperiencePaperGameserverImage.configure {
+            mustRunAfter(paperGameserverImage)
+        }
+        serviceLauncherImage.configure {
+            mustRunAfter(auctionExperiencePaperGameserverImageReceipt)
+        }
+        velocityProxyImage.configure {
+            mustRunAfter(serviceLauncherImage)
+        }
+        auctionEscrowImage.configure {
+            mustRunAfter(clusterK3sImportImages)
+        }
+        escrowWitnessImage.configure {
+            mustRunAfter(auctionEscrowImage)
+        }
+        clusterK3sImportImages.configure {
+            dependsOn(auctionExperiencePaperGameserverImageReceipt)
+        }
+        serviceLauncherTasks.named("paperAgonesApply").configure {
+            dependsOn(auctionExperiencePaperGameserverImageReceipt)
+        }
+        auctionEscrowClusterImportImage.configure {
+            dependsOn(serviceLauncherTasks.named("clusterK3sStart"))
+            mustRunAfter(clusterK3sImportImages)
+        }
+        auctionEscrowClusterApply.configure {
+            dependsOn(lobbyClusterE2eVerify)
+            mustRunAfter(lobbyClusterE2eVerify)
+        }
+        escrowWitnessClusterImportImage.configure {
+            dependsOn(serviceLauncherTasks.named("clusterK3sStart"))
+            mustRunAfter(auctionEscrowClusterImportImage)
+            mustRunAfter(clusterK3sImportImages)
+        }
+        escrowWitnessClusterApply.configure {
+            dependsOn(auctionEscrowClusterRestartProof)
+            mustRunAfter(auctionEscrowClusterRestartProof)
+        }
+    }
+    project(":validation:auction-escrow-backend")
+        .tasks
+        .named("auctionEscrowClusterDeploy")
+        .configure {
+            mustRunAfter(project(":distribution:service-launcher").tasks.named("lobbyClusterE2eVerify"))
+        }
+    project(":validation:auction-escrow-backend")
+        .tasks
+        .named("auctionEscrowClusterRestartProof")
+        .configure {
+            mustRunAfter(tasks.named("clusterExistingE2e"))
+            mustRunAfter(project(":distribution:service-launcher").tasks.named("lobbyClusterE2eVerify"))
+        }
+    project(":validation:escrow-e2e")
+        .tasks
+        .named("escrowWitnessClusterRun")
+        .configure {
+            mustRunAfter(project(":validation:auction-escrow-backend").tasks.named("auctionEscrowClusterRestartProof"))
+        }
 }
 
 tasks.named("check") {

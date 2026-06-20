@@ -268,11 +268,6 @@ final class PaperRuntimeServiceEngineTest {
         values.put("FULCRUM_PAPER_HOST_RUNTIME_ABI", "paper-host-runtime-v1");
         values.put("FULCRUM_HOST_COMMAND_TOPIC", "host.paper.commands");
         values.put("FULCRUM_HOST_OBSERVATION_TOPIC", "host.observation");
-        values.put("FULCRUM_PAPER_REWARD_ECONOMY_COMMAND_TOPIC", "cmd.standard.economy");
-        values.put("FULCRUM_PAPER_REWARD_STATS_COMMAND_TOPIC", "cmd.standard.stats");
-        values.put("FULCRUM_PAPER_REWARD_CURRENCY_KEY", "coins");
-        values.put("FULCRUM_PAPER_REWARD_AMOUNT_MINOR_UNITS", "250");
-        values.put("FULCRUM_PAPER_REWARD_STAT_KEY", "session-completions");
         values.put("FULCRUM_MACHINE_REF", "machine-test");
         return values;
     }

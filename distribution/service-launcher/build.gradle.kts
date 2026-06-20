@@ -34,6 +34,7 @@ dependencies {
     implementation(project(":data:store-valkey"))
     implementation(project(":data:subject-authority"))
     implementation(project(":control:allocation-bridge"))
+    implementation(project(":control:capability-backend-registration"))
     implementation(project(":control:capability-enablement-controller"))
     implementation(project(":control:fault-controller"))
     implementation(project(":control:instance-registry-controller"))
@@ -44,26 +45,11 @@ dependencies {
     implementation(project(":host:paper-agent"))
     implementation(project(":host:velocity-agent"))
     implementation(project(":host:worker-agent"))
-    implementation(project(":standard-capabilities:chat-decoration"))
-    implementation(project(":standard-capabilities:economy"))
-    implementation(project(":standard-capabilities:player-profile"))
-    implementation(project(":standard-capabilities:punishment"))
-    implementation(project(":standard-capabilities:rank"))
-    implementation(project(":standard-capabilities:stats"))
-
     runtimeOnly(project(":adapters:agones-fake"))
     runtimeOnly(project(":capability:capability-runtime"))
     runtimeOnly(project(":distribution:profiles"))
     runtimeOnly(project(":host:effect-admission"))
     runtimeOnly(project(":host:tick-runtime-api"))
-    runtimeOnly(project(":standard-capabilities:party"))
-    runtimeOnly(project(":standard-capabilities:friends"))
-    runtimeOnly(project(":standard-capabilities:guild"))
-    runtimeOnly(project(":standard-capabilities:economy"))
-    runtimeOnly(project(":standard-capabilities:stats"))
-    runtimeOnly(project(":standard-capabilities:auction"))
-    runtimeOnly(project(":standard-capabilities:realm"))
-    runtimeOnly(project(":standard-capabilities:standard-contracts"))
 
     testImplementation(project(":testkit:substrate-testkit"))
 }
@@ -156,7 +142,7 @@ val lobbyAgonesFleetName = providers.gradleProperty("fulcrum.lobbyAgonesFleetNam
     .orElse("fulcrum-lobby-paper")
 val verifyLobbyAgonesFleetState = providers.gradleProperty("fulcrum.verifyLobbyAgonesFleetState")
 val verifyLobbyScaleOut = providers.gradleProperty("fulcrum.verifyLobbyScaleOut")
-    .orElse("true")
+    .orElse("false")
 val expectedLobbyAgonesAllocatedReplicas = providers.gradleProperty("fulcrum.expectedLobbyAgonesAllocatedReplicas")
     .orElse(verifyLobbyScaleOut.map { value ->
         if (value.equals("true", ignoreCase = true)) "2" else "1"
@@ -198,40 +184,6 @@ val lobbyHostObservationTopic = providers.gradleProperty("fulcrum.lobbyHostObser
 val verifyLobbyPresenceAuthorityState = providers.gradleProperty("fulcrum.verifyLobbyPresenceAuthorityState")
 val lobbyPresenceAuthorityStateTopic = providers.gradleProperty("fulcrum.lobbyPresenceAuthorityStateTopic")
     .orElse("state.presence")
-val verifyLobbyStandardCapabilityState = providers.gradleProperty("fulcrum.verifyLobbyStandardCapabilityState")
-val lobbyPlayerProfileStateTopic = providers.gradleProperty("fulcrum.lobbyPlayerProfileStateTopic")
-    .orElse("state.standard.player-profile")
-val lobbyRankStateTopic = providers.gradleProperty("fulcrum.lobbyRankStateTopic")
-    .orElse("state.standard.rank")
-val lobbyPunishmentStateTopic = providers.gradleProperty("fulcrum.lobbyPunishmentStateTopic")
-    .orElse("state.standard.punishment")
-val verifyLobbyStandardCapabilityCommandLog =
-    providers.gradleProperty("fulcrum.verifyLobbyStandardCapabilityCommandLog")
-val lobbyPlayerProfileCommandTopic = providers.gradleProperty("fulcrum.lobbyPlayerProfileCommandTopic")
-    .orElse("cmd.standard.player-profile")
-val lobbyRankCommandTopic = providers.gradleProperty("fulcrum.lobbyRankCommandTopic")
-    .orElse("cmd.standard.rank")
-val lobbyPunishmentCommandTopic = providers.gradleProperty("fulcrum.lobbyPunishmentCommandTopic")
-    .orElse("cmd.standard.punishment")
-val verifyLobbyRewardState = providers.gradleProperty("fulcrum.verifyLobbyRewardState")
-val lobbyEconomyStateTopic = providers.gradleProperty("fulcrum.lobbyEconomyStateTopic")
-    .orElse("state.standard.economy")
-val lobbyStatsStateTopic = providers.gradleProperty("fulcrum.lobbyStatsStateTopic")
-    .orElse("state.standard.stats")
-val verifyLobbyRewardCommandLog = providers.gradleProperty("fulcrum.verifyLobbyRewardCommandLog")
-val lobbyEconomyCommandTopic = providers.gradleProperty("fulcrum.lobbyEconomyCommandTopic")
-    .orElse("cmd.standard.economy")
-val lobbyStatsCommandTopic = providers.gradleProperty("fulcrum.lobbyStatsCommandTopic")
-    .orElse("cmd.standard.stats")
-val expectedLobbyRewardCurrencyKey = providers.gradleProperty("fulcrum.expectedLobbyRewardCurrencyKey")
-    .orElse("coins")
-val expectedLobbyRewardAmountMinorUnits = providers.gradleProperty("fulcrum.expectedLobbyRewardAmountMinorUnits")
-    .orElse("250")
-val expectedLobbyRewardStatKey = providers.gradleProperty("fulcrum.expectedLobbyRewardStatKey")
-    .orElse("session-completions")
-val expectedLobbyRewardCommandDeliveryCopies =
-    providers.gradleProperty("fulcrum.expectedLobbyRewardCommandDeliveryCopies")
-        .orElse("2")
 val verifyLobbyCassandraHotProjections = providers.gradleProperty("fulcrum.verifyLobbyCassandraHotProjections")
 val lobbyCassandraPodName = providers.gradleProperty("fulcrum.lobbyCassandraPodName")
     .orElse("fulcrum-cassandra-0")
@@ -336,29 +288,21 @@ val expectedLobbyPlayerYaw = providers.gradleProperty("fulcrum.expectedLobbyPlay
 val expectedLobbyPlayerPitch = providers.gradleProperty("fulcrum.expectedLobbyPlayerPitch")
     .orElse("0.0")
 val expectedLobbyDisplayName = providers.gradleProperty("fulcrum.expectedLobbyDisplayName")
-    .orElse("Fulcrum Bot One")
-val expectedLobbyRankLabel = providers.gradleProperty("fulcrum.expectedLobbyRankLabel")
-    .orElse("Admin")
+    .orElse("FulcrumBotOne")
 val expectedLobbyDecoratedChatContains = providers.gradleProperty("fulcrum.expectedLobbyDecoratedChatContains")
-    .orElse("[Admin] Fulcrum Bot One: fulcrum-proof-chat")
+    .orElse("FulcrumBotOne: fulcrum-proof-chat")
 val expectedSecondLobbyDisplayName = providers.gradleProperty("fulcrum.expectedSecondLobbyDisplayName")
-    .orElse("Fulcrum Bot Two")
-val expectedSecondLobbyRankLabel = providers.gradleProperty("fulcrum.expectedSecondLobbyRankLabel")
-    .orElse("Admin")
+    .orElse("FulcrumBotTwo")
 val expectedSecondLobbyDecoratedChatContains = providers.gradleProperty("fulcrum.expectedSecondLobbyDecoratedChatContains")
-    .orElse("[Admin] Fulcrum Bot Two: fulcrum-proof-chat")
+    .orElse("FulcrumBotTwo: fulcrum-proof-chat")
 val scaleOutTriggerLobbyLoginUsername = providers.gradleProperty("fulcrum.scaleOutTriggerLobbyLoginUsername")
     .orElse("FulcrumBotThree")
-val scaleOutTriggerDeniedLobbyLoginReason = providers.gradleProperty("fulcrum.scaleOutTriggerDeniedLobbyLoginReasonContains")
-    .orElse("No lobby route is currently available")
 val scaleOutLobbyLoginUsername = providers.gradleProperty("fulcrum.scaleOutLobbyLoginUsername")
     .orElse("FulcrumBotFour")
 val expectedScaleOutLobbyDisplayName = providers.gradleProperty("fulcrum.expectedScaleOutLobbyDisplayName")
-    .orElse("Fulcrum Bot Four")
-val expectedScaleOutLobbyRankLabel = providers.gradleProperty("fulcrum.expectedScaleOutLobbyRankLabel")
-    .orElse("Admin")
+    .orElse("FulcrumBotFour")
 val expectedScaleOutLobbyDecoratedChatContains = providers.gradleProperty("fulcrum.expectedScaleOutLobbyDecoratedChatContains")
-    .orElse("[Admin] Fulcrum Bot Four: fulcrum-proof-chat")
+    .orElse("FulcrumBotFour: fulcrum-proof-chat")
 val lobbyScaleOutTimeout = providers.gradleProperty("fulcrum.lobbyScaleOutTimeout")
     .orElse("PT60S")
 val lobbyTargetCapacity = providers.gradleProperty("fulcrum.lobbyTargetCapacity")
@@ -370,9 +314,6 @@ val lobbyHardCapacity = providers.gradleProperty("fulcrum.lobbyHardCapacity")
         if (value.equals("true", ignoreCase = true)) "2" else "150"
     })
 val deniedLobbyLoginUsername = providers.gradleProperty("fulcrum.deniedLobbyLoginUsername")
-    .orElse("FulcrumBannedOne")
-val deniedLobbyLoginReason = providers.gradleProperty("fulcrum.deniedLobbyLoginReasonContains")
-    .orElse("Banned from the lobby")
 val lobbyVerifierTimeout = providers.gradleProperty("fulcrum.lobbyVerifierTimeout")
     .orElse("PT90S")
 val lobbyEndpointReadyTimeout = providers.gradleProperty("fulcrum.lobbyEndpointReadyTimeout")
@@ -386,8 +327,6 @@ val lobbyPresenceAuthorityStateTimeout = providers.gradleProperty("fulcrum.lobby
 val lobbyPresenceAuthorityStateFreshnessSkew =
     providers.gradleProperty("fulcrum.lobbyPresenceAuthorityStateFreshnessSkew")
         .orElse("PT5S")
-val lobbyStandardCapabilityStateTimeout = providers.gradleProperty("fulcrum.lobbyStandardCapabilityStateTimeout")
-    .orElse("PT60S")
 val lobbyCassandraHotProjectionTimeout = providers.gradleProperty("fulcrum.lobbyCassandraHotProjectionTimeout")
     .orElse("PT60S")
 val lobbyPostgresAuthorityRecordTimeout = providers.gradleProperty("fulcrum.lobbyPostgresAuthorityRecordTimeout")
@@ -413,6 +352,9 @@ val generatedClusterRequested = providers.provider {
     val requestedGeneratedCluster = taskNames.any {
         taskNameTargets(it, "clusterE2e")
                 || taskNameTargets(it, "clusterK3sE2e")
+                || taskNameTargets(it, "escrowE2e")
+                || taskNameTargets(it, "escrowClusterE2e")
+                || taskNameTargets(it, "escrowClusterK3sE2e")
                 || taskNameTargets(it, "clusterK3sPreflight")
                 || taskNameTargets(it, "clusterK3sStart")
                 || taskNameTargets(it, "clusterK3sImportImages")
@@ -1533,34 +1475,6 @@ tasks.register("paperAgonesWaitForWorldArtifact") {
     }
 }
 
-tasks.register("paperAgonesWaitForCapabilitySeed") {
-    group = "verification"
-    description = "Waits for the lobby capability seed provisioner Job to publish standard capability commands."
-    doLast {
-        waitForClusterProcess("lobby capability seed provisioner", kubectlCommand(
-            "-n",
-            "fulcrum-lobby",
-            "wait",
-            "--for=condition=complete",
-            "job/fulcrum-lobby-capability-seed",
-            "--timeout=5s"), 180, 5)
-    }
-}
-
-tasks.register("paperAgonesWaitForCapabilityMaterialization") {
-    group = "verification"
-    description = "Waits for the lobby capability materialization verifier Job to observe standard capability cache writes."
-    doLast {
-        waitForClusterProcess("lobby capability materialization verifier", kubectlCommand(
-            "-n",
-            "fulcrum-lobby",
-            "wait",
-            "--for=condition=complete",
-            "job/fulcrum-lobby-capability-materialization",
-            "--timeout=5s"), 300, 5)
-    }
-}
-
 tasks.register("paperAgonesWaitForFleetReady") {
     group = "verification"
     description = "Waits for the lobby Paper Fleet to report one Ready GameServer."
@@ -1747,8 +1661,6 @@ tasks.register("paperAgonesPhase2Deploy") {
         tasks.named("paperAgonesVerifyAgonesInstall"),
         tasks.named("paperAgonesApply"),
         tasks.named("paperAgonesWaitForWorldArtifact"),
-        tasks.named("paperAgonesWaitForCapabilitySeed"),
-        tasks.named("paperAgonesWaitForCapabilityMaterialization"),
         tasks.named("paperAgonesWaitForFleetReady"),
         tasks.named("paperAgonesApplySharedShardAllocation"),
         tasks.named("paperAgonesWaitForSharedShardAllocation"),
@@ -1770,7 +1682,7 @@ tasks.register("paperAgonesPhase3Deploy") {
 
 tasks.register<JavaExec>("lobbyClusterE2eVerify") {
     group = "verification"
-    description = "Resolves the Velocity L4 endpoint and verifies Minecraft status, lobby proof, scale-out, and login denial."
+    description = "Resolves the Velocity L4 endpoint and verifies bare Minecraft status plus shared-shard lobby proof."
     dependsOn(
         tasks.named("paperAgonesPhase3Deploy"),
         tasks.named("velocityL4WaitForHostPort"))
@@ -1798,20 +1710,6 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
             "--paper-host-command-topic=${lobbyPaperHostCommandTopic.get()}",
             "--host-observation-topic=${lobbyHostObservationTopic.get()}",
             "--presence-authority-state-topic=${lobbyPresenceAuthorityStateTopic.get()}",
-            "--player-profile-state-topic=${lobbyPlayerProfileStateTopic.get()}",
-            "--rank-state-topic=${lobbyRankStateTopic.get()}",
-            "--punishment-state-topic=${lobbyPunishmentStateTopic.get()}",
-            "--player-profile-command-topic=${lobbyPlayerProfileCommandTopic.get()}",
-            "--rank-command-topic=${lobbyRankCommandTopic.get()}",
-            "--punishment-command-topic=${lobbyPunishmentCommandTopic.get()}",
-            "--economy-state-topic=${lobbyEconomyStateTopic.get()}",
-            "--stats-state-topic=${lobbyStatsStateTopic.get()}",
-            "--economy-command-topic=${lobbyEconomyCommandTopic.get()}",
-            "--stats-command-topic=${lobbyStatsCommandTopic.get()}",
-            "--expected-reward-currency-key=${expectedLobbyRewardCurrencyKey.get()}",
-            "--expected-reward-amount-minor-units=${expectedLobbyRewardAmountMinorUnits.get()}",
-            "--expected-reward-stat-key=${expectedLobbyRewardStatKey.get()}",
-            "--expected-reward-command-delivery-copies=${expectedLobbyRewardCommandDeliveryCopies.get()}",
             "--cassandra-pod-name=${lobbyCassandraPodName.get()}",
             "--cassandra-container-name=${lobbyCassandraContainerName.get()}",
             "--cassandra-cqlsh-path=${lobbyCassandraCqlshPath.get()}",
@@ -1856,17 +1754,13 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
             "--expected-lobby-player-yaw=${expectedLobbyPlayerYaw.get()}",
             "--expected-lobby-player-pitch=${expectedLobbyPlayerPitch.get()}",
             "--expected-lobby-display-name=${expectedLobbyDisplayName.get()}",
-            "--expected-lobby-rank-label=${expectedLobbyRankLabel.get()}",
             "--expected-lobby-decorated-chat-contains=${expectedLobbyDecoratedChatContains.get()}",
             "--expected-second-lobby-display-name=${expectedSecondLobbyDisplayName.get()}",
-            "--expected-second-lobby-rank-label=${expectedSecondLobbyRankLabel.get()}",
             "--expected-second-lobby-decorated-chat-contains=${expectedSecondLobbyDecoratedChatContains.get()}",
             "--verify-scale-out=${verifyLobbyScaleOut.get()}",
             "--scale-out-trigger-login-username=${scaleOutTriggerLobbyLoginUsername.get()}",
-            "--scale-out-trigger-denied-reason-contains=${scaleOutTriggerDeniedLobbyLoginReason.get()}",
             "--scale-out-login-username=${scaleOutLobbyLoginUsername.get()}",
             "--expected-scale-out-lobby-display-name=${expectedScaleOutLobbyDisplayName.get()}",
-            "--expected-scale-out-lobby-rank-label=${expectedScaleOutLobbyRankLabel.get()}",
             "--expected-scale-out-lobby-decorated-chat-contains=${expectedScaleOutLobbyDecoratedChatContains.get()}",
             "--scale-out-timeout=${lobbyScaleOutTimeout.get()}",
             "--endpoint-ready-timeout=${lobbyEndpointReadyTimeout.get()}",
@@ -1874,7 +1768,6 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
             "--route-attempt-state-freshness-skew=${lobbyRouteAttemptStateFreshnessSkew.get()}",
             "--presence-authority-state-timeout=${lobbyPresenceAuthorityStateTimeout.get()}",
             "--presence-authority-state-freshness-skew=${lobbyPresenceAuthorityStateFreshnessSkew.get()}",
-            "--standard-capability-state-timeout=${lobbyStandardCapabilityStateTimeout.get()}",
             "--cassandra-hot-projection-timeout=${lobbyCassandraHotProjectionTimeout.get()}",
             "--postgres-authority-record-timeout=${lobbyPostgresAuthorityRecordTimeout.get()}",
             "--valkey-cache-timeout=${lobbyValkeyCacheTimeout.get()}",
@@ -1899,10 +1792,6 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
                 "--verify-host-route-command-logs=true",
                 "--verify-host-observation-log=true",
                 "--verify-presence-authority-state=true",
-                "--verify-standard-capability-state=true",
-                "--verify-standard-capability-command-log=true",
-                "--verify-reward-state=true",
-                "--verify-reward-command-log=true",
                 "--verify-cassandra-hot-projections=true",
                 "--verify-postgres-authority-records=true",
                 "--verify-valkey-cache=true",
@@ -1943,18 +1832,6 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
         }
         verifyLobbyPresenceAuthorityState.orNull?.takeIf { it.isNotBlank() }?.let {
             runArgs.add("--verify-presence-authority-state=$it")
-        }
-        verifyLobbyStandardCapabilityState.orNull?.takeIf { it.isNotBlank() }?.let {
-            runArgs.add("--verify-standard-capability-state=$it")
-        }
-        verifyLobbyStandardCapabilityCommandLog.orNull?.takeIf { it.isNotBlank() }?.let {
-            runArgs.add("--verify-standard-capability-command-log=$it")
-        }
-        verifyLobbyRewardState.orNull?.takeIf { it.isNotBlank() }?.let {
-            runArgs.add("--verify-reward-state=$it")
-        }
-        verifyLobbyRewardCommandLog.orNull?.takeIf { it.isNotBlank() }?.let {
-            runArgs.add("--verify-reward-command-log=$it")
         }
         verifyLobbyCassandraHotProjections.orNull?.takeIf { it.isNotBlank() }?.let {
             runArgs.add("--verify-cassandra-hot-projections=$it")
@@ -1998,9 +1875,6 @@ tasks.register<JavaExec>("lobbyClusterE2eVerify") {
         deniedLobbyLoginUsername.orNull?.takeIf { it.isNotBlank() }?.let {
             runArgs.add("--denied-login-username=$it")
         }
-        deniedLobbyLoginReason.orNull?.takeIf { it.isNotBlank() }?.let {
-            runArgs.add("--denied-login-reason-contains=$it")
-        }
         setArgs(runArgs)
     }
 }
@@ -2033,16 +1907,16 @@ tasks.named("paperAgonesWaitForWorldArtifact") {
     mustRunAfter(tasks.named("paperAgonesApply"))
 }
 
-tasks.named("paperAgonesWaitForCapabilitySeed") {
-    mustRunAfter(tasks.named("paperAgonesApply"))
+tasks.named("paperAgonesWaitForFleetReady") {
     mustRunAfter(tasks.named("paperAgonesWaitForWorldArtifact"))
 }
 
-tasks.named("paperAgonesWaitForFleetReady") {
-    mustRunAfter(tasks.named("paperAgonesWaitForCapabilityMaterialization"))
+tasks.named("paperAgonesApplySharedShardAllocation") {
+    mustRunAfter(tasks.named("clusterK3sImportImages"))
+    mustRunAfter(tasks.named("paperAgonesWaitForFleetReady"))
 }
 
-tasks.named("paperAgonesApplySharedShardAllocation") {
+tasks.named("paperAgonesDeleteSharedShardAllocationJobs") {
     mustRunAfter(tasks.named("clusterK3sImportImages"))
     mustRunAfter(tasks.named("paperAgonesWaitForFleetReady"))
 }
@@ -2130,10 +2004,6 @@ tasks.named("paperAgonesWaitForControllerService") {
 tasks.named("paperAgonesWaitForWorkerAgent") {
     mustRunAfter(tasks.named("paperAgonesWaitForKafka"))
     mustRunAfter(tasks.named("paperAgonesWaitForObjectStorage"))
-}
-
-tasks.named("paperAgonesWaitForCapabilityMaterialization") {
-    mustRunAfter(tasks.named("paperAgonesWaitForCapabilitySeed"))
 }
 
 tasks.named("velocityL4Apply") {

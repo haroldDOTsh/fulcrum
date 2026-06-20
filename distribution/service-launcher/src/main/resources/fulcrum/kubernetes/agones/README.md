@@ -2,8 +2,8 @@
 
 The `lobby-paper-fleet.yaml` resource is the Phase 2 Paper GameServer deployment
 surface for the local Kubernetes cluster (k3d by default) plus Agones. It
-declares the lobby namespace, content provisioner Job, capability seed Job,
-capability materialization verifier Job, Paper Fleet, and FleetAutoscaler.
+declares the lobby namespace, content provisioner Job, Paper Fleet, and
+FleetAutoscaler.
 The `lobby-shared-shard-allocation.yaml` resource is applied only after the Fleet
 has a Ready replica. It publishes a typed
 `ctrl.cmd.shared-shard-allocation` command and waits for controller-service to
@@ -29,12 +29,9 @@ packaged Helm values, then has controller-service call the allocator through its
 in-cluster Service over HTTP. This keeps allocation live through Agones while
 avoiding the chart-generated allocator server certificate shape that Java 26
 rejects before custom CA-pinned trust can run.
-The capability seed Job publishes typed player-profile, rank, and punishment
-commands to the standard authority command topics for the lobby verifier
-subjects: the first accepted bot, the second same-shard bot, the scale-out
-accepted bot, and the punished denied bot. The capability materialization
-verifier waits for authority-service to consume those topics and write the
-governed cache outputs before the Fleet gate continues.
+The lobby Fleet now boots with only substrate placement, route, presence, and
+session proof requirements. Domain-specific bootstrapping is intentionally
+outside the core launcher path.
 
 Build the images and apply the resources with:
 
@@ -158,8 +155,7 @@ instead of mounting that CA. It runs `paperAgonesApplySubstrate` for
 and `paperAgonesWaitForWorkerAgent`.
 After the explicit Agones readiness gates pass, it verifies the Agones CRDs, runs `kubectl apply` for
 `lobby-paper-fleet.yaml`, waits for the world-artifact Job, waits for the
-capability seed Job, waits for the capability materialization verifier Job,
-waits for one Ready Fleet replica, runs `paperAgonesApplySharedShardAllocation`
+one Ready Fleet replica, runs `paperAgonesApplySharedShardAllocation`
 for `lobby-shared-shard-allocation.yaml`, waits for
 `paperAgonesWaitForSharedShardAllocation`, waits for
 `paperAgonesWaitForSharedShardAllocationState`, then runs

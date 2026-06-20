@@ -6,6 +6,7 @@ import sh.harold.fulcrum.core.artifact.ArtifactObjectAddress;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
 import sh.harold.fulcrum.host.paper.AgonesGameServerHttpClient;
 import sh.harold.fulcrum.host.paper.ArtifactSource;
+import sh.harold.fulcrum.host.paper.NoopPaperCapabilityBridge;
 import sh.harold.fulcrum.host.paper.PaperAllocatedAssignmentFile;
 import sh.harold.fulcrum.host.paper.PaperArtifactCache;
 import sh.harold.fulcrum.host.paper.PaperCapabilityBridgeServer;
@@ -112,15 +113,6 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
                 securityContext,
                 clients.paperKafka().producer(),
                 settings.hostObservationTopic());
-        PaperRewardCommandPublisher rewardSink = new PaperRewardCommandPublisher(
-                securityContext,
-                clients.paperKafka().producer(),
-                settings.rewardEconomyCommandTopic(),
-                settings.rewardStatsCommandTopic(),
-                settings.experienceId(),
-                settings.rewardCurrencyKey(),
-                settings.rewardAmountMinorUnits(),
-                settings.rewardStatKey());
         PaperGameServerLifecycle lifecycle = new PaperGameServerLifecycle(
                 securityContext,
                 new AgonesGameServerHttpClient(settings.agonesSdkUrl()),
@@ -137,10 +129,11 @@ final class PaperRuntimeServiceEngine implements RuntimeServiceEngine {
                 new PaperObservationBridgeServer(settings.observationBridgeUrl(), observationSink),
                 new PaperCapabilityBridgeServer(
                         settings.capabilityBridgeUrl(),
-                        new ValkeyPaperCapabilityBridge(securityContext, clients.valkey())),
+                        new NoopPaperCapabilityBridge()),
                 new PaperRewardBridgeServer(
                         settings.rewardBridgeUrl(),
-                        rewardSink,
+                        report -> {
+                        },
                         settings.rewardDeliveryCopies()),
                 Duration.ofSeconds(1),
                 Clock.systemUTC());

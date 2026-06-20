@@ -19,7 +19,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ArchitectureValidationTest {
     private static final Path ROOT = findRoot();
+    private static final Path ADR_ROOT = ROOT.resolve("planning/adrs");
     private static final Pattern PROJECT_DEPENDENCY = Pattern.compile("project\\(\"(:[^\"]+)\"\\)");
+    private static final Map<String, Pattern> SERVICE_LAUNCHER_DOMAIN_PATTERNS = Map.ofEntries(
+            Map.entry("standard package import", Pattern.compile("sh\\.harold\\.fulcrum\\.standard")),
+            Map.entry("standard-capabilities dependency", Pattern.compile("standard-capabilities")),
+            Map.entry("standard-contracts dependency", Pattern.compile("standard-contracts")),
+            Map.entry("standard topic/table prefix", Pattern.compile("standard[._]")),
+            Map.entry("StandardCapability symbol", Pattern.compile("\\bStandardCapability\\b")),
+            Map.entry("player profile symbol", Pattern.compile("\\b(PlayerProfile|player-profile)\\b")),
+            Map.entry("punishment symbol", Pattern.compile("\\bpunishment\\b", Pattern.CASE_INSENSITIVE)),
+            Map.entry("economy symbol", Pattern.compile("\\beconomy\\b", Pattern.CASE_INSENSITIVE)),
+            Map.entry("stats symbol", Pattern.compile("\\bstats\\b", Pattern.CASE_INSENSITIVE)),
+            Map.entry("auction symbol", Pattern.compile("\\bauction\\b", Pattern.CASE_INSENSITIVE)),
+            Map.entry("guild symbol", Pattern.compile("\\bguild\\b", Pattern.CASE_INSENSITIVE)),
+            Map.entry("rank symbol", Pattern.compile("\\brank\\b", Pattern.CASE_INSENSITIVE))
+    );
+    private static final Pattern DEFAULT_ROOT_GRAPH_STANDARD_MODULE =
+            Pattern.compile("\"(?:standard-capabilities|validation:(?:standard-capabilities|fleet-e2e|synthetic-load)):");
     private static final Set<String> KERNEL_SOURCE_FILES = Set.of(
             "ArtifactId.java",
             "CapabilityId.java",
@@ -43,8 +60,10 @@ final class ArchitectureValidationTest {
             Map.entry(":api:contract-api", Set.of(":api:kernel-api")),
             Map.entry(":api:kernel-api", Set.of()),
             Map.entry(":capability:capability-api", Set.of(":api:contract-api", ":api:kernel-api", ":data:contract-declarations")),
+            Map.entry(":capability:capability-bundle-runtime", Set.of(":capability:capability-runtime", ":core:artifact-layout")),
             Map.entry(":capability:capability-runtime", Set.of(":capability:capability-api")),
             Map.entry(":control:allocation-bridge", Set.of(":api:contract-api", ":api:kernel-api", ":control:queue-controller", ":host:host-api")),
+            Map.entry(":control:capability-backend-registration", Set.of(":capability:capability-runtime", ":sdk:authority-sdk")),
             Map.entry(":control:capability-enablement-controller", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api")),
             Map.entry(":control:fault-controller", Set.of(":api:contract-api")),
             Map.entry(":control:instance-registry-controller", Set.of(":api:contract-api", ":api:kernel-api")),
@@ -70,33 +89,26 @@ final class ArchitectureValidationTest {
             Map.entry(":data:store-valkey", Set.of(":data:authority-runtime")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
-            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":standard-capabilities:auction", ":standard-capabilities:chat-decoration", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:realm", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats", ":testkit:substrate-testkit")),
+            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-backend-registration", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":testkit:substrate-testkit")),
             Map.entry(":host:effect-admission", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
-            Map.entry(":host:paper-agent", Set.of(":core:artifact-layout", ":host:host-api", ":host:tick-runtime-api")),
+            Map.entry(":host:paper-agent", Set.of(":capability:capability-bundle-runtime", ":core:artifact-layout", ":host:host-api", ":host:tick-runtime-api")),
             Map.entry(":host:tick-runtime-api", Set.of(":core:session-runtime", ":host:host-api")),
-            Map.entry(":host:velocity-agent", Set.of(":host:host-api", ":data:route-contract")),
+            Map.entry(":host:velocity-agent", Set.of(":capability:capability-bundle-runtime", ":host:host-api", ":data:route-contract")),
             Map.entry(":host:worker-agent", Set.of(":api:contract-api", ":api:kernel-api", ":host:host-api")),
-            Map.entry(":platform:fulcrum-bom", Set.of()),
-            Map.entry(":standard-capabilities:auction", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:economy", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:chat-decoration", Set.of(":capability:capability-api", ":capability:capability-runtime", ":standard-capabilities:player-profile", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:economy", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:friends", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:guild", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:party", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:player-profile", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:punishment", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:rank", Set.of(":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:realm", Set.of(":api:contract-api", ":capability:capability-api", ":capability:capability-runtime", ":core:artifact-layout", ":core:manifest-core", ":standard-capabilities:standard-contracts")),
-            Map.entry(":standard-capabilities:standard-contracts", Set.of(":api:contract-api", ":data:contract-declarations")),
-            Map.entry(":standard-capabilities:stats", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":capability:capability-runtime", ":data:authority-core", ":standard-capabilities:player-profile", ":standard-capabilities:standard-contracts")),
+            Map.entry(":platform:fulcrum-bom", Set.of(":sdk:authoring-sdk", ":sdk:authority-sdk")),
+            Map.entry(":sdk:authoring-sdk", Set.of(":capability:capability-runtime", ":sdk:authority-sdk")),
+            Map.entry(":sdk:authority-sdk", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":data:authority-runtime", ":host:host-api")),
             Map.entry(":testkit:architecture-testkit", Set.of()),
             Map.entry(":testkit:substrate-testkit", Set.of(":capability:capability-runtime", ":data:artifact-authority", ":data:contract-codegen", ":data:presence-authority")),
             Map.entry(":validation:architecture", Set.of()),
-            Map.entry(":validation:fleet-e2e", Set.of(":adapters:agones-allocator", ":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":control:allocation-bridge", ":control:queue-controller", ":control:route-controller", ":core:content-resolver", ":core:manifest-core", ":core:session-runtime", ":data:authority-core", ":data:authority-runtime", ":data:route-contract", ":data:session-authority", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":standard-capabilities:auction", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats", ":testkit:substrate-testkit")),
-            Map.entry(":validation:store-adapter-certification", Set.of(":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":core:artifact-layout", ":core:manifest-core", ":data:authority-core", ":data:authority-runtime", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":testkit:substrate-testkit")),
-            Map.entry(":validation:synthetic-load", Set.of(":adapters:agones-fake", ":api:contract-api", ":api:kernel-api", ":control:route-controller", ":data:authority-core", ":host:host-api", ":standard-capabilities:rank")),
-            Map.entry(":validation:standard-capabilities", Set.of(":capability:capability-runtime", ":standard-capabilities:auction", ":standard-capabilities:chat-decoration", ":standard-capabilities:economy", ":standard-capabilities:friends", ":standard-capabilities:guild", ":standard-capabilities:party", ":standard-capabilities:player-profile", ":standard-capabilities:punishment", ":standard-capabilities:rank", ":standard-capabilities:standard-contracts", ":standard-capabilities:stats"))
+            Map.entry(":validation:auction-escrow-contract", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":data:contract-declarations")),
+            Map.entry(":validation:auction-escrow-backend", Set.of(":control:capability-backend-registration", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":sdk:authority-sdk", ":testkit:substrate-testkit", ":validation:auction-escrow-contract", ":validation:auction-experience-bundle")),
+            Map.entry(":validation:auction-experience-bundle", Set.of(":host:host-api", ":host:paper-agent", ":sdk:authority-sdk", ":validation:auction-escrow-contract")),
+            Map.entry(":validation:authoring-sdk-conformance", Set.of(":adapters:object-storage", ":capability:capability-bundle-runtime", ":capability:capability-runtime", ":core:manifest-core", ":sdk:authoring-sdk", ":sdk:authority-sdk")),
+            Map.entry(":validation:authority-sdk-conformance", Set.of(":adapters:object-storage", ":capability:capability-bundle-runtime", ":control:capability-backend-registration", ":sdk:authority-sdk")),
+            Map.entry(":validation:escrow-e2e", Set.of(":control:capability-backend-registration", ":sdk:authority-sdk", ":validation:auction-escrow-backend", ":validation:auction-escrow-contract", ":validation:auction-experience-bundle")),
+            Map.entry(":validation:store-adapter-certification", Set.of(":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":core:artifact-layout", ":core:manifest-core", ":data:authority-core", ":data:authority-runtime", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":testkit:substrate-testkit"))
     );
 
     @Test
@@ -143,6 +155,74 @@ final class ArchitectureValidationTest {
             }
         }
         assertTrue(violations.isEmpty(), () -> "Illegal project dependency edges: " + violations);
+    }
+
+    @Test
+    void defaultRootBuildDoesNotIncludeLegacyStandardModules() throws IOException {
+        String settings = Files.readString(ROOT.resolve("settings.gradle.kts"), StandardCharsets.UTF_8);
+        String rootBuild = Files.readString(ROOT.resolve("build.gradle.kts"), StandardCharsets.UTF_8);
+        assertFalse(
+                DEFAULT_ROOT_GRAPH_STANDARD_MODULE.matcher(settings).find(),
+                "default settings.gradle.kts must not include legacy standard capability projects");
+        assertFalse(
+                rootBuild.contains(":standard-capabilities:"),
+                "root lifecycle checks must not depend on legacy standard capability projects");
+        assertFalse(
+                rootBuild.contains(":validation:standard-capabilities"),
+                "root lifecycle checks must not depend on legacy standard capability validation");
+        assertFalse(
+                rootBuild.contains(":validation:fleet-e2e"),
+                "root lifecycle checks must not depend on legacy fleet E2E validation");
+        assertFalse(
+                rootBuild.contains(":validation:synthetic-load"),
+                "root lifecycle checks must not depend on legacy synthetic-load validation");
+    }
+
+    @Test
+    void serviceLauncherProductionSurfaceStaysDomainBlind() throws IOException {
+        List<String> violations = new ArrayList<>();
+        for (Path file : serviceLauncherDomainBlindTextFiles()) {
+            String text = Files.readString(file, StandardCharsets.UTF_8);
+            SERVICE_LAUNCHER_DOMAIN_PATTERNS.forEach((label, pattern) -> {
+                if (pattern.matcher(text).find()) {
+                    violations.add(ROOT.relativize(file).toString() + " contains " + label);
+                }
+            });
+        }
+        assertTrue(violations.isEmpty(), () -> "Service launcher domain coupling found: " + violations);
+    }
+
+    @Test
+    void auctionExperienceBundleCannotImportEscrowBackend() throws IOException {
+        Path experience = ROOT.resolve("validation/auction-experience-bundle");
+        if (!Files.exists(experience)) {
+            return;
+        }
+
+        List<String> violations = new ArrayList<>();
+        String buildFile = Files.readString(experience.resolve("build.gradle.kts"), StandardCharsets.UTF_8);
+        if (buildFile.contains(":validation:auction-escrow-backend")) {
+            violations.add("auction experience build file depends on escrow backend");
+        }
+
+        List<String> forbidden = List.of(
+                "AuctionEscrowAuthority",
+                "AuctionEscrowState",
+                "AuctionEscrowReceipt",
+                "EscrowSnapshot",
+                "ReleasePlan",
+                "ReleaseLine"
+        );
+        try (Stream<Path> files = Files.walk(experience.resolve("src/main/java"))) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbidden.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains backend symbol " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "Auction experience crossed escrow backend boundary: " + violations);
     }
 
     @Test
@@ -309,6 +389,8 @@ final class ArchitectureValidationTest {
                 "worker-agent must compile against the object storage adapter");
         assertTrue(buildText.contains("implementation(project(\":control:allocation-bridge\"))"),
                 "controller-service must compile against the allocation bridge");
+        assertTrue(buildText.contains("implementation(project(\":control:capability-backend-registration\"))"),
+                "controller-service must expose the generic capability backend registration authority");
         for (String storeModule : List.of(
                 ":data:store-kafka",
                 ":data:store-postgresql",
@@ -387,6 +469,8 @@ final class ArchitectureValidationTest {
                 "FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS",
                 "FULCRUM_AGONES_ALLOCATOR_URL",
                 "FULCRUM_AGONES_NAMESPACE",
+                "FULCRUM_AUTHORITY_REGISTRATION_BIND_HOST",
+                "FULCRUM_AUTHORITY_REGISTRATION_PORT",
                 "FULCRUM_WORKER_KAFKA_BOOTSTRAP_SERVERS",
                 "FULCRUM_WORKER_OBJECT_BUCKET",
                 "FULCRUM_OBJECT_STORE_ROOT")) {
@@ -486,7 +570,7 @@ final class ArchitectureValidationTest {
 
     @Test
     void edgeIngressAndRoutingDecisionIsCapturedInAdr() throws IOException {
-        Path adr = ROOT.resolve("adrs/ADR-0017-edge-ingress-and-routing.md");
+        Path adr = ADR_ROOT.resolve("ADR-0017-edge-ingress-and-routing.md");
         assertTrue(Files.exists(adr), "edge ingress and routing ADR must exist");
 
         String text = Files.readString(adr, StandardCharsets.UTF_8);
@@ -512,7 +596,7 @@ final class ArchitectureValidationTest {
                 List.of("clusterE2e", "headless Minecraft", "L4", "Agones")
         );
         for (Map.Entry<String, List<String>> entry : adrTerms.entrySet()) {
-            Path adr = ROOT.resolve("adrs").resolve(entry.getKey());
+            Path adr = ADR_ROOT.resolve(entry.getKey());
             assertTrue(Files.exists(adr), entry.getKey() + " must exist");
             String text = Files.readString(adr, StandardCharsets.UTF_8);
             for (String required : entry.getValue()) {
@@ -720,6 +804,91 @@ final class ArchitectureValidationTest {
         assertTrue(text.contains("CONSUME"), "Host API must allow scoped addressed command consumption");
         assertTrue(text.contains("READ"), "Host API must allow scoped hot projection, cache, and artifact reads");
         assertTrue(!text.contains("WRITE"), "Host API must not expose canonical store write grants");
+    }
+
+    @Test
+    void authoritySdkStaysOnPublishedBackendBoundary() throws IOException {
+        Path sdkBuild = ROOT.resolve("sdk/authority-sdk/build.gradle.kts");
+        String sdkText = Files.readString(sdkBuild, StandardCharsets.UTF_8);
+        List<String> violations = new ArrayList<>();
+        List<String> forbiddenBuildEdges = List.of(":control:", ":data:store-", ":distribution:");
+        forbiddenBuildEdges.stream()
+                .filter(sdkText::contains)
+                .map(edge -> "sdk/authority-sdk/build.gradle.kts contains " + edge)
+                .forEach(violations::add);
+
+        Path sdkSource = ROOT.resolve("sdk/authority-sdk/src/main/java");
+        List<String> forbiddenImports = List.of(
+                "sh.harold.fulcrum.control.",
+                "sh.harold.fulcrum.data.store.",
+                "sh.harold.fulcrum.distribution.");
+        try (Stream<Path> files = Files.walk(sdkSource)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbiddenImports.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+
+        assertTrue(violations.isEmpty(), () -> "Authority SDK crossed author-facing boundary: " + violations);
+    }
+
+    @Test
+    void authoringSdkStaysOnPublishedAuthorBoundary() throws IOException {
+        Path sdkBuild = ROOT.resolve("sdk/authoring-sdk/build.gradle.kts");
+        String sdkText = Files.readString(sdkBuild, StandardCharsets.UTF_8);
+        List<String> violations = new ArrayList<>();
+        List<String> forbiddenBuildEdges = List.of(":control:", ":data:store-", ":distribution:");
+        forbiddenBuildEdges.stream()
+                .filter(sdkText::contains)
+                .map(edge -> "sdk/authoring-sdk/build.gradle.kts contains " + edge)
+                .forEach(violations::add);
+
+        Path sdkSource = ROOT.resolve("sdk/authoring-sdk/src/main/java");
+        List<String> forbiddenImports = List.of(
+                "sh.harold.fulcrum.control.",
+                "sh.harold.fulcrum.data.store.",
+                "sh.harold.fulcrum.distribution.");
+        try (Stream<Path> files = Files.walk(sdkSource)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbiddenImports.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+
+        assertTrue(violations.isEmpty(), () -> "Authoring SDK crossed author-facing boundary: " + violations);
+    }
+
+    @Test
+    void noOpBackendConformanceMainUsesOnlyPublishedSdk() throws IOException {
+        Path buildFile = ROOT.resolve("validation/authority-sdk-conformance/build.gradle.kts");
+        String buildText = Files.readString(buildFile, StandardCharsets.UTF_8);
+        assertTrue(buildText.contains("api(project(\":sdk:authority-sdk\"))"),
+                "no-op backend conformance main code must compile against the published SDK");
+        assertTrue(buildText.contains("testImplementation(project(\":control:capability-backend-registration\"))"),
+                "no-op backend conformance tests may wire the registration control authority");
+
+        Path mainSource = ROOT.resolve("validation/authority-sdk-conformance/src/main/java");
+        List<String> violations = new ArrayList<>();
+        List<String> forbiddenImports = List.of(
+                "sh.harold.fulcrum.control.",
+                "sh.harold.fulcrum.data.store.",
+                "sh.harold.fulcrum.distribution.");
+        try (Stream<Path> files = Files.walk(mainSource)) {
+            for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                forbiddenImports.stream()
+                        .filter(text::contains)
+                        .map(term -> ROOT.relativize(source) + " contains " + term)
+                        .forEach(violations::add);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "No-op backend main source imported private substrate internals: " + violations);
     }
 
     @Test
@@ -1063,7 +1232,7 @@ final class ArchitectureValidationTest {
                         .forEach(violations::add);
             }
         }
-        assertTrue(violations.isEmpty(), () -> "Standard capabilities crossed substrate boundary: " + violations);
+        assertTrue(violations.isEmpty(), () -> "Legacy standard migration material crossed substrate boundary: " + violations);
     }
 
     @Test
@@ -1472,6 +1641,40 @@ final class ArchitectureValidationTest {
         }
     }
 
+    private static List<Path> serviceLauncherDomainBlindTextFiles() throws IOException {
+        List<Path> files = new ArrayList<>();
+        for (Path root : List.of(
+                ROOT.resolve("distribution/service-launcher/build.gradle.kts"),
+                ROOT.resolve("distribution/service-launcher/src/main/java"),
+                ROOT.resolve("distribution/service-launcher/src/main/resources"))) {
+            if (!Files.exists(root)) {
+                continue;
+            }
+            if (Files.isRegularFile(root)) {
+                files.add(root);
+                continue;
+            }
+            try (Stream<Path> walked = Files.walk(root)) {
+                walked.filter(Files::isRegularFile)
+                        .filter(ArchitectureValidationTest::hasServiceLauncherDomainBlindTextExtension)
+                        .forEach(files::add);
+            }
+        }
+        return files;
+    }
+
+    private static boolean hasServiceLauncherDomainBlindTextExtension(Path path) {
+        String fileName = path.getFileName().toString();
+        return fileName.endsWith(".java")
+                || fileName.endsWith(".kts")
+                || fileName.endsWith(".properties")
+                || fileName.endsWith(".json")
+                || fileName.endsWith(".md")
+                || fileName.endsWith(".yaml")
+                || fileName.endsWith(".yml")
+                || fileName.endsWith(".cql");
+    }
+
     private static boolean hasImplementationTextExtension(Path path) {
         String fileName = path.getFileName().toString();
         return fileName.endsWith(".java")
@@ -1484,6 +1687,10 @@ final class ArchitectureValidationTest {
     private static boolean isImplementationPath(Path path) {
         String normalized = ROOT.relativize(path).toString().replace('\\', '/');
         return !normalized.startsWith("planning/")
+                && !normalized.startsWith("standard-capabilities/")
+                && !normalized.startsWith("validation/fleet-e2e/")
+                && !normalized.startsWith("validation/standard-capabilities/")
+                && !normalized.startsWith("validation/synthetic-load/")
                 && !normalized.startsWith(".git/")
                 && !normalized.startsWith(".gradle/")
                 && !normalized.contains("/src/test/")
