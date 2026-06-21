@@ -1,15 +1,16 @@
 name: Publish Fulcrum
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write
 
 env:
-  FULCRUM_VERSION: 5.0.0-alpha.1
   GITHUB_ACTOR: ${{ github.actor }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -19,6 +20,54 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive release version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          if [ "${tag}" = "${version}" ]; then
+            echo "Release tags must start with v, got ${tag}" >&2
+            exit 1
+          fi
+          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag ${tag} is not SemVer-compatible" >&2
+            exit 1
+          fi
+          gradle_version="$(sed -n 's/.*version = "\([^"]*\)".*/\1/p' build.gradle.kts | head -n 1)"
+          if [ -z "${gradle_version}" ]; then
+            echo "Could not read root Gradle version from build.gradle.kts" >&2
+            exit 1
+          fi
+          if [ "${version}" != "${gradle_version}" ]; then
+            echo "Tag version ${version} does not match Gradle version ${gradle_version}" >&2
+            exit 1
+          fi
+          echo "FULCRUM_VERSION=${version}" >> "${GITHUB_ENV}"
+          echo "RELEASE_TAG=${tag}" >> "${GITHUB_ENV}"
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          previous_tag="$(git describe --tags --abbrev=0 "${RELEASE_TAG}^" 2>/dev/null || true)"
+          if [ -n "${previous_tag}" ]; then
+            range="${previous_tag}..${RELEASE_TAG}"
+          else
+            range="${RELEASE_TAG}"
+          fi
+          {
+            echo "## Changes"
+            git log --no-merges --pretty=format:'- %s (%h)' "${range}"
+            echo
+            echo
+            echo "## Published artifacts"
+            echo "- GitHub Packages SDK/BOM coordinates for ${FULCRUM_VERSION}"
+            echo "- GHCR images tagged ${FULCRUM_VERSION}"
+            echo "- Fulcrum operator ZIP"
+            echo "- Fulcrum release manifest"
+          } > release-notes.md
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -108,3 +157,28 @@ jobs:
           }
           EOF
           ./gradlew --no-daemon -p "${consumer}" resolveFulcrumSdk
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          operator_zip="distribution/service-launcher/build/operator/fulcrum-operator-${FULCRUM_VERSION}.zip"
+          release_manifest="distribution/service-launcher/build/publication/release-manifest/fulcrum-${FULCRUM_VERSION}.json"
+          test -f "${operator_zip}"
+          test -f "${release_manifest}"
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --title "Fulcrum ${FULCRUM_VERSION}" \
+              --notes-file release-notes.md
+            gh release upload "${RELEASE_TAG}" \
+              "${operator_zip}" \
+              "${release_manifest}" \
+              --clobber
+          else
+            gh release create "${RELEASE_TAG}" \
+              --title "Fulcrum ${FULCRUM_VERSION}" \
+              --notes-file release-notes.md \
+              "${operator_zip}" \
+              "${release_manifest}"
+          fi
