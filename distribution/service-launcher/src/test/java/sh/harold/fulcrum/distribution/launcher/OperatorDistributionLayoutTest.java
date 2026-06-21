@@ -19,8 +19,8 @@ final class OperatorDistributionLayoutTest {
 
         assertTrue(shell.contains("docker run --rm"));
         assertTrue(powershell.contains("docker run --rm"));
-        assertTrue(shell.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT"));
-        assertTrue(powershell.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT"));
+        assertTrue(shell.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1"));
+        assertTrue(powershell.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1"));
         assertFalse(combined.contains("gradle"));
         assertFalse(combined.contains(".java"));
     }

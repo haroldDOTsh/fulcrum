@@ -133,7 +133,7 @@ val step8CheckedProjects = step7CheckedProjects + listOf(
 
 allprojects {
     group = "sh.harold.fulcrum"
-    version = "0.1.0-SNAPSHOT"
+    version = "5.0.0-alpha.1"
 }
 
 subprojects {
@@ -150,7 +150,7 @@ subprojects {
                 }
                 maven {
                     name = "githubPackages"
-                    url = uri("https://maven.pkg.github.com/haroldDOTsh/fulcrum")
+                    url = uri("https://maven.pkg.github.com/harolddotsh/fulcrum")
                     credentials {
                         username = providers.gradleProperty("gpr.user")
                             .orElse(providers.environmentVariable("GITHUB_ACTOR"))

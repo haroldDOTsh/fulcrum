@@ -16,9 +16,9 @@ final class SingleMachineComposeDeploymentTest {
     void composeAssetUsesPublishedImagesAndNoBuildContext() throws IOException {
         String compose = compose();
 
-        assertTrue(compose.contains("image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT}"));
-        assertTrue(compose.contains("image: ${FULCRUM_PAPER_GAMESERVER_IMAGE:-ghcr.io/harolddotsh/fulcrum-paper-gameserver:0.1.0-SNAPSHOT}"));
-        assertTrue(compose.contains("image: ${FULCRUM_VELOCITY_PROXY_IMAGE:-ghcr.io/harolddotsh/fulcrum-velocity-proxy:0.1.0-SNAPSHOT}"));
+        assertTrue(compose.contains("image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1}"));
+        assertTrue(compose.contains("image: ${FULCRUM_PAPER_GAMESERVER_IMAGE:-ghcr.io/harolddotsh/fulcrum-paper-gameserver:5.0.0-alpha.1}"));
+        assertTrue(compose.contains("image: ${FULCRUM_VELOCITY_PROXY_IMAGE:-ghcr.io/harolddotsh/fulcrum-velocity-proxy:5.0.0-alpha.1}"));
         assertFalse(compose.contains("build:"));
         assertFalse(compose.contains(".java"));
         assertFalse(compose.toLowerCase(java.util.Locale.ROOT).contains("gradle"));

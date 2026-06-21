@@ -1,0 +1,110 @@
+name: Publish Fulcrum
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  FULCRUM_VERSION: 5.0.0-alpha.1
+  GITHUB_ACTOR: ${{ github.actor }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '26'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Prepare Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Log in to GHCR
+        run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Run release rehearsal
+        run: ./gradlew releaseRehearsal
+
+      - name: Publish SDK and signed images
+        run: ./gradlew publishFulcrumDistribution
+
+      - name: Verify published GHCR images
+        run: |
+          set -euo pipefail
+          images=(
+            "ghcr.io/harolddotsh/fulcrum-service-launcher:${FULCRUM_VERSION}"
+            "ghcr.io/harolddotsh/fulcrum-paper-gameserver:${FULCRUM_VERSION}"
+            "ghcr.io/harolddotsh/fulcrum-velocity-proxy:${FULCRUM_VERSION}"
+          )
+          for image in "${images[@]}"; do
+            docker pull "${image}"
+            cosign verify \
+              --certificate-identity-regexp "https://github.com/haroldDOTsh/fulcrum/.github/workflows/publish.yml@.*" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${image}"
+          done
+
+      - name: Verify SDK resolves externally
+        run: |
+          set -euo pipefail
+          consumer="${RUNNER_TEMP}/fulcrum-sdk-consumer"
+          mkdir -p "${consumer}"
+          cat > "${consumer}/settings.gradle.kts" <<'EOF'
+          pluginManagement {
+              repositories {
+                  gradlePluginPortal()
+                  mavenCentral()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  mavenCentral()
+                  maven {
+                      url = uri("https://maven.pkg.github.com/harolddotsh/fulcrum")
+                      credentials {
+                          username = System.getenv("GITHUB_ACTOR")
+                          password = System.getenv("GITHUB_TOKEN")
+                      }
+                  }
+              }
+          }
+
+          rootProject.name = "fulcrum-sdk-consumer"
+          EOF
+          cat > "${consumer}/build.gradle.kts" <<EOF
+          plugins {
+              java
+          }
+
+          dependencies {
+              implementation(platform("sh.harold.fulcrum:fulcrum-sdk-bom:${FULCRUM_VERSION}"))
+              implementation("sh.harold.fulcrum:authoring-sdk")
+          }
+
+          tasks.register("resolveFulcrumSdk") {
+              doLast {
+                  configurations.compileClasspath.get().resolve().forEach {
+                      println(it.name)
+                  }
+              }
+          }
+          EOF
+          ./gradlew --no-daemon -p "${consumer}" resolveFulcrumSdk

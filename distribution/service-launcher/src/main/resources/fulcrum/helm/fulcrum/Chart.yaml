@@ -2,5 +2,5 @@ apiVersion: v2
 name: fulcrum
 description: Fulcrum operator-owned deployment chart
 type: application
-version: 0.1.0
-appVersion: 0.1.0-SNAPSHOT
+version: 5.0.0-alpha.1
+appVersion: 5.0.0-alpha.1
