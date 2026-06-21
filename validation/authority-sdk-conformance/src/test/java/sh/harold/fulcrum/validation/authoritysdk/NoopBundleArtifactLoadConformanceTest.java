@@ -12,6 +12,16 @@ import sh.harold.fulcrum.capability.bundle.ContributionBundleLoader;
 import sh.harold.fulcrum.capability.bundle.LoadedContribution;
 import sh.harold.fulcrum.capability.bundle.VerifiedContributionBundle;
 import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlanner;
+import sh.harold.fulcrum.core.artifact.ArtifactBlobLayout;
+import sh.harold.fulcrum.core.artifact.ArtifactSourceBytes;
+import sh.harold.fulcrum.core.artifact.ArtifactSourceKind;
+import sh.harold.fulcrum.core.artifact.ArtifactSourcePolicy;
+import sh.harold.fulcrum.core.artifact.ArtifactSourceRequest;
+import sh.harold.fulcrum.core.artifact.ArtifactSourceResolver;
+import sh.harold.fulcrum.core.artifact.ArtifactVerificationReceipt;
+import sh.harold.fulcrum.core.artifact.ArtifactVerificationStatus;
+import sh.harold.fulcrum.core.artifact.ArtifactVerificationStep;
+import sh.harold.fulcrum.core.artifact.VerifiedArtifact;
 import sh.harold.fulcrum.core.manifest.ArtifactPin;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendDescriptorDigests;
 
@@ -27,6 +37,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -92,6 +103,84 @@ final class NoopBundleArtifactLoadConformanceTest {
 
         assertTrue(verified.decision().steps().contains(BundleLoadStep.CACHE_HIT));
         assertTrue(verified.decision().steps().contains(BundleLoadStep.VERIFIED));
+    }
+
+    @Test
+    void loadsNoopContributionFromSignedVerifiedArtifactSource(@TempDir Path tempDir) throws Exception {
+        CapabilityDescriptor descriptor = NoopAuthorityBackend.descriptor();
+        String descriptorDigest = AuthorityBackendDescriptorDigests.descriptorDigest(descriptor);
+        byte[] jarBytes = providerJar(tempDir, descriptorDigest, List.of(PROVIDER), List.of(PROVIDER));
+        ArtifactSourceResolver resolver = new ArtifactSourceResolver(
+                tempDir.resolve("cache"),
+                request -> new ArtifactSourceBytes(jarBytes, request.expectedDigest(), "oci-test-source"),
+                (request, digest, bytes) -> sh.harold.fulcrum.core.artifact.ArtifactSignatureReceipt.verified("cosign:issuer=fulcrum-test"));
+        VerifiedArtifact artifact = resolver.resolve(new ArtifactSourceRequest(
+                new ArtifactId("artifact.bundle.noop"),
+                "fulcrum-bundle-v1",
+                ArtifactSourceKind.OCI,
+                "oci://ghcr.io/sh-harold/noop@sha256:" + sha256(jarBytes),
+                Optional.of("sha256:" + sha256(jarBytes)),
+                Optional.of("cosign://ghcr.io/sh-harold/noop"),
+                ArtifactSourcePolicy.production()));
+        ContributionBundleLoader loader = new ContributionBundleLoader(
+                BUCKET,
+                tempDir.resolve("cache"),
+                address -> Optional.empty());
+
+        VerifiedContributionBundle verified = loader.verifyResolved(
+                artifact,
+                descriptorDigest,
+                CapabilityMaterializationPlanner.plan(List.of(descriptor)));
+
+        assertEquals(List.of(
+                BundleLoadStep.SOURCE_NORMALIZED,
+                BundleLoadStep.SIGNATURE_VERIFIED,
+                BundleLoadStep.VERIFIED,
+                BundleLoadStep.MANIFEST_PARSED,
+                BundleLoadStep.MATERIALIZATION_MATCHED), verified.decision().steps());
+        try (LoadedContribution<Supplier> loaded = loader.load(verified, Supplier.class)) {
+            assertEquals("noop-contribution-loaded", loaded.provider().get());
+        }
+    }
+
+    @Test
+    void resolvedBundleLoadRefusesMissingSignatureEvidence(@TempDir Path tempDir) throws Exception {
+        CapabilityDescriptor descriptor = NoopAuthorityBackend.descriptor();
+        String descriptorDigest = AuthorityBackendDescriptorDigests.descriptorDigest(descriptor);
+        byte[] jarBytes = providerJar(tempDir, descriptorDigest, List.of(PROVIDER), List.of(PROVIDER));
+        ArtifactPin pin = new ArtifactPin(new ArtifactId("artifact.bundle.noop"), sha256(jarBytes), "fulcrum-bundle-v1");
+        Path cachedPath = ArtifactBlobLayout.cachePath(tempDir.resolve("cache"), pin);
+        Files.createDirectories(cachedPath.getParent());
+        Files.write(cachedPath, jarBytes);
+        ArtifactVerificationReceipt receipt = new ArtifactVerificationReceipt(
+                ArtifactVerificationStatus.VERIFIED,
+                Optional.of(pin),
+                ArtifactSourceKind.OCI,
+                "oci://ghcr.io/sh-harold/noop@sha256:" + sha256(jarBytes),
+                Optional.of("sha-256:" + sha256(jarBytes)),
+                Optional.of(cachedPath),
+                List.of(ArtifactVerificationStep.SOURCE_RESOLVED, ArtifactVerificationStep.DIGEST_PINNED),
+                Optional.empty(),
+                Optional.empty());
+        VerifiedArtifact artifact = new VerifiedArtifact(
+                pin,
+                ArtifactSourceKind.OCI,
+                "oci://ghcr.io/sh-harold/noop@sha256:" + sha256(jarBytes),
+                cachedPath,
+                receipt);
+        ContributionBundleLoader loader = new ContributionBundleLoader(
+                BUCKET,
+                tempDir.resolve("cache"),
+                address -> Optional.empty());
+
+        BundleLoadException exception = assertThrows(
+                BundleLoadException.class,
+                () -> loader.verifyResolved(
+                        artifact,
+                        descriptorDigest,
+                        CapabilityMaterializationPlanner.plan(List.of(descriptor))));
+
+        assertTrue(exception.getMessage().contains("signature verification missing"));
     }
 
     @Test

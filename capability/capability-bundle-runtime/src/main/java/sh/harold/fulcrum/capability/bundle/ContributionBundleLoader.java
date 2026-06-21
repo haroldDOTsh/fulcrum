@@ -5,6 +5,8 @@ import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlan;
 import sh.harold.fulcrum.core.artifact.ArtifactBlobLayout;
 import sh.harold.fulcrum.core.artifact.ArtifactDigestReference;
 import sh.harold.fulcrum.core.artifact.ArtifactObjectAddress;
+import sh.harold.fulcrum.core.artifact.ArtifactVerificationStep;
+import sh.harold.fulcrum.core.artifact.VerifiedArtifact;
 import sh.harold.fulcrum.core.manifest.ArtifactPin;
 
 import java.io.IOException;
@@ -60,25 +62,38 @@ public final class ContributionBundleLoader {
                 Files.move(staged, cachedPath, StandardCopyOption.ATOMIC_MOVE);
             }
             steps.add(BundleLoadStep.VERIFIED);
-
-            ContributionBundleManifest manifest = readManifest(cachedPath);
-            steps.add(BundleLoadStep.MANIFEST_PARSED);
-            if (!manifest.descriptorDigest().equals(checkedDescriptorDigest)) {
-                throw refused("bundle descriptor digest mismatch", artifactPin, address, cachedPath, steps);
-            }
-            if (!materializationContains(plan, manifest)) {
-                throw refused("bundle contributions are absent from materialization plan", artifactPin, address, cachedPath, steps);
-            }
-            steps.add(BundleLoadStep.MATERIALIZATION_MATCHED);
-
-            return new VerifiedContributionBundle(
-                    artifactPin,
-                    address,
-                    cachedPath,
-                    manifest,
-                    verifiedDecision(artifactPin, address, cachedPath, steps));
+            return verifyCachedBundle(artifactPin, address, cachedPath, checkedDescriptorDigest, plan, steps);
         } catch (IOException exception) {
             throw new BundleLoadException("could not verify bundle artifact", exception);
+        }
+    }
+
+    public VerifiedContributionBundle verifyResolved(
+            VerifiedArtifact verifiedArtifact,
+            String expectedDescriptorDigest,
+            CapabilityMaterializationPlan plan) {
+        Objects.requireNonNull(verifiedArtifact, "verifiedArtifact");
+        String checkedDescriptorDigest = BundleNames.requireNonBlank(expectedDescriptorDigest, "expectedDescriptorDigest");
+        Objects.requireNonNull(plan, "plan");
+        ArtifactPin artifactPin = verifiedArtifact.artifactPin();
+        ArtifactObjectAddress address = ArtifactBlobLayout.objectAddress(objectBucket, artifactPin);
+        Path cachedPath = verifiedArtifact.cachedPath();
+        List<BundleLoadStep> steps = new ArrayList<>();
+        steps.add(BundleLoadStep.SOURCE_NORMALIZED);
+        boolean signatureVerified = verifiedArtifact.verificationReceipt().steps().contains(ArtifactVerificationStep.SIGNATURE_VERIFIED);
+        boolean unsignedLocalAccepted = verifiedArtifact.verificationReceipt().steps().contains(ArtifactVerificationStep.UNSIGNED_LOCAL_IMPORT_ACCEPTED);
+        if (signatureVerified) {
+            steps.add(BundleLoadStep.SIGNATURE_VERIFIED);
+        }
+        if (!signatureVerified && !unsignedLocalAccepted) {
+            throw refused("bundle artifact signature verification missing", artifactPin, address, cachedPath, steps);
+        }
+        try {
+            verifyDigest(artifactPin, Files.readAllBytes(cachedPath));
+            steps.add(BundleLoadStep.VERIFIED);
+            return verifyCachedBundle(artifactPin, address, cachedPath, checkedDescriptorDigest, plan, steps);
+        } catch (IOException exception) {
+            throw new BundleLoadException("could not verify resolved bundle artifact", exception);
         }
     }
 
@@ -142,6 +157,31 @@ public final class ContributionBundleLoader {
                 declaration.extensionPoint() == requirement.extensionPoint()
                         && declaration.scope().equals(requirement.scope())
                         && declaration.order() == requirement.order()));
+    }
+
+    private static VerifiedContributionBundle verifyCachedBundle(
+            ArtifactPin artifactPin,
+            ArtifactObjectAddress address,
+            Path cachedPath,
+            String expectedDescriptorDigest,
+            CapabilityMaterializationPlan plan,
+            List<BundleLoadStep> steps) throws IOException {
+        ContributionBundleManifest manifest = readManifest(cachedPath);
+        steps.add(BundleLoadStep.MANIFEST_PARSED);
+        if (!manifest.descriptorDigest().equals(expectedDescriptorDigest)) {
+            throw refused("bundle descriptor digest mismatch", artifactPin, address, cachedPath, steps);
+        }
+        if (!materializationContains(plan, manifest)) {
+            throw refused("bundle contributions are absent from materialization plan", artifactPin, address, cachedPath, steps);
+        }
+        steps.add(BundleLoadStep.MATERIALIZATION_MATCHED);
+
+        return new VerifiedContributionBundle(
+                artifactPin,
+                address,
+                cachedPath,
+                manifest,
+                verifiedDecision(artifactPin, address, cachedPath, steps));
     }
 
     private static void verifyDigest(ArtifactPin artifactPin, byte[] bytes) {
