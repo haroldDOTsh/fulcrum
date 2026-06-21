@@ -12,7 +12,12 @@ final class PlanRenderer {
         builder.append("semanticModel=").append(profile.semanticModel()).append(System.lineSeparator());
         builder.append("contractSet=").append(profile.contractSet()).append(System.lineSeparator());
         builder.append("servicePlacement=").append(profile.servicePlacement()).append(System.lineSeparator());
-        builder.append("storageShape=").append(profile.storageShape()).append(System.lineSeparator());
+        plan.storageTier().ifPresent(tier -> builder.append("storageTier=")
+                .append(tier.id())
+                .append(System.lineSeparator()));
+        builder.append("storageShape=")
+                .append(plan.storageTier().map(SingleMachineTier::storageShape).orElse(profile.storageShape()))
+                .append(System.lineSeparator());
         builder.append("agonesMode=").append(profile.agonesMode()).append(System.lineSeparator());
         builder.append("objectStorage=").append(profile.objectStorage()).append(System.lineSeparator());
         builder.append("launchMode=").append(plan.mode().id()).append(System.lineSeparator());
@@ -24,14 +29,14 @@ final class PlanRenderer {
                     .append(" [")
                     .append(entry.processFamily())
                     .append("] ")
-                    .append(entry.command(profile))
+                    .append(entry.command(profile, plan.storageTier()))
                     .append(System.lineSeparator());
             builder.append("  mainClass=")
                     .append(entry.mainClass())
                     .append(System.lineSeparator());
-            if (!entry.requiredBindings().isEmpty()) {
+            if (!entry.requiredBindings(plan.storageTier()).isEmpty()) {
                 builder.append("  requiredBindings=")
-                        .append(String.join(", ", entry.requiredBindings()))
+                        .append(String.join(", ", entry.requiredBindings(plan.storageTier())))
                         .append(System.lineSeparator());
             }
         }

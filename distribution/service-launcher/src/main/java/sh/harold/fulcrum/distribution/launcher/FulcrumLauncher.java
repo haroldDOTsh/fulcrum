@@ -75,10 +75,11 @@ public final class FulcrumLauncher {
 
     private static String usage() {
         return String.join(System.lineSeparator(),
-                "Usage: fulcrum [--profile=<profile>] [--role=<role>] [--mode=<plan|run>]",
+                "Usage: fulcrum [--profile=<profile>] [--tier=<tier>] [--role=<role>] [--mode=<plan|run>]",
                 "               [--probe-host=<host>] [--probe-port=<port>] [--run-for=<duration>]",
                 "",
                 "Profiles: single-machine, small-production, large-production",
+                "Tiers: in-memory, slim, full-engine (single-machine only; default in-memory)",
                 "Roles: authority-service, controller-service, worker-agent, paper-agent, velocity-agent, all",
                 "Default: --profile=single-machine --role=all --mode=plan",
                 "");

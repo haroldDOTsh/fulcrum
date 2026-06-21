@@ -3,7 +3,9 @@
   "semanticModel": "fulcrum-v2-substrate",
   "contractSet": "fulcrum-step0-contracts",
   "servicePlacement": "co-located-controllers-authorities",
-  "storageShape": "testcontainers-friendly",
+  "storageShape": "tiered-single-machine",
+  "defaultTier": "in-memory",
+  "availableTiers": "in-memory,slim,full-engine",
   "agonesMode": "fake-contract-adapter",
   "objectStorage": "local-blob-store"
 }

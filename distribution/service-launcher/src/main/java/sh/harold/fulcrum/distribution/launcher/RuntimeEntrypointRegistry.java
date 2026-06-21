@@ -1,25 +1,26 @@
 package sh.harold.fulcrum.distribution.launcher;
 
 import java.util.List;
+import java.util.Optional;
 
 final class RuntimeEntrypointRegistry {
     private static final String MAIN_CLASS = "sh.harold.fulcrum.distribution.launcher.FulcrumLauncher";
-    private static final RuntimeBindingRequirement KAFKA = requirement(
+    private static final RuntimeBindingRequirement KAFKA = storeRequirement(
             "FULCRUM_KAFKA_BOOTSTRAP_SERVERS",
             "Kafka command, event, state, and response log clients");
-    private static final RuntimeBindingRequirement POSTGRES_URL = requirement(
+    private static final RuntimeBindingRequirement POSTGRES_URL = storeRequirement(
             "FULCRUM_POSTGRES_JDBC_URL",
             "PostgreSQL authority record adapter");
-    private static final RuntimeBindingRequirement POSTGRES_USER = requirement(
+    private static final RuntimeBindingRequirement POSTGRES_USER = storeRequirement(
             "FULCRUM_POSTGRES_USERNAME",
             "PostgreSQL authority credential user");
-    private static final RuntimeBindingRequirement POSTGRES_PASSWORD = requirement(
+    private static final RuntimeBindingRequirement POSTGRES_PASSWORD = storeRequirement(
             "FULCRUM_POSTGRES_PASSWORD",
             "PostgreSQL authority credential secret");
-    private static final RuntimeBindingRequirement CASSANDRA = requirement(
+    private static final RuntimeBindingRequirement CASSANDRA = storeRequirement(
             "FULCRUM_CASSANDRA_CONTACT_POINTS",
             "Cassandra projection writer adapter");
-    private static final RuntimeBindingRequirement VALKEY = requirement(
+    private static final RuntimeBindingRequirement VALKEY = storeRequirement(
             "FULCRUM_VALKEY_ENDPOINT",
             "Valkey idempotency and cache adapter");
     private static final RuntimeBindingRequirement AGONES = requirement(
@@ -51,7 +52,7 @@ final class RuntimeEntrypointRegistry {
                     "control",
                     MAIN_CLASS,
                     List.of(
-                            requirement("FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS", "Kafka control command, event, and state log clients"),
+                            storeRequirement("FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS", "Kafka control command, event, and state log clients"),
                             AGONES,
                             AGONES_NAMESPACE,
                             requirement("FULCRUM_CONTROL_STATE_TOPIC", "control-plane authority runtime binding"),
@@ -65,7 +66,7 @@ final class RuntimeEntrypointRegistry {
                     "host-worker",
                     MAIN_CLASS,
                     List.of(
-                            requirement("FULCRUM_WORKER_KAFKA_BOOTSTRAP_SERVERS", "Kafka worker job and result log clients"),
+                            storeRequirement("FULCRUM_WORKER_KAFKA_BOOTSTRAP_SERVERS", "Kafka worker job and result log clients"),
                             requirement("FULCRUM_WORKER_JOB_TOPIC", "worker job command source"),
                             requirement("FULCRUM_WORKER_RESULT_TOPIC", "worker result emission sink"),
                             requirement("FULCRUM_WORKER_OBJECT_BUCKET", "worker object storage result bucket"),
@@ -79,7 +80,7 @@ final class RuntimeEntrypointRegistry {
                     List.of(
                             PAPER_ROOT,
                             OBJECT_STORE,
-                            requirement("FULCRUM_PAPER_KAFKA_BOOTSTRAP_SERVERS", "Kafka Paper Session command and host observation producers"),
+                            storeRequirement("FULCRUM_PAPER_KAFKA_BOOTSTRAP_SERVERS", "Kafka Paper Session command and host observation producers"),
                             requirement("FULCRUM_PAPER_AGONES_SDK_URL", "Agones GameServer SDK sidecar endpoint"),
                             requirement("FULCRUM_PAPER_OBSERVATION_BRIDGE_URL", "local Paper plugin observation bridge"),
                             requirement("FULCRUM_PAPER_CAPABILITY_BRIDGE_URL", "local Paper plugin capability bridge"),
@@ -106,7 +107,7 @@ final class RuntimeEntrypointRegistry {
                     MAIN_CLASS,
                     List.of(
                             VELOCITY_ROOT,
-                            requirement("FULCRUM_VELOCITY_KAFKA_BOOTSTRAP_SERVERS", "Velocity route command Kafka client"),
+                            storeRequirement("FULCRUM_VELOCITY_KAFKA_BOOTSTRAP_SERVERS", "Velocity route command Kafka client"),
                             requirement("FULCRUM_VELOCITY_ROUTE_BRIDGE_URL", "local Velocity plugin route execution bridge"),
                             requirement("FULCRUM_VELOCITY_LOGIN_GATE_BRIDGE_URL", "local Velocity login gate decision bridge"),
                             requirement("FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC", "Velocity addressed proxy route command channel"),
@@ -128,7 +129,8 @@ final class RuntimeEntrypointRegistry {
 
     static LaunchPlan plan(LaunchCommand command, ClassLoader classLoader) {
         ProfileDescriptor descriptor = command.profile().loadDescriptor(classLoader);
-        return new LaunchPlan(descriptor, command.mode(), entriesFor(command.role()));
+        Optional<SingleMachineTier> tier = resolveTier(command, descriptor);
+        return new LaunchPlan(descriptor, command.mode(), tier, entriesFor(command.role()));
     }
 
     static List<LaunchEntry> entriesFor(LaunchRole role) {
@@ -142,6 +144,25 @@ final class RuntimeEntrypointRegistry {
 
     private static RuntimeBindingRequirement requirement(String name, String description) {
         return new RuntimeBindingRequirement(name, description);
+    }
+
+    private static RuntimeBindingRequirement storeRequirement(String name, String description) {
+        return RuntimeBindingRequirement.externalStore(name, description);
+    }
+
+    private static Optional<SingleMachineTier> resolveTier(LaunchCommand command, ProfileDescriptor descriptor) {
+        if (!descriptor.supportsTiers()) {
+            if (command.tier().isPresent()) {
+                throw new IllegalArgumentException("--tier is only supported by the single-machine profile");
+            }
+            return Optional.empty();
+        }
+        SingleMachineTier tier = command.tier().orElseGet(descriptor::defaultSingleMachineTier);
+        if (!descriptor.availableTiers().contains(tier)) {
+            throw new IllegalArgumentException("Profile " + descriptor.profileId()
+                    + " does not support tier " + tier.id());
+        }
+        return Optional.of(tier);
     }
 
     private static boolean hasObjectStoreBinding(RuntimeEnvironment environment) {

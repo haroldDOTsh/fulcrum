@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":data:session-authority"))
     implementation(project(":data:store-cassandra"))
     implementation(project(":data:store-kafka"))
+    implementation(project(":data:store-memory"))
     implementation(project(":data:store-postgresql"))
     implementation(project(":data:store-valkey"))
     implementation(project(":data:subject-authority"))

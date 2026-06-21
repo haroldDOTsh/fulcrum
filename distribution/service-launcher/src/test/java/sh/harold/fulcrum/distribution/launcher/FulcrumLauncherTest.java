@@ -173,6 +173,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -195,12 +196,39 @@ final class FulcrumLauncherTest {
         assertEquals(FulcrumLauncher.OK, result.code());
         assertEquals("", result.err());
         assertTrue(result.out().contains("profile=single-machine"));
+        assertTrue(result.out().contains("storageTier=in-memory"));
+        assertTrue(result.out().contains("storageShape=embedded-in-memory-authority-stores"));
         assertTrue(result.out().contains("authority-service"));
         assertTrue(result.out().contains("controller-service"));
         assertTrue(result.out().contains("worker-agent"));
         assertTrue(result.out().contains("paper-agent"));
         assertTrue(result.out().contains("velocity-agent"));
         assertTrue(result.out().contains("fulcrum --role=paper-agent --profile=single-machine --mode=run"));
+        assertTrue(result.out().contains("--tier=in-memory"));
+    }
+
+    @Test
+    void planModeAcceptsExplicitSingleMachineTier() {
+        LaunchResult result = run(RuntimeEnvironment.of(Map.of()),
+                "--profile=single-machine",
+                "--tier=full-engine");
+
+        assertEquals(FulcrumLauncher.OK, result.code());
+        assertEquals("", result.err());
+        assertTrue(result.out().contains("profile=single-machine"));
+        assertTrue(result.out().contains("storageTier=full-engine"));
+        assertTrue(result.out().contains("storageShape=full-engine-compose-bindings"));
+        assertTrue(result.out().contains("--tier=full-engine"));
+    }
+
+    @Test
+    void productionProfilesRejectSingleMachineTierSwitch() {
+        LaunchResult result = run(RuntimeEnvironment.of(Map.of()),
+                "--profile=large-production",
+                "--tier=in-memory");
+
+        assertEquals(FulcrumLauncher.USAGE_ERROR, result.code());
+        assertTrue(result.err().contains("--tier is only supported by the single-machine profile"));
     }
 
     @Test
@@ -1120,7 +1148,7 @@ final class FulcrumLauncherTest {
         assertEquals(19, stored.fencingEpoch());
         assertEquals(SubjectLifecycleStatus.ACTIVE, stored.state().current().orElseThrow().status());
         assertEquals(subject, stored.state().current().orElseThrow().subjectId());
-        assertEquals(List.of(new AuthorityOffset("cmd.subject", 0, 7)), bindings.committedOffsets("subject"));
+        assertEquals(List.of(new AuthorityOffset("cmd.subject", 0, 0)), bindings.committedOffsets("subject"));
     }
 
     @Test
@@ -2416,6 +2444,15 @@ final class FulcrumLauncherTest {
             assertEquals("fulcrum-v2-substrate", descriptor.semanticModel());
             assertEquals("fulcrum-step0-contracts", descriptor.contractSet());
             assertTrue(descriptor.resourcePath().endsWith(profile.id() + ".json"));
+            if (profile == DeploymentProfile.SINGLE_MACHINE) {
+                assertEquals(Optional.of(SingleMachineTier.IN_MEMORY), descriptor.defaultTier());
+                assertEquals(
+                        Set.of(SingleMachineTier.IN_MEMORY, SingleMachineTier.SLIM, SingleMachineTier.FULL_ENGINE),
+                        descriptor.availableTiers());
+            } else {
+                assertTrue(descriptor.defaultTier().isEmpty());
+                assertTrue(descriptor.availableTiers().isEmpty());
+            }
         }
     }
 

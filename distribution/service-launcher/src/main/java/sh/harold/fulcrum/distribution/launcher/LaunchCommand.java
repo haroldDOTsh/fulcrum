@@ -5,6 +5,7 @@ import java.util.Optional;
 
 record LaunchCommand(
         DeploymentProfile profile,
+        Optional<SingleMachineTier> tier,
         LaunchRole role,
         LaunchMode mode,
         Optional<Duration> runFor,
@@ -12,6 +13,7 @@ record LaunchCommand(
         int probePort) {
     static LaunchCommand parse(String[] args) {
         DeploymentProfile profile = DeploymentProfile.SINGLE_MACHINE;
+        Optional<SingleMachineTier> tier = Optional.empty();
         LaunchRole role = LaunchRole.ALL;
         LaunchMode mode = LaunchMode.PLAN;
         Optional<Duration> runFor = Optional.empty();
@@ -24,6 +26,10 @@ record LaunchCommand(
                 profile = DeploymentProfile.fromId(arg.substring("--profile=".length()));
             } else if (arg.equals("--profile")) {
                 profile = DeploymentProfile.fromId(nextValue(args, ++index, "--profile"));
+            } else if (arg.startsWith("--tier=")) {
+                tier = Optional.of(SingleMachineTier.fromId(arg.substring("--tier=".length())));
+            } else if (arg.equals("--tier")) {
+                tier = Optional.of(SingleMachineTier.fromId(nextValue(args, ++index, "--tier")));
             } else if (arg.startsWith("--role=")) {
                 role = LaunchRole.fromId(arg.substring("--role=".length()));
             } else if (arg.equals("--role")) {
@@ -49,7 +55,7 @@ record LaunchCommand(
             }
         }
 
-        return new LaunchCommand(profile, role, mode, runFor, probeHost, probePort);
+        return new LaunchCommand(profile, tier, role, mode, runFor, probeHost, probePort);
     }
 
     private static String nextValue(String[] args, int index, String option) {

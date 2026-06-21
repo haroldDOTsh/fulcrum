@@ -90,7 +90,7 @@ final class ArchitectureValidationTest {
             Map.entry(":data:store-valkey", Set.of(":data:authority-runtime")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":distribution:profiles", Set.of()),
-            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-backend-registration", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":testkit:substrate-testkit")),
+            Map.entry(":distribution:service-launcher", Set.of(":adapters:agones-allocator", ":adapters:agones-fake", ":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":capability:capability-runtime", ":control:allocation-bridge", ":control:capability-backend-registration", ":control:capability-enablement-controller", ":control:fault-controller", ":control:instance-registry-controller", ":control:lifecycle-controller", ":control:queue-controller", ":control:route-controller", ":data:artifact-authority", ":data:authority-runtime", ":data:presence-authority", ":data:route-authority", ":data:session-authority", ":data:store-cassandra", ":data:store-kafka", ":data:store-memory", ":data:store-postgresql", ":data:store-valkey", ":data:subject-authority", ":distribution:profiles", ":host:effect-admission", ":host:host-api", ":host:paper-agent", ":host:tick-runtime-api", ":host:velocity-agent", ":host:worker-agent", ":testkit:substrate-testkit")),
             Map.entry(":host:effect-admission", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:host-api", Set.of(":api:contract-api", ":api:kernel-api", ":core:manifest-core")),
             Map.entry(":host:paper-agent", Set.of(":capability:capability-bundle-runtime", ":core:artifact-layout", ":host:host-api", ":host:tick-runtime-api")),
@@ -394,6 +394,7 @@ final class ArchitectureValidationTest {
                 "controller-service must expose the generic capability backend registration authority");
         for (String storeModule : List.of(
                 ":data:store-kafka",
+                ":data:store-memory",
                 ":data:store-postgresql",
                 ":data:store-cassandra",
                 ":data:store-valkey")) {
