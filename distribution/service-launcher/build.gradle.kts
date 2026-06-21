@@ -2,6 +2,7 @@ import org.gradle.api.GradleException
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.bundling.Zip
 import org.gradle.jvm.tasks.Jar
 import java.io.File
 import java.io.IOException
@@ -58,6 +59,33 @@ dependencies {
 
 tasks.named("check") {
     dependsOn(tasks.named("installDist"))
+}
+
+val operatorDistribution by tasks.registering(Sync::class) {
+    group = "distribution"
+    description = "Assembles the no-source Fulcrum operator package with the Docker-backed CLI, Compose unit, and Helm chart."
+
+    into(layout.buildDirectory.dir("operator/fulcrum"))
+    from("src/main/resources/fulcrum/operator")
+    from("src/main/resources/fulcrum/compose") {
+        into("compose")
+    }
+    from("src/main/resources/fulcrum/helm") {
+        into("helm")
+    }
+}
+
+val operatorDistributionZip by tasks.registering(Zip::class) {
+    group = "distribution"
+    description = "Archives the no-source Fulcrum operator package."
+    dependsOn(operatorDistribution)
+
+    archiveBaseName.set("fulcrum-operator")
+    archiveVersion.set(project.version.toString())
+    destinationDirectory.set(layout.buildDirectory.dir("operator"))
+    from(operatorDistribution.map { it.destinationDir }) {
+        into("fulcrum")
+    }
 }
 
 val serviceLauncherImageContext by tasks.registering(Sync::class) {

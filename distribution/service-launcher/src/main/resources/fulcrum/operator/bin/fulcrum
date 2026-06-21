@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+set -eu
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker or a compatible container runtime is required to run fulcrum." >&2
+  exit 78
+fi
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+OPERATOR_HOME=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+IMAGE="${FULCRUM_CLI_IMAGE:-ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT}"
+
+exec docker run --rm -i \
+  -v "$PWD:/workspace" \
+  -w /workspace \
+  -v "$OPERATOR_HOME:/opt/fulcrum/operator:ro" \
+  -e FULCRUM_OPERATOR_HOME=/opt/fulcrum/operator \
+  "$IMAGE" "$@"
