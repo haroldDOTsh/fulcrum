@@ -49,6 +49,7 @@ dependencies {
     implementation(project(":host:paper-agent"))
     implementation(project(":host:velocity-agent"))
     implementation(project(":host:worker-agent"))
+    implementation(project(":sdk:authoring-sdk"))
     runtimeOnly(project(":adapters:agones-fake"))
     runtimeOnly(project(":capability:capability-runtime"))
     runtimeOnly(project(":distribution:profiles"))
