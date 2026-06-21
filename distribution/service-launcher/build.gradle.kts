@@ -109,6 +109,20 @@ val operatorDeploymentSurfaceTest by tasks.registering(Test::class) {
     }
 }
 
+val bundleInstallSurfaceTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs the Phase 4 declarative bundle install, reconcile, grant, and identity lifecycle contract tests."
+
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.BundleReconcilerTest")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.OperatorBundleCliTest")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.FulcrumLauncherTest.reservedOperatorGroupsHaveStableRefusalAndHelp")
+    }
+}
+
 val serviceLauncherImageContext by tasks.registering(Sync::class) {
     group = "distribution"
     description = "Assembles the Docker build context for the Fulcrum service launcher image."

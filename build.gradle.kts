@@ -472,8 +472,9 @@ tasks.register("publishFulcrumDistribution") {
 
 tasks.register("releaseRehearsal") {
     group = "verification"
-    description = "Runs the current no-source release-shaped rehearsal gate; later phases extend this with install and author flows."
+    description = "Runs the current no-source release-shaped rehearsal gate; later phases extend this with author flows."
     dependsOn(":distribution:service-launcher:operatorDistributionZip")
     dependsOn(":distribution:service-launcher:operatorDeploymentSurfaceTest")
+    dependsOn(":distribution:service-launcher:bundleInstallSurfaceTest")
     dependsOn(":validation:architecture:test")
 }
