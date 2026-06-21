@@ -3,6 +3,7 @@ import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.Zip
+import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.tasks.Jar
 import java.io.File
 import java.io.IOException
@@ -85,6 +86,26 @@ val operatorDistributionZip by tasks.registering(Zip::class) {
     destinationDirectory.set(layout.buildDirectory.dir("operator"))
     from(operatorDistribution.map { it.destinationDir }) {
         into("fulcrum")
+    }
+}
+
+val operatorDeploymentSurfaceTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs the Phase 3 operator CLI, Compose, Helm, and no-source package contract tests."
+
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.FulcrumLauncherTest.operatorHelpListsSubcommandsAndKeepsInternalEntrypointVisible")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.FulcrumLauncherTest.operatorUpDryRunWritesSupervisedRunPlanForSlimTier")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.FulcrumLauncherTest.operatorUpDryRunRoutesFullEngineToComposePlan")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.FulcrumLauncherTest.operatorStatusAndDownUseSavedRunPlan")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.FulcrumLauncherTest.operatorUpRejectsProductionProfilesWithHelmInstruction")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.FulcrumLauncherTest.reservedOperatorGroupsHaveStableRefusalAndHelp")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.SingleMachineComposeDeploymentTest")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.HelmDeploymentChartTest")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.OperatorDistributionLayoutTest")
     }
 }
 

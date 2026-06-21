@@ -469,3 +469,11 @@ tasks.register("publishFulcrumDistribution") {
     dependsOn(":distribution:service-launcher:signFulcrumImages")
     dependsOn(":distribution:service-launcher:writeFulcrumReleaseManifest")
 }
+
+tasks.register("releaseRehearsal") {
+    group = "verification"
+    description = "Runs the current no-source release-shaped rehearsal gate; later phases extend this with install and author flows."
+    dependsOn(":distribution:service-launcher:operatorDistributionZip")
+    dependsOn(":distribution:service-launcher:operatorDeploymentSurfaceTest")
+    dependsOn(":validation:architecture:test")
+}
