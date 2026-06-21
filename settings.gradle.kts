@@ -40,6 +40,7 @@ include(
     "data:route-authority",
     "data:session-authority",
     "data:store-cassandra",
+    "data:store-memory",
     "data:store-kafka",
     "data:store-postgresql",
     "data:store-valkey",

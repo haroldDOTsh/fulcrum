@@ -12,6 +12,7 @@ dependencies {
     testImplementation(project(":data:authority-runtime"))
     testImplementation(project(":data:store-cassandra"))
     testImplementation(project(":data:store-kafka"))
+    testImplementation(project(":data:store-memory"))
     testImplementation(project(":data:store-postgresql"))
     testImplementation(project(":data:store-valkey"))
     testImplementation(project(":testkit:substrate-testkit"))

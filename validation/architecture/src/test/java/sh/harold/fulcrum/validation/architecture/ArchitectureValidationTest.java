@@ -85,6 +85,7 @@ final class ArchitectureValidationTest {
             Map.entry(":data:session-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
             Map.entry(":data:store-cassandra", Set.of(":data:authority-runtime")),
             Map.entry(":data:store-kafka", Set.of(":data:authority-runtime")),
+            Map.entry(":data:store-memory", Set.of(":data:authority-runtime")),
             Map.entry(":data:store-postgresql", Set.of(":data:authority-runtime")),
             Map.entry(":data:store-valkey", Set.of(":data:authority-runtime")),
             Map.entry(":data:subject-authority", Set.of(":api:contract-api", ":api:kernel-api", ":data:authority-core")),
@@ -108,7 +109,7 @@ final class ArchitectureValidationTest {
             Map.entry(":validation:authoring-sdk-conformance", Set.of(":adapters:object-storage", ":capability:capability-bundle-runtime", ":capability:capability-runtime", ":core:manifest-core", ":sdk:authoring-sdk", ":sdk:authority-sdk")),
             Map.entry(":validation:authority-sdk-conformance", Set.of(":adapters:object-storage", ":capability:capability-bundle-runtime", ":control:capability-backend-registration", ":sdk:authority-sdk")),
             Map.entry(":validation:escrow-e2e", Set.of(":control:capability-backend-registration", ":sdk:authority-sdk", ":validation:auction-escrow-backend", ":validation:auction-escrow-contract", ":validation:auction-experience-bundle")),
-            Map.entry(":validation:store-adapter-certification", Set.of(":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":core:artifact-layout", ":core:manifest-core", ":data:authority-core", ":data:authority-runtime", ":data:store-cassandra", ":data:store-kafka", ":data:store-postgresql", ":data:store-valkey", ":testkit:substrate-testkit"))
+            Map.entry(":validation:store-adapter-certification", Set.of(":adapters:object-storage", ":api:contract-api", ":api:kernel-api", ":core:artifact-layout", ":core:manifest-core", ":data:authority-core", ":data:authority-runtime", ":data:store-cassandra", ":data:store-kafka", ":data:store-memory", ":data:store-postgresql", ":data:store-valkey", ":testkit:substrate-testkit"))
     );
 
     @Test
@@ -611,7 +612,7 @@ final class ArchitectureValidationTest {
         assertTrue(Files.exists(matrix), "store adapter certification matrix must exist");
 
         String text = Files.readString(matrix, StandardCharsets.UTF_8);
-        for (String required : List.of("kafka-log", "cassandra-projection", "postgresql-authority-record", "valkey-cache-idempotency", "object-storage-artifact")) {
+        for (String required : List.of("in-memory-authority-store", "kafka-log", "cassandra-projection", "postgresql-authority-record", "valkey-cache-idempotency", "object-storage-artifact")) {
             assertTrue(text.contains(required), "store adapter certification matrix missing " + required);
         }
     }

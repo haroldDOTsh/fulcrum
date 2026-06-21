@@ -46,11 +46,18 @@ import sh.harold.fulcrum.data.authority.AuthorityEmissionKind;
 import sh.harold.fulcrum.data.authority.AuthorityMutationResult;
 import sh.harold.fulcrum.data.authority.AuthorityRecord;
 import sh.harold.fulcrum.data.authority.AuthorityRejectionReason;
+import sh.harold.fulcrum.data.authority.IdempotencyLedger;
 import sh.harold.fulcrum.data.authority.StoredAuthorityDecision;
 import sh.harold.fulcrum.data.authority.runtime.AuthorityDomainHandler;
 import sh.harold.fulcrum.data.authority.runtime.AuthorityEmissionSinks;
 import sh.harold.fulcrum.data.authority.runtime.AuthorityRuntimeReceipt;
 import sh.harold.fulcrum.data.authority.runtime.AuthorityRuntimeWorker;
+import sh.harold.fulcrum.data.store.memory.InMemoryAuthorityCommandLog;
+import sh.harold.fulcrum.data.store.memory.InMemoryAuthorityDecisionRecorder;
+import sh.harold.fulcrum.data.store.memory.InMemoryAuthorityEmissionSink;
+import sh.harold.fulcrum.data.store.memory.InMemoryAuthorityProjectionWriter;
+import sh.harold.fulcrum.data.store.memory.InMemoryAuthorityRecordStore;
+import sh.harold.fulcrum.data.store.memory.InMemoryIdempotencyLedger;
 import sh.harold.fulcrum.data.store.cassandra.CassandraAuthorityProjectionWriter;
 import sh.harold.fulcrum.data.store.kafka.KafkaAuthorityCommandSource;
 import sh.harold.fulcrum.data.store.kafka.KafkaAuthorityEmissionSink;
@@ -103,6 +110,82 @@ final class StoreAdapterCertificationMatrixTest {
     private static final String OBJECT_BUCKET = "artifact-store";
     private static final String OBJECT_ACCESS_KEY = "fulcrum-object-access";
     private static final String OBJECT_SECRET_KEY = "fulcrum-object-secret";
+
+    @Test
+    void inMemoryAdaptersPassExecutableCertificationWithoutExternalInfra() {
+        InMemoryAuthorityCommandLog<CertCommand> commandLog =
+                new InMemoryAuthorityCommandLog<>(COMMAND_TOPIC);
+        InMemoryAuthorityRecordStore<CertState> recordStore = new InMemoryAuthorityRecordStore<>(
+                () -> new AuthorityRecord<>(new Revision(0), FENCING_EPOCH, new CertState(0)));
+        InMemoryIdempotencyLedger<CertState, CertReceipt> idempotencyLedger = new InMemoryIdempotencyLedger<>();
+        InMemoryAuthorityProjectionWriter<CertState, CertCommand, CertReceipt> projectionWriter =
+                new InMemoryAuthorityProjectionWriter<>((command, decision) ->
+                        new InMemoryAuthorityProjectionWriter.Projection(
+                                command.envelope().aggregateId().value(),
+                                command.envelope().aggregateId().value()
+                                        + "|" + decision.state().total()
+                                        + "|" + decision.revision().value()));
+        InMemoryAuthorityEmissionSink emissionSink = new InMemoryAuthorityEmissionSink();
+        InMemoryAuthorityDecisionRecorder<CertState, CertCommand, CertReceipt> decisionRecorder =
+                new InMemoryAuthorityDecisionRecorder<>();
+
+        AuthorityCommand<CertCommand> acceptedCommand = command(
+                "command-cert-1",
+                "idempotency-cert-1",
+                3,
+                0,
+                "cert:aggregate:1:3");
+        commandLog.append(acceptedCommand);
+        assertEquals(acceptedCommand, commandLog.openSource().poll().orElseThrow().command());
+
+        AuthorityRuntimeWorker<CertState, CertCommand, CertReceipt> worker = new AuthorityRuntimeWorker<>(
+                commandLog.openSource(),
+                recordStore,
+                domainHandler(idempotencyLedger),
+                projectionWriter,
+                AuthorityEmissionSinks.composite(emissionSink),
+                decisionRecorder,
+                commandLog.committer());
+
+        AuthorityRuntimeReceipt accepted = worker.handleNext().orElseThrow();
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, accepted.status());
+        assertEquals(new Revision(1), accepted.revision());
+        assertTrue(!accepted.replayed());
+
+        commandLog.append(command(
+                "command-cert-1",
+                "idempotency-cert-1",
+                3,
+                0,
+                "cert:aggregate:1:3"));
+        AuthorityRuntimeReceipt duplicate = worker.handleNext().orElseThrow();
+        assertEquals(AuthorityDecisionStatus.ACCEPTED, duplicate.status());
+        assertTrue(duplicate.replayed());
+
+        commandLog.append(command(
+                "command-cert-conflict",
+                "idempotency-cert-1",
+                5,
+                1,
+                "cert:aggregate:1:5"));
+        AuthorityRuntimeReceipt conflict = worker.handleNext().orElseThrow();
+        assertEquals(AuthorityDecisionStatus.REJECTED, conflict.status());
+        assertTrue(!conflict.replayed());
+
+        StoredAuthorityDecision<CertState, CertReceipt> stored = idempotencyLedger
+                .find(new IdempotencyKey("idempotency-cert-1"))
+                .orElseThrow();
+        assertEquals("cert:aggregate:1:3", stored.payloadFingerprint());
+        assertEquals(new Revision(1), stored.decision().revision());
+        assertEquals(new Revision(1), recordStore.load(AGGREGATE_ID).revision());
+        assertEquals(3, recordStore.load(AGGREGATE_ID).state().total());
+        assertEquals(2, decisionRecorder.size());
+        assertEquals("cert:aggregate:1|3|1", projectionWriter.find(AGGREGATE_ID.value()).orElseThrow());
+        assertEquals(List.of("accepted:3"), emissionSink.payloads(AuthorityEmissionKind.EVENT));
+        assertEquals(List.of("total=3"), emissionSink.payloads(AuthorityEmissionKind.STATE));
+        assertEquals(List.of("status=ACCEPTED;revision=1"), emissionSink.payloads(AuthorityEmissionKind.RESPONSE));
+        assertEquals("total=3", emissionSink.latestPayload(AuthorityEmissionKind.CACHE_WRITE, AGGREGATE_ID.value()));
+    }
 
     @Test
     void realAdaptersPassExecutableCertificationAgainstSubstrateEngines() throws Exception {
@@ -287,7 +370,7 @@ final class StoreAdapterCertificationMatrixTest {
     }
 
     private static AuthorityDomainHandler<CertState, CertCommand, CertReceipt> domainHandler(
-            ValkeyIdempotencyLedger<CertState, CertReceipt> idempotencyLedger) {
+            IdempotencyLedger<CertState, CertReceipt> idempotencyLedger) {
         AuthorityCommandProcessor<CertState, CertCommand, CertReceipt> processor = new AuthorityCommandProcessor<>(
                 idempotencyLedger,
                 reason -> new CertReceipt("REJECTED:" + reason.name(), -1),
@@ -351,6 +434,30 @@ final class StoreAdapterCertificationMatrixTest {
                 expectedRevision=%d
                 payloadFingerprint=%s
                 """.formatted(commandId, idempotencyKey, PRINCIPAL.value(), amount, FENCING_EPOCH, expectedRevision, payloadFingerprint);
+    }
+
+    private static AuthorityCommand<CertCommand> command(
+            String commandId,
+            String idempotencyKey,
+            int amount,
+            long expectedRevision,
+            String payloadFingerprint) {
+        return new AuthorityCommand<>(
+                new CommandEnvelope<>(
+                        new CommandId(commandId),
+                        new IdempotencyKey(idempotencyKey),
+                        PRINCIPAL,
+                        AGGREGATE_ID,
+                        new ContractName("store-adapter-certification"),
+                        new CommandName("apply-cert-total"),
+                        trace(commandId),
+                        Optional.empty(),
+                        new CertCommand(amount)),
+                PRINCIPAL,
+                FENCING_EPOCH,
+                Optional.of(new Revision(expectedRevision)),
+                payloadFingerprint,
+                NOW);
     }
 
     private static void createTopics(String bootstrapServers) throws Exception {
