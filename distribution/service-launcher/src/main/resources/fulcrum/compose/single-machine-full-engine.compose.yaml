@@ -1,0 +1,271 @@
+name: fulcrum-single-machine
+
+services:
+  fulcrum-kafka:
+    image: ${FULCRUM_KAFKA_IMAGE:-apache/kafka:4.3.0}
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      CLUSTER_ID: "w6vQq2v0RkqGQe6wXtX6sQ"
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@fulcrum-kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://fulcrum-kafka:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+    volumes:
+      - fulcrum-kafka-data:/var/lib/kafka/data
+
+  fulcrum-postgres:
+    image: ${FULCRUM_POSTGRES_IMAGE:-postgres:18.4}
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: "fulcrum"
+      POSTGRES_USER: "fulcrum"
+      POSTGRES_PASSWORD: "${FULCRUM_POSTGRES_PASSWORD:-fulcrum-dev-password}"
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+    volumes:
+      - fulcrum-postgres-data:/var/lib/postgresql/data
+
+  fulcrum-cassandra:
+    image: ${FULCRUM_CASSANDRA_IMAGE:-cassandra:5.0.8}
+    restart: unless-stopped
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_CLUSTER_NAME: "fulcrum-single-machine"
+      CASSANDRA_DC: "datacenter1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      MAX_HEAP_SIZE: "768M"
+      HEAP_NEWSIZE: "256M"
+    volumes:
+      - fulcrum-cassandra-data:/var/lib/cassandra
+
+  fulcrum-valkey:
+    image: ${FULCRUM_VALKEY_IMAGE:-valkey/valkey:9.1.0}
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  fulcrum-object-store:
+    image: ${FULCRUM_OBJECT_STORE_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    restart: unless-stopped
+    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: "${FULCRUM_OBJECT_STORE_ACCESS_KEY:-fulcrum-object-access}"
+      MINIO_ROOT_PASSWORD: "${FULCRUM_OBJECT_STORE_SECRET_KEY:-fulcrum-object-secret}"
+    volumes:
+      - fulcrum-object-store-data:/data
+
+  authority-service:
+    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT}
+    restart: unless-stopped
+    command:
+      - "--profile=single-machine"
+      - "--tier=full-engine"
+      - "--role=authority-service"
+      - "--mode=run"
+      - "--probe-host=0.0.0.0"
+      - "--probe-port=8080"
+    depends_on:
+      - fulcrum-kafka
+      - fulcrum-postgres
+      - fulcrum-cassandra
+      - fulcrum-valkey
+    environment:
+      FULCRUM_KAFKA_BOOTSTRAP_SERVERS: "fulcrum-kafka:9092"
+      FULCRUM_POSTGRES_JDBC_URL: "jdbc:postgresql://fulcrum-postgres:5432/fulcrum"
+      FULCRUM_POSTGRES_USERNAME: "fulcrum"
+      FULCRUM_POSTGRES_PASSWORD: "${FULCRUM_POSTGRES_PASSWORD:-fulcrum-dev-password}"
+      FULCRUM_CASSANDRA_CONTACT_POINTS: "fulcrum-cassandra:9042"
+      FULCRUM_CASSANDRA_LOCAL_DATACENTER: "datacenter1"
+      FULCRUM_VALKEY_ENDPOINT: "fulcrum-valkey:6379"
+      FULCRUM_INSTANCE_ID: "instance-authority-service"
+      FULCRUM_MACHINE_REF: "machine-single"
+      FULCRUM_PRINCIPAL_ID: "principal-fulcrum-authority-service"
+      FULCRUM_CREDENTIAL_REF: "service-account:fulcrum-authority-service"
+
+  controller-service:
+    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT}
+    restart: unless-stopped
+    command:
+      - "--profile=single-machine"
+      - "--tier=full-engine"
+      - "--role=controller-service"
+      - "--mode=run"
+      - "--probe-host=0.0.0.0"
+      - "--probe-port=8080"
+    depends_on:
+      - fulcrum-kafka
+    ports:
+      - "18085:18085"
+    environment:
+      FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS: "fulcrum-kafka:9092"
+      FULCRUM_AGONES_ALLOCATOR_URL: "http://fulcrum-agones-allocator:8000/gameserverallocation"
+      FULCRUM_AGONES_NAMESPACE: "fulcrum-lobby"
+      FULCRUM_CONTROL_STATE_TOPIC: "ctrl.state"
+      FULCRUM_HOST_COMMAND_TOPIC: "host.paper.commands"
+      FULCRUM_HOST_OBSERVATION_TOPIC: "host.observation"
+      FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC: "host.velocity.routes"
+      FULCRUM_AUTHORITY_REGISTRATION_BIND_HOST: "0.0.0.0"
+      FULCRUM_AUTHORITY_REGISTRATION_PORT: "18085"
+      FULCRUM_INSTANCE_ID: "instance-controller-service"
+      FULCRUM_MACHINE_REF: "machine-single"
+      FULCRUM_POOL_ID: "pool-control"
+      FULCRUM_PRINCIPAL_ID: "principal-fulcrum-controller-service"
+      FULCRUM_CREDENTIAL_REF: "service-account:fulcrum-controller-service"
+
+  worker-agent:
+    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT}
+    restart: unless-stopped
+    command:
+      - "--profile=single-machine"
+      - "--tier=full-engine"
+      - "--role=worker-agent"
+      - "--mode=run"
+      - "--probe-host=0.0.0.0"
+      - "--probe-port=8080"
+    depends_on:
+      - fulcrum-kafka
+      - fulcrum-object-store
+    environment:
+      FULCRUM_WORKER_KAFKA_BOOTSTRAP_SERVERS: "fulcrum-kafka:9092"
+      FULCRUM_WORKER_JOB_TOPIC: "worker.jobs"
+      FULCRUM_WORKER_RESULT_TOPIC: "worker.results"
+      FULCRUM_WORKER_OBJECT_BUCKET: "worker-results"
+      FULCRUM_OBJECT_STORE_MODE: "s3"
+      FULCRUM_OBJECT_STORE_ENDPOINT: "http://fulcrum-object-store:9000"
+      FULCRUM_OBJECT_STORE_REGION: "us-east-1"
+      FULCRUM_OBJECT_STORE_ACCESS_KEY: "${FULCRUM_OBJECT_STORE_ACCESS_KEY:-fulcrum-object-access}"
+      FULCRUM_OBJECT_STORE_SECRET_KEY: "${FULCRUM_OBJECT_STORE_SECRET_KEY:-fulcrum-object-secret}"
+      FULCRUM_INSTANCE_ID: "instance-worker-agent"
+      FULCRUM_MACHINE_REF: "machine-single"
+      FULCRUM_POOL_ID: "pool-worker"
+      FULCRUM_PRINCIPAL_ID: "principal-fulcrum-worker-agent"
+      FULCRUM_CREDENTIAL_REF: "service-account:fulcrum-worker-agent"
+
+  paper-agent:
+    image: ${FULCRUM_PAPER_GAMESERVER_IMAGE:-ghcr.io/sh-harold/fulcrum-paper-gameserver:0.1.0-SNAPSHOT}
+    restart: unless-stopped
+    command:
+      - "--profile=single-machine"
+      - "--tier=full-engine"
+      - "--role=paper-agent"
+      - "--mode=run"
+      - "--probe-host=0.0.0.0"
+      - "--probe-port=18081"
+    depends_on:
+      - fulcrum-kafka
+      - fulcrum-valkey
+      - fulcrum-object-store
+    ports:
+      - "25566:25565"
+      - "18081:18081"
+    environment:
+      MINECRAFT_EULA: "true"
+      FULCRUM_OBJECT_STORE_MODE: "s3"
+      FULCRUM_OBJECT_STORE_ENDPOINT: "http://fulcrum-object-store:9000"
+      FULCRUM_OBJECT_STORE_REGION: "us-east-1"
+      FULCRUM_OBJECT_STORE_ACCESS_KEY: "${FULCRUM_OBJECT_STORE_ACCESS_KEY:-fulcrum-object-access}"
+      FULCRUM_OBJECT_STORE_SECRET_KEY: "${FULCRUM_OBJECT_STORE_SECRET_KEY:-fulcrum-object-secret}"
+      FULCRUM_PAPER_SERVER_ROOT: "/var/fulcrum/paper"
+      FULCRUM_PAPER_ALLOCATION_FILE: "/var/fulcrum/paper/fulcrum-allocated-assignment.properties"
+      FULCRUM_PAPER_KAFKA_BOOTSTRAP_SERVERS: "fulcrum-kafka:9092"
+      FULCRUM_PAPER_AGONES_SDK_URL: "http://127.0.0.1:9358/"
+      FULCRUM_PAPER_OBSERVATION_BRIDGE_URL: "http://127.0.0.1:18080/observations"
+      FULCRUM_PAPER_CAPABILITY_BRIDGE_URL: "http://127.0.0.1:18083/capabilities"
+      FULCRUM_PAPER_REWARD_BRIDGE_URL: "http://127.0.0.1:18084/rewards"
+      FULCRUM_VALKEY_ENDPOINT: "fulcrum-valkey:6379"
+      FULCRUM_PAPER_EXPERIENCE_ID: "experience-lobby"
+      FULCRUM_PAPER_SESSION_ID: "session-lobby-shared"
+      FULCRUM_PAPER_SLOT_ID: "slot-lobby-shared"
+      FULCRUM_PAPER_RESOLVED_MANIFEST_ID: "manifest-lobby-bedrock-v1"
+      FULCRUM_PAPER_CODE_ARTIFACT_ID: "artifact-paper-gameserver"
+      FULCRUM_PAPER_WORLD_ARTIFACT_ID: "artifact-lobby-bedrock-world"
+      FULCRUM_PAPER_WORLD_ARTIFACT_DIGEST: "105d948db09cb4eb6a8ac74d1ae01744366a5252e2a2b033d480c5154bde2abe"
+      FULCRUM_PAPER_WORLD_ARTIFACT_COMPATIBILITY: "lobby-world-v1"
+      FULCRUM_PAPER_SESSION_OWNER_TOKEN: "${FULCRUM_PAPER_SESSION_OWNER_TOKEN:-replace-with-runtime-issued-owner-token}"
+      FULCRUM_PAPER_SESSION_LEASE: "PT5M"
+      FULCRUM_PAPER_HOST_RUNTIME_ABI: "paper-host-runtime-v1"
+      FULCRUM_PAPER_ROUTE_ID_PREFIX: "route-velocity-login-"
+      FULCRUM_PAPER_SPAWN_WORLD: "world"
+      FULCRUM_PAPER_SPAWN_X: "0.5"
+      FULCRUM_PAPER_SPAWN_Y: "65.0"
+      FULCRUM_PAPER_SPAWN_Z: "0.5"
+      FULCRUM_PAPER_SPAWN_YAW: "0.0"
+      FULCRUM_PAPER_SPAWN_PITCH: "0.0"
+      FULCRUM_HOST_COMMAND_TOPIC: "host.paper.commands"
+      FULCRUM_HOST_OBSERVATION_TOPIC: "host.observation"
+      FULCRUM_INSTANCE_ID: "instance-paper-agent"
+      FULCRUM_MACHINE_REF: "machine-single"
+      FULCRUM_POOL_ID: "pool-lobby"
+      FULCRUM_PRINCIPAL_ID: "principal-fulcrum-paper-agent"
+      FULCRUM_CREDENTIAL_REF: "service-account:fulcrum-paper-agent"
+    volumes:
+      - fulcrum-paper-state:/var/fulcrum/paper
+
+  velocity-agent:
+    image: ${FULCRUM_VELOCITY_PROXY_IMAGE:-ghcr.io/sh-harold/fulcrum-velocity-proxy:0.1.0-SNAPSHOT}
+    restart: unless-stopped
+    command:
+      - "--profile=single-machine"
+      - "--tier=full-engine"
+      - "--role=velocity-agent"
+      - "--mode=run"
+      - "--probe-host=0.0.0.0"
+      - "--probe-port=8080"
+    depends_on:
+      - fulcrum-kafka
+      - fulcrum-valkey
+    ports:
+      - "25565:25565"
+      - "18082:8080"
+    environment:
+      FULCRUM_VELOCITY_SERVER_ROOT: "/opt/fulcrum/velocity"
+      FULCRUM_VELOCITY_KAFKA_BOOTSTRAP_SERVERS: "fulcrum-kafka:9092"
+      FULCRUM_VELOCITY_ROUTE_BRIDGE_URL: "http://127.0.0.1:18081/routes"
+      FULCRUM_VELOCITY_LOGIN_GATE_BRIDGE_URL: "http://127.0.0.1:18082/login-gate"
+      FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC: "host.velocity.routes"
+      FULCRUM_ROUTE_COMMAND_TOPIC: "cmd.route"
+      FULCRUM_QUEUE_ROSTER_COMMAND_TOPIC: "ctrl.cmd.queue-roster"
+      FULCRUM_PRESENCE_COMMAND_TOPIC: "cmd.presence"
+      FULCRUM_SHARED_SHARD_PLACEMENT_COMMAND_TOPIC: "ctrl.cmd.shared-shard-placement"
+      FULCRUM_ROUTE_ATTEMPT_COMMAND_TOPIC: "ctrl.cmd.route-attempt"
+      FULCRUM_LIFECYCLE_TRACE_COMMAND_TOPIC: "ctrl.cmd.lifecycle-trace"
+      FULCRUM_SHARED_SHARD_ALLOCATION_STATE_TOPIC: "ctrl.state.shared-shard-allocation"
+      FULCRUM_LOBBY_EXPERIENCE_ID: "experience-lobby"
+      FULCRUM_LOBBY_POOL_ID: "pool-lobby"
+      FULCRUM_LOBBY_AGONES_FLEET_NAME: "fulcrum-lobby-paper"
+      FULCRUM_LOBBY_TARGET_CAPACITY: "75"
+      FULCRUM_LOBBY_HARD_CAPACITY: "150"
+      FULCRUM_LOBBY_RESOLVED_MANIFEST_ID: "manifest-lobby-bedrock-v1"
+      FULCRUM_LOBBY_CAPABILITY_SCOPE_FINGERPRINT: "capability-scope-lobby"
+      FULCRUM_LOGIN_GATE_SCOPE: "experience-lobby"
+      FULCRUM_VELOCITY_PRESENCE_LEASE: "PT5M"
+      FULCRUM_VALKEY_ENDPOINT: "fulcrum-valkey:6379"
+      FULCRUM_INSTANCE_ID: "instance-velocity-agent"
+      FULCRUM_MACHINE_REF: "machine-single"
+      FULCRUM_POOL_ID: "pool-velocity"
+      FULCRUM_PRINCIPAL_ID: "principal-fulcrum-velocity-agent"
+      FULCRUM_CREDENTIAL_REF: "service-account:fulcrum-velocity-agent"
+
+volumes:
+  fulcrum-kafka-data:
+  fulcrum-postgres-data:
+  fulcrum-cassandra-data:
+  fulcrum-object-store-data:
+  fulcrum-paper-state:
