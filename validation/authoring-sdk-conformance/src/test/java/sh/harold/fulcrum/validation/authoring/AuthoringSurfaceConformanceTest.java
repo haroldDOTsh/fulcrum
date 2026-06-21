@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import sh.harold.fulcrum.adapters.objectstorage.LocalObjectStorageAdapter;
 import sh.harold.fulcrum.api.kernel.ArtifactId;
 import sh.harold.fulcrum.api.kernel.CapabilityId;
+import sh.harold.fulcrum.capability.api.CapabilityAuthorityDeclaration;
 import sh.harold.fulcrum.capability.api.CapabilityDescriptor;
 import sh.harold.fulcrum.capability.api.CapabilityExtensionPoint;
 import sh.harold.fulcrum.capability.api.CapabilityScope;
@@ -127,6 +128,35 @@ final class AuthoringSurfaceConformanceTest {
                 .anyMatch(refusal -> refusal.code() == AuthorBundlePreflightRefusalCode.PROVIDER_SHADOWED_SUBSTRATE_CLASS));
     }
 
+    @Test
+    void authorityScaffoldUsesPublishedSdkCoordinatesAndDeclaresBackendManifest() {
+        CapabilityDescriptor descriptor = new CapabilityDescriptor(
+                new CapabilityId("author-ledger-tools"),
+                new CapabilityVersion("0.0.1"),
+                List.of(),
+                List.of(),
+                List.of(new CapabilityAuthorityDeclaration("author.ledger", "author-ledger-backend", 1)),
+                List.of(),
+                List.of(CapabilityScope.NETWORK));
+
+        GeneratedAuthorBundle scaffold = AuthorBundleScaffold.authority(new AuthorBundleScaffoldRequest(
+                "author-ledger-tools",
+                "external.authoring.ledger",
+                "LedgerAuthority",
+                descriptor,
+                SUBSTRATE_FINGERPRINT));
+
+        assertEquals("external.authoring.ledger.LedgerAuthority", scaffold.providerClassName());
+        assertTrue(scaffold.files().get("build.gradle.kts")
+                .contains("implementation(platform(\"sh.harold.fulcrum:fulcrum-sdk-bom:"));
+        assertTrue(scaffold.files().get("build.gradle.kts").contains("api(\"sh.harold.fulcrum:authoring-sdk\")"));
+        assertTrue(scaffold.files().get("build.gradle.kts").contains("api(\"sh.harold.fulcrum:authority-sdk\")"));
+        assertTrue(scaffold.files().get("src/main/resources/META-INF/fulcrum/authoring.properties")
+                .contains("bundle.kind=authority"));
+        assertTrue(scaffold.files().get("src/main/resources/META-INF/fulcrum/bundle.properties")
+                .contains("author.ledger:author-ledger-backend:1"));
+    }
+
     private static CapabilityDescriptor descriptor() {
         return new CapabilityDescriptor(
                 new CapabilityId("author-auction-tools"),
@@ -206,14 +236,16 @@ final class AuthoringSurfaceConformanceTest {
             String descriptorDigest) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (JarOutputStream jar = new JarOutputStream(bytes)) {
-            addEntry(jar, "META-INF/fulcrum/bundle.properties", """
-                    bundle.id=%s
-                    descriptor.digest=%s
-                    bundle.digest=declared-by-artifact-pin
-                    providers=%s
-                    contributions=Paper.Commands:network:0
-                    """.formatted(scaffold.bundleId(), descriptorDigest, scaffold.providerClassName())
-                    .getBytes(StandardCharsets.UTF_8));
+            if (!Files.exists(workspace.resolve("src/main/resources/META-INF/fulcrum/bundle.properties"))) {
+                addEntry(jar, "META-INF/fulcrum/bundle.properties", """
+                        bundle.id=%s
+                        descriptor.digest=%s
+                        bundle.digest=declared-by-artifact-pin
+                        providers=%s
+                        contributions=Paper.Commands:network:0
+                        """.formatted(scaffold.bundleId(), descriptorDigest, scaffold.providerClassName())
+                        .getBytes(StandardCharsets.UTF_8));
+            }
             addTree(jar, workspace.resolve("src/main/resources"), workspace.resolve("src/main/resources"));
             addTree(jar, classesDir, classesDir);
         }
