@@ -124,6 +124,20 @@ val bundleInstallSurfaceTest by tasks.registering(Test::class) {
     }
 }
 
+val authorLoopSurfaceTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs the Phase 5 author scaffold and single-machine reload loop contract tests."
+
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.OperatorAuthorCliTest")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.OperatorDevCliTest")
+        includeTestsMatching("sh.harold.fulcrum.distribution.launcher.FulcrumLauncherTest.reservedOperatorGroupsHaveStableRefusalAndHelp")
+    }
+}
+
 val serviceLauncherImageContext by tasks.registering(Sync::class) {
     group = "distribution"
     description = "Assembles the Docker build context for the Fulcrum service launcher image."
