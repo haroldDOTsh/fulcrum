@@ -27,6 +27,10 @@ public final class FulcrumLauncher {
     }
 
     int run(String[] args, PrintStream out, PrintStream err) {
+        if (args.length > 0 && OperatorCli.isOperatorCommand(args[0])) {
+            return new OperatorCli(environment, Thread.currentThread().getContextClassLoader()).run(args, out, err);
+        }
+
         if (Arrays.stream(args).anyMatch(arg -> arg.equals("--help") || arg.equals("-h"))) {
             out.print(usage());
             return OK;
@@ -75,13 +79,23 @@ public final class FulcrumLauncher {
 
     private static String usage() {
         return String.join(System.lineSeparator(),
-                "Usage: fulcrum [--profile=<profile>] [--tier=<tier>] [--role=<role>] [--mode=<plan|run>]",
+                "Usage: fulcrum <up|status|down|bundle|dev|author|identity> [options]",
+                "       fulcrum [--profile=<profile>] [--tier=<tier>] [--role=<role>] [--mode=<plan|run>]",
                 "               [--probe-host=<host>] [--probe-port=<port>] [--run-for=<duration>]",
+                "",
+                "Operator commands:",
+                "  up       create a single-machine run plan and start or render the selected deployment unit",
+                "  status   inspect the saved run plan",
+                "  down     stop the saved deployment unit",
+                "  bundle   declarative bundle commands (Phase 4)",
+                "  dev      author reload loop (Phase 5)",
+                "  author   author project commands (Phase 5)",
+                "  identity install credential commands (Phase 4)",
                 "",
                 "Profiles: single-machine, small-production, large-production",
                 "Tiers: in-memory, slim, full-engine (single-machine only; default in-memory)",
                 "Roles: authority-service, controller-service, worker-agent, paper-agent, velocity-agent, all",
-                "Default: --profile=single-machine --role=all --mode=plan",
+                "Internal image entrypoint default: --profile=single-machine --role=all --mode=plan",
                 "");
     }
 }

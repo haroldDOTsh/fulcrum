@@ -164,6 +164,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -189,6 +190,104 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class FulcrumLauncherTest {
     @TempDir
     private Path tempDir;
+
+    @Test
+    void operatorHelpListsSubcommandsAndKeepsInternalEntrypointVisible() {
+        LaunchResult result = run(RuntimeEnvironment.of(Map.of()), "--help");
+
+        assertEquals(FulcrumLauncher.OK, result.code());
+        assertEquals("", result.err());
+        assertTrue(result.out().contains("Usage: fulcrum <up|status|down|bundle|dev|author|identity>"));
+        assertTrue(result.out().contains("Internal image entrypoint default"));
+    }
+
+    @Test
+    void operatorUpDryRunWritesSupervisedRunPlanForSlimTier() throws Exception {
+        Path stateDir = tempDir.resolve("operator-state");
+
+        LaunchResult result = run(RuntimeEnvironment.of(Map.of()),
+                "up",
+                "--tier=slim",
+                "--state-dir=" + stateDir,
+                "--dry-run",
+                "--run-for=PT2S");
+
+        assertEquals(FulcrumLauncher.OK, result.code(), result.err());
+        assertEquals("", result.err());
+        assertTrue(result.out().contains("profile=single-machine"));
+        assertTrue(result.out().contains("tier=slim"));
+        assertTrue(result.out().contains("deploymentUnit=supervised-process"));
+        assertTrue(result.out().contains("fulcrum --profile=single-machine --tier=slim --role=all --mode=run --run-for=PT2S"));
+        String plan = Files.readString(stateDir.resolve("run-plan.json"));
+        assertTrue(plan.contains("\"schema\": \"fulcrum.operator-run-plan/v1\""));
+        assertTrue(plan.contains("\"deploymentUnit\": \"supervised-process\""));
+        assertTrue(plan.contains("\"tier\": \"slim\""));
+        assertFalse(plan.contains(".java"));
+        assertFalse(plan.contains("gradle"));
+    }
+
+    @Test
+    void operatorUpDryRunRoutesFullEngineToComposePlan() throws Exception {
+        Path stateDir = tempDir.resolve("compose-state");
+
+        LaunchResult result = run(RuntimeEnvironment.of(Map.of()),
+                "up",
+                "--tier=full-engine",
+                "--state-dir=" + stateDir,
+                "--dry-run");
+
+        assertEquals(FulcrumLauncher.OK, result.code(), result.err());
+        assertTrue(result.out().contains("deploymentUnit=compose"));
+        assertTrue(result.out().contains("docker compose -f fulcrum/compose/single-machine-full-engine.compose.yaml"));
+        String plan = Files.readString(stateDir.resolve("run-plan.json"));
+        assertTrue(plan.contains("\"deploymentUnit\": \"compose\""));
+        assertTrue(plan.contains("\"entrypoint\": \"docker compose\""));
+    }
+
+    @Test
+    void operatorStatusAndDownUseSavedRunPlan() {
+        Path stateDir = tempDir.resolve("status-state");
+        LaunchResult up = run(RuntimeEnvironment.of(Map.of()),
+                "up",
+                "--state-dir=" + stateDir,
+                "--dry-run");
+        assertEquals(FulcrumLauncher.OK, up.code(), up.err());
+
+        LaunchResult status = run(RuntimeEnvironment.of(Map.of()), "status", "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, status.code(), status.err());
+        assertTrue(status.out().contains("status=planned"));
+        assertTrue(status.out().contains("deploymentUnit=supervised-process"));
+
+        LaunchResult down = run(RuntimeEnvironment.of(Map.of()), "down", "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, down.code(), down.err());
+        assertTrue(down.out().contains("status=stopped"));
+
+        LaunchResult stopped = run(RuntimeEnvironment.of(Map.of()), "status", "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, stopped.code(), stopped.err());
+        assertTrue(stopped.out().contains("status=stopped"));
+    }
+
+    @Test
+    void operatorUpRejectsProductionProfilesWithHelmInstruction() {
+        LaunchResult result = run(RuntimeEnvironment.of(Map.of()),
+                "up",
+                "--profile=small-production",
+                "--dry-run");
+
+        assertEquals(FulcrumLauncher.USAGE_ERROR, result.code());
+        assertTrue(result.err().contains("use the Fulcrum Helm chart"));
+    }
+
+    @Test
+    void reservedOperatorGroupsHaveStableRefusalAndHelp() {
+        LaunchResult bundle = run(RuntimeEnvironment.of(Map.of()), "bundle", "list");
+        assertEquals(69, bundle.code());
+        assertTrue(bundle.err().contains("fulcrum bundle is reserved by ADR-0029"));
+
+        LaunchResult authorHelp = run(RuntimeEnvironment.of(Map.of()), "author", "--help");
+        assertEquals(FulcrumLauncher.OK, authorHelp.code());
+        assertTrue(authorHelp.out().contains("Usage: fulcrum author"));
+    }
 
     @Test
     void planModeListsAllServiceAndHostEntrypoints() {
