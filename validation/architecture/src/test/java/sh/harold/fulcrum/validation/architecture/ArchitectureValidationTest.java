@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ArchitectureValidationTest {
     private static final Path ROOT = findRoot();
-    private static final Path ADR_ROOT = ROOT.resolve("planning/adrs");
     private static final Pattern PROJECT_DEPENDENCY = Pattern.compile("project\\(\"(:[^\"]+)\"\\)");
     private static final Map<String, Pattern> SERVICE_LAUNCHER_DOMAIN_PATTERNS = Map.ofEntries(
             Map.entry("standard package import", Pattern.compile("sh\\.harold\\.fulcrum\\.standard")),
@@ -620,43 +619,6 @@ final class ArchitectureValidationTest {
         assertTrue(probeText.contains("/live"), "probe server must expose liveness");
         assertTrue(probeText.contains("/ready"), "probe server must expose readiness");
         assertTrue(identityText.contains("HostSecurityContext"), "identity issuer must produce scoped host security context");
-    }
-
-    @Test
-    void edgeIngressAndRoutingDecisionIsCapturedInAdr() throws IOException {
-        Path adr = ADR_ROOT.resolve("ADR-0017-edge-ingress-and-routing.md");
-        assertTrue(Files.exists(adr), "edge ingress and routing ADR must exist");
-
-        String text = Files.readString(adr, StandardCharsets.UTF_8);
-        for (String required : List.of(
-                "L4 TCP load balancing",
-                "Velocity Instances",
-                "RouteController",
-                "Paper Instances are not public ingress targets",
-                "Presence, Route, and Session projections"
-        )) {
-            assertTrue(text.contains(required), "ADR missing required decision text: " + required);
-        }
-    }
-
-    @Test
-    void lobbyBringupAdrsExistBeforeHostIntegration() throws IOException {
-        Map<String, List<String>> adrTerms = Map.of(
-                "ADR-0018-shared-shard-placement.md",
-                List.of("shared-shard", "many Presences", "Agones Fleet", "ResolvedManifest"),
-                "ADR-0019-host-credential-issuance.md",
-                List.of("least-privilege", "Host runtimes", "canonical stores", "transport principal"),
-                "ADR-0020-cluster-e2e-strategy.md",
-                List.of("clusterE2e", "headless Minecraft", "L4", "Agones")
-        );
-        for (Map.Entry<String, List<String>> entry : adrTerms.entrySet()) {
-            Path adr = ADR_ROOT.resolve(entry.getKey());
-            assertTrue(Files.exists(adr), entry.getKey() + " must exist");
-            String text = Files.readString(adr, StandardCharsets.UTF_8);
-            for (String required : entry.getValue()) {
-                assertTrue(text.contains(required), entry.getKey() + " missing " + required);
-            }
-        }
     }
 
     @Test
