@@ -1,0 +1,30 @@
+profile: large-production
+semanticModel: fulcrum-v2-substrate
+contractSet: fulcrum-step0-contracts
+
+topology:
+  placement: separated-service-families
+  redundancy: full
+  objectStorage: external-object-store
+
+stores:
+  kafka:
+    replicas: 3
+  postgres:
+    replicas: 1
+  cassandra:
+    replicas: 3
+  valkey:
+    replicas: 3
+
+roles:
+  authorityService:
+    replicas: 3
+  controllerService:
+    replicas: 2
+  workerAgent:
+    replicas: 3
+  paperAgent:
+    replicas: 2
+  velocityAgent:
+    replicas: 2

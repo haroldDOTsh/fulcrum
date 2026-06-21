@@ -1,0 +1,175 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fulcrum.name" . }}-kafka
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/service: kafka-command-log
+spec:
+  clusterIP: None
+  selector:
+    sh.harold.fulcrum/service: kafka-command-log
+  ports:
+    - name: broker
+      port: 9092
+      targetPort: broker
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fulcrum.name" . }}-kafka
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/service: kafka-command-log
+spec:
+  serviceName: {{ include "fulcrum.name" . }}-kafka
+  replicas: {{ .Values.stores.kafka.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: kafka-command-log
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: kafka-command-log
+    spec:
+      containers:
+        - name: kafka
+          image: {{ .Values.images.kafka | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: broker
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          env:
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://:9092,CONTROLLER://:9093
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://{{ include "fulcrum.name" . }}-kafka:9092
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fulcrum.name" . }}-postgres
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/service: postgres-record-store
+spec:
+  selector:
+    sh.harold.fulcrum/service: postgres-record-store
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fulcrum.name" . }}-postgres
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/service: postgres-record-store
+spec:
+  serviceName: {{ include "fulcrum.name" . }}-postgres
+  replicas: {{ .Values.stores.postgres.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: postgres-record-store
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: postgres-record-store
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fulcrum.name" . }}-cassandra
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/service: cassandra-hot-projections
+spec:
+  selector:
+    sh.harold.fulcrum/service: cassandra-hot-projections
+  ports:
+    - name: cql
+      port: 9042
+      targetPort: cql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fulcrum.name" . }}-cassandra
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/service: cassandra-hot-projections
+spec:
+  serviceName: {{ include "fulcrum.name" . }}-cassandra
+  replicas: {{ .Values.stores.cassandra.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: cassandra-hot-projections
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: cassandra-hot-projections
+    spec:
+      containers:
+        - name: cassandra
+          image: {{ .Values.images.cassandra | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: cql
+              containerPort: 9042
+          env:
+            - name: CASSANDRA_DC
+              value: {{ .Values.stores.cassandra.datacenter | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fulcrum.name" . }}-valkey
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/service: valkey-cache
+spec:
+  selector:
+    sh.harold.fulcrum/service: valkey-cache
+  ports:
+    - name: cache
+      port: 6379
+      targetPort: cache
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fulcrum.name" . }}-valkey
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/service: valkey-cache
+spec:
+  replicas: {{ .Values.stores.valkey.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/service: valkey-cache
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/service: valkey-cache
+    spec:
+      containers:
+        - name: valkey
+          image: {{ .Values.images.valkey | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: cache
+              containerPort: 6379

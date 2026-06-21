@@ -1,0 +1,51 @@
+profile: small-production
+semanticModel: fulcrum-v2-substrate
+contractSet: fulcrum-step0-contracts
+
+topology:
+  placement: co-located-service-families
+  redundancy: reduced
+  objectStorage: external-object-store
+
+imagePullPolicy: IfNotPresent
+
+images:
+  serviceLauncher: ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT
+  paperGameserver: ghcr.io/sh-harold/fulcrum-paper-gameserver:0.1.0-SNAPSHOT
+  velocityProxy: ghcr.io/sh-harold/fulcrum-velocity-proxy:0.1.0-SNAPSHOT
+  kafka: apache/kafka:4.3.0
+  postgres: postgres:18.4
+  cassandra: cassandra:5.0.8
+  valkey: valkey/valkey:9.1.0
+
+stores:
+  kafka:
+    replicas: 1
+  postgres:
+    replicas: 1
+    database: fulcrum
+    username: fulcrum
+    passwordSecretName: fulcrum-postgres-credentials
+  cassandra:
+    replicas: 1
+    datacenter: datacenter1
+  valkey:
+    replicas: 1
+
+objectStore:
+  endpoint: https://object-store.example.invalid
+  region: us-east-1
+  bucket: fulcrum-artifacts
+  credentialsSecretName: fulcrum-object-store-credentials
+
+roles:
+  authorityService:
+    replicas: 1
+  controllerService:
+    replicas: 1
+  workerAgent:
+    replicas: 1
+  paperAgent:
+    replicas: 1
+  velocityAgent:
+    replicas: 1

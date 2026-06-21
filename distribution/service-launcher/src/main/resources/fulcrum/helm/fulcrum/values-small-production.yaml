@@ -1,0 +1,30 @@
+profile: small-production
+semanticModel: fulcrum-v2-substrate
+contractSet: fulcrum-step0-contracts
+
+topology:
+  placement: co-located-service-families
+  redundancy: reduced
+  objectStorage: external-object-store
+
+stores:
+  kafka:
+    replicas: 1
+  postgres:
+    replicas: 1
+  cassandra:
+    replicas: 1
+  valkey:
+    replicas: 1
+
+roles:
+  authorityService:
+    replicas: 1
+  controllerService:
+    replicas: 1
+  workerAgent:
+    replicas: 1
+  paperAgent:
+    replicas: 1
+  velocityAgent:
+    replicas: 1

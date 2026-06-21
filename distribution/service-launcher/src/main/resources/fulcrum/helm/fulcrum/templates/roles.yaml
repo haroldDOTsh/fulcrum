@@ -1,0 +1,173 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fulcrum.name" . }}-authority-service
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/role: authority-service
+spec:
+  replicas: {{ .Values.roles.authorityService.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: authority-service
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: authority-service
+    spec:
+      containers:
+        - name: authority-service
+          image: {{ .Values.images.serviceLauncher | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["--profile={{ .Values.profile }}", "--role=authority-service", "--mode=run", "--probe-host=0.0.0.0", "--probe-port=8080"]
+          env:
+            - name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS
+              value: '{{ include "fulcrum.name" . }}-kafka:9092'
+            - name: FULCRUM_POSTGRES_JDBC_URL
+              value: 'jdbc:postgresql://{{ include "fulcrum.name" . }}-postgres:5432/{{ .Values.stores.postgres.database }}'
+            - name: FULCRUM_POSTGRES_USERNAME
+              value: {{ .Values.stores.postgres.username | quote }}
+            - name: FULCRUM_CASSANDRA_CONTACT_POINTS
+              value: '{{ include "fulcrum.name" . }}-cassandra:9042'
+            - name: FULCRUM_CASSANDRA_LOCAL_DATACENTER
+              value: {{ .Values.stores.cassandra.datacenter | quote }}
+            - name: FULCRUM_VALKEY_ENDPOINT
+              value: '{{ include "fulcrum.name" . }}-valkey:6379'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fulcrum.name" . }}-controller-service
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/role: controller-service
+spec:
+  replicas: {{ .Values.roles.controllerService.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: controller-service
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: controller-service
+    spec:
+      containers:
+        - name: controller-service
+          image: {{ .Values.images.serviceLauncher | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["--profile={{ .Values.profile }}", "--role=controller-service", "--mode=run", "--probe-host=0.0.0.0", "--probe-port=8080"]
+          env:
+            - name: FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS
+              value: '{{ include "fulcrum.name" . }}-kafka:9092'
+            - name: FULCRUM_AGONES_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: FULCRUM_CONTROL_STATE_TOPIC
+              value: ctrl.state
+            - name: FULCRUM_HOST_COMMAND_TOPIC
+              value: host.paper.commands
+            - name: FULCRUM_HOST_OBSERVATION_TOPIC
+              value: host.observation
+            - name: FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC
+              value: host.velocity.routes
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fulcrum.name" . }}-worker-agent
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/role: worker-agent
+spec:
+  replicas: {{ .Values.roles.workerAgent.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: worker-agent
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: worker-agent
+    spec:
+      containers:
+        - name: worker-agent
+          image: {{ .Values.images.serviceLauncher | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["--profile={{ .Values.profile }}", "--role=worker-agent", "--mode=run", "--probe-host=0.0.0.0", "--probe-port=8080"]
+          env:
+            - name: FULCRUM_WORKER_KAFKA_BOOTSTRAP_SERVERS
+              value: '{{ include "fulcrum.name" . }}-kafka:9092'
+            - name: FULCRUM_WORKER_JOB_TOPIC
+              value: worker.jobs
+            - name: FULCRUM_WORKER_RESULT_TOPIC
+              value: worker.results
+            - name: FULCRUM_WORKER_OBJECT_BUCKET
+              value: {{ .Values.objectStore.bucket | quote }}
+            - name: FULCRUM_OBJECT_STORE_MODE
+              value: s3
+            - name: FULCRUM_OBJECT_STORE_ENDPOINT
+              value: {{ .Values.objectStore.endpoint | quote }}
+            - name: FULCRUM_OBJECT_STORE_REGION
+              value: {{ .Values.objectStore.region | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fulcrum.name" . }}-paper-agent
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/role: paper-agent
+spec:
+  replicas: {{ .Values.roles.paperAgent.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: paper-agent
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: paper-agent
+    spec:
+      containers:
+        - name: paper-agent
+          image: {{ .Values.images.paperGameserver | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["--profile={{ .Values.profile }}", "--role=paper-agent", "--mode=run", "--probe-host=0.0.0.0", "--probe-port=18081"]
+          env:
+            - name: FULCRUM_PAPER_SERVER_ROOT
+              value: /var/fulcrum/paper
+            - name: FULCRUM_PAPER_KAFKA_BOOTSTRAP_SERVERS
+              value: '{{ include "fulcrum.name" . }}-kafka:9092'
+            - name: FULCRUM_OBJECT_STORE_MODE
+              value: s3
+            - name: FULCRUM_OBJECT_STORE_ENDPOINT
+              value: {{ .Values.objectStore.endpoint | quote }}
+            - name: FULCRUM_VALKEY_ENDPOINT
+              value: '{{ include "fulcrum.name" . }}-valkey:6379'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fulcrum.name" . }}-velocity-agent
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/role: velocity-agent
+spec:
+  replicas: {{ .Values.roles.velocityAgent.replicas }}
+  selector:
+    matchLabels:
+      sh.harold.fulcrum/role: velocity-agent
+  template:
+    metadata:
+      labels:
+        sh.harold.fulcrum/role: velocity-agent
+    spec:
+      containers:
+        - name: velocity-agent
+          image: {{ .Values.images.velocityProxy | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["--profile={{ .Values.profile }}", "--role=velocity-agent", "--mode=run", "--probe-host=0.0.0.0", "--probe-port=8080"]
+          env:
+            - name: FULCRUM_VELOCITY_SERVER_ROOT
+              value: /opt/fulcrum/velocity
+            - name: FULCRUM_VELOCITY_KAFKA_BOOTSTRAP_SERVERS
+              value: '{{ include "fulcrum.name" . }}-kafka:9092'
+            - name: FULCRUM_VALKEY_ENDPOINT
+              value: '{{ include "fulcrum.name" . }}-valkey:6379'
