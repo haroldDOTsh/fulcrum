@@ -19,6 +19,7 @@ public record AuthorityBackendRegistrationReceipt(
         Instant issuedAt,
         String receiptId,
         Optional<AuthorityBackendRegistrationRejectionReason> rejectionReason,
+        Optional<String> artifactVerificationEvidence,
         String signature) {
     public AuthorityBackendRegistrationReceipt {
         status = Objects.requireNonNull(status, "status");
@@ -35,9 +36,14 @@ public record AuthorityBackendRegistrationReceipt(
         issuedAt = Objects.requireNonNull(issuedAt, "issuedAt");
         receiptId = AuthoritySdkNames.requireNonBlank(receiptId, "receiptId");
         rejectionReason = rejectionReason == null ? Optional.empty() : rejectionReason;
+        artifactVerificationEvidence = artifactVerificationEvidence == null ? Optional.empty() : artifactVerificationEvidence
+                .map(evidence -> AuthoritySdkNames.requireNonBlank(evidence, "artifactVerificationEvidence"));
         signature = AuthoritySdkNames.requireNonBlank(signature, "signature");
         if (status == AuthorityBackendRegistrationStatus.ADMITTED && principalId.isEmpty()) {
             throw new IllegalArgumentException("admitted receipt must include principalId");
+        }
+        if (status == AuthorityBackendRegistrationStatus.ADMITTED && artifactVerificationEvidence.isEmpty()) {
+            throw new IllegalArgumentException("admitted receipt must include artifactVerificationEvidence");
         }
         if (status == AuthorityBackendRegistrationStatus.DENIED && rejectionReason.isEmpty()) {
             throw new IllegalArgumentException("denied receipt must include rejectionReason");
@@ -59,7 +65,8 @@ public record AuthorityBackendRegistrationReceipt(
                 + "|fencingEpoch=" + fencingEpoch
                 + "|issuedAt=" + issuedAt
                 + "|receiptId=" + receiptId
-                + "|rejectionReason=" + rejectionReason.map(Enum::name).orElse("none");
+                + "|rejectionReason=" + rejectionReason.map(Enum::name).orElse("none")
+                + "|artifactVerificationEvidence=" + artifactVerificationEvidence.orElse("none");
     }
 
     public String signedWireValue() {

@@ -62,6 +62,7 @@ public final class AuthorityBackendRegistrationWireCodec {
         putSecurityContext(fields, checked.securityContext());
         fields.put("descriptorDigest", checked.descriptorDigest());
         fields.put("bundleDigest", checked.bundleDigest());
+        putArtifactVerification(fields, checked.artifactVerification());
         fields.put("sdkVersion", checked.sdkVersion());
         fields.put("requestedAt", checked.requestedAt().toString());
         return encode(fields);
@@ -75,6 +76,7 @@ public final class AuthorityBackendRegistrationWireCodec {
                 securityContext(fields),
                 required(fields, "descriptorDigest"),
                 required(fields, "bundleDigest"),
+                artifactVerification(fields),
                 required(fields, "sdkVersion"),
                 Instant.parse(required(fields, "requestedAt")));
     }
@@ -93,6 +95,7 @@ public final class AuthorityBackendRegistrationWireCodec {
         fields.put("issuedAt", checked.issuedAt().toString());
         fields.put("receiptId", checked.receiptId());
         putOptional(fields, "rejectionReason", checked.rejectionReason().map(Enum::name));
+        putOptional(fields, "artifactVerificationEvidence", checked.artifactVerificationEvidence());
         fields.put("signature", checked.signature());
         return encode(fields);
     }
@@ -115,6 +118,7 @@ public final class AuthorityBackendRegistrationWireCodec {
                 Instant.parse(required(fields, "issuedAt")),
                 required(fields, "receiptId"),
                 rejectionReason,
+                optional(fields, "artifactVerificationEvidence"),
                 required(fields, "signature"));
     }
 
@@ -447,6 +451,31 @@ public final class AuthorityBackendRegistrationWireCodec {
                         new PrincipalId(required(fields, "security.identity.principalId"))),
                 required(fields, "security.credentialRef"),
                 new HostCredentialScope(grants)));
+    }
+
+    private static void putArtifactVerification(
+            Map<String, String> fields,
+            Optional<AuthorityArtifactVerificationEvidence> artifactVerification) {
+        fields.put("artifactVerification.present", Boolean.toString(artifactVerification.isPresent()));
+        artifactVerification.ifPresent(evidence -> {
+            fields.put("artifactVerification.verified", Boolean.toString(evidence.verified()));
+            fields.put("artifactVerification.sourceKind", evidence.sourceKind());
+            fields.put("artifactVerification.sourceReference", evidence.sourceReference());
+            fields.put("artifactVerification.digest", evidence.digest());
+            fields.put("artifactVerification.evidence", evidence.evidence());
+        });
+    }
+
+    private static Optional<AuthorityArtifactVerificationEvidence> artifactVerification(Map<String, String> fields) {
+        if (!bool(fields, "artifactVerification.present")) {
+            return Optional.empty();
+        }
+        return Optional.of(new AuthorityArtifactVerificationEvidence(
+                bool(fields, "artifactVerification.verified"),
+                required(fields, "artifactVerification.sourceKind"),
+                required(fields, "artifactVerification.sourceReference"),
+                required(fields, "artifactVerification.digest"),
+                required(fields, "artifactVerification.evidence")));
     }
 
     private static void putStrings(Map<String, String> fields, String prefix, List<String> values) {

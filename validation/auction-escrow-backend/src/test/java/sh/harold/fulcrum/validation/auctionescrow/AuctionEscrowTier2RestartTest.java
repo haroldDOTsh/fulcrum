@@ -125,7 +125,13 @@ final class AuctionEscrowTier2RestartTest {
                 NOW,
                 "receipt-auction-escrow",
                 Optional.empty(),
+                Optional.of(artifactEvidence("sha256:auction-escrow-backend")),
                 AuthorityBackendDescriptorDigests.sha256Hex("receipt-auction-escrow"));
+    }
+
+    private static String artifactEvidence(String digest) {
+        return "verified=true|sourceKind=OCI|sourceReference=oci://ghcr.io/sh-harold/auction-escrow-backend@"
+                + digest + "|digest=" + digest + "|evidence=cosign:test";
     }
 
     private static AuthorityCommand<AuctionEscrowCommand> command(

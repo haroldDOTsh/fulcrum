@@ -8,6 +8,7 @@ import sh.harold.fulcrum.capability.api.CapabilityScope;
 import sh.harold.fulcrum.capability.api.CapabilityVersion;
 import sh.harold.fulcrum.capability.api.ContributionDeclaration;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
+import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationClient;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationReceipt;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationRequest;
@@ -40,6 +41,11 @@ public final class NoopAuthorityBackend {
                 descriptor(),
                 securityContext,
                 BUNDLE_DIGEST,
+                AuthorityArtifactVerificationEvidence.verified(
+                        "OCI",
+                        "oci://ghcr.io/sh-harold/noop-backend@sha256:" + BUNDLE_DIGEST,
+                        BUNDLE_DIGEST,
+                        "cosign:test"),
                 requestedAt));
     }
 

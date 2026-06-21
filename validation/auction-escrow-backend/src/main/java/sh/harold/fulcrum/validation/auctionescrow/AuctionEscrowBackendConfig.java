@@ -9,6 +9,7 @@ import sh.harold.fulcrum.host.api.HostInstanceIdentity;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendDescriptorDigests;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendGrants;
+import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationRequest;
 
 import java.net.URI;
@@ -119,6 +120,11 @@ public record AuctionEscrowBackendConfig(
                 AuctionEscrowAuthority.descriptor(),
                 securityContext,
                 bundleDigest,
+                AuthorityArtifactVerificationEvidence.verified(
+                        "OCI",
+                        "oci://ghcr.io/sh-harold/auction-escrow-backend@sha256:" + bundleDigest,
+                        bundleDigest,
+                        "cosign:test"),
                 requestedAt);
     }
 

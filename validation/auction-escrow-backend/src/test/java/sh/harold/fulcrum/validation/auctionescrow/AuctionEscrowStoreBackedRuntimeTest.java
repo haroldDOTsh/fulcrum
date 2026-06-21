@@ -33,6 +33,7 @@ import sh.harold.fulcrum.data.store.postgresql.PostgresClientHandle;
 import sh.harold.fulcrum.host.api.HostCredentialScope;
 import sh.harold.fulcrum.host.api.HostInstanceIdentity;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
+import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendGrants;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationReceipt;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationRequest;
@@ -360,6 +361,7 @@ final class AuctionEscrowStoreBackedRuntimeTest {
                                 AuthorityBackendGrants.authorityDomain(AuctionEscrowAuthority.AUTHORITY_DOMAIN),
                                 AuthorityBackendGrants.resourceClass(AuctionEscrowAuthority.RESOURCE_CLASS))),
                 "sha256:auction-escrow-store-backed",
+                verification("sha256:auction-escrow-store-backed"),
                 NOW));
     }
 
@@ -378,7 +380,16 @@ final class AuctionEscrowStoreBackedRuntimeTest {
                 receipt.issuedAt().plusSeconds(1),
                 receipt.receiptId() + "-epoch-" + fencingEpoch,
                 receipt.rejectionReason(),
+                receipt.artifactVerificationEvidence(),
                 receipt.signature() + "-epoch-" + fencingEpoch);
+    }
+
+    private static AuthorityArtifactVerificationEvidence verification(String digest) {
+        return AuthorityArtifactVerificationEvidence.verified(
+                "OCI",
+                "oci://ghcr.io/sh-harold/auction-escrow-backend@" + digest,
+                digest,
+                "cosign:test");
     }
 
     private static AuthorityCommand<AuctionEscrowCommand> command(

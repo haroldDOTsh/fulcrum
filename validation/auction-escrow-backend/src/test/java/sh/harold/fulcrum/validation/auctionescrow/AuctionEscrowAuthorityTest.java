@@ -21,6 +21,7 @@ import sh.harold.fulcrum.data.authority.InMemoryIdempotencyLedger;
 import sh.harold.fulcrum.host.api.HostCredentialScope;
 import sh.harold.fulcrum.host.api.HostInstanceIdentity;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
+import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendGrants;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationReceipt;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationRequest;
@@ -122,6 +123,7 @@ final class AuctionEscrowAuthorityTest {
                 AuctionEscrowAuthority.descriptor(),
                 securityContext(),
                 "sha256:auction-escrow-backend",
+                verification("sha256:auction-escrow-backend"),
                 NOW));
 
         assertEquals(AuthorityBackendRegistrationStatus.ADMITTED, receipt.status());
@@ -185,6 +187,14 @@ final class AuctionEscrowAuthorityTest {
                 NOW,
                 "auction-escrow-test",
                 new InstanceId("instance-auction-escrow-test"));
+    }
+
+    private static AuthorityArtifactVerificationEvidence verification(String digest) {
+        return AuthorityArtifactVerificationEvidence.verified(
+                "OCI",
+                "oci://ghcr.io/sh-harold/auction-escrow-backend@" + digest,
+                digest,
+                "cosign:test");
     }
 
     private static HostSecurityContext securityContext() {

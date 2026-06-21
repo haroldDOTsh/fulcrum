@@ -135,6 +135,7 @@ import sh.harold.fulcrum.host.api.HostResourceFamily;
 import sh.harold.fulcrum.host.api.HostResourceGrant;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
 import sh.harold.fulcrum.host.api.HostSessionAttachment;
+import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationReceipt;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationRequest;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationStatus;
@@ -604,6 +605,11 @@ final class FulcrumLauncherTest {
                 descriptor,
                 securityContext,
                 "sha256:neutral-registration-bundle",
+                AuthorityArtifactVerificationEvidence.verified(
+                        "OCI",
+                        "oci://ghcr.io/sh-harold/neutral-registration@sha256:neutral-registration-bundle",
+                        "sha256:neutral-registration-bundle",
+                        "cosign:test"),
                 Instant.parse("2026-06-20T12:00:00Z"));
 
         try (ControllerRuntimeServiceEngine engine = new ControllerRuntimeServiceEngine(

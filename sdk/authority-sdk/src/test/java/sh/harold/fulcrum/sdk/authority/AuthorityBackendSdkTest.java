@@ -68,6 +68,7 @@ final class AuthorityBackendSdkTest {
                 NOW,
                 "receipt-denied",
                 Optional.of(AuthorityBackendRegistrationRejectionReason.MISSING_CREDENTIAL),
+                Optional.empty(),
                 AuthorityBackendDescriptorDigests.sha256Hex("denied"));
 
         IllegalStateException exception = assertThrows(
@@ -91,6 +92,7 @@ final class AuthorityBackendSdkTest {
                 NOW,
                 "receipt-admitted",
                 Optional.empty(),
+                Optional.of(verification("sha256:no-op-bundle").wireValue()),
                 AuthorityBackendDescriptorDigests.sha256Hex("admitted"));
 
         assertEquals(admitted, AuthorityBackendRuntimeGuard.requireAdmitted(admitted));
@@ -104,6 +106,7 @@ final class AuthorityBackendSdkTest {
                 descriptor,
                 securityContext,
                 "sha256:wire-bundle",
+                verification("sha256:wire-bundle"),
                 NOW);
 
         AuthorityBackendRegistrationRequest decodedRequest = AuthorityBackendRegistrationWireCodec.decodeRequest(
@@ -126,6 +129,7 @@ final class AuthorityBackendSdkTest {
                 NOW.plusSeconds(1),
                 "receipt-wire",
                 Optional.empty(),
+                Optional.of(request.artifactVerification().orElseThrow().wireValue()),
                 AuthorityBackendDescriptorDigests.sha256Hex("wire-signature"));
 
         assertEquals(
@@ -203,5 +207,13 @@ final class AuthorityBackendSdkTest {
                                 HostResourceFamily.RESOURCE_CLASS,
                                 HostAccessMode.READ,
                                 "external-authority")));
+    }
+
+    private static AuthorityArtifactVerificationEvidence verification(String digest) {
+        return AuthorityArtifactVerificationEvidence.verified(
+                "OCI",
+                "oci://ghcr.io/sh-harold/wire@sha256:" + digest,
+                digest,
+                "cosign:test");
     }
 }

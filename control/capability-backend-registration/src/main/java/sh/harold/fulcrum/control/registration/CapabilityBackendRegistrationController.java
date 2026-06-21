@@ -6,6 +6,7 @@ import sh.harold.fulcrum.capability.api.CapabilityValidationResult;
 import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlan;
 import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlanner;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
+import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendDescriptorDigests;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendGrants;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationClient;
@@ -41,6 +42,17 @@ public final class CapabilityBackendRegistrationController implements AuthorityB
             return denied(
                     checked,
                     AuthorityBackendRegistrationRejectionReason.INVALID_DESCRIPTOR_DIGEST,
+                    maybeSecurityContext,
+                    Optional.of(grantFingerprint));
+        }
+
+        Optional<AuthorityArtifactVerificationEvidence> artifactVerification = checked.artifactVerification();
+        if (artifactVerification.isEmpty()
+                || !artifactVerification.orElseThrow().verified()
+                || !artifactVerification.orElseThrow().digest().equals(checked.bundleDigest())) {
+            return denied(
+                    checked,
+                    AuthorityBackendRegistrationRejectionReason.ARTIFACT_VERIFICATION_FAILED,
                     maybeSecurityContext,
                     Optional.of(grantFingerprint));
         }
@@ -124,6 +136,8 @@ public final class CapabilityBackendRegistrationController implements AuthorityB
             String grantFingerprint) {
         return receipt.descriptorDigest().equals(request.descriptorDigest())
                 && receipt.bundleDigest().equals(request.bundleDigest())
+                && receipt.artifactVerificationEvidence()
+                .equals(request.artifactVerification().map(AuthorityArtifactVerificationEvidence::wireValue))
                 && receipt.principalId().filter(securityContext.identity().principalId()::equals).isPresent()
                 && receipt.grantFingerprint().filter(grantFingerprint::equals).isPresent();
     }
@@ -156,6 +170,7 @@ public final class CapabilityBackendRegistrationController implements AuthorityB
                 request.requestedAt(),
                 receiptId,
                 Optional.empty(),
+                request.artifactVerification().map(AuthorityArtifactVerificationEvidence::wireValue),
                 signature);
     }
 
@@ -185,6 +200,7 @@ public final class CapabilityBackendRegistrationController implements AuthorityB
                 request.requestedAt(),
                 receiptId,
                 Optional.of(reason),
+                request.artifactVerification().map(AuthorityArtifactVerificationEvidence::wireValue),
                 signature);
     }
 
@@ -219,6 +235,9 @@ public final class CapabilityBackendRegistrationController implements AuthorityB
                         + "|capabilityId=" + request.descriptor().capabilityId().value()
                         + "|descriptorDigest=" + request.descriptorDigest()
                         + "|bundleDigest=" + request.bundleDigest()
+                        + "|artifactVerificationEvidence=" + request.artifactVerification()
+                        .map(AuthorityArtifactVerificationEvidence::wireValue)
+                        .orElse("none")
                         + "|materializationPlanHash=" + materializationPlanHash
                         + "|principalId=" + securityContext.map(context -> context.identity().principalId().value()).orElse("none")
                         + "|grantFingerprint=" + grantFingerprint.orElse("none")

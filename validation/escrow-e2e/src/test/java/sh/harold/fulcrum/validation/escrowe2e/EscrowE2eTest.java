@@ -19,6 +19,7 @@ import sh.harold.fulcrum.data.authority.runtime.AuthorityRuntimeWorker;
 import sh.harold.fulcrum.host.api.HostCredentialScope;
 import sh.harold.fulcrum.host.api.HostInstanceIdentity;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
+import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendDescriptorDigests;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendGrants;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationReceipt;
@@ -130,7 +131,16 @@ final class EscrowE2eTest {
                                 AuthorityBackendGrants.authorityDomain(AuctionEscrowContract.AUTHORITY_DOMAIN),
                                 AuthorityBackendGrants.resourceClass(AuctionEscrowContract.RESOURCE_CLASS))),
                 "sha256:auction-escrow-e2e",
+                verification("sha256:auction-escrow-e2e"),
                 NOW));
+    }
+
+    private static AuthorityArtifactVerificationEvidence verification(String digest) {
+        return AuthorityArtifactVerificationEvidence.verified(
+                "OCI",
+                "oci://ghcr.io/sh-harold/auction-escrow-backend@" + digest,
+                digest,
+                "cosign:test");
     }
 
     private static AuthorityRuntimeWorker<AuctionEscrowState, AuctionEscrowCommand, AuctionEscrowReceipt> worker(EscrowRuntime runtime) {

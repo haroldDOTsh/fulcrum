@@ -12,6 +12,7 @@ public record AuthorityBackendRegistrationRequest(
         Optional<HostSecurityContext> securityContext,
         String descriptorDigest,
         String bundleDigest,
+        Optional<AuthorityArtifactVerificationEvidence> artifactVerification,
         String sdkVersion,
         Instant requestedAt) {
     public AuthorityBackendRegistrationRequest {
@@ -19,8 +20,25 @@ public record AuthorityBackendRegistrationRequest(
         securityContext = securityContext == null ? Optional.empty() : securityContext;
         descriptorDigest = AuthoritySdkNames.requireNonBlank(descriptorDigest, "descriptorDigest");
         bundleDigest = AuthoritySdkNames.requireNonBlank(bundleDigest, "bundleDigest");
+        artifactVerification = artifactVerification == null ? Optional.empty() : artifactVerification;
         sdkVersion = AuthoritySdkNames.requireNonBlank(sdkVersion, "sdkVersion");
         requestedAt = Objects.requireNonNull(requestedAt, "requestedAt");
+    }
+
+    public static AuthorityBackendRegistrationRequest credentialed(
+            CapabilityDescriptor descriptor,
+            HostSecurityContext securityContext,
+            String bundleDigest,
+            AuthorityArtifactVerificationEvidence artifactVerification,
+            Instant requestedAt) {
+        return new AuthorityBackendRegistrationRequest(
+                descriptor,
+                Optional.of(Objects.requireNonNull(securityContext, "securityContext")),
+                AuthorityBackendDescriptorDigests.descriptorDigest(descriptor),
+                bundleDigest,
+                Optional.of(Objects.requireNonNull(artifactVerification, "artifactVerification")),
+                AuthoritySdkVersion.CURRENT,
+                requestedAt);
     }
 
     public static AuthorityBackendRegistrationRequest credentialed(
@@ -33,6 +51,7 @@ public record AuthorityBackendRegistrationRequest(
                 Optional.of(Objects.requireNonNull(securityContext, "securityContext")),
                 AuthorityBackendDescriptorDigests.descriptorDigest(descriptor),
                 bundleDigest,
+                Optional.empty(),
                 AuthoritySdkVersion.CURRENT,
                 requestedAt);
     }
@@ -46,6 +65,7 @@ public record AuthorityBackendRegistrationRequest(
                 Optional.empty(),
                 AuthorityBackendDescriptorDigests.descriptorDigest(descriptor),
                 bundleDigest,
+                Optional.empty(),
                 AuthoritySdkVersion.CURRENT,
                 requestedAt);
     }

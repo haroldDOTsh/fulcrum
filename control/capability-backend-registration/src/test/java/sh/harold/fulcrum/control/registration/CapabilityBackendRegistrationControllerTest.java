@@ -14,6 +14,7 @@ import sh.harold.fulcrum.host.api.HostCredentialScope;
 import sh.harold.fulcrum.host.api.HostInstanceIdentity;
 import sh.harold.fulcrum.host.api.HostResourceGrant;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
+import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendDescriptorDigests;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendGrants;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationReceipt;
@@ -46,6 +47,7 @@ final class CapabilityBackendRegistrationControllerTest {
                 descriptor,
                 securityContext(authorityGrants(DOMAIN, RESOURCE_CLASS)),
                 BUNDLE_DIGEST,
+                verification(BUNDLE_DIGEST),
                 NOW);
 
         AuthorityBackendRegistrationReceipt admitted = controller.register(request);
@@ -85,6 +87,7 @@ final class CapabilityBackendRegistrationControllerTest {
                 descriptor,
                 securityContext(Set.of(AuthorityBackendGrants.resourceClass(RESOURCE_CLASS))),
                 BUNDLE_DIGEST,
+                verification(BUNDLE_DIGEST),
                 NOW);
 
         AuthorityBackendRegistrationReceipt receipt = controller.register(request);
@@ -103,6 +106,7 @@ final class CapabilityBackendRegistrationControllerTest {
                 Optional.of(securityContext(authorityGrants(DOMAIN, RESOURCE_CLASS))),
                 AuthorityBackendDescriptorDigests.sha256Hex("wrong-descriptor"),
                 BUNDLE_DIGEST,
+                Optional.of(verification(BUNDLE_DIGEST)),
                 "0.1.0-SNAPSHOT",
                 NOW);
 
@@ -120,12 +124,14 @@ final class CapabilityBackendRegistrationControllerTest {
                 descriptor("noop-backend", DOMAIN),
                 securityContext,
                 BUNDLE_DIGEST,
+                verification(BUNDLE_DIGEST),
                 NOW));
 
         AuthorityBackendRegistrationReceipt conflicting = controller.register(AuthorityBackendRegistrationRequest.credentialed(
                 descriptor("other-backend", DOMAIN),
                 securityContext,
                 "sha256:other-bundle",
+                verification("sha256:other-bundle"),
                 NOW.plusSeconds(1)));
 
         assertEquals(AuthorityBackendRegistrationStatus.ADMITTED, first.status());
@@ -140,6 +146,7 @@ final class CapabilityBackendRegistrationControllerTest {
                 descriptor("noop-backend", DOMAIN),
                 securityContext(authorityGrants(DOMAIN, RESOURCE_CLASS)),
                 BUNDLE_DIGEST,
+                verification(BUNDLE_DIGEST),
                 NOW);
 
         try (CapabilityBackendRegistrationHttpServer server = CapabilityBackendRegistrationHttpServer.start(
@@ -153,6 +160,22 @@ final class CapabilityBackendRegistrationControllerTest {
             assertEquals(Optional.of(PRINCIPAL), receipt.principalId());
             assertEquals(1, receipt.fencingEpoch());
         }
+    }
+
+    @Test
+    void deniesMissingArtifactVerificationBeforeAdmission() {
+        CapabilityBackendRegistrationController controller = new CapabilityBackendRegistrationController();
+        AuthorityBackendRegistrationRequest request = AuthorityBackendRegistrationRequest.credentialed(
+                descriptor("noop-backend", DOMAIN),
+                securityContext(authorityGrants(DOMAIN, RESOURCE_CLASS)),
+                BUNDLE_DIGEST,
+                NOW);
+
+        AuthorityBackendRegistrationReceipt receipt = controller.register(request);
+
+        assertEquals(AuthorityBackendRegistrationStatus.DENIED, receipt.status());
+        assertEquals(Optional.of(AuthorityBackendRegistrationRejectionReason.ARTIFACT_VERIFICATION_FAILED), receipt.rejectionReason());
+        assertEquals(0, receipt.fencingEpoch());
     }
 
     private static CapabilityDescriptor descriptor(String capabilityId, String authorityDomain) {
@@ -170,6 +193,14 @@ final class CapabilityBackendRegistrationControllerTest {
         return Set.of(
                 AuthorityBackendGrants.authorityDomain(authorityDomain),
                 AuthorityBackendGrants.resourceClass(resourceClass));
+    }
+
+    private static AuthorityArtifactVerificationEvidence verification(String digest) {
+        return AuthorityArtifactVerificationEvidence.verified(
+                "OCI",
+                "oci://ghcr.io/sh-harold/test@sha256:" + digest,
+                digest,
+                "cosign:test");
     }
 
     private static HostSecurityContext securityContext(Set<HostResourceGrant> grants) {
