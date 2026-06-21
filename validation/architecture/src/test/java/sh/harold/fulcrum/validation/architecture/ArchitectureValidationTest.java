@@ -37,6 +37,16 @@ final class ArchitectureValidationTest {
     );
     private static final Pattern DEFAULT_ROOT_GRAPH_STANDARD_MODULE =
             Pattern.compile("\"(?:standard-capabilities|validation:(?:standard-capabilities|fleet-e2e|synthetic-load)):");
+    private static final Map<String, String> PUBLISHED_SDK_COORDINATES = Map.ofEntries(
+            Map.entry(":platform:fulcrum-bom", "fulcrum-sdk-bom"),
+            Map.entry(":sdk:authoring-sdk", "authoring-sdk"),
+            Map.entry(":sdk:authority-sdk", "authority-sdk"),
+            Map.entry(":api:contract-api", "contract-api"),
+            Map.entry(":capability:capability-api", "capability-api"),
+            Map.entry(":host:host-api", "host-api"),
+            Map.entry(":host:tick-runtime-api", "tick-runtime-api"),
+            Map.entry(":api:kernel-api", "kernel-api")
+    );
     private static final Set<String> KERNEL_SOURCE_FILES = Set.of(
             "ArtifactId.java",
             "CapabilityId.java",
@@ -97,7 +107,7 @@ final class ArchitectureValidationTest {
             Map.entry(":host:tick-runtime-api", Set.of(":core:session-runtime", ":host:host-api")),
             Map.entry(":host:velocity-agent", Set.of(":capability:capability-bundle-runtime", ":host:host-api", ":data:route-contract")),
             Map.entry(":host:worker-agent", Set.of(":api:contract-api", ":api:kernel-api", ":host:host-api")),
-            Map.entry(":platform:fulcrum-bom", Set.of(":sdk:authoring-sdk", ":sdk:authority-sdk")),
+            Map.entry(":platform:fulcrum-bom", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":host:host-api", ":host:tick-runtime-api", ":sdk:authoring-sdk", ":sdk:authority-sdk")),
             Map.entry(":sdk:authoring-sdk", Set.of(":capability:capability-runtime", ":sdk:authority-sdk")),
             Map.entry(":sdk:authority-sdk", Set.of(":api:contract-api", ":api:kernel-api", ":capability:capability-api", ":data:authority-runtime", ":host:host-api")),
             Map.entry(":testkit:architecture-testkit", Set.of()),
@@ -177,6 +187,48 @@ final class ArchitectureValidationTest {
         assertFalse(
                 rootBuild.contains(":validation:synthetic-load"),
                 "root lifecycle checks must not depend on legacy synthetic-load validation");
+    }
+
+    @Test
+    void sdkPublicationSurfaceMatchesAdr0031CoordinateJail() throws IOException {
+        String rootBuild = Files.readString(ROOT.resolve("build.gradle.kts"), StandardCharsets.UTF_8);
+        String bomBuild = Files.readString(ROOT.resolve("platform/fulcrum-bom/build.gradle.kts"), StandardCharsets.UTF_8);
+        String scaffold = Files.readString(ROOT.resolve("sdk/authoring-sdk/src/main/java/sh/harold/fulcrum/sdk/authoring/AuthorBundleScaffold.java"), StandardCharsets.UTF_8);
+
+        PUBLISHED_SDK_COORDINATES.forEach((module, artifactId) ->
+                assertTrue(rootBuild.contains("\"" + module + "\" to \"" + artifactId + "\""),
+                        "root publication map missing " + module + " -> " + artifactId));
+        assertTrue(rootBuild.contains("removeUnpublishedFulcrumDependencies(publishedSdkArtifactIds)"),
+                "published SDK POMs must strip dependencies on unpublished Fulcrum internals");
+        assertTrue(rootBuild.contains("tasks.withType<GenerateModuleMetadata>()"),
+                "published SDK artifacts must disable Gradle module metadata while publication POMs are the coordinate jail");
+        assertTrue(rootBuild.contains("enabled = false"),
+                "published SDK Gradle module metadata must be disabled");
+        for (String forbidden : List.of(":data:store-", ":distribution:", ":validation:", ":control:")) {
+            assertFalse(rootBuild.contains("\"" + forbidden + "\" to "),
+                    "ADR-0031 publication map must not expose " + forbidden + " modules");
+        }
+
+        Set<String> bomProjects = Set.of(
+                ":api:kernel-api",
+                ":api:contract-api",
+                ":capability:capability-api",
+                ":host:host-api",
+                ":host:tick-runtime-api",
+                ":sdk:authoring-sdk",
+                ":sdk:authority-sdk");
+        var matcher = PROJECT_DEPENDENCY.matcher(bomBuild);
+        List<String> actualBomProjects = new ArrayList<>();
+        while (matcher.find()) {
+            actualBomProjects.add(matcher.group(1));
+        }
+        assertEquals(bomProjects, Set.copyOf(actualBomProjects), "Fulcrum SDK BOM must constrain only published SDK coordinates");
+        assertTrue(scaffold.contains("implementation(platform(\"sh.harold.fulcrum:fulcrum-sdk-bom:%s\"))"),
+                "author scaffold must import the published SDK BOM coordinate");
+        assertTrue(scaffold.contains("api(\"sh.harold.fulcrum:authority-sdk\")"),
+                "author scaffold must depend on the published authority SDK coordinate");
+        assertFalse(scaffold.contains("project("), "author scaffold must not depend on source checkout projects");
+        assertFalse(scaffold.contains("sdk-authority-sdk"), "author scaffold must not use pre-publication coordinate names");
     }
 
     @Test

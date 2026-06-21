@@ -55,7 +55,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class AuthoringSurfaceConformanceTest {
     private static final String BUCKET = "artifact-store";
     private static final String SUBSTRATE_FINGERPRINT = "fulcrum-substrate-0.1.0";
-    private static final String SDK_COORDINATE = "sh.harold.fulcrum:sdk-authority-sdk:" + AuthoritySdkVersion.CURRENT;
+    private static final String SDK_COORDINATE = "sh.harold.fulcrum:authority-sdk:" + AuthoritySdkVersion.CURRENT;
     private static final ContributionDeclaration PAPER_COMMAND =
             new ContributionDeclaration(CapabilityExtensionPoint.PAPER_COMMANDS, CapabilityScope.NETWORK, 0);
 

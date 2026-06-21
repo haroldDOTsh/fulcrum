@@ -8,15 +8,12 @@ javaPlatform {
 
 dependencies {
     constraints {
+        api(project(":api:kernel-api"))
+        api(project(":api:contract-api"))
+        api(project(":capability:capability-api"))
+        api(project(":host:host-api"))
+        api(project(":host:tick-runtime-api"))
         api(project(":sdk:authoring-sdk"))
         api(project(":sdk:authority-sdk"))
-        api(libs.kafka.clients)
-        api(libs.paper.api)
-        api(libs.testcontainers)
-        api(libs.testcontainers.cassandra)
-        api(libs.testcontainers.junit.jupiter)
-        api(libs.testcontainers.kafka)
-        api(libs.testcontainers.postgresql)
-        api(libs.velocity.api)
     }
 }

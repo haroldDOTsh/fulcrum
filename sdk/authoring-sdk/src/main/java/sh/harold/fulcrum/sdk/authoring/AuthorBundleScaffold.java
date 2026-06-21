@@ -32,12 +32,13 @@ public final class AuthorBundleScaffold {
                 }
 
                 dependencies {
-                    api("sh.harold.fulcrum:sdk-authority-sdk:%s")
+                    implementation(platform("sh.harold.fulcrum:fulcrum-sdk-bom:%s"))
+                    api("sh.harold.fulcrum:authority-sdk")
                 }
                 """.formatted(AuthoritySdkVersion.CURRENT);
         String fingerprint = """
                 substrate.fingerprint=%s
-                sdk.coordinate=sh.harold.fulcrum:sdk-authority-sdk:%s
+                sdk.coordinate=sh.harold.fulcrum:authority-sdk:%s
                 bundle.id=%s
                 """.formatted(request.substrateFingerprint(), AuthoritySdkVersion.CURRENT, request.bundleId());
         return new GeneratedAuthorBundle(

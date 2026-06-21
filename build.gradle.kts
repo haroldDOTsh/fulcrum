@@ -1,5 +1,10 @@
+import groovy.util.Node
+import groovy.util.NodeList
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.publish.PublishingExtension
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -9,6 +14,39 @@ plugins {
 }
 
 val fulcrumJavaVersion = JavaLanguageVersion.of(26)
+val publishedSdkArtifacts = mapOf(
+    ":platform:fulcrum-bom" to "fulcrum-sdk-bom",
+    ":sdk:authoring-sdk" to "authoring-sdk",
+    ":sdk:authority-sdk" to "authority-sdk",
+    ":api:contract-api" to "contract-api",
+    ":capability:capability-api" to "capability-api",
+    ":host:host-api" to "host-api",
+    ":host:tick-runtime-api" to "tick-runtime-api",
+    ":api:kernel-api" to "kernel-api",
+)
+val publishedSdkArtifactIds = publishedSdkArtifacts.values.toSet()
+
+fun MavenPublication.removeUnpublishedFulcrumDependencies(allowedArtifactIds: Set<String>) {
+    pom.withXml {
+        val dependencyNodes = (asNode().get("dependencies") as NodeList)
+            .filterIsInstance<Node>()
+            .flatMap { dependenciesNode -> dependenciesNode.children().filterIsInstance<Node>() }
+        dependencyNodes
+            .filter { dependencyNode ->
+                dependencyNode.childText("groupId") == "sh.harold.fulcrum"
+                        && dependencyNode.childText("artifactId") !in allowedArtifactIds
+            }
+            .forEach { dependencyNode -> dependencyNode.parent().remove(dependencyNode) }
+    }
+}
+
+fun Node.childText(name: String): String? {
+    return (get(name) as NodeList)
+        .filterIsInstance<Node>()
+        .firstOrNull()
+        ?.text()
+}
+
 val step0CheckedProjects = listOf(
     ":platform:fulcrum-bom",
     ":api:kernel-api",
@@ -99,6 +137,68 @@ allprojects {
 }
 
 subprojects {
+    publishedSdkArtifacts[path]?.let { publishedArtifactId ->
+        pluginManager.apply("maven-publish")
+        tasks.withType<GenerateModuleMetadata>().configureEach {
+            enabled = false
+        }
+        extensions.configure<PublishingExtension> {
+            repositories {
+                maven {
+                    name = "fulcrumLocalPublication"
+                    url = rootProject.layout.buildDirectory.dir("publication/sdk-maven").get().asFile.toURI()
+                }
+                maven {
+                    name = "githubPackages"
+                    url = uri("https://maven.pkg.github.com/sh-harold/fulcrum")
+                    credentials {
+                        username = providers.gradleProperty("gpr.user")
+                            .orElse(providers.environmentVariable("GITHUB_ACTOR"))
+                            .orElse("")
+                            .get()
+                        password = providers.gradleProperty("gpr.key")
+                            .orElse(providers.environmentVariable("GITHUB_TOKEN"))
+                            .orElse("")
+                            .get()
+                    }
+                }
+            }
+        }
+
+        plugins.withId("java") {
+            extensions.configure<PublishingExtension> {
+                publications {
+                    create<MavenPublication>("mavenJava") {
+                        from(components["java"])
+                        artifactId = publishedArtifactId
+                        removeUnpublishedFulcrumDependencies(publishedSdkArtifactIds)
+                        pom {
+                            name.set("Fulcrum ${publishedArtifactId}")
+                            description.set("Fulcrum v2 published SDK surface: ${publishedArtifactId}")
+                            url.set("https://github.com/sh-harold/fulcrum")
+                        }
+                    }
+                }
+            }
+        }
+
+        plugins.withId("java-platform") {
+            extensions.configure<PublishingExtension> {
+                publications {
+                    create<MavenPublication>("mavenJava") {
+                        from(components["javaPlatform"])
+                        artifactId = publishedArtifactId
+                        pom {
+                            name.set("Fulcrum SDK BOM")
+                            description.set("Version alignment BOM for Fulcrum v2 author-facing SDK artifacts")
+                            url.set("https://github.com/sh-harold/fulcrum")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     plugins.withId("java") {
         extensions.configure<JavaPluginExtension> {
             toolchain {
@@ -344,4 +444,20 @@ gradle.projectsEvaluated {
 
 tasks.named("check") {
     dependsOn("step8Check")
+}
+
+tasks.register("publishSdkToLocalPublicationRepo") {
+    group = "publishing"
+    description = "Publishes only the ADR-0031 Fulcrum SDK/BOM coordinates to build/publication/sdk-maven."
+    dependsOn(publishedSdkArtifacts.keys.map {
+        "$it:publishAllPublicationsToFulcrumLocalPublicationRepository"
+    })
+}
+
+tasks.register("publishSdkToGitHubPackages") {
+    group = "publishing"
+    description = "Publishes only the ADR-0031 Fulcrum SDK/BOM coordinates to GitHub Packages."
+    dependsOn(publishedSdkArtifacts.keys.map {
+        "$it:publishAllPublicationsToGithubPackagesRepository"
+    })
 }
