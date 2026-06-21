@@ -32,8 +32,8 @@ jobs:
             echo "Release tags must start with v, got ${tag}" >&2
             exit 1
           fi
-          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Release tag ${tag} is not SemVer-compatible" >&2
+          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag ${tag} must be SemVer-compatible without build metadata" >&2
             exit 1
           fi
           gradle_version="$(sed -n 's/.*version = "\([^"]*\)".*/\1/p' build.gradle.kts | head -n 1)"
