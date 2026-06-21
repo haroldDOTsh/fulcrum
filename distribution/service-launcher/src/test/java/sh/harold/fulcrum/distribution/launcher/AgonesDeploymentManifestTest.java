@@ -21,7 +21,7 @@ final class AgonesDeploymentManifestTest {
         assertTrue(manifest.contains("kind: Job"));
         assertTrue(manifest.contains("name: fulcrum-lobby-world-artifact"));
         assertTrue(manifest.contains("serviceAccountName: fulcrum-content-provisioner"));
-        assertTrue(manifest.contains("image: ghcr.io/sh-harold/fulcrum-service-launcher:dev"));
+        assertTrue(manifest.contains("image: ghcr.io/harolddotsh/fulcrum-service-launcher:dev"));
         assertTrue(manifest.contains("sh.harold.fulcrum.distribution.launcher.LobbyWorldArtifactProvisioner"));
         assertTrue(manifest.contains("name: FULCRUM_KAFKA_BOOTSTRAP_SERVERS"));
         assertTrue(manifest.contains("value: \"cmd.artifact-metadata\""));
@@ -319,9 +319,9 @@ final class AgonesDeploymentManifestTest {
         assertTrue(readme.contains("-Pfulcrum.kubeContext=<context>"));
         assertTrue(readme.contains("-Pfulcrum.kubeconfig=<path>"));
         assertTrue(readme.contains("this takes precedence over `-Pfulcrum.kubeContext`"));
-        assertTrue(readme.contains("ghcr.io/sh-harold/fulcrum-service-launcher:dev"));
-        assertTrue(readme.contains("ghcr.io/sh-harold/fulcrum-paper-gameserver:dev"));
-        assertTrue(readme.contains("ghcr.io/sh-harold/fulcrum-velocity-proxy:dev"));
+        assertTrue(readme.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:dev"));
+        assertTrue(readme.contains("ghcr.io/harolddotsh/fulcrum-paper-gameserver:dev"));
+        assertTrue(readme.contains("ghcr.io/harolddotsh/fulcrum-velocity-proxy:dev"));
         assertTrue(readme.contains("-Pfulcrum.serviceLauncherImage=<image-ref>"));
         assertTrue(readme.contains("-Pfulcrum.paperGameserverImage=<image-ref>"));
         assertTrue(readme.contains("-Pfulcrum.velocityProxyImage=<image-ref>"));

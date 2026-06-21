@@ -8,7 +8,7 @@ if ($null -eq $docker) {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $operatorHome = Split-Path -Parent $scriptDir
-$image = if ($env:FULCRUM_CLI_IMAGE) { $env:FULCRUM_CLI_IMAGE } else { "ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT" }
+$image = if ($env:FULCRUM_CLI_IMAGE) { $env:FULCRUM_CLI_IMAGE } else { "ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT" }
 
 docker run --rm -i `
     -v "${PWD}:/workspace" `

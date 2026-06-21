@@ -150,11 +150,11 @@ val serviceLauncherImageContext by tasks.registering(Sync::class) {
     }
 }
 
-val defaultServiceLauncherImage = "ghcr.io/sh-harold/fulcrum-service-launcher:dev"
+val defaultServiceLauncherImage = "ghcr.io/harolddotsh/fulcrum-service-launcher:dev"
 val serviceLauncherImageTag = providers.gradleProperty("fulcrum.serviceLauncherImage")
     .orElse(defaultServiceLauncherImage)
 val serviceLauncherPublishedImageTag = providers.gradleProperty("fulcrum.serviceLauncherPublishedImage")
-    .orElse("ghcr.io/sh-harold/fulcrum-service-launcher:${project.version}")
+    .orElse("ghcr.io/harolddotsh/fulcrum-service-launcher:${project.version}")
 val kubeContext = providers.gradleProperty("fulcrum.kubeContext")
 val agonesChartVersion = providers.gradleProperty("fulcrum.agonesChartVersion")
     .orElse(libs.versions.agones)
@@ -852,11 +852,11 @@ val paperGameserverImageContext by tasks.registering(Sync::class) {
     }
 }
 
-val defaultPaperGameserverImage = "ghcr.io/sh-harold/fulcrum-paper-gameserver:dev"
+val defaultPaperGameserverImage = "ghcr.io/harolddotsh/fulcrum-paper-gameserver:dev"
 val paperGameserverImageTag = providers.gradleProperty("fulcrum.paperGameserverImage")
     .orElse(defaultPaperGameserverImage)
 val paperGameserverPublishedImageTag = providers.gradleProperty("fulcrum.paperGameserverPublishedImage")
-    .orElse("ghcr.io/sh-harold/fulcrum-paper-gameserver:${project.version}")
+    .orElse("ghcr.io/harolddotsh/fulcrum-paper-gameserver:${project.version}")
 
 tasks.register<Exec>("paperGameserverImage") {
     group = "distribution"
@@ -887,11 +887,11 @@ val velocityProxyImageContext by tasks.registering(Sync::class) {
     }
 }
 
-val defaultVelocityProxyImage = "ghcr.io/sh-harold/fulcrum-velocity-proxy:dev"
+val defaultVelocityProxyImage = "ghcr.io/harolddotsh/fulcrum-velocity-proxy:dev"
 val velocityProxyImageTag = providers.gradleProperty("fulcrum.velocityProxyImage")
     .orElse(defaultVelocityProxyImage)
 val velocityProxyPublishedImageTag = providers.gradleProperty("fulcrum.velocityProxyPublishedImage")
-    .orElse("ghcr.io/sh-harold/fulcrum-velocity-proxy:${project.version}")
+    .orElse("ghcr.io/harolddotsh/fulcrum-velocity-proxy:${project.version}")
 
 tasks.register<Exec>("velocityProxyImage") {
     group = "distribution"

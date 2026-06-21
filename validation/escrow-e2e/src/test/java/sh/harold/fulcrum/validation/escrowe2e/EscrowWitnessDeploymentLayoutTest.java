@@ -39,7 +39,7 @@ final class EscrowWitnessDeploymentLayoutTest {
         assertTrue(manifest.contains("resources: [\"pods\", \"pods/log\"]"));
         assertTrue(manifest.contains("verbs: [\"delete\"]"));
         assertTrue(manifest.contains("kind: Job"));
-        assertTrue(manifest.contains("image: ghcr.io/sh-harold/fulcrum-escrow-e2e-witness:dev"));
+        assertTrue(manifest.contains("image: ghcr.io/harolddotsh/fulcrum-escrow-e2e-witness:dev"));
         assertTrue(manifest.contains("FULCRUM_WITNESS_MODE"));
         assertTrue(manifest.contains("value: \"live-store\""));
         assertTrue(manifest.contains("FULCRUM_WITNESS_DELETE_ESCROW_POD"));

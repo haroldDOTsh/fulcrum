@@ -122,7 +122,7 @@ public record AuctionEscrowBackendConfig(
                 bundleDigest,
                 AuthorityArtifactVerificationEvidence.verified(
                         "OCI",
-                        "oci://ghcr.io/sh-harold/auction-escrow-backend@sha256:" + bundleDigest,
+                        "oci://ghcr.io/harolddotsh/auction-escrow-backend@sha256:" + bundleDigest,
                         bundleDigest,
                         "cosign:test"),
                 requestedAt);

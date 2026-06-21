@@ -526,7 +526,7 @@ spec:
             - "until nc -z fulcrum-cassandra 9042; do echo waiting for cassandra; sleep 2; done"
       containers:
         - name: authority-schema-provisioner
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          image: ghcr.io/harolddotsh/fulcrum-service-launcher:dev
           imagePullPolicy: IfNotPresent
           command:
             - "java"
@@ -601,7 +601,7 @@ spec:
             - "until nc -z fulcrum-valkey 6379; do echo waiting for valkey; sleep 2; done"
       containers:
         - name: authority-service
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          image: ghcr.io/harolddotsh/fulcrum-service-launcher:dev
           imagePullPolicy: IfNotPresent
           args:
             - "--profile=single-machine"
@@ -700,7 +700,7 @@ spec:
             - "until nc -z agones-allocator.agones-system.svc.cluster.local 443; do echo waiting for agones allocator; sleep 2; done"
       containers:
         - name: controller-service
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          image: ghcr.io/harolddotsh/fulcrum-service-launcher:dev
           imagePullPolicy: IfNotPresent
           args:
             - "--profile=single-machine"
@@ -802,7 +802,7 @@ spec:
             - "until nc -z fulcrum-object-store 9000; do echo waiting for object store; sleep 2; done"
       containers:
         - name: worker-agent
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          image: ghcr.io/harolddotsh/fulcrum-service-launcher:dev
           imagePullPolicy: IfNotPresent
           args:
             - "--profile=single-machine"

@@ -23,7 +23,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: lobby-shared-shard-allocation-provisioner
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          image: ghcr.io/harolddotsh/fulcrum-service-launcher:dev
           imagePullPolicy: IfNotPresent
           command:
             - "java"
@@ -74,7 +74,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: lobby-shared-shard-allocation-materialization-verifier
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          image: ghcr.io/harolddotsh/fulcrum-service-launcher:dev
           imagePullPolicy: IfNotPresent
           command:
             - "java"

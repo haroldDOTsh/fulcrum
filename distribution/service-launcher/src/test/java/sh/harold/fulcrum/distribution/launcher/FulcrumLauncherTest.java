@@ -710,7 +710,7 @@ final class FulcrumLauncherTest {
                 "sha256:neutral-registration-bundle",
                 AuthorityArtifactVerificationEvidence.verified(
                         "OCI",
-                        "oci://ghcr.io/sh-harold/neutral-registration@sha256:neutral-registration-bundle",
+                        "oci://ghcr.io/harolddotsh/neutral-registration@sha256:neutral-registration-bundle",
                         "sha256:neutral-registration-bundle",
                         "cosign:test"),
                 Instant.parse("2026-06-20T12:00:00Z"));

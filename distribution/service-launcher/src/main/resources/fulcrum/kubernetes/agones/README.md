@@ -72,9 +72,9 @@ represented by a generated kubeconfig, such as the generated k3d/kind
 `kubectl`, Helm, and the cluster verifier. The task builds and applies:
 
 ```text
-ghcr.io/sh-harold/fulcrum-service-launcher:dev
-ghcr.io/sh-harold/fulcrum-paper-gameserver:dev
-ghcr.io/sh-harold/fulcrum-velocity-proxy:dev
+ghcr.io/harolddotsh/fulcrum-service-launcher:dev
+ghcr.io/harolddotsh/fulcrum-paper-gameserver:dev
+ghcr.io/harolddotsh/fulcrum-velocity-proxy:dev
 ```
 
 Override those image tags with:

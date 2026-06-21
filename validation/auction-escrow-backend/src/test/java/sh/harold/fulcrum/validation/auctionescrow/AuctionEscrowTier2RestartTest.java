@@ -130,7 +130,7 @@ final class AuctionEscrowTier2RestartTest {
     }
 
     private static String artifactEvidence(String digest) {
-        return "verified=true|sourceKind=OCI|sourceReference=oci://ghcr.io/sh-harold/auction-escrow-backend@"
+        return "verified=true|sourceKind=OCI|sourceReference=oci://ghcr.io/harolddotsh/auction-escrow-backend@"
                 + digest + "|digest=" + digest + "|evidence=cosign:test";
     }
 

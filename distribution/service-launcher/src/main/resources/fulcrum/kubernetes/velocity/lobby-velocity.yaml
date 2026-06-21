@@ -53,7 +53,7 @@ spec:
       serviceAccountName: fulcrum-velocity-agent
       containers:
         - name: velocity-proxy
-          image: ghcr.io/sh-harold/fulcrum-velocity-proxy:dev
+          image: ghcr.io/harolddotsh/fulcrum-velocity-proxy:dev
           imagePullPolicy: IfNotPresent
           ports:
             - name: minecraft

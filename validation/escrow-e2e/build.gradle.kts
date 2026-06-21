@@ -19,7 +19,7 @@ dependencies {
     implementation(project(":validation:auction-experience-bundle"))
 }
 
-val defaultEscrowWitnessImage = "ghcr.io/sh-harold/fulcrum-escrow-e2e-witness:dev"
+val defaultEscrowWitnessImage = "ghcr.io/harolddotsh/fulcrum-escrow-e2e-witness:dev"
 val escrowWitnessImageTag = providers.gradleProperty("fulcrum.escrowWitnessImage")
     .orElse(defaultEscrowWitnessImage)
 

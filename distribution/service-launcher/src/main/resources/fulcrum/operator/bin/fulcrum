@@ -8,7 +8,7 @@ fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 OPERATOR_HOME=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-IMAGE="${FULCRUM_CLI_IMAGE:-ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT}"
+IMAGE="${FULCRUM_CLI_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT}"
 
 exec docker run --rm -i \
   -v "$PWD:/workspace" \

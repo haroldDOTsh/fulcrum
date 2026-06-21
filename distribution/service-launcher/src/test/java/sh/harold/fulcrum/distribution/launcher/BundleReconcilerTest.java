@@ -106,7 +106,7 @@ final class BundleReconcilerTest {
     private static DeclaredBundle escrowBundle() {
         return new DeclaredBundle(
                 "auction-escrow",
-                "oci://ghcr.io/sh-harold/auction-escrow@sha256:auction-escrow",
+                "oci://ghcr.io/harolddotsh/auction-escrow@sha256:auction-escrow",
                 "sha256:auction-escrow",
                 "authority-backend",
                 "network",

@@ -198,7 +198,7 @@ final class CapabilityBackendRegistrationControllerTest {
     private static AuthorityArtifactVerificationEvidence verification(String digest) {
         return AuthorityArtifactVerificationEvidence.verified(
                 "OCI",
-                "oci://ghcr.io/sh-harold/test@sha256:" + digest,
+                "oci://ghcr.io/harolddotsh/test@sha256:" + digest,
                 digest,
                 "cosign:test");
     }

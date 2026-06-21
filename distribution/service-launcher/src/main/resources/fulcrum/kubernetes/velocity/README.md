@@ -212,7 +212,7 @@ the generated cluster must bind the conventional Minecraft port.
 The default Velocity image is:
 
 ```text
-ghcr.io/sh-harold/fulcrum-velocity-proxy:dev
+ghcr.io/harolddotsh/fulcrum-velocity-proxy:dev
 ```
 
 Override it with:

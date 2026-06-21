@@ -81,7 +81,7 @@ val auctionExperiencePaperBundleContext by tasks.registering(Sync::class) {
     from(auctionExperiencePaperBundleDeclarationFile)
 }
 
-val defaultPaperGameserverImage = "ghcr.io/sh-harold/fulcrum-paper-gameserver:dev"
+val defaultPaperGameserverImage = "ghcr.io/harolddotsh/fulcrum-paper-gameserver:dev"
 val paperGameserverImageTag = providers.gradleProperty("fulcrum.paperGameserverImage")
     .orElse(defaultPaperGameserverImage)
 val basePaperGameserverImageContextDirectory =

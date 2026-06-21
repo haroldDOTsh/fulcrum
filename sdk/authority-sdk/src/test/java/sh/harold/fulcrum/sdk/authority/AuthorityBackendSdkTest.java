@@ -212,7 +212,7 @@ final class AuthorityBackendSdkTest {
     private static AuthorityArtifactVerificationEvidence verification(String digest) {
         return AuthorityArtifactVerificationEvidence.verified(
                 "OCI",
-                "oci://ghcr.io/sh-harold/wire@sha256:" + digest,
+                "oci://ghcr.io/harolddotsh/wire@sha256:" + digest,
                 digest,
                 "cosign:test");
     }

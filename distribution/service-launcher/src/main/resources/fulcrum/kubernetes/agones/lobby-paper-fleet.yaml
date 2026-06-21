@@ -108,7 +108,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: lobby-world-artifact-provisioner
-          image: ghcr.io/sh-harold/fulcrum-service-launcher:dev
+          image: ghcr.io/harolddotsh/fulcrum-service-launcher:dev
           imagePullPolicy: IfNotPresent
           command:
             - "java"
@@ -204,7 +204,7 @@ spec:
           serviceAccountName: fulcrum-paper-agent
           containers:
             - name: paper-gameserver
-              image: ghcr.io/sh-harold/fulcrum-paper-gameserver:dev
+              image: ghcr.io/harolddotsh/fulcrum-paper-gameserver:dev
               imagePullPolicy: IfNotPresent
               args:
                 - "--profile=single-machine"

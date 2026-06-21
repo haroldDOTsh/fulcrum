@@ -25,7 +25,7 @@ final class AuctionEscrowDeploymentLayoutTest {
 
         assertTrue(build.contains("applicationName = \"auction-escrow-backend\""));
         assertTrue(build.contains("AuctionEscrowBackendMain"));
-        assertTrue(build.contains("val defaultAuctionEscrowImage = \"ghcr.io/sh-harold/fulcrum-auction-escrow:dev\""));
+        assertTrue(build.contains("val defaultAuctionEscrowImage = \"ghcr.io/harolddotsh/fulcrum-auction-escrow:dev\""));
         assertTrue(build.contains("auctionEscrowImageContext"));
         assertTrue(build.contains("auctionEscrowImage"));
         assertTrue(build.contains("auctionEscrowRenderManifests"));
@@ -87,7 +87,7 @@ final class AuctionEscrowDeploymentLayoutTest {
         assertFalse(manifest.contains("rollingUpdate"));
         assertFalse(manifest.contains("maxSurge"));
         assertTrue(manifest.contains("sh.harold.fulcrum/writer-authority: \"single\""));
-        assertTrue(manifest.contains("image: ghcr.io/sh-harold/fulcrum-auction-escrow:dev"));
+        assertTrue(manifest.contains("image: ghcr.io/harolddotsh/fulcrum-auction-escrow:dev"));
         assertTrue(manifest.contains("fieldPath: metadata.name"));
         assertTrue(manifest.contains("fieldPath: spec.nodeName"));
         assertTrue(manifest.contains("name: fulcrum-postgres-credentials"));

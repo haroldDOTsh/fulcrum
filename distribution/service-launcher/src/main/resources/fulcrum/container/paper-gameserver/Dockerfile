@@ -2,7 +2,7 @@ FROM eclipse-temurin:26-jre
 
 ARG PAPER_SERVER_URL="https://fill-data.papermc.io/v1/objects/6c59eefe2752f97ee79f83ad0a61fe14865a0976e4ac06597f53de6c44afd6c5/paper-26.1.2-70.jar"
 ARG PAPER_SERVER_SHA256="6c59eefe2752f97ee79f83ad0a61fe14865a0976e4ac06597f53de6c44afd6c5"
-ARG PAPER_DOWNLOAD_USER_AGENT="fulcrum-paper-gameserver/1.0 (https://github.com/sh-harold/fulcrum)"
+ARG PAPER_DOWNLOAD_USER_AGENT="fulcrum-paper-gameserver/1.0 (https://github.com/haroldDOTsh/fulcrum)"
 
 WORKDIR /opt/fulcrum/paper
 

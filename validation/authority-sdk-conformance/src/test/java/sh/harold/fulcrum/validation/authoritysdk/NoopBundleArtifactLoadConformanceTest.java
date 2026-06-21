@@ -118,9 +118,9 @@ final class NoopBundleArtifactLoadConformanceTest {
                 new ArtifactId("artifact.bundle.noop"),
                 "fulcrum-bundle-v1",
                 ArtifactSourceKind.OCI,
-                "oci://ghcr.io/sh-harold/noop@sha256:" + sha256(jarBytes),
+                "oci://ghcr.io/harolddotsh/noop@sha256:" + sha256(jarBytes),
                 Optional.of("sha256:" + sha256(jarBytes)),
-                Optional.of("cosign://ghcr.io/sh-harold/noop"),
+                Optional.of("cosign://ghcr.io/harolddotsh/noop"),
                 ArtifactSourcePolicy.production()));
         ContributionBundleLoader loader = new ContributionBundleLoader(
                 BUCKET,
@@ -156,7 +156,7 @@ final class NoopBundleArtifactLoadConformanceTest {
                 ArtifactVerificationStatus.VERIFIED,
                 Optional.of(pin),
                 ArtifactSourceKind.OCI,
-                "oci://ghcr.io/sh-harold/noop@sha256:" + sha256(jarBytes),
+                "oci://ghcr.io/harolddotsh/noop@sha256:" + sha256(jarBytes),
                 Optional.of("sha-256:" + sha256(jarBytes)),
                 Optional.of(cachedPath),
                 List.of(ArtifactVerificationStep.SOURCE_RESOLVED, ArtifactVerificationStep.DIGEST_PINNED),
@@ -165,7 +165,7 @@ final class NoopBundleArtifactLoadConformanceTest {
         VerifiedArtifact artifact = new VerifiedArtifact(
                 pin,
                 ArtifactSourceKind.OCI,
-                "oci://ghcr.io/sh-harold/noop@sha256:" + sha256(jarBytes),
+                "oci://ghcr.io/harolddotsh/noop@sha256:" + sha256(jarBytes),
                 cachedPath,
                 receipt);
         ContributionBundleLoader loader = new ContributionBundleLoader(

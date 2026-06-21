@@ -105,7 +105,7 @@ spec:
             - "until nc -z fulcrum-authority-registration 18085; do echo waiting for authority registration; sleep 2; done"
       containers:
         - name: auction-escrow
-          image: ghcr.io/sh-harold/fulcrum-auction-escrow:dev
+          image: ghcr.io/harolddotsh/fulcrum-auction-escrow:dev
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

@@ -18,7 +18,7 @@ final class VelocityDeploymentManifestTest {
         assertTrue(manifest.contains("kind: Deployment"));
         assertTrue(manifest.contains("name: fulcrum-velocity"));
         assertTrue(manifest.contains("replicas: 1"));
-        assertTrue(manifest.contains("image: ghcr.io/sh-harold/fulcrum-velocity-proxy:dev"));
+        assertTrue(manifest.contains("image: ghcr.io/harolddotsh/fulcrum-velocity-proxy:dev"));
         assertTrue(manifest.contains("containerPort: 25565"));
         assertTrue(manifest.contains("protocol: TCP"));
         assertTrue(manifest.contains("FULCRUM_VELOCITY_SERVER_ROOT: \"/opt/fulcrum/velocity\""));
@@ -234,7 +234,7 @@ final class VelocityDeploymentManifestTest {
         assertTrue(readme.contains("-Pfulcrum.lobbyPresenceAuthorityStateTimeout=PT60S"));
         assertTrue(readme.contains("-Pfulcrum.lobbyPresenceAuthorityStateFreshnessSkew=PT5S"));
         assertFalse(readme.contains("-Pfulcrum.lobbyStandardCapabilityStateTimeout"));
-        assertTrue(readme.contains("ghcr.io/sh-harold/fulcrum-velocity-proxy:dev"));
+        assertTrue(readme.contains("ghcr.io/harolddotsh/fulcrum-velocity-proxy:dev"));
         assertTrue(readme.contains("-Pfulcrum.velocityProxyImage=<image-ref>"));
         assertTrue(readme.contains("velocityL4RenderManifests"));
         assertTrue(readme.contains("velocityL4Apply"));

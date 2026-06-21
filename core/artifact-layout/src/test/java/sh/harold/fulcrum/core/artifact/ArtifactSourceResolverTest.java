@@ -67,9 +67,9 @@ final class ArtifactSourceResolverTest {
         ArtifactSourceResolver resolver = resolver(tempDir, bytes, ArtifactSignatureReceipt.verified("cosign:identity=fulcrum-release"));
         ArtifactSourceRequest request = request(
                 ArtifactSourceKind.OCI,
-                "oci://ghcr.io/sh-harold/auction@sha256:" + sha256(bytes),
+                "oci://ghcr.io/harolddotsh/auction@sha256:" + sha256(bytes),
                 Optional.of("sha256:" + sha256(bytes)),
-                Optional.of("cosign://ghcr.io/sh-harold/auction"),
+                Optional.of("cosign://ghcr.io/harolddotsh/auction"),
                 ArtifactSourcePolicy.production());
 
         VerifiedArtifact artifact = resolver.resolve(request);
@@ -86,9 +86,9 @@ final class ArtifactSourceResolverTest {
         ArtifactSourceResolver resolver = resolver(tempDir, bytes, ArtifactSignatureReceipt.verified("cosign"));
         ArtifactSourceRequest request = request(
                 ArtifactSourceKind.OCI,
-                "oci://ghcr.io/sh-harold/auction:latest",
+                "oci://ghcr.io/harolddotsh/auction:latest",
                 Optional.of("sha256:" + "0".repeat(64)),
-                Optional.of("cosign://ghcr.io/sh-harold/auction"),
+                Optional.of("cosign://ghcr.io/harolddotsh/auction"),
                 ArtifactSourcePolicy.production());
 
         ArtifactVerificationException exception = assertThrows(ArtifactVerificationException.class, () -> resolver.resolve(request));
@@ -103,9 +103,9 @@ final class ArtifactSourceResolverTest {
         ArtifactSourceResolver resolver = resolver(tempDir, bytes, ArtifactSignatureReceipt.verified("cosign"));
         ArtifactSourceRequest request = request(
                 ArtifactSourceKind.OCI,
-                "oci://ghcr.io/sh-harold/auction@sha256:" + sha256(bytes),
+                "oci://ghcr.io/harolddotsh/auction@sha256:" + sha256(bytes),
                 Optional.of("sha256:" + sha256(bytes)),
-                Optional.of("cosign://ghcr.io/sh-harold/auction"),
+                Optional.of("cosign://ghcr.io/harolddotsh/auction"),
                 ArtifactSourcePolicy.production());
         VerifiedArtifact artifact = resolver.resolve(request);
         Files.writeString(artifact.cachedPath(), "poisoned", StandardCharsets.UTF_8);

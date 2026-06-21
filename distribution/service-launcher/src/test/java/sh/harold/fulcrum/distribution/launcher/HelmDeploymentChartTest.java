@@ -34,9 +34,9 @@ final class HelmDeploymentChartTest {
         String stores = resource("fulcrum/helm/fulcrum/templates/stores.yaml");
         String combined = values + roles + stores;
 
-        assertTrue(values.contains("ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT"));
-        assertTrue(values.contains("ghcr.io/sh-harold/fulcrum-paper-gameserver:0.1.0-SNAPSHOT"));
-        assertTrue(values.contains("ghcr.io/sh-harold/fulcrum-velocity-proxy:0.1.0-SNAPSHOT"));
+        assertTrue(values.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT"));
+        assertTrue(values.contains("ghcr.io/harolddotsh/fulcrum-paper-gameserver:0.1.0-SNAPSHOT"));
+        assertTrue(values.contains("ghcr.io/harolddotsh/fulcrum-velocity-proxy:0.1.0-SNAPSHOT"));
         assertFalse(combined.contains("build:"));
         assertFalse(combined.contains(".java"));
         assertFalse(combined.toLowerCase(java.util.Locale.ROOT).contains("gradle"));

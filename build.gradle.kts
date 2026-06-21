@@ -150,7 +150,7 @@ subprojects {
                 }
                 maven {
                     name = "githubPackages"
-                    url = uri("https://maven.pkg.github.com/sh-harold/fulcrum")
+                    url = uri("https://maven.pkg.github.com/haroldDOTsh/fulcrum")
                     credentials {
                         username = providers.gradleProperty("gpr.user")
                             .orElse(providers.environmentVariable("GITHUB_ACTOR"))
@@ -175,7 +175,7 @@ subprojects {
                         pom {
                             name.set("Fulcrum ${publishedArtifactId}")
                             description.set("Fulcrum v2 published SDK surface: ${publishedArtifactId}")
-                            url.set("https://github.com/sh-harold/fulcrum")
+                            url.set("https://github.com/haroldDOTsh/fulcrum")
                         }
                     }
                 }
@@ -191,7 +191,7 @@ subprojects {
                         pom {
                             name.set("Fulcrum SDK BOM")
                             description.set("Version alignment BOM for Fulcrum v2 author-facing SDK artifacts")
-                            url.set("https://github.com/sh-harold/fulcrum")
+                            url.set("https://github.com/haroldDOTsh/fulcrum")
                         }
                     }
                 }

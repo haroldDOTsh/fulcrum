@@ -43,7 +43,7 @@ public final class NoopAuthorityBackend {
                 BUNDLE_DIGEST,
                 AuthorityArtifactVerificationEvidence.verified(
                         "OCI",
-                        "oci://ghcr.io/sh-harold/noop-backend@sha256:" + BUNDLE_DIGEST,
+                        "oci://ghcr.io/harolddotsh/noop-backend@sha256:" + BUNDLE_DIGEST,
                         BUNDLE_DIGEST,
                         "cosign:test"),
                 requestedAt));

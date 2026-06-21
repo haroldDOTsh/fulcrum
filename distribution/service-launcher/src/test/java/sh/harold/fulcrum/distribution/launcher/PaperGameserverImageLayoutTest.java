@@ -157,9 +157,9 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(launcherBuild.contains("serviceLauncherPublishedImageTag"));
         assertTrue(launcherBuild.contains("paperGameserverPublishedImageTag"));
         assertTrue(launcherBuild.contains("velocityProxyPublishedImageTag"));
-        assertTrue(launcherBuild.contains("ghcr.io/sh-harold/fulcrum-service-launcher:${project.version}"));
-        assertTrue(launcherBuild.contains("ghcr.io/sh-harold/fulcrum-paper-gameserver:${project.version}"));
-        assertTrue(launcherBuild.contains("ghcr.io/sh-harold/fulcrum-velocity-proxy:${project.version}"));
+        assertTrue(launcherBuild.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:${project.version}"));
+        assertTrue(launcherBuild.contains("ghcr.io/harolddotsh/fulcrum-paper-gameserver:${project.version}"));
+        assertTrue(launcherBuild.contains("ghcr.io/harolddotsh/fulcrum-velocity-proxy:${project.version}"));
         assertTrue(launcherBuild.contains("docker\", \"tag\""));
         assertTrue(launcherBuild.contains("docker\", \"push\""));
         assertTrue(launcherBuild.contains("cosign\", \"sign\", \"--yes\""));

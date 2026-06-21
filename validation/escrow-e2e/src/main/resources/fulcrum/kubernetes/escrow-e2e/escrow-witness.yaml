@@ -80,7 +80,7 @@ spec:
             - "until nc -z fulcrum-valkey 6379; do echo waiting for valkey; sleep 2; done"
       containers:
         - name: witness
-          image: ghcr.io/sh-harold/fulcrum-escrow-e2e-witness:dev
+          image: ghcr.io/harolddotsh/fulcrum-escrow-e2e-witness:dev
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

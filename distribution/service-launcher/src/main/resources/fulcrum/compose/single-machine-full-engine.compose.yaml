@@ -72,7 +72,7 @@ services:
       - fulcrum-object-store-data:/data
 
   authority-service:
-    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT}
+    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT}
     restart: unless-stopped
     command:
       - "--profile=single-machine"
@@ -100,7 +100,7 @@ services:
       FULCRUM_CREDENTIAL_REF: "service-account:fulcrum-authority-service"
 
   controller-service:
-    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT}
+    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT}
     restart: unless-stopped
     command:
       - "--profile=single-machine"
@@ -130,7 +130,7 @@ services:
       FULCRUM_CREDENTIAL_REF: "service-account:fulcrum-controller-service"
 
   worker-agent:
-    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/sh-harold/fulcrum-service-launcher:0.1.0-SNAPSHOT}
+    image: ${FULCRUM_SERVICE_LAUNCHER_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:0.1.0-SNAPSHOT}
     restart: unless-stopped
     command:
       - "--profile=single-machine"
@@ -159,7 +159,7 @@ services:
       FULCRUM_CREDENTIAL_REF: "service-account:fulcrum-worker-agent"
 
   paper-agent:
-    image: ${FULCRUM_PAPER_GAMESERVER_IMAGE:-ghcr.io/sh-harold/fulcrum-paper-gameserver:0.1.0-SNAPSHOT}
+    image: ${FULCRUM_PAPER_GAMESERVER_IMAGE:-ghcr.io/harolddotsh/fulcrum-paper-gameserver:0.1.0-SNAPSHOT}
     restart: unless-stopped
     command:
       - "--profile=single-machine"
@@ -219,7 +219,7 @@ services:
       - fulcrum-paper-state:/var/fulcrum/paper
 
   velocity-agent:
-    image: ${FULCRUM_VELOCITY_PROXY_IMAGE:-ghcr.io/sh-harold/fulcrum-velocity-proxy:0.1.0-SNAPSHOT}
+    image: ${FULCRUM_VELOCITY_PROXY_IMAGE:-ghcr.io/harolddotsh/fulcrum-velocity-proxy:0.1.0-SNAPSHOT}
     restart: unless-stopped
     command:
       - "--profile=single-machine"

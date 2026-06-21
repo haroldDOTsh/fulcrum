@@ -24,7 +24,7 @@ dependencies {
     testImplementation(project(":validation:auction-experience-bundle"))
 }
 
-val defaultAuctionEscrowImage = "ghcr.io/sh-harold/fulcrum-auction-escrow:dev"
+val defaultAuctionEscrowImage = "ghcr.io/harolddotsh/fulcrum-auction-escrow:dev"
 val auctionEscrowImageTag = providers.gradleProperty("fulcrum.auctionEscrowImage")
     .orElse(defaultAuctionEscrowImage)
 

@@ -233,7 +233,7 @@ public final class HeadlessAuctionBotWitness {
     private static AuthorityArtifactVerificationEvidence verification(String digest) {
         return AuthorityArtifactVerificationEvidence.verified(
                 "OCI",
-                "oci://ghcr.io/sh-harold/auction-escrow-backend@" + digest,
+                "oci://ghcr.io/harolddotsh/auction-escrow-backend@" + digest,
                 digest,
                 "cosign:test");
     }
