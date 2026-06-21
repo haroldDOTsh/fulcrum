@@ -44,7 +44,7 @@ final class OperatorCli {
                 case "bundle" -> new BundleOperatorCommands().run(slice(args), out, err);
                 case "identity" -> new IdentityOperatorCommands().run(slice(args), out, err);
                 case "author" -> new AuthorOperatorCommands().run(slice(args), out, err);
-                case "dev" -> unavailable(args[0], slice(args), out, err);
+                case "dev" -> new DevOperatorCommands().run(slice(args), out, err);
                 default -> throw new IllegalArgumentException("Unknown fulcrum command: " + args[0]);
             };
         } catch (IllegalArgumentException exception) {

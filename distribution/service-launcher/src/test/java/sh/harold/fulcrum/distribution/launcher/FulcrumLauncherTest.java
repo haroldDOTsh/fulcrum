@@ -288,9 +288,9 @@ final class FulcrumLauncherTest {
         assertEquals(FulcrumLauncher.OK, authorHelp.code());
         assertTrue(authorHelp.out().contains("Usage: fulcrum author"));
 
-        LaunchResult dev = run(RuntimeEnvironment.of(Map.of()), "dev", "watch");
-        assertEquals(69, dev.code());
-        assertTrue(dev.err().contains("fulcrum dev is reserved by ADR-0029"));
+        LaunchResult devHelp = run(RuntimeEnvironment.of(Map.of()), "dev", "--help");
+        assertEquals(FulcrumLauncher.OK, devHelp.code());
+        assertTrue(devHelp.out().contains("Usage: fulcrum dev"));
     }
 
     @Test
