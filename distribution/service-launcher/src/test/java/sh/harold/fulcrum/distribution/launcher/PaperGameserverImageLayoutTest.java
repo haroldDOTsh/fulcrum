@@ -149,6 +149,35 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(velocityServer.getProperty("sha256").matches("[a-f0-9]{64}"));
     }
 
+    @Test
+    void ociPublicationTasksPushSignAndDescribeReleaseManifest() throws IOException {
+        String launcherBuild = Files.readString(Path.of("build.gradle.kts"));
+        String rootBuild = Files.readString(Path.of("..", "..", "build.gradle.kts"));
+
+        assertTrue(launcherBuild.contains("serviceLauncherPublishedImageTag"));
+        assertTrue(launcherBuild.contains("paperGameserverPublishedImageTag"));
+        assertTrue(launcherBuild.contains("velocityProxyPublishedImageTag"));
+        assertTrue(launcherBuild.contains("ghcr.io/sh-harold/fulcrum-service-launcher:${project.version}"));
+        assertTrue(launcherBuild.contains("ghcr.io/sh-harold/fulcrum-paper-gameserver:${project.version}"));
+        assertTrue(launcherBuild.contains("ghcr.io/sh-harold/fulcrum-velocity-proxy:${project.version}"));
+        assertTrue(launcherBuild.contains("docker\", \"tag\""));
+        assertTrue(launcherBuild.contains("docker\", \"push\""));
+        assertTrue(launcherBuild.contains("cosign\", \"sign\", \"--yes\""));
+        assertTrue(launcherBuild.contains("tasks.register(\"publishFulcrumImages\")"));
+        assertTrue(launcherBuild.contains("tasks.register(\"signFulcrumImages\")"));
+        assertTrue(launcherBuild.contains("tasks.register(\"writeFulcrumReleaseManifest\")"));
+        assertTrue(launcherBuild.contains("\\\"schema\\\": \\\"fulcrum.release-manifest/v1\\\""));
+        assertTrue(launcherBuild.contains("\\\"productionFormat\\\": \\\"oci\\\""));
+        assertTrue(launcherBuild.contains("\\\"signaturePolicy\\\": \\\"cosign-fail-closed\\\""));
+        assertTrue(launcherBuild.contains("sh.harold.fulcrum:fulcrum-sdk-bom:${project.version}"));
+        assertTrue(launcherBuild.contains("sh.harold.fulcrum:authority-sdk:${project.version}"));
+
+        assertTrue(rootBuild.contains("tasks.register(\"publishFulcrumDistribution\")"));
+        assertTrue(rootBuild.contains("publishSdkToGitHubPackages"));
+        assertTrue(rootBuild.contains(":distribution:service-launcher:signFulcrumImages"));
+        assertTrue(rootBuild.contains(":distribution:service-launcher:writeFulcrumReleaseManifest"));
+    }
+
     private static String resource(String name) throws IOException {
         try (var stream = PaperGameserverImageLayoutTest.class.getClassLoader().getResourceAsStream(name)) {
             if (stream == null) {

@@ -1,4 +1,5 @@
 import org.gradle.api.GradleException
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.Sync
 import org.gradle.jvm.tasks.Jar
@@ -74,6 +75,8 @@ val serviceLauncherImageContext by tasks.registering(Sync::class) {
 val defaultServiceLauncherImage = "ghcr.io/sh-harold/fulcrum-service-launcher:dev"
 val serviceLauncherImageTag = providers.gradleProperty("fulcrum.serviceLauncherImage")
     .orElse(defaultServiceLauncherImage)
+val serviceLauncherPublishedImageTag = providers.gradleProperty("fulcrum.serviceLauncherPublishedImage")
+    .orElse("ghcr.io/sh-harold/fulcrum-service-launcher:${project.version}")
 val kubeContext = providers.gradleProperty("fulcrum.kubeContext")
 val agonesChartVersion = providers.gradleProperty("fulcrum.agonesChartVersion")
     .orElse(libs.versions.agones)
@@ -774,6 +777,8 @@ val paperGameserverImageContext by tasks.registering(Sync::class) {
 val defaultPaperGameserverImage = "ghcr.io/sh-harold/fulcrum-paper-gameserver:dev"
 val paperGameserverImageTag = providers.gradleProperty("fulcrum.paperGameserverImage")
     .orElse(defaultPaperGameserverImage)
+val paperGameserverPublishedImageTag = providers.gradleProperty("fulcrum.paperGameserverPublishedImage")
+    .orElse("ghcr.io/sh-harold/fulcrum-paper-gameserver:${project.version}")
 
 tasks.register<Exec>("paperGameserverImage") {
     group = "distribution"
@@ -807,6 +812,8 @@ val velocityProxyImageContext by tasks.registering(Sync::class) {
 val defaultVelocityProxyImage = "ghcr.io/sh-harold/fulcrum-velocity-proxy:dev"
 val velocityProxyImageTag = providers.gradleProperty("fulcrum.velocityProxyImage")
     .orElse(defaultVelocityProxyImage)
+val velocityProxyPublishedImageTag = providers.gradleProperty("fulcrum.velocityProxyPublishedImage")
+    .orElse("ghcr.io/sh-harold/fulcrum-velocity-proxy:${project.version}")
 
 tasks.register<Exec>("velocityProxyImage") {
     group = "distribution"
@@ -815,6 +822,146 @@ tasks.register<Exec>("velocityProxyImage") {
     workingDir(layout.buildDirectory.dir("velocity-proxy-image"))
     doFirst {
         commandLine("docker", "build", "-t", velocityProxyImageTag.get(), ".")
+    }
+}
+
+fun registerImagePublicationTasks(
+    imageName: String,
+    imageTaskName: String,
+    localImageTag: Provider<String>,
+    publishedImageTag: Provider<String>) {
+    val tagTask = tasks.register<Exec>("${imageName}PublishTag") {
+        group = "publishing"
+        description = "Tags the locally built $imageName image with its GHCR publication ref."
+        dependsOn(tasks.named(imageTaskName))
+        doFirst {
+            commandLine("docker", "tag", localImageTag.get(), publishedImageTag.get())
+        }
+    }
+    val pushTask = tasks.register<Exec>("${imageName}Push") {
+        group = "publishing"
+        description = "Pushes the $imageName OCI image to GHCR."
+        dependsOn(tagTask)
+        doFirst {
+            commandLine("docker", "push", publishedImageTag.get())
+        }
+    }
+    tasks.register<Exec>("${imageName}Sign") {
+        group = "publishing"
+        description = "Signs the pushed $imageName OCI image with cosign."
+        dependsOn(pushTask)
+        doFirst {
+            commandLine("cosign", "sign", "--yes", publishedImageTag.get())
+        }
+    }
+}
+
+registerImagePublicationTasks(
+    "serviceLauncherImage",
+    "serviceLauncherImage",
+    serviceLauncherImageTag,
+    serviceLauncherPublishedImageTag)
+registerImagePublicationTasks(
+    "paperGameserverImage",
+    "paperGameserverImage",
+    paperGameserverImageTag,
+    paperGameserverPublishedImageTag)
+registerImagePublicationTasks(
+    "velocityProxyImage",
+    "velocityProxyImage",
+    velocityProxyImageTag,
+    velocityProxyPublishedImageTag)
+
+tasks.register("publishFulcrumImages") {
+    group = "publishing"
+    description = "Builds, tags, and pushes Fulcrum v2 production OCI images to GHCR."
+    dependsOn(
+        tasks.named("serviceLauncherImagePush"),
+        tasks.named("paperGameserverImagePush"),
+        tasks.named("velocityProxyImagePush"))
+}
+
+tasks.register("signFulcrumImages") {
+    group = "publishing"
+    description = "Builds, pushes, and cosign-signs Fulcrum v2 production OCI images."
+    dependsOn(
+        tasks.named("serviceLauncherImageSign"),
+        tasks.named("paperGameserverImageSign"),
+        tasks.named("velocityProxyImageSign"))
+}
+
+fun jsonQuote(value: String): String {
+    return "\"" + value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n") + "\""
+}
+
+fun releaseImageJson(
+    name: String,
+    localRef: String,
+    publishedRef: String,
+    pushTask: String,
+    signTask: String): String = """
+        {
+          "name": ${jsonQuote(name)},
+          "localBuildRef": ${jsonQuote(localRef)},
+          "publishedRef": ${jsonQuote(publishedRef)},
+          "format": "oci",
+          "registry": "ghcr.io",
+          "pushTask": ${jsonQuote(pushTask)},
+          "signature": {
+            "provider": "cosign",
+            "task": ${jsonQuote(signTask)}
+          }
+        }
+    """.trimIndent()
+
+fun indentJsonBlock(value: String, spaces: Int): String = value.prependIndent(" ".repeat(spaces))
+
+val fulcrumReleaseManifest = layout.buildDirectory.file("publication/release-manifest/fulcrum-${project.version}.json")
+
+tasks.register("writeFulcrumReleaseManifest") {
+    group = "publishing"
+    description = "Writes the Fulcrum v2 release manifest for signed OCI images and published SDK/BOM coordinates."
+    outputs.file(fulcrumReleaseManifest)
+    doLast {
+        val sdkCoordinates = listOf(
+            "sh.harold.fulcrum:fulcrum-sdk-bom:${project.version}",
+            "sh.harold.fulcrum:authoring-sdk:${project.version}",
+            "sh.harold.fulcrum:authority-sdk:${project.version}",
+            "sh.harold.fulcrum:contract-api:${project.version}",
+            "sh.harold.fulcrum:capability-api:${project.version}",
+            "sh.harold.fulcrum:host-api:${project.version}",
+            "sh.harold.fulcrum:tick-runtime-api:${project.version}",
+            "sh.harold.fulcrum:kernel-api:${project.version}")
+        val imageEntries = listOf(
+            releaseImageJson("service-launcher", serviceLauncherImageTag.get(), serviceLauncherPublishedImageTag.get(), "serviceLauncherImagePush", "serviceLauncherImageSign"),
+            releaseImageJson("paper-gameserver", paperGameserverImageTag.get(), paperGameserverPublishedImageTag.get(), "paperGameserverImagePush", "paperGameserverImageSign"),
+            releaseImageJson("velocity-proxy", velocityProxyImageTag.get(), velocityProxyPublishedImageTag.get(), "velocityProxyImagePush", "velocityProxyImageSign"))
+            .joinToString(",\n") { indentJsonBlock(it, 4) }
+        val sdkCoordinateEntries = sdkCoordinates.joinToString(",\n") { "      ${jsonQuote(it)}" }
+        val manifest = buildString {
+            appendLine("{")
+            appendLine("  \"schema\": \"fulcrum.release-manifest/v1\",")
+            appendLine("  \"version\": ${jsonQuote(project.version.toString())},")
+            appendLine("  \"productionFormat\": \"oci\",")
+            appendLine("  \"signaturePolicy\": \"cosign-fail-closed\",")
+            appendLine("  \"images\": [")
+            appendLine(imageEntries)
+            appendLine("  ],")
+            appendLine("  \"sdk\": {")
+            appendLine("    \"repository\": \"github-packages\",")
+            appendLine("    \"coordinates\": [")
+            appendLine(sdkCoordinateEntries)
+            appendLine("    ]")
+            appendLine("  }")
+            appendLine("}")
+        }
+        val outputFile = fulcrumReleaseManifest.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.writeText(manifest)
     }
 }
 
