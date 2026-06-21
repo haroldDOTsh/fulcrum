@@ -41,7 +41,9 @@ final class OperatorCli {
                 case "up" -> up(slice(args), out, err);
                 case "status" -> status(slice(args), out);
                 case "down" -> down(slice(args), out);
-                case "bundle", "dev", "author", "identity" -> unavailable(args[0], slice(args), out, err);
+                case "bundle" -> new BundleOperatorCommands().run(slice(args), out, err);
+                case "identity" -> new IdentityOperatorCommands().run(slice(args), out, err);
+                case "dev", "author" -> unavailable(args[0], slice(args), out, err);
                 default -> throw new IllegalArgumentException("Unknown fulcrum command: " + args[0]);
             };
         } catch (IllegalArgumentException exception) {
@@ -192,10 +194,10 @@ final class OperatorCli {
                 "  up       create a single-machine run plan and start or render it",
                 "  status   inspect the saved run plan",
                 "  down     stop the deployment recorded in the saved run plan",
-                "  bundle   declarative bundle commands (Phase 4)",
+                "  bundle   declarative bundle install and reconcile commands",
                 "  dev      author reload loop (Phase 5)",
                 "  author   author project commands (Phase 5)",
-                "  identity install credential commands (Phase 4)",
+                "  identity install credential lifecycle commands",
                 "");
     }
 

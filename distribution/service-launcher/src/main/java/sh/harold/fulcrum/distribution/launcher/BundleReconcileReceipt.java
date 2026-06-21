@@ -49,4 +49,51 @@ record BundleReconcileReceipt(
                 Optional.empty(),
                 now);
     }
+
+    String toJson() {
+        return "{"
+                + "\"bundleId\":\"" + escape(bundleId) + "\","
+                + "\"status\":\"" + escape(status) + "\","
+                + "\"reason\":\"" + escape(reason) + "\","
+                + "\"digest\":\"" + escape(digest) + "\","
+                + "\"grantFingerprint\":\"" + escape(grantFingerprint.orElse("none")) + "\","
+                + "\"artifactVerificationEvidence\":\"" + escape(artifactVerificationEvidence.orElse("none")) + "\","
+                + "\"reconciledAt\":\"" + reconciledAt + "\""
+                + "}";
+    }
+
+    static BundleReconcileReceipt fromJson(String json) {
+        String grantFingerprint = field(json, "grantFingerprint");
+        String artifactEvidence = field(json, "artifactVerificationEvidence");
+        return new BundleReconcileReceipt(
+                field(json, "bundleId"),
+                field(json, "status"),
+                field(json, "reason"),
+                field(json, "digest"),
+                grantFingerprint.equals("none") ? Optional.empty() : Optional.of(grantFingerprint),
+                artifactEvidence.equals("none") ? Optional.empty() : Optional.of(artifactEvidence),
+                Instant.parse(field(json, "reconciledAt")));
+    }
+
+    private static String field(String json, String name) {
+        String marker = "\"" + name + "\":\"";
+        int start = json.indexOf(marker);
+        if (start < 0) {
+            throw new IllegalArgumentException("receipt missing field: " + name);
+        }
+        int valueStart = start + marker.length();
+        int end = json.indexOf('"', valueStart);
+        if (end < 0) {
+            throw new IllegalArgumentException("receipt has unterminated field: " + name);
+        }
+        return unescape(json.substring(valueStart, end));
+    }
+
+    private static String escape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static String unescape(String value) {
+        return value.replace("\\\"", "\"").replace("\\\\", "\\");
+    }
 }

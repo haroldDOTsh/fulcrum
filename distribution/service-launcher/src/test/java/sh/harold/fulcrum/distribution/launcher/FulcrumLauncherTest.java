@@ -280,13 +280,17 @@ final class FulcrumLauncherTest {
 
     @Test
     void reservedOperatorGroupsHaveStableRefusalAndHelp() {
-        LaunchResult bundle = run(RuntimeEnvironment.of(Map.of()), "bundle", "list");
-        assertEquals(69, bundle.code());
-        assertTrue(bundle.err().contains("fulcrum bundle is reserved by ADR-0029"));
+        LaunchResult bundleHelp = run(RuntimeEnvironment.of(Map.of()), "bundle", "--help");
+        assertEquals(FulcrumLauncher.OK, bundleHelp.code());
+        assertTrue(bundleHelp.out().contains("Usage: fulcrum bundle"));
 
         LaunchResult authorHelp = run(RuntimeEnvironment.of(Map.of()), "author", "--help");
         assertEquals(FulcrumLauncher.OK, authorHelp.code());
         assertTrue(authorHelp.out().contains("Usage: fulcrum author"));
+
+        LaunchResult dev = run(RuntimeEnvironment.of(Map.of()), "dev", "watch");
+        assertEquals(69, dev.code());
+        assertTrue(dev.err().contains("fulcrum dev is reserved by ADR-0029"));
     }
 
     @Test
