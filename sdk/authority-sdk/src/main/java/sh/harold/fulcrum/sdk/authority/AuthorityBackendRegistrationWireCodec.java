@@ -51,6 +51,8 @@ public final class AuthorityBackendRegistrationWireCodec {
     private static final String SCHEMA = "authority-backend-registration-v1";
     private static final String REQUEST = "request";
     private static final String RECEIPT = "receipt";
+    private static final String DEREGISTRATION_REQUEST = "deregistration-request";
+    private static final String DEREGISTRATION_RECEIPT = "deregistration-receipt";
 
     private AuthorityBackendRegistrationWireCodec() {
     }
@@ -119,6 +121,52 @@ public final class AuthorityBackendRegistrationWireCodec {
                 required(fields, "receiptId"),
                 rejectionReason,
                 optional(fields, "artifactVerificationEvidence"),
+                required(fields, "signature"));
+    }
+
+    public static String encodeDeregistrationRequest(AuthorityBackendDeregistrationRequest request) {
+        AuthorityBackendDeregistrationRequest checked = Objects.requireNonNull(request, "request");
+        Map<String, String> fields = baseFields(DEREGISTRATION_REQUEST);
+        fields.put("registrationReceiptId", checked.receiptId());
+        putOptional(fields, "principalId", checked.principalId().map(PrincipalId::value));
+        fields.put("reason", checked.reason());
+        fields.put("requestedAt", checked.requestedAt().toString());
+        return encode(fields);
+    }
+
+    public static AuthorityBackendDeregistrationRequest decodeDeregistrationRequest(String wireValue) {
+        Map<String, String> fields = decode(wireValue);
+        requireSchema(fields, DEREGISTRATION_REQUEST);
+        return new AuthorityBackendDeregistrationRequest(
+                required(fields, "registrationReceiptId"),
+                optional(fields, "principalId").map(PrincipalId::new),
+                required(fields, "reason"),
+                Instant.parse(required(fields, "requestedAt")));
+    }
+
+    public static String encodeDeregistrationReceipt(AuthorityBackendDeregistrationReceipt receipt) {
+        AuthorityBackendDeregistrationReceipt checked = Objects.requireNonNull(receipt, "receipt");
+        Map<String, String> fields = baseFields(DEREGISTRATION_RECEIPT);
+        fields.put("status", checked.status().name());
+        fields.put("registrationReceiptId", checked.registrationReceiptId());
+        putOptional(fields, "principalId", checked.principalId().map(PrincipalId::value));
+        fields.put("reason", checked.reason());
+        fields.put("issuedAt", checked.issuedAt().toString());
+        fields.put("receiptId", checked.receiptId());
+        fields.put("signature", checked.signature());
+        return encode(fields);
+    }
+
+    public static AuthorityBackendDeregistrationReceipt decodeDeregistrationReceipt(String wireValue) {
+        Map<String, String> fields = decode(wireValue);
+        requireSchema(fields, DEREGISTRATION_RECEIPT);
+        return new AuthorityBackendDeregistrationReceipt(
+                AuthorityBackendDeregistrationStatus.valueOf(required(fields, "status")),
+                required(fields, "registrationReceiptId"),
+                optional(fields, "principalId").map(PrincipalId::new),
+                required(fields, "reason"),
+                Instant.parse(required(fields, "issuedAt")),
+                required(fields, "receiptId"),
                 required(fields, "signature"));
     }
 

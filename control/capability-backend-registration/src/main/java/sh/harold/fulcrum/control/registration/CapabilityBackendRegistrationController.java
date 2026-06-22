@@ -7,6 +7,9 @@ import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlan;
 import sh.harold.fulcrum.capability.runtime.CapabilityMaterializationPlanner;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
 import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
+import sh.harold.fulcrum.sdk.authority.AuthorityBackendDeregistrationReceipt;
+import sh.harold.fulcrum.sdk.authority.AuthorityBackendDeregistrationRequest;
+import sh.harold.fulcrum.sdk.authority.AuthorityBackendDeregistrationStatus;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendDescriptorDigests;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendGrants;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationClient;
@@ -112,6 +115,29 @@ public final class CapabilityBackendRegistrationController implements AuthorityB
             receiptsByAuthorityDomain.put(authority.authorityDomain(), receipt);
         }
         return receipt;
+    }
+
+    @Override
+    public AuthorityBackendDeregistrationReceipt deregister(AuthorityBackendDeregistrationRequest request) {
+        AuthorityBackendDeregistrationRequest checked = Objects.requireNonNull(request, "request");
+        Optional<AuthorityBackendRegistrationReceipt> existing = receiptsByAuthorityDomain.values().stream()
+                .filter(receipt -> receipt.receiptId().equals(checked.receiptId()))
+                .findFirst();
+        if (existing.isEmpty()) {
+            return deregistrationReceipt(AuthorityBackendDeregistrationStatus.NOT_FOUND, checked, "registration-receipt-not-found");
+        }
+        AuthorityBackendRegistrationReceipt receipt = existing.orElseThrow();
+        if (checked.principalId().isPresent() && !receipt.principalId().equals(checked.principalId())) {
+            return deregistrationReceipt(
+                    AuthorityBackendDeregistrationStatus.PRINCIPAL_MISMATCH,
+                    checked,
+                    "registration-principal-mismatch");
+        }
+        receiptsByAuthorityDomain.values().removeIf(candidate -> candidate.receiptId().equals(checked.receiptId()));
+        return deregistrationReceipt(
+                AuthorityBackendDeregistrationStatus.TOMBSTONED,
+                checked,
+                "registration-tombstoned");
     }
 
     private Optional<AuthorityBackendRegistrationReceipt> existingReceipt(
@@ -244,5 +270,33 @@ public final class CapabilityBackendRegistrationController implements AuthorityB
                         + "|fencingEpoch=" + fencingEpoch
                         + "|issuedAt=" + request.requestedAt()
                         + "|receiptId=" + receiptId);
+    }
+
+    private static AuthorityBackendDeregistrationReceipt deregistrationReceipt(
+            AuthorityBackendDeregistrationStatus status,
+            AuthorityBackendDeregistrationRequest request,
+            String reason) {
+        String receiptId = "backend-deregistration-"
+                + AuthorityBackendDescriptorDigests.sha256Hex(
+                        request.receiptId()
+                                + "|" + status
+                                + "|" + request.principalId().map(principal -> principal.value()).orElse("none")
+                                + "|" + request.requestedAt())
+                .substring(0, 16);
+        String signature = AuthorityBackendDescriptorDigests.sha256Hex(
+                "status=" + status
+                        + "|registrationReceiptId=" + request.receiptId()
+                        + "|principalId=" + request.principalId().map(principal -> principal.value()).orElse("none")
+                        + "|reason=" + reason
+                        + "|issuedAt=" + request.requestedAt()
+                        + "|receiptId=" + receiptId);
+        return new AuthorityBackendDeregistrationReceipt(
+                status,
+                request.receiptId(),
+                request.principalId(),
+                reason,
+                request.requestedAt(),
+                receiptId,
+                signature);
     }
 }

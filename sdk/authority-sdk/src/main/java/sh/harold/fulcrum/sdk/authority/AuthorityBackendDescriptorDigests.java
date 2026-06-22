@@ -38,7 +38,7 @@ public final class AuthorityBackendDescriptorDigests {
     }
 
     public static String sha256Hex(String value) {
-        String checked = AuthoritySdkNames.requireNonBlank(value, "value");
+        String checked = Objects.requireNonNull(value, "value");
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(checked.getBytes(StandardCharsets.UTF_8)));

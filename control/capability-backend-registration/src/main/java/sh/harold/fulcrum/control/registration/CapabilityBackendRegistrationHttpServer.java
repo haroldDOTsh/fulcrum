@@ -2,6 +2,8 @@ package sh.harold.fulcrum.control.registration;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import sh.harold.fulcrum.sdk.authority.AuthorityBackendDeregistrationReceipt;
+import sh.harold.fulcrum.sdk.authority.AuthorityBackendDeregistrationRequest;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationClient;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationReceipt;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationRequest;
@@ -15,6 +17,7 @@ import java.util.Objects;
 
 public final class CapabilityBackendRegistrationHttpServer implements AutoCloseable {
     public static final String REGISTRATION_PATH = "/authority-backends/register";
+    public static final String DEREGISTRATION_PATH = "/authority-backends/deregister";
 
     private final HttpServer server;
 
@@ -31,7 +34,8 @@ public final class CapabilityBackendRegistrationHttpServer implements AutoClosea
                 "registrationClient");
         try {
             HttpServer server = HttpServer.create(address, 0);
-            server.createContext(REGISTRATION_PATH, exchange -> handle(exchange, checkedClient));
+            server.createContext(REGISTRATION_PATH, exchange -> handleRegistration(exchange, checkedClient));
+            server.createContext(DEREGISTRATION_PATH, exchange -> handleDeregistration(exchange, checkedClient));
             server.start();
             return new CapabilityBackendRegistrationHttpServer(server);
         } catch (IOException exception) {
@@ -48,7 +52,7 @@ public final class CapabilityBackendRegistrationHttpServer implements AutoClosea
         server.stop(0);
     }
 
-    private static void handle(
+    private static void handleRegistration(
             HttpExchange exchange,
             AuthorityBackendRegistrationClient registrationClient) throws IOException {
         try (exchange) {
@@ -67,6 +71,33 @@ public final class CapabilityBackendRegistrationHttpServer implements AutoClosea
                         AuthorityBackendRegistrationWireCodec.decodeRequest(body);
                 AuthorityBackendRegistrationReceipt receipt = registrationClient.register(request);
                 respond(exchange, 200, AuthorityBackendRegistrationWireCodec.encodeReceipt(receipt));
+            } catch (IllegalArgumentException exception) {
+                respond(exchange, 400, exception.getMessage());
+            } catch (RuntimeException exception) {
+                respond(exchange, 500, exception.getMessage());
+            }
+        }
+    }
+
+    private static void handleDeregistration(
+            HttpExchange exchange,
+            AuthorityBackendRegistrationClient registrationClient) throws IOException {
+        try (exchange) {
+            if (!DEREGISTRATION_PATH.equals(exchange.getRequestURI().getPath())) {
+                respond(exchange, 404, "unknown authority backend deregistration route");
+                return;
+            }
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                exchange.getResponseHeaders().set("Allow", "POST");
+                respond(exchange, 405, "authority backend deregistration requires POST");
+                return;
+            }
+            try {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                AuthorityBackendDeregistrationRequest request =
+                        AuthorityBackendRegistrationWireCodec.decodeDeregistrationRequest(body);
+                AuthorityBackendDeregistrationReceipt receipt = registrationClient.deregister(request);
+                respond(exchange, 200, AuthorityBackendRegistrationWireCodec.encodeDeregistrationReceipt(receipt));
             } catch (IllegalArgumentException exception) {
                 respond(exchange, 400, exception.getMessage());
             } catch (RuntimeException exception) {

@@ -136,6 +136,31 @@ final class AuthorityBackendSdkTest {
                 receipt,
                 AuthorityBackendRegistrationWireCodec.decodeReceipt(
                         AuthorityBackendRegistrationWireCodec.encodeReceipt(receipt)));
+
+        AuthorityBackendDeregistrationRequest deregistrationRequest = new AuthorityBackendDeregistrationRequest(
+                receipt.receiptId(),
+                Optional.of(securityContext.identity().principalId()),
+                "bundle-declaration-removed",
+                NOW.plusSeconds(2));
+
+        assertEquals(
+                deregistrationRequest,
+                AuthorityBackendRegistrationWireCodec.decodeDeregistrationRequest(
+                        AuthorityBackendRegistrationWireCodec.encodeDeregistrationRequest(deregistrationRequest)));
+
+        AuthorityBackendDeregistrationReceipt deregistrationReceipt = new AuthorityBackendDeregistrationReceipt(
+                AuthorityBackendDeregistrationStatus.TOMBSTONED,
+                deregistrationRequest.receiptId(),
+                deregistrationRequest.principalId(),
+                "registration-tombstoned",
+                NOW.plusSeconds(3),
+                "deregistration-wire",
+                AuthorityBackendDescriptorDigests.sha256Hex("wire-deregistration-signature"));
+
+        assertEquals(
+                deregistrationReceipt,
+                AuthorityBackendRegistrationWireCodec.decodeDeregistrationReceipt(
+                        AuthorityBackendRegistrationWireCodec.encodeDeregistrationReceipt(deregistrationReceipt)));
     }
 
     private static CapabilityDescriptor descriptor(String capabilityId) {

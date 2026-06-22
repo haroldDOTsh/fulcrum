@@ -15,6 +15,9 @@ import sh.harold.fulcrum.host.api.HostInstanceIdentity;
 import sh.harold.fulcrum.host.api.HostResourceGrant;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
 import sh.harold.fulcrum.sdk.authority.AuthorityArtifactVerificationEvidence;
+import sh.harold.fulcrum.sdk.authority.AuthorityBackendDeregistrationReceipt;
+import sh.harold.fulcrum.sdk.authority.AuthorityBackendDeregistrationRequest;
+import sh.harold.fulcrum.sdk.authority.AuthorityBackendDeregistrationStatus;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendDescriptorDigests;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendGrants;
 import sh.harold.fulcrum.sdk.authority.AuthorityBackendRegistrationReceipt;
@@ -152,13 +155,33 @@ final class CapabilityBackendRegistrationControllerTest {
         try (CapabilityBackendRegistrationHttpServer server = CapabilityBackendRegistrationHttpServer.start(
                 new InetSocketAddress("127.0.0.1", 0),
                 controller)) {
-            AuthorityBackendRegistrationReceipt receipt = new HttpAuthorityBackendRegistrationClient(
-                    server.endpointUri())
-                    .register(request);
+            HttpAuthorityBackendRegistrationClient client = new HttpAuthorityBackendRegistrationClient(
+                    server.endpointUri());
+            AuthorityBackendRegistrationReceipt receipt = client.register(request);
 
             assertEquals(AuthorityBackendRegistrationStatus.ADMITTED, receipt.status());
             assertEquals(Optional.of(PRINCIPAL), receipt.principalId());
             assertEquals(1, receipt.fencingEpoch());
+
+            AuthorityBackendDeregistrationReceipt deregistrationReceipt = client.deregister(
+                    new AuthorityBackendDeregistrationRequest(
+                            receipt.receiptId(),
+                            Optional.of(PRINCIPAL),
+                            "bundle-declaration-removed",
+                            NOW.plusSeconds(1)));
+
+            assertEquals(AuthorityBackendDeregistrationStatus.TOMBSTONED, deregistrationReceipt.status());
+            assertEquals(receipt.receiptId(), deregistrationReceipt.registrationReceiptId());
+
+            AuthorityBackendRegistrationReceipt second = client.register(AuthorityBackendRegistrationRequest.credentialed(
+                    descriptor("noop-backend", DOMAIN),
+                    securityContext(authorityGrants(DOMAIN, RESOURCE_CLASS)),
+                    BUNDLE_DIGEST,
+                    verification(BUNDLE_DIGEST),
+                    NOW.plusSeconds(2)));
+
+            assertEquals(AuthorityBackendRegistrationStatus.ADMITTED, second.status());
+            assertEquals(2, second.fencingEpoch());
         }
     }
 

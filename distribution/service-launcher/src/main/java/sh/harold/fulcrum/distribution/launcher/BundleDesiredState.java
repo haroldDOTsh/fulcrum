@@ -94,14 +94,23 @@ record BundleDesiredState(String schema, List<DeclaredBundle> bundles) {
                 + "\"scope\":\"" + escape(bundle.scope()) + "\","
                 + "\"placementProfile\":\"" + escape(bundle.placementProfile()) + "\","
                 + "\"placementTier\":\"" + escape(bundle.placementTier().orElse("none")) + "\","
+                + "\"backendImageRef\":\"" + escape(bundle.backendImageRef().orElse("none")) + "\","
+                + "\"backendImageDigest\":\"" + escape(bundle.backendImageDigest().orElse("none")) + "\","
                 + "\"authorityDomains\":" + arrayJson(bundle.authorityDomains()) + ","
                 + "\"resourceClasses\":" + arrayJson(bundle.resourceClasses()) + ","
+                + "\"descriptorDigest\":\"" + escape(bundle.descriptorDigest().orElse("none")) + "\","
+                + "\"contributions\":" + arrayJson(bundle.contributions().stream()
+                        .map(BundleContributionDeclarations::wire)
+                        .toList()) + ","
                 + "\"enabled\":" + bundle.enabled()
                 + "}";
     }
 
     private static DeclaredBundle bundleFromJson(String object) {
         String placementTier = field(object, "placementTier");
+        String backendImageRef = optionalField(object, "backendImageRef");
+        String backendImageDigest = optionalField(object, "backendImageDigest");
+        String descriptorDigest = optionalField(object, "descriptorDigest");
         return new DeclaredBundle(
                 field(object, "id"),
                 field(object, "artifactRef"),
@@ -110,8 +119,14 @@ record BundleDesiredState(String schema, List<DeclaredBundle> bundles) {
                 field(object, "scope"),
                 field(object, "placementProfile"),
                 placementTier.equals("none") ? Optional.empty() : Optional.of(placementTier),
+                backendImageRef.equals("none") ? Optional.empty() : Optional.of(backendImageRef),
+                backendImageDigest.equals("none") ? Optional.empty() : Optional.of(backendImageDigest),
                 arrayField(object, "authorityDomains"),
                 arrayField(object, "resourceClasses"),
+                descriptorDigest.equals("none") ? Optional.empty() : Optional.of(descriptorDigest),
+                optionalArrayField(object, "contributions").stream()
+                        .map(BundleContributionDeclarations::parse)
+                        .toList(),
                 booleanField(object, "enabled"));
     }
 
@@ -147,6 +162,15 @@ record BundleDesiredState(String schema, List<DeclaredBundle> bundles) {
         return values;
     }
 
+    private static List<String> optionalArrayField(String json, String name) {
+        String marker = "\"" + name + "\":[";
+        int start = json.indexOf(marker);
+        if (start < 0) {
+            return List.of();
+        }
+        return arrayField(json, name);
+    }
+
     private static String field(String json, String name) {
         String marker = "\"" + name + "\": \"";
         int start = json.indexOf(marker);
@@ -156,6 +180,24 @@ record BundleDesiredState(String schema, List<DeclaredBundle> bundles) {
         }
         if (start < 0) {
             throw new IllegalArgumentException("missing field: " + name);
+        }
+        int valueStart = start + marker.length();
+        int end = json.indexOf('"', valueStart);
+        if (end < 0) {
+            throw new IllegalArgumentException("unterminated field: " + name);
+        }
+        return unescape(json.substring(valueStart, end));
+    }
+
+    private static String optionalField(String json, String name) {
+        String marker = "\"" + name + "\": \"";
+        int start = json.indexOf(marker);
+        if (start < 0) {
+            marker = "\"" + name + "\":\"";
+            start = json.indexOf(marker);
+        }
+        if (start < 0) {
+            return "none";
         }
         int valueStart = start + marker.length();
         int end = json.indexOf('"', valueStart);
