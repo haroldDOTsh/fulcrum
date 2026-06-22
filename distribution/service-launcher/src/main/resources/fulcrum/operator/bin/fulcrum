@@ -8,7 +8,7 @@ fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 OPERATOR_HOME=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-IMAGE="${FULCRUM_CLI_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1}"
+IMAGE="${FULCRUM_CLI_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-beta.1}"
 DOCKER_SOCKET="${FULCRUM_DOCKER_SOCKET:-/var/run/docker.sock}"
 DOCKER_HOST_VALUE="${DOCKER_HOST:-unix:///var/run/docker.sock}"
 KUBE_DIR="${FULCRUM_KUBE_DIR:-${HOME:-}/.kube}"

@@ -10,9 +10,9 @@ topology:
 imagePullPolicy: IfNotPresent
 
 images:
-  serviceLauncher: ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1
-  paperGameserver: ghcr.io/harolddotsh/fulcrum-paper-gameserver:5.0.0-alpha.1
-  velocityProxy: ghcr.io/harolddotsh/fulcrum-velocity-proxy:5.0.0-alpha.1
+  serviceLauncher: ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-beta.1
+  paperGameserver: ghcr.io/harolddotsh/fulcrum-paper-gameserver:5.0.0-beta.1
+  velocityProxy: ghcr.io/harolddotsh/fulcrum-velocity-proxy:5.0.0-beta.1
   kafka: apache/kafka:4.3.0
   postgres: postgres:18.4
   cassandra: cassandra:5.0.8

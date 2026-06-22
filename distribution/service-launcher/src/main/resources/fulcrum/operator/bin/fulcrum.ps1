@@ -8,7 +8,7 @@ if ($null -eq $docker) {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $operatorHome = Split-Path -Parent $scriptDir
-$image = if ($env:FULCRUM_CLI_IMAGE) { $env:FULCRUM_CLI_IMAGE } else { "ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1" }
+$image = if ($env:FULCRUM_CLI_IMAGE) { $env:FULCRUM_CLI_IMAGE } else { "ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-beta.1" }
 $dockerSocket = if ($env:FULCRUM_DOCKER_SOCKET) { $env:FULCRUM_DOCKER_SOCKET } else { "/var/run/docker.sock" }
 $dockerHost = if ($env:DOCKER_HOST) { $env:DOCKER_HOST } else { "unix:///var/run/docker.sock" }
 $kubeDir = if ($env:FULCRUM_KUBE_DIR) { $env:FULCRUM_KUBE_DIR } else { Join-Path $HOME ".kube" }

@@ -18,10 +18,9 @@ final class OperatorDistributionLayoutTest {
         String combined = (shell + powershell).toLowerCase(Locale.ROOT);
 
         assertTrue(shell.contains("docker run --rm"));
-        assertTrue(powershell.contains("docker run @dockerArgs"));
-        assertTrue(powershell.contains("\"--rm\""));
-        assertTrue(shell.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1"));
-        assertTrue(powershell.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1"));
+        assertTrue(powershell.contains("docker run --rm @dockerArgs"));
+        assertTrue(shell.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-beta.1"));
+        assertTrue(powershell.contains("ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-beta.1"));
         assertTrue(shell.contains("/var/run/docker.sock"));
         assertTrue(powershell.contains("FULCRUM_DOCKER_SOCKET"));
         assertTrue(shell.contains("DOCKER_HOST"));

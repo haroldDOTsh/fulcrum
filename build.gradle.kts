@@ -133,7 +133,7 @@ val step8CheckedProjects = step7CheckedProjects + listOf(
 
 allprojects {
     group = "sh.harold.fulcrum"
-    version = "5.0.0-alpha.1"
+    version = "5.0.0-beta.1"
 }
 
 subprojects {
