@@ -245,6 +245,37 @@ final class VelocityRouteExecutorTest {
     }
 
     @Test
+    void knownLoginWithoutWaitingInitialServerEventDoesNotBlockRouteWorkerWhenDirectTransferUnavailable()
+            throws Exception {
+        RecordingGateway gateway = new RecordingGateway(false);
+        VelocityLoginSubjectRegistry subjects = new VelocityLoginSubjectRegistry();
+        subjects.record("FulcrumBotOne", SUBJECT_ID);
+        try (VelocityInitialRouteCoordinator coordinator =
+                new VelocityInitialRouteCoordinator(Duration.ofSeconds(5), subjects::username)) {
+            VelocityRouteExecutor executor = new VelocityRouteExecutor(
+                    securityContext(HostInstanceKinds.VELOCITY, HostCredentialScope.of(proxyConsumeGrant())),
+                    PROXY_ROUTE_TOPIC,
+                    new VelocityBackendRegistry(gateway),
+                    clock(),
+                    coordinator,
+                    Duration.ofMillis(25));
+            VelocityBackendEndpoint endpoint = new VelocityBackendEndpoint(TARGET_INSTANCE, "10.96.10.25", 25565);
+
+            Optional<VelocityRouteTransfer> transfer = executor.execute(
+                            VelocityProxyRouteCommand.parse(proxyCommandWireValue()),
+                            endpoint)
+                    .toCompletableFuture()
+                    .get(1, TimeUnit.SECONDS);
+
+            assertTrue(transfer.isEmpty());
+            assertEquals(List.of(new RegisteredBackend("fulcrum-instance-paper-target-1", endpoint.socketAddress())),
+                    gateway.registrations);
+            assertEquals(List.of(new TransferRequest(SUBJECT_ID, "fulcrum-instance-paper-target-1")),
+                    gateway.transfers);
+        }
+    }
+
+    @Test
     void initialRouteCoordinatorFallsBackToDirectTransferForAlreadyConnectedPlayer() {
         RecordingGateway gateway = new RecordingGateway(true);
         try (VelocityInitialRouteCoordinator coordinator = new VelocityInitialRouteCoordinator(Duration.ofSeconds(5))) {

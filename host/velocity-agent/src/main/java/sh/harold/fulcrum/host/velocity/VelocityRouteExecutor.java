@@ -6,15 +6,20 @@ import sh.harold.fulcrum.host.api.HostResourceFamily;
 import sh.harold.fulcrum.host.api.HostSecurityContext;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
 
 public final class VelocityRouteExecutor {
+    private static final Duration PENDING_INITIAL_ROUTE_GRACE = Duration.ofSeconds(1);
+
     private final VelocityBackendRegistry backendRegistry;
     private final Clock clock;
     private final VelocityInitialRouteCoordinator initialRouteCoordinator;
+    private final Duration pendingInitialRouteGrace;
 
     public VelocityRouteExecutor(
             HostSecurityContext securityContext,
@@ -30,8 +35,23 @@ public final class VelocityRouteExecutor {
             VelocityBackendRegistry backendRegistry,
             Clock clock,
             VelocityInitialRouteCoordinator initialRouteCoordinator) {
+        this(securityContext, proxyRouteCommandTopic, backendRegistry, clock, initialRouteCoordinator,
+                PENDING_INITIAL_ROUTE_GRACE);
+    }
+
+    VelocityRouteExecutor(
+            HostSecurityContext securityContext,
+            String proxyRouteCommandTopic,
+            VelocityBackendRegistry backendRegistry,
+            Clock clock,
+            VelocityInitialRouteCoordinator initialRouteCoordinator,
+            Duration pendingInitialRouteGrace) {
         Objects.requireNonNull(securityContext, "securityContext");
         proxyRouteCommandTopic = requireNonBlank(proxyRouteCommandTopic, "proxyRouteCommandTopic");
+        pendingInitialRouteGrace = Objects.requireNonNull(pendingInitialRouteGrace, "pendingInitialRouteGrace");
+        if (pendingInitialRouteGrace.isNegative() || pendingInitialRouteGrace.isZero()) {
+            throw new IllegalArgumentException("pendingInitialRouteGrace must be positive");
+        }
         if (!HostInstanceKinds.VELOCITY.equals(securityContext.identity().instanceKind())) {
             throw new IllegalArgumentException("Velocity route execution requires a Velocity Instance identity");
         }
@@ -44,6 +64,7 @@ public final class VelocityRouteExecutor {
         this.backendRegistry = Objects.requireNonNull(backendRegistry, "backendRegistry");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.initialRouteCoordinator = initialRouteCoordinator;
+        this.pendingInitialRouteGrace = pendingInitialRouteGrace;
     }
 
     public CompletionStage<Optional<VelocityRouteTransfer>> execute(
@@ -65,12 +86,31 @@ public final class VelocityRouteExecutor {
                         : Optional.empty());
             }
             CompletionStage<Boolean> directTransfer = backendRegistry.transfer(command.subjectId(), backendName);
-            return firstSuccessfulTransfer(command, initialRoute.accepted(), directTransfer);
+            return firstSuccessfulTransfer(command, boundedInitialRoute(initialRoute.accepted()), directTransfer);
         }
         return backendRegistry.transfer(command.subjectId(), backendName)
                 .thenApply(transferred -> transferred
                         ? Optional.of(transfer(command))
                         : Optional.empty());
+    }
+
+    private CompletionStage<Boolean> boundedInitialRoute(CompletionStage<Boolean> accepted) {
+        CompletableFuture<Boolean> source = accepted.toCompletableFuture();
+        CompletableFuture<Boolean> bounded = new CompletableFuture<>();
+        source.whenComplete((selected, failure) -> {
+            if (failure != null) {
+                bounded.completeExceptionally(failure);
+            } else {
+                bounded.complete(Boolean.TRUE.equals(selected));
+            }
+        });
+        CompletableFuture.delayedExecutor(pendingInitialRouteGrace.toMillis(), TimeUnit.MILLISECONDS)
+                .execute(() -> {
+                    if (bounded.complete(false)) {
+                        source.complete(false);
+                    }
+                });
+        return bounded;
     }
 
     private CompletionStage<Optional<VelocityRouteTransfer>> firstSuccessfulTransfer(
