@@ -56,6 +56,9 @@ spec:
           image: {{ .Values.images.serviceLauncher | quote }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args: ["--profile={{ .Values.profile }}", "--role=controller-service", "--mode=run", "--probe-host=0.0.0.0", "--probe-port=8080"]
+          ports:
+            - name: registration
+              containerPort: 18085
           env:
             - name: FULCRUM_CONTROL_KAFKA_BOOTSTRAP_SERVERS
               value: '{{ include "fulcrum.name" . }}-kafka:9092'
@@ -69,6 +72,25 @@ spec:
               value: host.observation
             - name: FULCRUM_VELOCITY_ROUTE_COMMAND_TOPIC
               value: host.velocity.routes
+            - name: FULCRUM_AUTHORITY_REGISTRATION_BIND_HOST
+              value: "0.0.0.0"
+            - name: FULCRUM_AUTHORITY_REGISTRATION_PORT
+              value: "18085"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fulcrum.name" . }}-controller-service
+  labels:
+    {{- include "fulcrum.labels" . | nindent 4 }}
+    sh.harold.fulcrum/role: controller-service
+spec:
+  selector:
+    sh.harold.fulcrum/role: controller-service
+  ports:
+    - name: registration
+      port: 18085
+      targetPort: registration
 ---
 apiVersion: apps/v1
 kind: Deployment

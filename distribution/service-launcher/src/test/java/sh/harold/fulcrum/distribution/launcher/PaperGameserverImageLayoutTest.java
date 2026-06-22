@@ -165,16 +165,33 @@ final class PaperGameserverImageLayoutTest {
         assertTrue(launcherBuild.contains("cosign\", \"sign\", \"--yes\""));
         assertTrue(launcherBuild.contains("tasks.register(\"publishFulcrumImages\")"));
         assertTrue(launcherBuild.contains("tasks.register(\"signFulcrumImages\")"));
+        assertTrue(launcherBuild.contains("auctionEscrowBundleArtifact"));
+        assertTrue(launcherBuild.contains("auctionEscrowBackendImagePin"));
+        assertTrue(launcherBuild.contains("auctionEscrowBackendImagePinnedRefFile"));
+        assertTrue(launcherBuild.contains("receiptValue(auctionEscrowBackendImagePinnedRefFile.get().asFile, \"pinnedRef\")"));
+        assertTrue(launcherBuild.contains("\"backendImageRef\": ${jsonQuote(backendImageRef)}"));
+        assertTrue(launcherBuild.contains("\"oras\","));
+        assertTrue(launcherBuild.contains("\"push\","));
+        assertTrue(launcherBuild.contains("oras\", \"resolve\""));
+        assertTrue(launcherBuild.contains("tasks.register(\"assembleFulcrumBundles\")"));
+        assertTrue(launcherBuild.contains("tasks.register(\"publishFulcrumBundles\")"));
+        assertTrue(launcherBuild.contains("tasks.register(\"signFulcrumBundles\")"));
         assertTrue(launcherBuild.contains("tasks.register(\"writeFulcrumReleaseManifest\")"));
+        assertTrue(launcherBuild.contains("dependsOn(auctionEscrowBundlePin)"));
         assertTrue(launcherBuild.contains("\\\"schema\\\": \\\"fulcrum.release-manifest/v1\\\""));
         assertTrue(launcherBuild.contains("\\\"productionFormat\\\": \\\"oci\\\""));
         assertTrue(launcherBuild.contains("\\\"signaturePolicy\\\": \\\"cosign-fail-closed\\\""));
+        assertTrue(launcherBuild.contains("\\\"bundles\\\": ["));
+        assertTrue(launcherBuild.contains("releaseBundleJson("));
+        assertTrue(launcherBuild.contains("jsonStringValue(auctionEscrowBundleManifestFile.get().asFile, \"backendImageRef\")"));
+        assertTrue(launcherBuild.contains("auctionEscrowBundlePinnedRefFile"));
         assertTrue(launcherBuild.contains("sh.harold.fulcrum:fulcrum-sdk-bom:${project.version}"));
         assertTrue(launcherBuild.contains("sh.harold.fulcrum:authority-sdk:${project.version}"));
 
         assertTrue(rootBuild.contains("tasks.register(\"publishFulcrumDistribution\")"));
         assertTrue(rootBuild.contains("publishSdkToGitHubPackages"));
         assertTrue(rootBuild.contains(":distribution:service-launcher:signFulcrumImages"));
+        assertTrue(rootBuild.contains(":distribution:service-launcher:signFulcrumBundles"));
         assertTrue(rootBuild.contains(":distribution:service-launcher:writeFulcrumReleaseManifest"));
     }
 

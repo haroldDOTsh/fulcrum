@@ -27,6 +27,10 @@ dependencies {
 val defaultAuctionEscrowImage = "ghcr.io/harolddotsh/fulcrum-auction-escrow:dev"
 val auctionEscrowImageTag = providers.gradleProperty("fulcrum.auctionEscrowImage")
     .orElse(defaultAuctionEscrowImage)
+val auctionEscrowPublishedImageTag = providers.gradleProperty("fulcrum.auctionEscrowPublishedImage")
+    .orElse("ghcr.io/harolddotsh/fulcrum-auction-escrow:${project.version}")
+val auctionEscrowImagePinnedRefFile =
+    layout.buildDirectory.file("publication/images/auction-escrow-backend.ref")
 
 val auctionEscrowImageContext by tasks.registering(Sync::class) {
     group = "distribution"
@@ -48,6 +52,73 @@ tasks.register<Exec>("auctionEscrowImage") {
     doFirst {
         commandLine("docker", "build", "-t", auctionEscrowImageTag.get(), ".")
     }
+}
+
+val auctionEscrowImagePublishTag by tasks.registering(Exec::class) {
+    group = "publishing"
+    description = "Tags the auction escrow backend image with its GHCR publication ref."
+    dependsOn(tasks.named("auctionEscrowImage"))
+    doFirst {
+        commandLine("docker", "tag", auctionEscrowImageTag.get(), auctionEscrowPublishedImageTag.get())
+    }
+}
+
+val auctionEscrowImagePush by tasks.registering(Exec::class) {
+    group = "publishing"
+    description = "Pushes the auction escrow backend OCI image to GHCR."
+    dependsOn(auctionEscrowImagePublishTag)
+    doFirst {
+        commandLine("docker", "push", auctionEscrowPublishedImageTag.get())
+    }
+}
+
+val auctionEscrowImageSign by tasks.registering(Exec::class) {
+    group = "publishing"
+    description = "Signs the pushed auction escrow backend OCI image with cosign."
+    dependsOn(auctionEscrowImagePush)
+    doFirst {
+        commandLine("cosign", "sign", "--yes", auctionEscrowPublishedImageTag.get())
+    }
+}
+
+val auctionEscrowImagePin by tasks.registering {
+    group = "publishing"
+    description = "Resolves and records the digest-pinned auction escrow backend image reference."
+    dependsOn(auctionEscrowImageSign)
+    outputs.file(auctionEscrowImagePinnedRefFile)
+
+    doLast {
+        val execution = providers.exec {
+            commandLine("oras", "resolve", auctionEscrowPublishedImageTag.get())
+        }
+        execution.result.get().assertNormalExitValue()
+        val digest = execution.standardOutput.asText.get().trim()
+        if (!digest.startsWith("sha256:")) {
+            throw GradleException("oras resolve did not return a sha256 digest for ${auctionEscrowPublishedImageTag.get()}")
+        }
+        val outputFile = auctionEscrowImagePinnedRefFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.writeText("""
+            |schema=fulcrum.image-publish-receipt/v1
+            |image=auction-escrow-backend
+            |publishedRef=${auctionEscrowPublishedImageTag.get()}
+            |digest=$digest
+            |pinnedRef=${auctionEscrowPublishedImageTag.get()}@$digest
+            |signature=cosign
+            |""".trimMargin())
+    }
+}
+
+tasks.register("publishAuctionEscrowImage") {
+    group = "publishing"
+    description = "Builds and pushes the auction escrow backend OCI image."
+    dependsOn(auctionEscrowImagePush)
+}
+
+tasks.register("signAuctionEscrowImage") {
+    group = "publishing"
+    description = "Builds, pushes, cosign-signs, and pins the auction escrow backend OCI image."
+    dependsOn(auctionEscrowImagePin)
 }
 
 val auctionEscrowManifest = layout.projectDirectory.file(

@@ -197,7 +197,7 @@ final class FulcrumLauncherTest {
 
         assertEquals(FulcrumLauncher.OK, result.code());
         assertEquals("", result.err());
-        assertTrue(result.out().contains("Usage: fulcrum <up|status|down|bundle|dev|author|identity>"));
+        assertTrue(result.out().contains("Usage: fulcrum <up|status|down|cluster|bundle|dev|author|identity>"));
         assertTrue(result.out().contains("Internal image entrypoint default"));
     }
 
@@ -238,10 +238,40 @@ final class FulcrumLauncherTest {
 
         assertEquals(FulcrumLauncher.OK, result.code(), result.err());
         assertTrue(result.out().contains("deploymentUnit=compose"));
-        assertTrue(result.out().contains("docker compose -f fulcrum/compose/single-machine-full-engine.compose.yaml"));
+        assertTrue(result.out().contains("docker compose -f "));
+        assertTrue(result.out().contains("single-machine-full-engine.compose.yaml"));
         String plan = Files.readString(stateDir.resolve("run-plan.json"));
         assertTrue(plan.contains("\"deploymentUnit\": \"compose\""));
         assertTrue(plan.contains("\"entrypoint\": \"docker compose\""));
+        assertTrue(Files.exists(stateDir.resolve("compose").resolve("single-machine-full-engine.compose.yaml")));
+    }
+
+    @Test
+    void operatorUpExecutesFullEngineComposePlan() throws Exception {
+        Path stateDir = tempDir.resolve("compose-exec-state");
+        List<List<String>> commands = new ArrayList<>();
+        BundleRuntimeCommandRunner runner = (command, workingDirectory) -> {
+            commands.add(List.copyOf(command));
+            assertTrue(Files.isDirectory(workingDirectory));
+            return new BundleRuntimeCommandResult(0, "compose-up-ok\n");
+        };
+
+        LaunchResult result = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "up",
+                "--tier=full-engine",
+                "--state-dir=" + stateDir);
+
+        assertEquals(FulcrumLauncher.OK, result.code(), result.err());
+        assertEquals("", result.err());
+        assertTrue(result.out().contains("compose-up-ok"));
+        assertTrue(result.out().contains("status=running"));
+        assertEquals(1, commands.size());
+        assertEquals(List.of("docker", "compose"), commands.get(0).subList(0, 2));
+        assertTrue(commands.get(0).contains("up"));
+        assertTrue(commands.get(0).contains("-d"));
+        String plan = Files.readString(stateDir.resolve("run-plan.json"));
+        assertTrue(plan.contains("\"status\": \"running\""));
+        assertTrue(plan.contains("\"statusCommand\": ["));
     }
 
     @Test
@@ -268,14 +298,216 @@ final class FulcrumLauncherTest {
     }
 
     @Test
-    void operatorUpRejectsProductionProfilesWithHelmInstruction() {
+    void operatorStatusAndDownSuperviseRunningComposePlan() throws Exception {
+        Path stateDir = tempDir.resolve("compose-lifecycle-state");
+        List<List<String>> commands = new ArrayList<>();
+        BundleRuntimeCommandRunner runner = (command, workingDirectory) -> {
+            commands.add(List.copyOf(command));
+            if (command.contains("ps")) {
+                return new BundleRuntimeCommandResult(0, "compose-ps-ok\n");
+            }
+            if (command.contains("down")) {
+                return new BundleRuntimeCommandResult(0, "compose-down-ok\n");
+            }
+            return new BundleRuntimeCommandResult(0, "compose-up-ok\n");
+        };
+
+        LaunchResult up = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "up",
+                "--tier=full-engine",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, up.code(), up.err());
+
+        LaunchResult status = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "status",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, status.code(), status.err());
+        assertTrue(status.out().contains("status=running"));
+        assertTrue(status.out().contains("compose-ps-ok"));
+        assertTrue(status.out().contains("runtimeStatus=available"));
+
+        LaunchResult down = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "down",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, down.code(), down.err());
+        assertTrue(down.out().contains("compose-down-ok"));
+        assertTrue(down.out().contains("status=stopped"));
+
+        String plan = Files.readString(stateDir.resolve("run-plan.json"));
+        assertTrue(plan.contains("\"status\": \"stopped\""));
+        assertTrue(commands.stream().anyMatch(command -> command.contains("ps")));
+        assertTrue(commands.stream().anyMatch(command -> command.contains("down")));
+    }
+
+    @Test
+    void operatorUpDryRunRoutesProductionProfileToHelmPlan() throws Exception {
+        Path stateDir = tempDir.resolve("helm-plan-state");
+
         LaunchResult result = run(RuntimeEnvironment.of(Map.of()),
                 "up",
                 "--profile=small-production",
+                "--state-dir=" + stateDir,
+                "--release=fulcrum-test",
+                "--namespace=fulcrum-prod",
                 "--dry-run");
 
-        assertEquals(FulcrumLauncher.USAGE_ERROR, result.code());
-        assertTrue(result.err().contains("use the Fulcrum Helm chart"));
+        assertEquals(FulcrumLauncher.OK, result.code(), result.err());
+        assertEquals("", result.err());
+        assertTrue(result.out().contains("deploymentUnit=helm"));
+        assertTrue(result.out().contains("helm upgrade --install fulcrum-test"));
+        assertTrue(result.out().contains("--namespace fulcrum-prod"));
+        assertTrue(result.out().contains("values-small-production.yaml"));
+        assertTrue(result.out().contains("dryRun=true"));
+        String plan = Files.readString(stateDir.resolve("run-plan.json"));
+        assertTrue(plan.contains("\"deploymentUnit\": \"helm\""));
+        assertTrue(plan.contains("\"entrypoint\": \"helm\""));
+        assertTrue(plan.contains("\"statusCommand\": ["));
+        assertTrue(Files.exists(stateDir.resolve("helm").resolve("fulcrum").resolve("Chart.yaml")));
+        assertTrue(Files.exists(stateDir.resolve("helm").resolve("fulcrum").resolve("templates").resolve("roles.yaml")));
+    }
+
+    @Test
+    void operatorUpExecutesProductionHelmPlan() throws Exception {
+        Path stateDir = tempDir.resolve("helm-exec-state");
+        List<List<String>> commands = new ArrayList<>();
+        BundleRuntimeCommandRunner runner = (command, workingDirectory) -> {
+            commands.add(List.copyOf(command));
+            return new BundleRuntimeCommandResult(0, "helm-up-ok\n");
+        };
+
+        LaunchResult result = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "up",
+                "--profile=large-production",
+                "--state-dir=" + stateDir);
+
+        assertEquals(FulcrumLauncher.OK, result.code(), result.err());
+        assertEquals("", result.err());
+        assertTrue(result.out().contains("helm-up-ok"));
+        assertTrue(result.out().contains("status=running"));
+        assertEquals(1, commands.size());
+        assertEquals("helm", commands.get(0).get(0));
+        assertTrue(commands.get(0).contains("upgrade"));
+        assertTrue(commands.get(0).contains("--install"));
+        assertTrue(commands.get(0).stream().anyMatch(value -> value.endsWith("values-large-production.yaml")));
+        String plan = Files.readString(stateDir.resolve("run-plan.json"));
+        assertTrue(plan.contains("\"profile\": \"large-production\""));
+        assertTrue(plan.contains("\"status\": \"running\""));
+    }
+
+    @Test
+    void operatorStatusAndDownSuperviseRunningHelmPlan() throws Exception {
+        Path stateDir = tempDir.resolve("helm-lifecycle-state");
+        List<List<String>> commands = new ArrayList<>();
+        BundleRuntimeCommandRunner runner = (command, workingDirectory) -> {
+            commands.add(List.copyOf(command));
+            if (command.contains("status")) {
+                return new BundleRuntimeCommandResult(0, "helm-status-ok\n");
+            }
+            if (command.contains("uninstall")) {
+                return new BundleRuntimeCommandResult(0, "helm-uninstall-ok\n");
+            }
+            return new BundleRuntimeCommandResult(0, "helm-up-ok\n");
+        };
+
+        LaunchResult up = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "up",
+                "--profile=small-production",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, up.code(), up.err());
+
+        LaunchResult status = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "status",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, status.code(), status.err());
+        assertTrue(status.out().contains("status=running"));
+        assertTrue(status.out().contains("helm-status-ok"));
+        assertTrue(status.out().contains("runtimeStatus=available"));
+
+        LaunchResult down = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "down",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, down.code(), down.err());
+        assertTrue(down.out().contains("helm-uninstall-ok"));
+        assertTrue(down.out().contains("status=stopped"));
+
+        assertTrue(commands.stream().anyMatch(command -> command.contains("status")));
+        assertTrue(commands.stream().anyMatch(command -> command.contains("uninstall")));
+    }
+
+    @Test
+    void operatorClusterUpDryRunWritesK3dHelmPlan() throws Exception {
+        Path stateDir = tempDir.resolve("cluster-plan-state");
+        List<List<String>> commands = new ArrayList<>();
+        BundleRuntimeCommandRunner runner = (command, workingDirectory) -> {
+            commands.add(List.copyOf(command));
+            return new BundleRuntimeCommandResult(0, "");
+        };
+
+        LaunchResult result = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "cluster",
+                "up",
+                "--state-dir=" + stateDir,
+                "--dry-run");
+
+        assertEquals(FulcrumLauncher.OK, result.code(), result.err());
+        assertEquals("", result.err());
+        assertTrue(result.out().contains("provider=k3d"));
+        assertTrue(result.out().contains("create=k3d cluster create fulcrum-local"));
+        assertTrue(result.out().contains("install=helm --kubeconfig"));
+        assertTrue(result.out().contains("values-small-production.yaml"));
+        assertTrue(result.out().contains("dryRun=true"));
+        assertTrue(commands.isEmpty());
+        assertTrue(Files.exists(stateDir.resolve("cluster").resolve("helm").resolve("fulcrum").resolve("Chart.yaml")));
+        String plan = Files.readString(stateDir.resolve("cluster-plan.json"));
+        assertTrue(plan.contains("\"schema\": \"fulcrum.cluster-run-plan/v1\""));
+        assertTrue(plan.contains("\"status\": \"planned\""));
+    }
+
+    @Test
+    void operatorClusterLifecycleUsesSavedPlan() throws Exception {
+        Path stateDir = tempDir.resolve("cluster-lifecycle-state");
+        List<List<String>> commands = new ArrayList<>();
+        BundleRuntimeCommandRunner runner = (command, workingDirectory) -> {
+            commands.add(List.copyOf(command));
+            if (command.equals(List.of("k3d", "kubeconfig", "get", "fulcrum-local"))) {
+                return new BundleRuntimeCommandResult(0, "apiVersion: v1\nclusters: []\n");
+            }
+            if (command.contains("status")) {
+                return new BundleRuntimeCommandResult(0, "helm-status-ok\n");
+            }
+            if (command.contains("delete")) {
+                return new BundleRuntimeCommandResult(0, "cluster-delete-ok\n");
+            }
+            return new BundleRuntimeCommandResult(0, "cluster-command-ok\n");
+        };
+
+        LaunchResult up = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "cluster",
+                "up",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, up.code(), up.err());
+        assertTrue(up.out().contains("status=running"));
+        assertTrue(Files.readString(stateDir.resolve("cluster").resolve("kubeconfig.yaml")).contains("apiVersion: v1"));
+        assertTrue(commands.stream().anyMatch(command -> command.containsAll(List.of("cluster", "create"))));
+        assertTrue(commands.stream().anyMatch(command -> command.containsAll(List.of("wait", "node"))));
+        assertTrue(commands.stream().anyMatch(command -> command.containsAll(List.of("upgrade", "--install"))));
+
+        LaunchResult status = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "cluster",
+                "status",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, status.code(), status.err());
+        assertTrue(status.out().contains("status=running"));
+        assertTrue(status.out().contains("clusterStatus=available"));
+
+        LaunchResult down = runOperator(RuntimeEnvironment.of(Map.of()), runner,
+                "cluster",
+                "down",
+                "--state-dir=" + stateDir);
+        assertEquals(FulcrumLauncher.OK, down.code(), down.err());
+        assertTrue(down.out().contains("cluster-delete-ok"));
+        assertTrue(down.out().contains("status=stopped"));
+        assertTrue(Files.readString(stateDir.resolve("cluster-plan.json")).contains("\"status\": \"stopped\""));
     }
 
     @Test
@@ -2609,6 +2841,28 @@ final class FulcrumLauncherTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         int code = new FulcrumLauncher(environment).run(
+                args,
+                new PrintStream(out, true, StandardCharsets.UTF_8),
+                new PrintStream(err, true, StandardCharsets.UTF_8)
+        );
+        return new LaunchResult(
+                code,
+                out.toString(StandardCharsets.UTF_8),
+                err.toString(StandardCharsets.UTF_8)
+        );
+    }
+
+    private LaunchResult runOperator(
+            RuntimeEnvironment environment,
+            BundleRuntimeCommandRunner runner,
+            String... args) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int code = new OperatorCli(
+                environment,
+                FulcrumLauncherTest.class.getClassLoader(),
+                runner
+        ).run(
                 args,
                 new PrintStream(out, true, StandardCharsets.UTF_8),
                 new PrintStream(err, true, StandardCharsets.UTF_8)

@@ -55,6 +55,18 @@ final class HelmDeploymentChartTest {
         assertFalse(roles.contains("--tier="));
     }
 
+    @Test
+    void controllerServiceExposesAuthorityBackendRegistrationEndpoint() throws IOException {
+        String roles = resource("fulcrum/helm/fulcrum/templates/roles.yaml");
+
+        assertTrue(roles.contains("kind: Service"));
+        assertTrue(roles.contains("name: {{ include \"fulcrum.name\" . }}-controller-service"));
+        assertTrue(roles.contains("name: FULCRUM_AUTHORITY_REGISTRATION_BIND_HOST"));
+        assertTrue(roles.contains("name: FULCRUM_AUTHORITY_REGISTRATION_PORT"));
+        assertTrue(roles.contains("containerPort: 18085"));
+        assertTrue(roles.contains("targetPort: registration"));
+    }
+
     private static void assertRole(String roles, String role) {
         assertTrue(roles.contains("sh.harold.fulcrum/role: " + role), role);
         assertTrue(roles.contains("--role=" + role), role);

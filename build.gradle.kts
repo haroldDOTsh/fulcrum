@@ -464,9 +464,10 @@ tasks.register("publishSdkToGitHubPackages") {
 
 tasks.register("publishFulcrumDistribution") {
     group = "publishing"
-    description = "Publishes the Fulcrum v2 GitHub Packages SDK/BOM and signed GHCR OCI images."
+    description = "Publishes the Fulcrum v2 GitHub Packages SDK/BOM and signed GHCR OCI images and bundles."
     dependsOn("publishSdkToGitHubPackages")
     dependsOn(":distribution:service-launcher:signFulcrumImages")
+    dependsOn(":distribution:service-launcher:signFulcrumBundles")
     dependsOn(":distribution:service-launcher:writeFulcrumReleaseManifest")
 }
 

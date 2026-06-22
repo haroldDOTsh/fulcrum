@@ -9,10 +9,96 @@ fi
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 OPERATOR_HOME=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 IMAGE="${FULCRUM_CLI_IMAGE:-ghcr.io/harolddotsh/fulcrum-service-launcher:5.0.0-alpha.1}"
+DOCKER_SOCKET="${FULCRUM_DOCKER_SOCKET:-/var/run/docker.sock}"
+DOCKER_HOST_VALUE="${DOCKER_HOST:-unix:///var/run/docker.sock}"
+KUBE_DIR="${FULCRUM_KUBE_DIR:-${HOME:-}/.kube}"
+
+if [ -n "${FULCRUM_DOCKER_SOCKET:-}" ] || [ -S "$DOCKER_SOCKET" ]; then
+  if [ -d "$KUBE_DIR" ]; then
+    exec docker run --rm -i \
+      -v "$PWD:/workspace" \
+      -w /workspace \
+      -v "$OPERATOR_HOME:/opt/fulcrum/operator:ro" \
+      -v "$DOCKER_SOCKET:/var/run/docker.sock" \
+      -v "$KUBE_DIR:/root/.kube:ro" \
+      -e FULCRUM_OPERATOR_HOME=/opt/fulcrum/operator \
+      -e FULCRUM_CASSANDRA_IMAGE \
+      -e FULCRUM_KAFKA_IMAGE \
+      -e FULCRUM_OBJECT_STORE_ACCESS_KEY \
+      -e FULCRUM_OBJECT_STORE_IMAGE \
+      -e FULCRUM_OBJECT_STORE_SECRET_KEY \
+      -e FULCRUM_PAPER_GAMESERVER_IMAGE \
+      -e FULCRUM_PAPER_SESSION_OWNER_TOKEN \
+      -e FULCRUM_POSTGRES_IMAGE \
+      -e FULCRUM_POSTGRES_PASSWORD \
+      -e FULCRUM_SERVICE_LAUNCHER_IMAGE \
+      -e FULCRUM_VALKEY_IMAGE \
+      -e FULCRUM_VELOCITY_PROXY_IMAGE \
+      -e DOCKER_HOST="$DOCKER_HOST_VALUE" \
+      "$IMAGE" "$@"
+  fi
+
+  exec docker run --rm -i \
+    -v "$PWD:/workspace" \
+    -w /workspace \
+    -v "$OPERATOR_HOME:/opt/fulcrum/operator:ro" \
+    -v "$DOCKER_SOCKET:/var/run/docker.sock" \
+    -e FULCRUM_OPERATOR_HOME=/opt/fulcrum/operator \
+    -e FULCRUM_CASSANDRA_IMAGE \
+    -e FULCRUM_KAFKA_IMAGE \
+    -e FULCRUM_OBJECT_STORE_ACCESS_KEY \
+    -e FULCRUM_OBJECT_STORE_IMAGE \
+    -e FULCRUM_OBJECT_STORE_SECRET_KEY \
+    -e FULCRUM_PAPER_GAMESERVER_IMAGE \
+    -e FULCRUM_PAPER_SESSION_OWNER_TOKEN \
+    -e FULCRUM_POSTGRES_IMAGE \
+    -e FULCRUM_POSTGRES_PASSWORD \
+    -e FULCRUM_SERVICE_LAUNCHER_IMAGE \
+    -e FULCRUM_VALKEY_IMAGE \
+    -e FULCRUM_VELOCITY_PROXY_IMAGE \
+    -e DOCKER_HOST="$DOCKER_HOST_VALUE" \
+    "$IMAGE" "$@"
+fi
+
+if [ -d "$KUBE_DIR" ]; then
+  exec docker run --rm -i \
+    -v "$PWD:/workspace" \
+    -w /workspace \
+    -v "$OPERATOR_HOME:/opt/fulcrum/operator:ro" \
+    -v "$KUBE_DIR:/root/.kube:ro" \
+    -e FULCRUM_OPERATOR_HOME=/opt/fulcrum/operator \
+    -e FULCRUM_CASSANDRA_IMAGE \
+    -e FULCRUM_KAFKA_IMAGE \
+    -e FULCRUM_OBJECT_STORE_ACCESS_KEY \
+    -e FULCRUM_OBJECT_STORE_IMAGE \
+    -e FULCRUM_OBJECT_STORE_SECRET_KEY \
+    -e FULCRUM_PAPER_GAMESERVER_IMAGE \
+    -e FULCRUM_PAPER_SESSION_OWNER_TOKEN \
+    -e FULCRUM_POSTGRES_IMAGE \
+    -e FULCRUM_POSTGRES_PASSWORD \
+    -e FULCRUM_SERVICE_LAUNCHER_IMAGE \
+    -e FULCRUM_VALKEY_IMAGE \
+    -e FULCRUM_VELOCITY_PROXY_IMAGE \
+    -e DOCKER_HOST="$DOCKER_HOST_VALUE" \
+    "$IMAGE" "$@"
+fi
 
 exec docker run --rm -i \
   -v "$PWD:/workspace" \
   -w /workspace \
   -v "$OPERATOR_HOME:/opt/fulcrum/operator:ro" \
   -e FULCRUM_OPERATOR_HOME=/opt/fulcrum/operator \
+  -e FULCRUM_CASSANDRA_IMAGE \
+  -e FULCRUM_KAFKA_IMAGE \
+  -e FULCRUM_OBJECT_STORE_ACCESS_KEY \
+  -e FULCRUM_OBJECT_STORE_IMAGE \
+  -e FULCRUM_OBJECT_STORE_SECRET_KEY \
+  -e FULCRUM_PAPER_GAMESERVER_IMAGE \
+  -e FULCRUM_PAPER_SESSION_OWNER_TOKEN \
+  -e FULCRUM_POSTGRES_IMAGE \
+  -e FULCRUM_POSTGRES_PASSWORD \
+  -e FULCRUM_SERVICE_LAUNCHER_IMAGE \
+  -e FULCRUM_VALKEY_IMAGE \
+  -e FULCRUM_VELOCITY_PROXY_IMAGE \
+  -e DOCKER_HOST="$DOCKER_HOST_VALUE" \
   "$IMAGE" "$@"

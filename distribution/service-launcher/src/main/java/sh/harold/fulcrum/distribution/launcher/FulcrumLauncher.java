@@ -79,7 +79,7 @@ public final class FulcrumLauncher {
 
     private static String usage() {
         return String.join(System.lineSeparator(),
-                "Usage: fulcrum <up|status|down|bundle|dev|author|identity> [options]",
+                "Usage: fulcrum <up|status|down|cluster|bundle|dev|author|identity> [options]",
                 "       fulcrum [--profile=<profile>] [--tier=<tier>] [--role=<role>] [--mode=<plan|run>]",
                 "               [--probe-host=<host>] [--probe-port=<port>] [--run-for=<duration>]",
                 "",
@@ -87,8 +87,9 @@ public final class FulcrumLauncher {
                 "  up       create a single-machine run plan and start or render the selected deployment unit",
                 "  status   inspect the saved run plan",
                 "  down     stop the saved deployment unit",
+                "  cluster  local k3d/kind cluster lifecycle commands",
                 "  bundle   declarative bundle commands (Phase 4)",
-                "  dev      author reload loop (Phase 5)",
+                "  dev      author reload and one-click capability test loop (Phase 5)",
                 "  author   author project commands (Phase 5)",
                 "  identity install credential commands (Phase 4)",
                 "",

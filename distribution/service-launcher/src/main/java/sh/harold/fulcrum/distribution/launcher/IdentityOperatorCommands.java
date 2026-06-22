@@ -25,18 +25,19 @@ final class IdentityOperatorCommands {
             out.print("Usage: fulcrum identity list [--state-dir=<path>]" + System.lineSeparator());
             return FulcrumLauncher.OK;
         }
-        Map<String, BundleReconcileReceipt> latest = new BundleReceiptStore(stateDir(options)).latestByBundle();
+        Map<String, BundleInstallGrantRecord> latest =
+                new BundleInstallGrantStateStore(stateDir(options)).latestByBundle();
         long installed = latest.values().stream()
-                .filter(receipt -> receipt.status().equals("INSTALLED"))
-                .filter(receipt -> receipt.grantFingerprint().isPresent())
+                .filter(BundleInstallGrantRecord::active)
                 .count();
         out.println("identities=" + installed);
         latest.values().stream()
-                .filter(receipt -> receipt.status().equals("INSTALLED"))
-                .filter(receipt -> receipt.grantFingerprint().isPresent())
-                .forEach(receipt -> out.println("bundle=" + receipt.bundleId()
-                        + " grantFingerprint=" + receipt.grantFingerprint().orElseThrow()
-                        + " credential=install://bundle/" + receipt.bundleId() + "/credential"));
+                .filter(BundleInstallGrantRecord::active)
+                .forEach(record -> out.println("bundle=" + record.bundleId()
+                        + " status=" + record.status()
+                        + " grantFingerprint=" + record.grantFingerprint()
+                        + " instance=" + record.instanceId()
+                        + " credential=" + record.credentialRef()));
         return FulcrumLauncher.OK;
     }
 
@@ -49,16 +50,21 @@ final class IdentityOperatorCommands {
         String id = options.value("id")
                 .or(() -> options.positionals().stream().findFirst())
                 .orElseThrow(() -> new IllegalArgumentException("Missing bundle id"));
-        BundleReconcileReceipt receipt = new BundleReceiptStore(stateDir(options)).latestByBundle().get(id);
-        if (receipt == null) {
+        BundleInstallGrantRecord grant = new BundleInstallGrantStateStore(stateDir(options))
+                .latest(id)
+                .orElse(null);
+        if (grant == null) {
             out.println("bundle=" + id);
             out.println("status=missing");
             return FulcrumLauncher.OK;
         }
-        out.println("bundle=" + receipt.bundleId());
-        out.println("status=" + receipt.status());
-        out.println("reason=" + receipt.reason());
-        out.println("grantFingerprint=" + receipt.grantFingerprint().orElse("none"));
+        out.println("bundle=" + grant.bundleId());
+        out.println("status=" + grant.status());
+        out.println("reason=" + grant.reason());
+        out.println("grantFingerprint=" + grant.grantFingerprint());
+        out.println("instanceId=" + grant.instanceId());
+        out.println("credential=" + grant.credentialRef());
+        out.println("evidence=" + grant.evidence());
         return FulcrumLauncher.OK;
     }
 
@@ -81,7 +87,7 @@ final class IdentityOperatorCommands {
                 "Usage: fulcrum identity <list|inspect> [options]",
                 "",
                 "Commands:",
-                "  list     print active install grants from the latest reconcile receipts",
+                "  list     print active install grants from the grant lifecycle ledger",
                 "  inspect  print the latest grant lifecycle receipt for one bundle",
                 "");
     }

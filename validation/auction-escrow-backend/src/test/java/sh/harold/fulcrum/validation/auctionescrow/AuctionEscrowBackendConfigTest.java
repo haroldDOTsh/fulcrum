@@ -38,6 +38,7 @@ final class AuctionEscrowBackendConfigTest {
                 AuctionEscrowAuthority.RESOURCE_CLASS));
         assertEquals(0, config.replayWatermark());
         assertTrue(config.registrationEndpoint().isEmpty());
+        assertEquals("launch-nonce-deployment", config.launchNonce());
         assertEquals(AuctionEscrowBackendConfig.StartupMode.SERVE, config.startupMode());
         assertTrue(config.bootSummary().contains("authorityDomain=auction-escrow"));
         assertTrue(config.bootSummary().contains("responseTopic=rsp.auction.escrow"));
@@ -56,6 +57,50 @@ final class AuctionEscrowBackendConfigTest {
                 URI.create("http://fulcrum-control:8080/authority-backends/register"),
                 config.registrationEndpoint().orElseThrow());
         assertTrue(config.bootSummary().contains("registrationEndpoint=http://fulcrum-control:8080/authority-backends/register"));
+    }
+
+    @Test
+    void acceptsGenericLauncherEnvironmentAndUsesEscrowDefaults() {
+        Map<String, String> environment = environment();
+        environment.remove("FULCRUM_ESCROW_BUNDLE_DIGEST");
+        environment.remove("FULCRUM_AUTHORITY_DOMAIN");
+        environment.remove("FULCRUM_AUTHORITY_RESOURCE_CLASS");
+        environment.remove("FULCRUM_ESCROW_CONTRACT_NAME");
+        environment.remove("FULCRUM_ESCROW_COMMAND_TOPIC");
+        environment.remove("FULCRUM_ESCROW_EVENT_TOPIC");
+        environment.remove("FULCRUM_ESCROW_STATE_TOPIC");
+        environment.remove("FULCRUM_ESCROW_RESPONSE_TOPIC");
+        environment.remove("FULCRUM_ESCROW_CONSUMER_GROUP");
+        environment.remove("FULCRUM_ESCROW_REPLAY_WATERMARK");
+        environment.remove("FULCRUM_ESCROW_READY_FILE");
+        environment.remove("FULCRUM_ESCROW_STARTUP_MODE");
+        environment.remove("FULCRUM_LAUNCH_NONCE");
+        environment.put("FULCRUM_BUNDLE_DIGEST", "sha256:launcher-bundle");
+        environment.put("FULCRUM_AUTHORITY_DOMAINS", "sample-authority,auction-escrow");
+        environment.put("FULCRUM_RESOURCE_CLASSES", "sample-backend,external-authority");
+        environment.put("FULCRUM_AUTHORITY_REGISTRATION_ENDPOINT", "http://controller-service:18085/authority-backends/register");
+        environment.put("FULCRUM_READY_FILE", "/var/run/fulcrum/backend.ready");
+        environment.put("FULCRUM_STARTUP_MODE", "bootstrap-check");
+        environment.put("FULCRUM_BOOT_NONCE", "boot-nonce-launcher");
+
+        AuctionEscrowBackendConfig config = AuctionEscrowBackendConfig.from(environment);
+
+        assertEquals("sha256:launcher-bundle", config.bundleDigest());
+        assertEquals(AuctionEscrowAuthority.AUTHORITY_DOMAIN, config.authorityDomain());
+        assertEquals(AuctionEscrowAuthority.RESOURCE_CLASS, config.resourceClass());
+        assertEquals(AuctionEscrowAuthority.CONTRACT.value(), config.contractName());
+        assertEquals("cmd.auction.escrow", config.commandTopic());
+        assertEquals("evt.auction.escrow", config.eventTopic());
+        assertEquals("state.auction.escrow", config.stateTopic());
+        assertEquals("rsp.auction.escrow", config.responseTopic());
+        assertEquals("auction-escrow-backend", config.consumerGroup());
+        assertEquals(0, config.replayWatermark());
+        assertEquals("/var/run/fulcrum/backend.ready", config.readyFile());
+        assertEquals("boot-nonce-launcher", config.launchNonce());
+        assertEquals(AuctionEscrowBackendConfig.StartupMode.BOOTSTRAP_CHECK, config.startupMode());
+        assertEquals(
+                URI.create("http://controller-service:18085/authority-backends/register"),
+                config.registrationEndpoint().orElseThrow());
     }
 
     @Test
@@ -109,6 +154,7 @@ final class AuctionEscrowBackendConfigTest {
         environment.put("FULCRUM_ESCROW_REPLAY_WATERMARK", "0");
         environment.put("FULCRUM_ESCROW_READY_FILE", "/var/run/fulcrum/auction-escrow.ready");
         environment.put("FULCRUM_ESCROW_STARTUP_MODE", "serve");
+        environment.put("FULCRUM_LAUNCH_NONCE", "launch-nonce-deployment");
         return environment;
     }
 }

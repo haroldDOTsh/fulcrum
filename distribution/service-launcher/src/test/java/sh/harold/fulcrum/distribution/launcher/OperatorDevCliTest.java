@@ -8,6 +8,8 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -95,6 +97,67 @@ final class OperatorDevCliTest {
         assertFalse(Files.exists(stateDir.resolve("author-dev").resolve("objects")));
     }
 
+    @Test
+    void devTestInstallsContributionThroughReconcileAndRunsProbe() throws Exception {
+        Path project = tempDir.resolve("test-contribution");
+        Path stateDir = tempDir.resolve("test-state");
+        assertEquals(FulcrumLauncher.OK, run(
+                "author",
+                "new",
+                "--kind=contribution",
+                "sample-tools",
+                "--output=" + project).code());
+
+        LaunchResult result = run(
+                "dev",
+                "test",
+                "--project-dir=" + project,
+                "--state-dir=" + stateDir);
+
+        assertEquals(FulcrumLauncher.OK, result.code(), result.err());
+        assertTrue(result.out().contains("status=STAGED"));
+        assertTrue(result.out().contains("installPath=fulcrum-bundle-reconcile"));
+        assertTrue(result.out().contains("probe=sample-tools loaded with SDK"));
+        assertTrue(result.out().contains("testStatus=PASSED"));
+        assertTrue(Files.readString(stateDir.resolve(BundleDesiredStateStore.FILE_NAME)).contains("\"kind\":\"contribution\""));
+        assertTrue(Files.readString(stateDir.resolve(BundleReceiptStore.FILE_NAME)).contains("\"status\":\"STAGED\""));
+    }
+
+    @Test
+    void devTestLocalClusterBootsClusterBeforeReconcileAndProbe() throws Exception {
+        Path project = tempDir.resolve("cluster-contribution");
+        Path stateDir = tempDir.resolve("cluster-test-state");
+        assertEquals(FulcrumLauncher.OK, run(
+                "author",
+                "new",
+                "--kind=contribution",
+                "sample-tools",
+                "--output=" + project).code());
+        List<List<String>> commands = new ArrayList<>();
+        BundleRuntimeCommandRunner runner = (command, workingDirectory) -> {
+            commands.add(List.copyOf(command));
+            if (command.equals(List.of("k3d", "kubeconfig", "get", "fulcrum-local"))) {
+                return new BundleRuntimeCommandResult(0, "apiVersion: v1\nclusters: []\n");
+            }
+            return new BundleRuntimeCommandResult(0, "ok\n");
+        };
+
+        LaunchResult result = runOperator(runner,
+                "dev",
+                "test",
+                "--shape=local-cluster",
+                "--project-dir=" + project,
+                "--state-dir=" + stateDir);
+
+        assertEquals(FulcrumLauncher.OK, result.code(), result.err());
+        assertTrue(result.out().contains("status=running"));
+        assertTrue(result.out().contains("status=STAGED"));
+        assertTrue(result.out().contains("shape=local-cluster"));
+        assertTrue(result.out().contains("testStatus=PASSED"));
+        assertTrue(commands.stream().anyMatch(command -> command.containsAll(List.of("cluster", "create"))));
+        assertTrue(commands.stream().anyMatch(command -> command.containsAll(List.of("upgrade", "--install"))));
+    }
+
     private LaunchResult run(String... args) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
@@ -103,6 +166,25 @@ final class OperatorDevCliTest {
                 new PrintStream(out, true, StandardCharsets.UTF_8),
                 new PrintStream(err, true, StandardCharsets.UTF_8)
         );
+        return new LaunchResult(
+                code,
+                out.toString(StandardCharsets.UTF_8),
+                err.toString(StandardCharsets.UTF_8)
+        );
+    }
+
+    private LaunchResult runOperator(BundleRuntimeCommandRunner runner, String... args) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int code = new OperatorCli(
+                RuntimeEnvironment.of(Map.of()),
+                Thread.currentThread().getContextClassLoader(),
+                runner)
+                .run(
+                        args,
+                        new PrintStream(out, true, StandardCharsets.UTF_8),
+                        new PrintStream(err, true, StandardCharsets.UTF_8)
+                );
         return new LaunchResult(
                 code,
                 out.toString(StandardCharsets.UTF_8),

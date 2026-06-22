@@ -15,7 +15,7 @@ final class AuctionEscrowDeploymentLayoutTest {
     void imageContextInstallsExecutableEscrowBackendDistribution() throws IOException {
         String dockerfile = resource("fulcrum/container/auction-escrow/Dockerfile");
         String readme = resource("fulcrum/container/auction-escrow/README.txt");
-        String build = Files.readString(Path.of("build.gradle.kts"));
+        String build = Files.readString(Path.of("build.gradle.kts")).replace("\r\n", "\n");
 
         assertTrue(dockerfile.contains("FROM eclipse-temurin:26-jre"));
         assertTrue(dockerfile.contains("COPY auction-escrow-backend /opt/fulcrum/auction-escrow"));
@@ -26,10 +26,20 @@ final class AuctionEscrowDeploymentLayoutTest {
         assertTrue(build.contains("applicationName = \"auction-escrow-backend\""));
         assertTrue(build.contains("AuctionEscrowBackendMain"));
         assertTrue(build.contains("val defaultAuctionEscrowImage = \"ghcr.io/harolddotsh/fulcrum-auction-escrow:dev\""));
+        assertTrue(build.contains("auctionEscrowPublishedImageTag"));
         assertTrue(build.contains("auctionEscrowImageContext"));
         assertTrue(build.contains("auctionEscrowImage"));
+        assertTrue(build.contains("auctionEscrowImagePush"));
+        assertTrue(build.contains("auctionEscrowImageSign"));
+        assertTrue(build.contains("auctionEscrowImagePin"));
+        assertTrue(build.contains("publishAuctionEscrowImage"));
+        assertTrue(build.contains("signAuctionEscrowImage"));
+        assertTrue(build.contains("fulcrum.image-publish-receipt/v1"));
         assertTrue(build.contains("auctionEscrowRenderManifests"));
         assertTrue(build.contains("fulcrum.auctionEscrowImage"));
+        assertTrue(build.contains("fulcrum.auctionEscrowPublishedImage"));
+        assertTrue(build.contains("oras\", \"resolve\""));
+        assertTrue(build.contains("cosign\", \"sign\", \"--yes\""));
         assertTrue(build.contains("auctionEscrowClusterImportImage"));
         assertTrue(build.contains("auctionEscrowClusterApply"));
         assertTrue(build.contains("auctionEscrowClusterWaitForInitialized"));

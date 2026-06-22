@@ -421,7 +421,7 @@ final class AgonesDeploymentManifestTest {
 
     @Test
     void gradleDeployHelpersPreferGeneratedKubeconfigOverCurrentContext() throws IOException {
-        String build = Files.readString(Path.of("build.gradle.kts"));
+        String build = Files.readString(Path.of("build.gradle.kts")).replace("\r\n", "\n");
 
         assertTrue(build.contains("val kubeconfig = providers.gradleProperty(\"fulcrum.kubeconfig\")"));
         assertTrue(build.contains("val generatedClusterKubeconfig = layout.buildDirectory.file(\"cluster-e2e/kubeconfig.yaml\")"));
@@ -443,7 +443,7 @@ final class AgonesDeploymentManifestTest {
 
     @Test
     void gradleRegistersGeneratedClusterLifecycle() throws IOException {
-        String build = Files.readString(Path.of("build.gradle.kts"));
+        String build = Files.readString(Path.of("build.gradle.kts")).replace("\r\n", "\n");
 
         assertTrue(build.contains("val clusterProvider = providers.gradleProperty(\"fulcrum.clusterProvider\")"));
         assertTrue(build.contains(".orElse(\"k3d\")"));

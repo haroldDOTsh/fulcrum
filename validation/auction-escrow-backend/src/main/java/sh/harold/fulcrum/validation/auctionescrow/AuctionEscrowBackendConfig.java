@@ -18,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 public record AuctionEscrowBackendConfig(
         HostSecurityContext securityContext,
@@ -40,7 +41,16 @@ public record AuctionEscrowBackendConfig(
         long replayWatermark,
         Optional<URI> registrationEndpoint,
         String readyFile,
+        String launchNonce,
         StartupMode startupMode) {
+    private static final String DEFAULT_COMMAND_TOPIC = "cmd.auction.escrow";
+    private static final String DEFAULT_EVENT_TOPIC = "evt.auction.escrow";
+    private static final String DEFAULT_STATE_TOPIC = "state.auction.escrow";
+    private static final String DEFAULT_RESPONSE_TOPIC = "rsp.auction.escrow";
+    private static final String DEFAULT_CONSUMER_GROUP = "auction-escrow-backend";
+    private static final String DEFAULT_READY_FILE = "/var/run/fulcrum/auction-escrow.ready";
+    private static final String DEFAULT_STARTUP_MODE = "serve";
+
     public AuctionEscrowBackendConfig {
         securityContext = Objects.requireNonNull(securityContext, "securityContext");
         bundleDigest = requireNonBlank(bundleDigest, "bundleDigest");
@@ -70,6 +80,7 @@ public record AuctionEscrowBackendConfig(
         }
         registrationEndpoint = registrationEndpoint == null ? Optional.empty() : registrationEndpoint;
         readyFile = requireNonBlank(readyFile, "readyFile");
+        launchNonce = requireNonBlank(launchNonce, "launchNonce");
         startupMode = Objects.requireNonNull(startupMode, "startupMode");
     }
 
@@ -93,16 +104,26 @@ public record AuctionEscrowBackendConfig(
                         AuthorityBackendGrants.resourceClass(AuctionEscrowAuthority.RESOURCE_CLASS)));
         return new AuctionEscrowBackendConfig(
                 securityContext,
-                required(environment, "FULCRUM_ESCROW_BUNDLE_DIGEST"),
-                required(environment, "FULCRUM_AUTHORITY_DOMAIN"),
-                required(environment, "FULCRUM_AUTHORITY_RESOURCE_CLASS"),
-                required(environment, "FULCRUM_ESCROW_CONTRACT_NAME"),
+                requiredAny(environment, "FULCRUM_ESCROW_BUNDLE_DIGEST", "FULCRUM_BUNDLE_DIGEST"),
+                expectedFrom(
+                        environment,
+                        "FULCRUM_AUTHORITY_DOMAIN",
+                        "FULCRUM_AUTHORITY_DOMAINS",
+                        "authorityDomain",
+                        AuctionEscrowAuthority.AUTHORITY_DOMAIN),
+                expectedFrom(
+                        environment,
+                        "FULCRUM_AUTHORITY_RESOURCE_CLASS",
+                        "FULCRUM_RESOURCE_CLASSES",
+                        "resourceClass",
+                        AuctionEscrowAuthority.RESOURCE_CLASS),
+                optional(environment, "FULCRUM_ESCROW_CONTRACT_NAME").orElse(AuctionEscrowAuthority.CONTRACT.value()),
                 required(environment, "FULCRUM_KAFKA_BOOTSTRAP_SERVERS"),
-                required(environment, "FULCRUM_ESCROW_COMMAND_TOPIC"),
-                required(environment, "FULCRUM_ESCROW_EVENT_TOPIC"),
-                required(environment, "FULCRUM_ESCROW_STATE_TOPIC"),
-                required(environment, "FULCRUM_ESCROW_RESPONSE_TOPIC"),
-                required(environment, "FULCRUM_ESCROW_CONSUMER_GROUP"),
+                optional(environment, "FULCRUM_ESCROW_COMMAND_TOPIC").orElse(DEFAULT_COMMAND_TOPIC),
+                optional(environment, "FULCRUM_ESCROW_EVENT_TOPIC").orElse(DEFAULT_EVENT_TOPIC),
+                optional(environment, "FULCRUM_ESCROW_STATE_TOPIC").orElse(DEFAULT_STATE_TOPIC),
+                optional(environment, "FULCRUM_ESCROW_RESPONSE_TOPIC").orElse(DEFAULT_RESPONSE_TOPIC),
+                optional(environment, "FULCRUM_ESCROW_CONSUMER_GROUP").orElse(DEFAULT_CONSUMER_GROUP),
                 required(environment, "FULCRUM_POSTGRES_JDBC_URL"),
                 required(environment, "FULCRUM_POSTGRES_USERNAME"),
                 required(environment, "FULCRUM_POSTGRES_PASSWORD"),
@@ -110,9 +131,16 @@ public record AuctionEscrowBackendConfig(
                 required(environment, "FULCRUM_CASSANDRA_LOCAL_DATACENTER"),
                 required(environment, "FULCRUM_VALKEY_ENDPOINT"),
                 replayWatermark(environment),
-                registrationEndpoint(environment.get("FULCRUM_REGISTRATION_ENDPOINT")),
-                environment.getOrDefault("FULCRUM_ESCROW_READY_FILE", "/var/run/fulcrum/auction-escrow.ready"),
-                StartupMode.from(environment.getOrDefault("FULCRUM_ESCROW_STARTUP_MODE", "serve")));
+                registrationEndpoint(optionalAny(
+                        environment,
+                        "FULCRUM_REGISTRATION_ENDPOINT",
+                        "FULCRUM_AUTHORITY_REGISTRATION_ENDPOINT")),
+                optionalAny(environment, "FULCRUM_ESCROW_READY_FILE", "FULCRUM_READY_FILE")
+                        .orElse(DEFAULT_READY_FILE),
+                optionalAny(environment, "FULCRUM_LAUNCH_NONCE", "FULCRUM_BOOT_NONCE")
+                        .orElseGet(() -> UUID.randomUUID().toString()),
+                StartupMode.from(optionalAny(environment, "FULCRUM_ESCROW_STARTUP_MODE", "FULCRUM_STARTUP_MODE")
+                        .orElse(DEFAULT_STARTUP_MODE)));
     }
 
     public AuthorityBackendRegistrationRequest registrationRequest(Instant requestedAt) {
@@ -139,6 +167,7 @@ public record AuctionEscrowBackendConfig(
                 + "|responseTopic=" + responseTopic
                 + "|consumerGroup=" + consumerGroup
                 + "|replayWatermark=" + replayWatermark
+                + "|launchNonceDigest=" + AuthorityBackendDescriptorDigests.sha256Hex(launchNonce)
                 + "|registrationEndpoint=" + registrationEndpoint.map(URI::toString).orElse("absent");
     }
 
@@ -159,7 +188,7 @@ public record AuctionEscrowBackendConfig(
     }
 
     private static long replayWatermark(Map<String, String> environment) {
-        String raw = required(environment, "FULCRUM_ESCROW_REPLAY_WATERMARK");
+        String raw = optional(environment, "FULCRUM_ESCROW_REPLAY_WATERMARK").orElse("0");
         try {
             return Long.parseLong(raw);
         } catch (NumberFormatException exception) {
@@ -171,13 +200,51 @@ public record AuctionEscrowBackendConfig(
         return requireNonBlank(environment.get(name), name);
     }
 
-    private static Optional<URI> registrationEndpoint(String value) {
+    private static String requiredAny(Map<String, String> environment, String primaryName, String fallbackName) {
+        return optionalAny(environment, primaryName, fallbackName)
+                .orElseThrow(() -> new IllegalArgumentException(primaryName + " or " + fallbackName + " must be set"));
+    }
+
+    private static String expectedFrom(
+            Map<String, String> environment,
+            String singularName,
+            String listName,
+            String label,
+            String expected) {
+        Optional<String> singular = optional(environment, singularName);
+        if (singular.isPresent()) {
+            return singular.orElseThrow();
+        }
+        String listed = optional(environment, listName)
+                .orElseThrow(() -> new IllegalArgumentException(singularName + " or " + listName + " must be set"));
+        for (String candidate : listed.split(",")) {
+            if (expected.equals(candidate.trim())) {
+                return expected;
+            }
+        }
+        throw new IllegalArgumentException(label + " must include " + expected + " in " + listName + " but was " + listed);
+    }
+
+    private static Optional<String> optionalAny(Map<String, String> environment, String primaryName, String fallbackName) {
+        Optional<String> primary = optional(environment, primaryName);
+        return primary.isPresent() ? primary : optional(environment, fallbackName);
+    }
+
+    private static Optional<String> optional(Map<String, String> environment, String name) {
+        String value = environment.get(name);
         if (value == null || value.isBlank()) {
             return Optional.empty();
         }
-        URI endpoint = URI.create(value.trim());
+        return Optional.of(value.trim());
+    }
+
+    private static Optional<URI> registrationEndpoint(Optional<String> value) {
+        if (value.isEmpty()) {
+            return Optional.empty();
+        }
+        URI endpoint = URI.create(value.orElseThrow());
         if (!"http".equals(endpoint.getScheme()) && !"https".equals(endpoint.getScheme())) {
-            throw new IllegalArgumentException("FULCRUM_REGISTRATION_ENDPOINT must use http or https");
+            throw new IllegalArgumentException("registration endpoint must use http or https");
         }
         return Optional.of(endpoint);
     }
@@ -186,7 +253,7 @@ public record AuctionEscrowBackendConfig(
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must be set");
         }
-        return value;
+        return value.trim();
     }
 
     private static String requireExpected(String value, String name, String expected) {

@@ -7,7 +7,6 @@ import sh.harold.fulcrum.sdk.authority.HttpAuthorityBackendRegistrationClient;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.UUID;
 
 public final class AuctionEscrowBackendMain {
     private AuctionEscrowBackendMain() {
@@ -43,7 +42,7 @@ public final class AuctionEscrowBackendMain {
                     config,
                     maybeReceipt.orElseThrow(),
                     Instant.now(),
-                    UUID.randomUUID().toString());
+                    config.launchNonce());
             try {
                 AuctionEscrowReadinessPublisher.publish(Path.of(config.readyFile()), evidence);
             } catch (java.io.IOException exception) {
@@ -61,7 +60,7 @@ public final class AuctionEscrowBackendMain {
                 AuctionEscrowReadinessEvidence evidence = runner.publishReadiness(
                         Path.of(config.readyFile()),
                         Instant.now(),
-                        UUID.randomUUID().toString());
+                        config.launchNonce());
                 System.out.println("auction-escrow-backend ready=true"
                         + "|readyFile=" + config.readyFile()
                         + "|receiptId=" + evidence.receiptId()
