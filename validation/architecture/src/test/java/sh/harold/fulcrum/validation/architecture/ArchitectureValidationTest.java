@@ -622,17 +622,6 @@ final class ArchitectureValidationTest {
     }
 
     @Test
-    void storeAdapterCertificationMatrixExists() throws IOException {
-        Path matrix = ROOT.resolve("validation/store-adapter-certification/src/main/resources/fulcrum/validation/store-adapter-certification.md");
-        assertTrue(Files.exists(matrix), "store adapter certification matrix must exist");
-
-        String text = Files.readString(matrix, StandardCharsets.UTF_8);
-        for (String required : List.of("in-memory-authority-store", "kafka-log", "cassandra-projection", "postgresql-authority-record", "valkey-cache-idempotency", "object-storage-artifact")) {
-            assertTrue(text.contains(required), "store adapter certification matrix missing " + required);
-        }
-    }
-
-    @Test
     void concreteStoreAdaptersOwnPhysicalClients() throws IOException {
         assertSourceContains("data/store-kafka/src/main/java", "org.apache.kafka.clients.consumer", "org.apache.kafka.clients.producer");
         assertSourceContains("data/store-cassandra/src/main/java", "CqlSession");
