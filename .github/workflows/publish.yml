@@ -164,7 +164,7 @@ jobs:
         run: |
           set -euo pipefail
           operator_zip="distribution/service-launcher/build/operator/fulcrum-operator-${FULCRUM_VERSION}.zip"
-          release_manifest="distribution/service-launcher/build/publication/release-manifest/fulcrum-${FULCRUM_VERSION}.json"
+          release_manifest="build/publication/release-manifest/fulcrum-${FULCRUM_VERSION}.json"
           test -f "${operator_zip}"
           test -f "${release_manifest}"
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then

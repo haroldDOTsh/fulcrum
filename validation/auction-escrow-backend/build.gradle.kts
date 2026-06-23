@@ -1,5 +1,8 @@
 import org.gradle.api.GradleException
 import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.bundling.Tar
+import org.gradle.jvm.tasks.Jar
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 plugins {
@@ -120,6 +123,157 @@ tasks.register("signAuctionEscrowImage") {
     description = "Builds, pushes, cosign-signs, and pins the auction escrow backend OCI image."
     dependsOn(auctionEscrowImagePin)
 }
+
+evaluationDependsOn(":validation:auction-experience-bundle")
+val auctionExperienceProject = project(":validation:auction-experience-bundle")
+val auctionExperienceBundleJar = auctionExperienceProject.tasks.named<Jar>("jar")
+val auctionEscrowBundlePublishedRef = providers.gradleProperty("fulcrum.auctionEscrowBundle")
+    .orElse("ghcr.io/harolddotsh/fulcrum-bundles/auction-escrow:${project.version}")
+val auctionEscrowBundleManifestFile =
+    layout.buildDirectory.file("publication/bundles/auction-escrow/bundle-publication.json")
+val auctionEscrowBundlePinnedRefFile =
+    layout.buildDirectory.file("publication/bundles/auction-escrow/auction-escrow-bundle.ref")
+val auctionEscrowBackendImageRefOverride = providers.gradleProperty("fulcrum.auctionEscrowBackendImageRef")
+
+val writeAuctionEscrowBundleManifest by tasks.registering {
+    group = "publishing"
+    description = "Writes the digest-pinned auction escrow bundle publication manifest."
+    dependsOn(auctionEscrowImagePin)
+    inputs.property("auctionEscrowBackendImageRef", auctionEscrowBackendImageRefOverride.orElse(""))
+    inputs.file(auctionEscrowImagePinnedRefFile)
+    outputs.file(auctionEscrowBundleManifestFile)
+
+    doLast {
+        val backendImageRef = auctionEscrowBackendImageRefOverride.orNull
+            ?.takeIf { it.isNotBlank() }
+            ?: receiptValue(auctionEscrowImagePinnedRefFile.get().asFile, "pinnedRef")
+        if (!backendImageRef.contains("@sha256:")) {
+            throw GradleException("fulcrum.auctionEscrowBackendImageRef must be pinned by digest")
+        }
+        val outputFile = auctionEscrowBundleManifestFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.writeText("""
+            |{
+            |  "schema": "fulcrum.bundle-publication/v1",
+            |  "bundle": "auction-escrow",
+            |  "kind": "authority-backend",
+            |  "backendImageRef": ${jsonQuote(backendImageRef)},
+            |  "providerJar": "providers/auction-experience-bundle.jar",
+            |  "migrations": "migrations/auction-escrow"
+            |}
+            |""".trimMargin())
+    }
+}
+
+val auctionEscrowBundleArtifact by tasks.registering(Tar::class) {
+    group = "publishing"
+    description = "Assembles the auction escrow OCI bundle payload tar."
+    dependsOn(writeAuctionEscrowBundleManifest, auctionExperienceBundleJar)
+    archiveFileName.set("auction-escrow-bundle.tar")
+    destinationDirectory.set(layout.buildDirectory.dir("publication/bundles/auction-escrow"))
+    duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.FAIL
+
+    from(auctionExperienceBundleJar.flatMap { it.archiveFile }) {
+        into("providers")
+        rename { "auction-experience-bundle.jar" }
+    }
+    from(auctionEscrowBundleManifestFile) {
+        into("META-INF/fulcrum")
+    }
+    from(layout.projectDirectory.dir("src/main/resources/fulcrum/migrations/auction-escrow")) {
+        into("migrations/auction-escrow")
+    }
+}
+
+val auctionEscrowBundleArchive = auctionEscrowBundleArtifact.flatMap { it.archiveFile }
+
+val auctionEscrowBundlePush by tasks.registering(Exec::class) {
+    group = "publishing"
+    description = "Pushes the auction escrow OCI bundle artifact to the configured registry."
+    dependsOn(auctionEscrowBundleArtifact)
+    inputs.file(auctionEscrowBundleArchive)
+    doFirst {
+        workingDir(auctionEscrowBundleArchive.get().asFile.parentFile)
+        commandLine(
+            "oras",
+            "push",
+            "--artifact-type",
+            "application/vnd.harold.fulcrum.bundle.v1",
+            auctionEscrowBundlePublishedRef.get(),
+            auctionEscrowBundleArchive.get().asFile.name
+                + ":application/vnd.harold.fulcrum.bundle.layer.v1+tar")
+    }
+}
+
+val auctionEscrowBundleSign by tasks.registering(Exec::class) {
+    group = "publishing"
+    description = "Signs the pushed auction escrow OCI bundle artifact with cosign."
+    dependsOn(auctionEscrowBundlePush)
+    doFirst {
+        commandLine("cosign", "sign", "--yes", auctionEscrowBundlePublishedRef.get())
+    }
+}
+
+val auctionEscrowBundlePin by tasks.registering {
+    group = "publishing"
+    description = "Resolves and records the digest-pinned auction escrow OCI bundle reference."
+    dependsOn(auctionEscrowBundleSign)
+    outputs.file(auctionEscrowBundlePinnedRefFile)
+
+    doLast {
+        val execution = providers.exec {
+            commandLine("oras", "resolve", auctionEscrowBundlePublishedRef.get())
+        }
+        execution.result.get().assertNormalExitValue()
+        val digest = execution.standardOutput.asText.get().trim()
+        if (!digest.startsWith("sha256:")) {
+            throw GradleException("oras resolve did not return a sha256 digest for ${auctionEscrowBundlePublishedRef.get()}")
+        }
+        val outputFile = auctionEscrowBundlePinnedRefFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.writeText("""
+            |schema=fulcrum.bundle-publish-receipt/v1
+            |bundle=auction-escrow
+            |publishedRef=${auctionEscrowBundlePublishedRef.get()}
+            |digest=$digest
+            |pinnedRef=oci://${auctionEscrowBundlePublishedRef.get()}@$digest
+            |signature=cosign
+            |""".trimMargin())
+    }
+}
+
+tasks.register("assembleFulcrumBundles") {
+    group = "publishing"
+    description = "Assembles Fulcrum v2 OCI bundle payloads."
+    dependsOn(auctionEscrowBundleArtifact)
+}
+
+tasks.register("publishFulcrumBundles") {
+    group = "publishing"
+    description = "Assembles and pushes Fulcrum v2 OCI bundle artifacts."
+    dependsOn(auctionEscrowBundlePush)
+}
+
+tasks.register("signFulcrumBundles") {
+    group = "publishing"
+    description = "Assembles, pushes, cosign-signs, and pins Fulcrum v2 OCI bundle artifacts."
+    dependsOn(auctionEscrowBundlePin)
+}
+
+fun jsonQuote(value: String): String {
+    return "\"" + value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n") + "\""
+}
+
+fun receiptValue(file: File, key: String): String =
+    file.readLines()
+        .firstOrNull { it.startsWith("$key=") }
+        ?.substringAfter("=")
+        ?.takeIf { it.isNotBlank() }
+        ?: throw GradleException("${file.absolutePath} is missing $key")
 
 val auctionEscrowManifest = layout.projectDirectory.file(
     "src/main/resources/fulcrum/kubernetes/auction-escrow/auction-escrow.yaml")

@@ -1,13 +1,19 @@
 import groovy.util.Node
+import org.gradle.api.GradleException
 import groovy.util.NodeList
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.publish.maven.tasks.PublishToMavenRepository
 import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
+import java.io.File
+import java.util.Base64
+import java.net.URI
+import java.net.HttpURLConnection
 
 plugins {
     base
@@ -25,6 +31,31 @@ val publishedSdkArtifacts = mapOf(
     ":api:kernel-api" to "kernel-api",
 )
 val publishedSdkArtifactIds = publishedSdkArtifacts.values.toSet()
+
+fun githubPackagesArtifactExists(uri: URI, username: String, password: String): Boolean {
+    val connection = uri.toURL().openConnection() as HttpURLConnection
+    connection.requestMethod = "HEAD"
+    connection.instanceFollowRedirects = true
+    connection.connectTimeout = 5_000
+    connection.readTimeout = 5_000
+    if (username.isNotBlank() && password.isNotBlank()) {
+        val token = Base64.getEncoder().encodeToString("$username:$password".toByteArray())
+        connection.setRequestProperty("Authorization", "Basic $token")
+    }
+    return when (connection.responseCode) {
+        HttpURLConnection.HTTP_OK -> true
+        HttpURLConnection.HTTP_NOT_FOUND -> false
+        HttpURLConnection.HTTP_UNAUTHORIZED -> false
+        HttpURLConnection.HTTP_FORBIDDEN -> false
+        else -> false
+    }
+}
+
+fun githubPackagesArtifactUri(repositoryUrl: URI, group: String, artifactId: String, version: String, extension: String): URI {
+    val baseUrl = repositoryUrl.toString().trimEnd('/')
+    val groupPath = group.replace('.', '/')
+    return URI.create("$baseUrl/$groupPath/$artifactId/$version/$artifactId-$version.$extension")
+}
 
 fun MavenPublication.removeUnpublishedFulcrumDependencies(allowedArtifactIds: Set<String>) {
     pom.withXml {
@@ -193,6 +224,47 @@ subprojects {
                             description.set("Version alignment BOM for Fulcrum v2 author-facing SDK artifacts")
                             url.set("https://github.com/haroldDOTsh/fulcrum")
                         }
+                    }
+                }
+            }
+        }
+
+        tasks.withType<PublishToMavenRepository>().configureEach {
+            onlyIf {
+                if (repository.name != "githubPackages") {
+                    true
+                } else {
+                    val username = providers.gradleProperty("gpr.user")
+                        .orElse(providers.environmentVariable("GITHUB_ACTOR"))
+                        .orElse("")
+                        .get()
+                    val password = providers.gradleProperty("gpr.key")
+                        .orElse(providers.environmentVariable("GITHUB_TOKEN"))
+                        .orElse("")
+                        .get()
+                    val versionText = project.version.toString()
+                    val groupText = project.group.toString()
+                    val pomExists = githubPackagesArtifactExists(
+                        githubPackagesArtifactUri(repository.url, groupText, publishedArtifactId, versionText, "pom"),
+                        username,
+                        password)
+                    val jarExists = if (publishedArtifactId == "fulcrum-sdk-bom") {
+                        null
+                    } else {
+                        githubPackagesArtifactExists(
+                            githubPackagesArtifactUri(repository.url, groupText, publishedArtifactId, versionText, "jar"),
+                            username,
+                            password)
+                    }
+                    val complete = pomExists && (jarExists ?: true)
+                    val absent = !pomExists && jarExists != true
+                    if (complete) {
+                        logger.lifecycle("Skipping ${project.path}:$name because $groupText:$publishedArtifactId:$versionText already exists in GitHub Packages")
+                        false
+                    } else if (absent) {
+                        true
+                    } else {
+                        throw GradleException("GitHub Packages contains a partial $groupText:$publishedArtifactId:$versionText publication; delete that package version before retrying")
                     }
                 }
             }
@@ -462,13 +534,184 @@ tasks.register("publishSdkToGitHubPackages") {
     })
 }
 
+tasks.register("assembleFulcrumBundles") {
+    group = "publishing"
+    description = "Assembles Fulcrum v2 OCI bundle payloads."
+    dependsOn(":validation:auction-escrow-backend:assembleFulcrumBundles")
+}
+
+tasks.register("publishFulcrumBundles") {
+    group = "publishing"
+    description = "Assembles and pushes Fulcrum v2 OCI bundle artifacts."
+    dependsOn(":validation:auction-escrow-backend:publishFulcrumBundles")
+}
+
+tasks.register("signFulcrumBundles") {
+    group = "publishing"
+    description = "Assembles, pushes, cosign-signs, and pins Fulcrum v2 OCI bundle artifacts."
+    dependsOn(":validation:auction-escrow-backend:signFulcrumBundles")
+}
+
+fun jsonQuote(value: String): String {
+    return "\"" + value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n") + "\""
+}
+
+fun releaseImageJson(
+    name: String,
+    localRef: String,
+    publishedRef: String,
+    pushTask: String,
+    signTask: String): String = """
+        {
+          "name": ${jsonQuote(name)},
+          "localBuildRef": ${jsonQuote(localRef)},
+          "publishedRef": ${jsonQuote(publishedRef)},
+          "format": "oci",
+          "registry": "ghcr.io",
+          "pushTask": ${jsonQuote(pushTask)},
+          "signature": {
+            "provider": "cosign",
+            "task": ${jsonQuote(signTask)}
+          }
+        }
+    """.trimIndent()
+
+fun releaseBundleJson(
+    name: String,
+    publishedRef: String,
+    pinnedRef: String,
+    digest: String,
+    backendImageRef: String,
+    pushTask: String,
+    signTask: String,
+    pinTask: String): String = """
+        {
+          "name": ${jsonQuote(name)},
+          "publishedRef": ${jsonQuote(publishedRef)},
+          "pinnedRef": ${jsonQuote(pinnedRef)},
+          "digest": ${jsonQuote(digest)},
+          "backendImageRef": ${jsonQuote(backendImageRef)},
+          "format": "oci",
+          "registry": "ghcr.io",
+          "pushTask": ${jsonQuote(pushTask)},
+          "pinTask": ${jsonQuote(pinTask)},
+          "signature": {
+            "provider": "cosign",
+            "task": ${jsonQuote(signTask)}
+          }
+        }
+    """.trimIndent()
+
+fun receiptValue(file: File, key: String): String =
+    file.readLines()
+        .firstOrNull { it.startsWith("$key=") }
+        ?.substringAfter("=")
+        ?.takeIf { it.isNotBlank() }
+        ?: throw GradleException("${file.absolutePath} is missing $key")
+
+fun jsonStringValue(file: File, key: String): String =
+    Regex("\"" + Regex.escape(key) + "\"\\s*:\\s*\"([^\"]+)\"")
+        .find(file.readText())
+        ?.groupValues
+        ?.get(1)
+        ?.replace("\\\"", "\"")
+        ?.replace("\\\\", "\\")
+        ?.takeIf { it.isNotBlank() }
+        ?: throw GradleException("${file.absolutePath} is missing JSON string field $key")
+
+fun indentJsonBlock(value: String, spaces: Int): String = value.prependIndent(" ".repeat(spaces))
+
+val serviceLauncherImageTagForRelease = providers.gradleProperty("fulcrum.serviceLauncherImage")
+    .orElse("ghcr.io/harolddotsh/fulcrum-service-launcher:dev")
+val serviceLauncherPublishedImageTagForRelease = providers.gradleProperty("fulcrum.serviceLauncherPublishedImage")
+    .orElse("ghcr.io/harolddotsh/fulcrum-service-launcher:${project.version}")
+val paperGameserverImageTagForRelease = providers.gradleProperty("fulcrum.paperGameserverImage")
+    .orElse("ghcr.io/harolddotsh/fulcrum-paper-gameserver:dev")
+val paperGameserverPublishedImageTagForRelease = providers.gradleProperty("fulcrum.paperGameserverPublishedImage")
+    .orElse("ghcr.io/harolddotsh/fulcrum-paper-gameserver:${project.version}")
+val velocityProxyImageTagForRelease = providers.gradleProperty("fulcrum.velocityProxyImage")
+    .orElse("ghcr.io/harolddotsh/fulcrum-velocity-proxy:dev")
+val velocityProxyPublishedImageTagForRelease = providers.gradleProperty("fulcrum.velocityProxyPublishedImage")
+    .orElse("ghcr.io/harolddotsh/fulcrum-velocity-proxy:${project.version}")
+val auctionEscrowBundlePublishedRefForRelease = providers.gradleProperty("fulcrum.auctionEscrowBundle")
+    .orElse("ghcr.io/harolddotsh/fulcrum-bundles/auction-escrow:${project.version}")
+val auctionEscrowBackendProjectForRelease = project(":validation:auction-escrow-backend")
+val auctionEscrowBundleManifestFileForRelease =
+    auctionEscrowBackendProjectForRelease.layout.buildDirectory.file("publication/bundles/auction-escrow/bundle-publication.json")
+val auctionEscrowBundlePinnedRefFileForRelease =
+    auctionEscrowBackendProjectForRelease.layout.buildDirectory.file("publication/bundles/auction-escrow/auction-escrow-bundle.ref")
+val fulcrumReleaseManifest = layout.buildDirectory.file("publication/release-manifest/fulcrum-${project.version}.json")
+
+tasks.register("writeFulcrumReleaseManifest") {
+    group = "publishing"
+    description = "Writes the Fulcrum v2 release manifest for signed OCI images, bundles, and SDK/BOM coordinates."
+    dependsOn(":validation:auction-escrow-backend:auctionEscrowBundlePin")
+    outputs.file(fulcrumReleaseManifest)
+    doLast {
+        val sdkCoordinates = listOf(
+            "sh.harold.fulcrum:fulcrum-sdk-bom:${project.version}",
+            "sh.harold.fulcrum:authoring-sdk:${project.version}",
+            "sh.harold.fulcrum:authority-sdk:${project.version}",
+            "sh.harold.fulcrum:contract-api:${project.version}",
+            "sh.harold.fulcrum:capability-api:${project.version}",
+            "sh.harold.fulcrum:host-api:${project.version}",
+            "sh.harold.fulcrum:tick-runtime-api:${project.version}",
+            "sh.harold.fulcrum:kernel-api:${project.version}")
+        val imageEntries = listOf(
+            releaseImageJson("service-launcher", serviceLauncherImageTagForRelease.get(), serviceLauncherPublishedImageTagForRelease.get(), "serviceLauncherImagePush", "serviceLauncherImageSign"),
+            releaseImageJson("paper-gameserver", paperGameserverImageTagForRelease.get(), paperGameserverPublishedImageTagForRelease.get(), "paperGameserverImagePush", "paperGameserverImageSign"),
+            releaseImageJson("velocity-proxy", velocityProxyImageTagForRelease.get(), velocityProxyPublishedImageTagForRelease.get(), "velocityProxyImagePush", "velocityProxyImageSign"))
+            .joinToString(",\n") { indentJsonBlock(it, 4) }
+        val auctionEscrowBundleReceipt = auctionEscrowBundlePinnedRefFileForRelease.get().asFile
+        val bundleEntries = listOf(
+            releaseBundleJson(
+                "auction-escrow",
+                auctionEscrowBundlePublishedRefForRelease.get(),
+                receiptValue(auctionEscrowBundleReceipt, "pinnedRef"),
+                receiptValue(auctionEscrowBundleReceipt, "digest"),
+                jsonStringValue(auctionEscrowBundleManifestFileForRelease.get().asFile, "backendImageRef"),
+                "auctionEscrowBundlePush",
+                "auctionEscrowBundleSign",
+                "auctionEscrowBundlePin"))
+            .joinToString(",\n") { indentJsonBlock(it, 4) }
+        val sdkCoordinateEntries = sdkCoordinates.joinToString(",\n") { "      ${jsonQuote(it)}" }
+        val manifest = buildString {
+            appendLine("{")
+            appendLine("  \"schema\": \"fulcrum.release-manifest/v1\",")
+            appendLine("  \"version\": ${jsonQuote(project.version.toString())},")
+            appendLine("  \"productionFormat\": \"oci\",")
+            appendLine("  \"signaturePolicy\": \"cosign-fail-closed\",")
+            appendLine("  \"images\": [")
+            appendLine(imageEntries)
+            appendLine("  ],")
+            appendLine("  \"bundles\": [")
+            appendLine(bundleEntries)
+            appendLine("  ],")
+            appendLine("  \"sdk\": {")
+            appendLine("    \"repository\": \"github-packages\",")
+            appendLine("    \"coordinates\": [")
+            appendLine(sdkCoordinateEntries)
+            appendLine("    ]")
+            appendLine("  }")
+            appendLine("}")
+        }
+        val outputFile = fulcrumReleaseManifest.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.writeText(manifest)
+    }
+}
+
 tasks.register("publishFulcrumDistribution") {
     group = "publishing"
     description = "Publishes the Fulcrum v2 GitHub Packages SDK/BOM and signed GHCR OCI images and bundles."
     dependsOn("publishSdkToGitHubPackages")
     dependsOn(":distribution:service-launcher:signFulcrumImages")
-    dependsOn(":distribution:service-launcher:signFulcrumBundles")
-    dependsOn(":distribution:service-launcher:writeFulcrumReleaseManifest")
+    dependsOn("signFulcrumBundles")
+    dependsOn("writeFulcrumReleaseManifest")
 }
 
 tasks.register("releaseRehearsal") {

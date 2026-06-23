@@ -2,11 +2,9 @@ import org.gradle.api.GradleException
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.Sync
-import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.bundling.Zip
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.tasks.Jar
-import java.io.File
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -437,19 +435,20 @@ val lobbySharedShardAllocationStateTimeout =
 fun taskNameTargets(taskName: String, target: String): Boolean =
     taskName == target || taskName.endsWith(":$target")
 
+fun unqualifiedTaskName(taskName: String): String = taskName.substringAfterLast(":")
+
+fun taskNameRequestsGeneratedCluster(taskName: String): Boolean {
+    val name = unqualifiedTaskName(taskName)
+    return taskNameTargets(taskName, "clusterK3sPreflight")
+            || taskNameTargets(taskName, "clusterK3sStart")
+            || taskNameTargets(taskName, "clusterK3sImportImages")
+            || (name.endsWith("E2e") && !name.endsWith("LocalE2e") && !name.endsWith("ExistingE2e"))
+}
+
 val generatedClusterRequested = providers.provider {
     val taskNames = gradle.startParameter.taskNames
-    val requestedGeneratedCluster = taskNames.any {
-        taskNameTargets(it, "clusterE2e")
-                || taskNameTargets(it, "clusterK3sE2e")
-                || taskNameTargets(it, "escrowE2e")
-                || taskNameTargets(it, "escrowClusterE2e")
-                || taskNameTargets(it, "escrowClusterK3sE2e")
-                || taskNameTargets(it, "clusterK3sPreflight")
-                || taskNameTargets(it, "clusterK3sStart")
-                || taskNameTargets(it, "clusterK3sImportImages")
-    }
-    val requestedExistingCluster = taskNames.any { taskNameTargets(it, "clusterExistingE2e") }
+    val requestedGeneratedCluster = taskNames.any(::taskNameRequestsGeneratedCluster)
+    val requestedExistingCluster = taskNames.any { unqualifiedTaskName(it).endsWith("ExistingE2e") }
     requestedGeneratedCluster && !requestedExistingCluster
 }
 
@@ -958,130 +957,6 @@ registerImagePublicationTasks(
     velocityProxyImageTag,
     velocityProxyPublishedImageTag)
 
-val auctionEscrowBundlePublishedRef = providers.gradleProperty("fulcrum.auctionEscrowBundle")
-    .orElse("ghcr.io/harolddotsh/fulcrum-bundles/auction-escrow:${project.version}")
-val auctionEscrowBundleManifestFile =
-    layout.buildDirectory.file("publication/bundles/auction-escrow/bundle-publication.json")
-val auctionEscrowBundlePinnedRefFile =
-    layout.buildDirectory.file("publication/bundles/auction-escrow/auction-escrow-bundle.ref")
-evaluationDependsOn(":validation:auction-experience-bundle")
-evaluationDependsOn(":validation:auction-escrow-backend")
-val auctionExperienceProject = project(":validation:auction-experience-bundle")
-val auctionEscrowBackendProject = project(":validation:auction-escrow-backend")
-val auctionExperienceBundleJar = auctionExperienceProject.tasks.named<Jar>("jar")
-val auctionEscrowBackendImageRefOverride = providers.gradleProperty("fulcrum.auctionEscrowBackendImageRef")
-val auctionEscrowBackendImagePin = auctionEscrowBackendProject.tasks.named("auctionEscrowImagePin")
-val auctionEscrowBackendImagePinnedRefFile =
-    auctionEscrowBackendProject.layout.buildDirectory.file("publication/images/auction-escrow-backend.ref")
-
-val writeAuctionEscrowBundleManifest by tasks.registering {
-    group = "publishing"
-    description = "Writes the digest-pinned auction escrow bundle publication manifest."
-    dependsOn(auctionEscrowBackendImagePin)
-    inputs.property("auctionEscrowBackendImageRef", auctionEscrowBackendImageRefOverride.orElse(""))
-    inputs.file(auctionEscrowBackendImagePinnedRefFile)
-    outputs.file(auctionEscrowBundleManifestFile)
-
-    doLast {
-        val backendImageRef = auctionEscrowBackendImageRefOverride.orNull
-            ?.takeIf { it.isNotBlank() }
-            ?: receiptValue(auctionEscrowBackendImagePinnedRefFile.get().asFile, "pinnedRef")
-        if (!backendImageRef.contains("@sha256:")) {
-            throw GradleException("fulcrum.auctionEscrowBackendImageRef must be pinned by digest")
-        }
-        val outputFile = auctionEscrowBundleManifestFile.get().asFile
-        outputFile.parentFile.mkdirs()
-        outputFile.writeText("""
-            |{
-            |  "schema": "fulcrum.bundle-publication/v1",
-            |  "bundle": "auction-escrow",
-            |  "kind": "authority-backend",
-            |  "backendImageRef": ${jsonQuote(backendImageRef)},
-            |  "providerJar": "providers/auction-experience-bundle.jar",
-            |  "migrations": "migrations/auction-escrow"
-            |}
-            |""".trimMargin())
-    }
-}
-
-val auctionEscrowBundleArtifact by tasks.registering(Tar::class) {
-    group = "publishing"
-    description = "Assembles the auction escrow OCI bundle payload tar."
-    dependsOn(writeAuctionEscrowBundleManifest, auctionExperienceBundleJar)
-    archiveFileName.set("auction-escrow-bundle.tar")
-    destinationDirectory.set(layout.buildDirectory.dir("publication/bundles/auction-escrow"))
-    duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.FAIL
-
-    from(auctionExperienceBundleJar.flatMap { it.archiveFile }) {
-        into("providers")
-        rename { "auction-experience-bundle.jar" }
-    }
-    from(auctionEscrowBundleManifestFile) {
-        into("META-INF/fulcrum")
-    }
-    from(auctionEscrowBackendProject.layout.projectDirectory.dir(
-        "src/main/resources/fulcrum/migrations/auction-escrow")) {
-        into("migrations/auction-escrow")
-    }
-}
-
-val auctionEscrowBundleArchive = auctionEscrowBundleArtifact.flatMap { it.archiveFile }
-
-val auctionEscrowBundlePush by tasks.registering(Exec::class) {
-    group = "publishing"
-    description = "Pushes the auction escrow OCI bundle artifact to the configured registry."
-    dependsOn(auctionEscrowBundleArtifact)
-    inputs.file(auctionEscrowBundleArchive)
-    doFirst {
-        workingDir(auctionEscrowBundleArchive.get().asFile.parentFile)
-        commandLine(
-            "oras",
-            "push",
-            "--artifact-type",
-            "application/vnd.harold.fulcrum.bundle.v1",
-            auctionEscrowBundlePublishedRef.get(),
-            auctionEscrowBundleArchive.get().asFile.name
-                + ":application/vnd.harold.fulcrum.bundle.layer.v1+tar")
-    }
-}
-
-val auctionEscrowBundleSign by tasks.registering(Exec::class) {
-    group = "publishing"
-    description = "Signs the pushed auction escrow OCI bundle artifact with cosign."
-    dependsOn(auctionEscrowBundlePush)
-    doFirst {
-        commandLine("cosign", "sign", "--yes", auctionEscrowBundlePublishedRef.get())
-    }
-}
-
-val auctionEscrowBundlePin by tasks.registering {
-    group = "publishing"
-    description = "Resolves and records the digest-pinned auction escrow OCI bundle reference."
-    dependsOn(auctionEscrowBundleSign)
-    outputs.file(auctionEscrowBundlePinnedRefFile)
-
-    doLast {
-        val execution = providers.exec {
-            commandLine("oras", "resolve", auctionEscrowBundlePublishedRef.get())
-        }
-        execution.result.get().assertNormalExitValue()
-        val digest = execution.standardOutput.asText.get().trim()
-        if (!digest.startsWith("sha256:")) {
-            throw GradleException("oras resolve did not return a sha256 digest for ${auctionEscrowBundlePublishedRef.get()}")
-        }
-        val outputFile = auctionEscrowBundlePinnedRefFile.get().asFile
-        outputFile.parentFile.mkdirs()
-        outputFile.writeText("""
-            |schema=fulcrum.bundle-publish-receipt/v1
-            |bundle=auction-escrow
-            |publishedRef=${auctionEscrowBundlePublishedRef.get()}
-            |digest=$digest
-            |pinnedRef=oci://${auctionEscrowBundlePublishedRef.get()}@$digest
-            |signature=cosign
-            |""".trimMargin())
-    }
-}
-
 tasks.register("publishFulcrumImages") {
     group = "publishing"
     description = "Builds, tags, and pushes Fulcrum v2 production OCI images to GHCR."
@@ -1098,158 +973,6 @@ tasks.register("signFulcrumImages") {
         tasks.named("serviceLauncherImageSign"),
         tasks.named("paperGameserverImageSign"),
         tasks.named("velocityProxyImageSign"))
-}
-
-tasks.register("assembleFulcrumBundles") {
-    group = "publishing"
-    description = "Assembles Fulcrum v2 OCI bundle payloads."
-    dependsOn(auctionEscrowBundleArtifact)
-}
-
-tasks.register("publishFulcrumBundles") {
-    group = "publishing"
-    description = "Assembles and pushes Fulcrum v2 OCI bundle artifacts."
-    dependsOn(auctionEscrowBundlePush)
-}
-
-tasks.register("signFulcrumBundles") {
-    group = "publishing"
-    description = "Assembles, pushes, cosign-signs, and pins Fulcrum v2 OCI bundle artifacts."
-    dependsOn(auctionEscrowBundlePin)
-}
-
-fun jsonQuote(value: String): String {
-    return "\"" + value
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\r", "\\r")
-        .replace("\n", "\\n") + "\""
-}
-
-fun releaseImageJson(
-    name: String,
-    localRef: String,
-    publishedRef: String,
-    pushTask: String,
-    signTask: String): String = """
-        {
-          "name": ${jsonQuote(name)},
-          "localBuildRef": ${jsonQuote(localRef)},
-          "publishedRef": ${jsonQuote(publishedRef)},
-          "format": "oci",
-          "registry": "ghcr.io",
-          "pushTask": ${jsonQuote(pushTask)},
-          "signature": {
-            "provider": "cosign",
-            "task": ${jsonQuote(signTask)}
-          }
-        }
-    """.trimIndent()
-
-fun releaseBundleJson(
-    name: String,
-    publishedRef: String,
-    pinnedRef: String,
-    digest: String,
-    backendImageRef: String,
-    pushTask: String,
-    signTask: String,
-    pinTask: String): String = """
-        {
-          "name": ${jsonQuote(name)},
-          "publishedRef": ${jsonQuote(publishedRef)},
-          "pinnedRef": ${jsonQuote(pinnedRef)},
-          "digest": ${jsonQuote(digest)},
-          "backendImageRef": ${jsonQuote(backendImageRef)},
-          "format": "oci",
-          "registry": "ghcr.io",
-          "pushTask": ${jsonQuote(pushTask)},
-          "pinTask": ${jsonQuote(pinTask)},
-          "signature": {
-            "provider": "cosign",
-            "task": ${jsonQuote(signTask)}
-          }
-        }
-    """.trimIndent()
-
-fun receiptValue(file: File, key: String): String =
-    file.readLines()
-        .firstOrNull { it.startsWith("$key=") }
-        ?.substringAfter("=")
-        ?.takeIf { it.isNotBlank() }
-        ?: throw GradleException("${file.absolutePath} is missing $key")
-
-fun jsonStringValue(file: File, key: String): String =
-    Regex("\"" + Regex.escape(key) + "\"\\s*:\\s*\"([^\"]+)\"")
-        .find(file.readText())
-        ?.groupValues
-        ?.get(1)
-        ?.replace("\\\"", "\"")
-        ?.replace("\\\\", "\\")
-        ?.takeIf { it.isNotBlank() }
-        ?: throw GradleException("${file.absolutePath} is missing JSON string field $key")
-
-fun indentJsonBlock(value: String, spaces: Int): String = value.prependIndent(" ".repeat(spaces))
-
-val fulcrumReleaseManifest = layout.buildDirectory.file("publication/release-manifest/fulcrum-${project.version}.json")
-
-tasks.register("writeFulcrumReleaseManifest") {
-    group = "publishing"
-    description = "Writes the Fulcrum v2 release manifest for signed OCI images, bundles, and SDK/BOM coordinates."
-    dependsOn(auctionEscrowBundlePin)
-    outputs.file(fulcrumReleaseManifest)
-    doLast {
-        val sdkCoordinates = listOf(
-            "sh.harold.fulcrum:fulcrum-sdk-bom:${project.version}",
-            "sh.harold.fulcrum:authoring-sdk:${project.version}",
-            "sh.harold.fulcrum:authority-sdk:${project.version}",
-            "sh.harold.fulcrum:contract-api:${project.version}",
-            "sh.harold.fulcrum:capability-api:${project.version}",
-            "sh.harold.fulcrum:host-api:${project.version}",
-            "sh.harold.fulcrum:tick-runtime-api:${project.version}",
-            "sh.harold.fulcrum:kernel-api:${project.version}")
-        val imageEntries = listOf(
-            releaseImageJson("service-launcher", serviceLauncherImageTag.get(), serviceLauncherPublishedImageTag.get(), "serviceLauncherImagePush", "serviceLauncherImageSign"),
-            releaseImageJson("paper-gameserver", paperGameserverImageTag.get(), paperGameserverPublishedImageTag.get(), "paperGameserverImagePush", "paperGameserverImageSign"),
-            releaseImageJson("velocity-proxy", velocityProxyImageTag.get(), velocityProxyPublishedImageTag.get(), "velocityProxyImagePush", "velocityProxyImageSign"))
-            .joinToString(",\n") { indentJsonBlock(it, 4) }
-        val auctionEscrowBundleReceipt = auctionEscrowBundlePinnedRefFile.get().asFile
-        val bundleEntries = listOf(
-            releaseBundleJson(
-                "auction-escrow",
-                auctionEscrowBundlePublishedRef.get(),
-                receiptValue(auctionEscrowBundleReceipt, "pinnedRef"),
-                receiptValue(auctionEscrowBundleReceipt, "digest"),
-                jsonStringValue(auctionEscrowBundleManifestFile.get().asFile, "backendImageRef"),
-                "auctionEscrowBundlePush",
-                "auctionEscrowBundleSign",
-                "auctionEscrowBundlePin"))
-            .joinToString(",\n") { indentJsonBlock(it, 4) }
-        val sdkCoordinateEntries = sdkCoordinates.joinToString(",\n") { "      ${jsonQuote(it)}" }
-        val manifest = buildString {
-            appendLine("{")
-            appendLine("  \"schema\": \"fulcrum.release-manifest/v1\",")
-            appendLine("  \"version\": ${jsonQuote(project.version.toString())},")
-            appendLine("  \"productionFormat\": \"oci\",")
-            appendLine("  \"signaturePolicy\": \"cosign-fail-closed\",")
-            appendLine("  \"images\": [")
-            appendLine(imageEntries)
-            appendLine("  ],")
-            appendLine("  \"bundles\": [")
-            appendLine(bundleEntries)
-            appendLine("  ],")
-            appendLine("  \"sdk\": {")
-            appendLine("    \"repository\": \"github-packages\",")
-            appendLine("    \"coordinates\": [")
-            appendLine(sdkCoordinateEntries)
-            appendLine("    ]")
-            appendLine("  }")
-            appendLine("}")
-        }
-        val outputFile = fulcrumReleaseManifest.get().asFile
-        outputFile.parentFile.mkdirs()
-        outputFile.writeText(manifest)
-    }
 }
 
 val lobbyPaperFleetManifest = layout.projectDirectory.file(
